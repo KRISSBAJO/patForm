@@ -154,6 +154,52 @@ create table resume_token (
   revoked_at  timestamptz
 );
 
+-- ------------------------------------------------------------------ intake
+
+-- §6.3: "Autosave and secure resume link." A draft is a form somebody has
+-- started and not finished. It is deliberately NOT an instance: a process
+-- that counts half-filled forms as cases reports nonsense, and a respondent
+-- who abandons one should leave no record to chase.
+create table draft (
+  id                   uuid primary key default gen_random_uuid(),
+  tenant_id            uuid not null references tenant(id),
+  process_version_id   uuid not null references process_version(id),
+  token_hash           text not null unique,
+  answers              jsonb not null default '{}'::jsonb,
+  page                 int not null default 0,
+  submitted_instance_id uuid references instance(id),
+  created_at           timestamptz not null default now(),
+  updated_at           timestamptz not null default now(),
+  expires_at           timestamptz not null
+);
+
+create index draft_live on draft (expires_at) where submitted_instance_id is null;
+
+-- Uploaded files. The bytes live outside the database; this row is the record
+-- of them, and the checksum is what makes "the same file" answerable.
+--
+-- NOT built: object storage, malware scanning, quarantine, presigned access
+-- (§12.1 uploads). Local disk is a development stand-in and is named as one in
+-- runtime/files.ts rather than left to be discovered.
+create table file (
+  id           uuid primary key default gen_random_uuid(),
+  tenant_id    uuid not null references tenant(id),
+  draft_id     uuid references draft(id) on delete cascade,
+  instance_id  uuid references instance(id),
+  field_key    text not null,
+  filename     text not null,
+  content_type text not null,
+  byte_size    bigint not null,
+  checksum     text not null,
+  storage_key  text not null,
+  scan_status  text not null default 'unscanned'
+    check (scan_status in ('unscanned', 'clean', 'quarantined')),
+  uploaded_at  timestamptz not null default now()
+);
+
+create index file_for_draft on file (draft_id);
+create index file_for_instance on file (instance_id);
+
 -- ------------------------------------------------------------ event history
 
 create table event (

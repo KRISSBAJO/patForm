@@ -4,6 +4,7 @@ import { Engine, newWorkerId } from './runtime/engine.js';
 import { AuthorizationError, type Principal } from './runtime/policy.js';
 import { resolveResumeToken } from './runtime/auth.js';
 import { runRetention } from './runtime/retention.js';
+import { checkAnswers, loadDraft, publicForm, respondentStatus, respondentUpdate, saveDraft, submitForm } from './runtime/intake.js';
 
 /**
  * Proofs for the gaps closed after the first spike: respondent scoping, a
@@ -215,5 +216,111 @@ export async function proveRetention({ pool, bp, T0, record, completeFor }: Proo
       `${preview.events} events and deleted nothing. The real run removed ${done.instances} instance and ` +
       `${before[0]!.count} events, leaving a retention_run row naming what went. The record still inside its ` +
       `retention period survived, and deleting its history outside the procedure is still refused.`,
+  );
+}
+
+
+export async function proveIntake({ pool, bp, record, completeFor }: ProofCtx): Promise<void> {
+  const engine = new Engine(pool);
+  const tenantId = await engine.createTenant('proof:intake');
+  await engine.publish(tenantId, bp, 'proof');
+
+  // 1. The public form carries no internals. A stranger reaching this must not
+  //    learn the workflow, the roles, or which fields are classified how.
+  const form = await publicForm(pool, bp.key);
+  const serialized = JSON.stringify(form);
+  const leaksNothing =
+    !serialized.includes('classification') &&
+    !serialized.includes('"workflow"') &&
+    !serialized.includes('"roles"') &&
+    !serialized.includes('national_id') === false; // the field is asked for; its class is not published
+
+  // 2. Conditional visibility is decided from the answers, not guessed.
+  const withoutHelp = await checkAnswers(pool, { processKey: bp.key, answers: { equipment_needs: ['laptop'] } });
+  const withHelp = await checkAnswers(pool, { processKey: bp.key, answers: { equipment_needs: ['accessibility'] } });
+  const conditional =
+    !withoutHelp.visible.includes('accessibility_notes') && withHelp.visible.includes('accessibility_notes');
+
+  // 3. A draft is kept, resumable, and is NOT a record.
+  const draft = await saveDraft(pool, {
+    processKey: bp.key,
+    answers: { full_name: 'Half Finished' },
+    page: 0,
+  });
+  const reopened = await loadDraft(pool, draft.token);
+  const { rows: instancesDuringDraft } = await pool.query<{ count: number }>(
+    'select count(*)::int as count from instance where tenant_id = $1',
+    [tenantId],
+  );
+
+  // 4. An incomplete submission is refused by the server.
+  const refused = await submitForm(pool, { processKey: bp.key, token: draft.token, answers: { full_name: 'Half Finished' } });
+
+  // 5. A complete one starts a process and hands back a resume link.
+  const submitted = await submitForm(pool, {
+    processKey: bp.key,
+    token: draft.token,
+    answers: completeFor(bp, { personal_email: 'intake@example.test', full_name: 'Ada Nwosu' }),
+  });
+  await engine.drain(new Date());
+
+  // 6. The draft is spent: the same link cannot start a second record.
+  const spent = await loadDraft(pool, draft.token);
+
+  // 7. §20.1 step 6 in full: the manager asks for changes, and only then does
+  //    the respondent amend what their role names.
+  const managerId = await engine.createActor(tenantId, 'manager_email@example.test', 'Manager', 'approver');
+  await engine.grant({ tenantId, actorId: managerId, processKey: bp.key, roleKey: 'hiring_manager' });
+  await engine.decide({
+    instanceId: submitted.instanceId!,
+    approvalKey: 'manager_approval',
+    decision: 'changes_requested',
+    principal: { kind: 'actor', tenantId, actorId: managerId },
+    reason: 'Your phone number has a digit missing.',
+    now: new Date(),
+  });
+  await engine.drain(new Date());
+
+  const status = await respondentStatus(pool, submitted.resumeToken!);
+  const permitted = await respondentUpdate(pool, {
+    resumeToken: submitted.resumeToken!,
+    patch: { phone: '+44 7700 900111' },
+  });
+  const forbidden = await respondentUpdate(pool, {
+    resumeToken: submitted.resumeToken!,
+    patch: { bank_account: 'tampered' },
+  });
+  const { rows: after } = await pool.query<{ phone: string; bank: string }>(
+    "select data->>'phone' as phone, data->>'bank_account' as bank from instance where id = $1",
+    [submitted.instanceId!],
+  );
+
+  record(
+    'A form can be filled in, saved, submitted, and amended when asked',
+    'Section 21 P0: value cannot exist without trustworthy intake. Section 20.1 steps 4 and 6.',
+    leaksNothing &&
+      conditional &&
+      reopened?.answers.full_name === 'Half Finished' &&
+      instancesDuringDraft[0]!.count === 0 &&
+      refused.ok === false &&
+      (refused.errors?.length ?? 0) > 0 &&
+      submitted.ok === true &&
+      Boolean(submitted.resumeToken) &&
+      Boolean(spent?.submittedInstanceId) &&
+      status !== null &&
+      status.changesRequested !== null &&
+      permitted.saved === true &&
+      permitted.advanced === true &&
+      forbidden.saved === false &&
+      forbidden.refused?.[0] === 'bank_account' &&
+      after[0]!.phone === '+44 7700 900111' &&
+      after[0]!.bank !== 'tampered',
+    `The published form served no classifications, roles or workflow. A hidden section appeared only once ` +
+      `its condition was met. A half-finished draft reopened with its answers and created ${instancesDuringDraft[0]!.count} ` +
+      `records, because a draft is not a case. An incomplete submission was refused with ${refused.errors?.length} ` +
+      `named fields; a complete one started a process and returned a resume link, and the draft could not be used ` +
+      `again. Asked for changes ("${status?.changesRequested}"), the respondent updated their phone number and ` +
+      `was refused their bank account ` +
+      `("${forbidden.refused?.join(', ')}") — which the blueprint declares and nothing until now enforced.`,
   );
 }

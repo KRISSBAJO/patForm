@@ -15,7 +15,8 @@ src/blueprint/     the schema — ten sections, two expression languages, no exe
 src/compiler/      the rules that decide whether a blueprint may be published
 src/runtime/       the workflow engine: outbox, idempotency, timers, policy, scenarios
 src/ai/            generation: two providers, a versioned prompt, three gates
-src/api/           the console API: session cookies, scrypt passwords
+src/api/           the API: public form, console, session cookies
+src/runtime/intake.ts   the respondent side: form, draft, submit, status
 src/worker.ts      the durable worker — without it, no deadline ever fires
 src/seed.ts        a workspace that looks like a Tuesday, for the console
 web/               the landing page, and the operator console at /console
@@ -78,6 +79,7 @@ performance evidence. `npm run spike` is that, and it proves eight things:
 | Proof | Result |
 |---|---|
 | Every blueprint's own scenarios run against the real engine | 21/21 across three processes |
+| A form can be filled in, saved, submitted and amended when asked | §20.1 steps 4 and 6, end to end |
 | Authorization is enforced by the runtime, not the caller | cross-tenant, wrong capability, and un-named approver all refused |
 | Idempotent email under replay | 3 deliveries, 1 email |
 | Concurrent workers never double-process | 8 workers, 40 instances, 40 emails, 0 duplicates |
@@ -106,6 +108,26 @@ prints them. Who you sign in as is the most useful control on the screen:
 | Priya — hiring_manager / approver | 2 approvals, 0 tasks, and no automation panel at all |
 | Ini — it_operator / operator | only the 2 IT tasks, not HR's |
 | Dana — hiring_manager / read_only | refused: *not named as an approver on this request* |
+
+## The respondent side
+
+```bash
+npm run db:up && npm run seed && npm run api && npm run worker
+npm --prefix web run dev
+```
+
+`/f/employee_onboarding` is the public form: multi-page, conditional sections,
+autosave with a resume link in the address bar, and a status page at
+`/f/status?resume=…` where a respondent answers a request for changes.
+
+Two properties worth knowing:
+
+- **A draft is not a record.** Half-finished forms never become instances, so
+  abandonment does not create work for an operator or distort the intake count.
+- **The browser holds no rules.** The API serves each field's constraint
+  *values* and the renderer turns them into native HTML attributes;
+  `validateAnswers` on the server is what decides. One source of truth, two
+  enforcers, nothing to drift apart.
 
 ## What is not built
 

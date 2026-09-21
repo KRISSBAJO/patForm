@@ -4,13 +4,22 @@ import { Engine } from '../runtime/engine.js';
 import { AuthorizationError, type Principal } from '../runtime/policy.js';
 import {
   devicesFor,
-  resolveResumeToken,
   resolveSession,
   revokeAllSessions,
   signIn,
   signOut,
 } from '../runtime/auth.js';
 import { runRetention } from '../runtime/retention.js';
+import {
+  checkAnswers,
+  loadDraft,
+  publicForm,
+  respondentStatus,
+  respondentUpdate,
+  saveDraft,
+  submitForm,
+} from '../runtime/intake.js';
+import type { Answers } from '../blueprint/answers.js';
 
 /**
  * The operator console's API.
@@ -46,6 +55,49 @@ const routes: { method: string; pattern: RegExp; handler: Handler }[] = [];
 function route(method: string, pattern: RegExp, handler: Handler): void {
   routes.push({ method, pattern, handler });
 }
+
+// ---------------------------------------------------------- public intake
+//
+// These routes are the only ones a stranger may reach. They serve a published
+// form, keep a draft, validate, and submit. Nothing here reads a record: the
+// status page needs a resume token, handled in the resume branch below.
+
+route('GET', /^\/api\/forms\/([a-z0-9_]+)$/, async ({ pool, url }) => {
+  const key = url.pathname.split('/').pop()!;
+  const form = await publicForm(pool, key);
+  if (!form) throw new HttpError(404, 'no such form');
+  return form;
+});
+
+route('POST', /^\/api\/forms\/([a-z0-9_]+)\/check$/, async ({ pool, url }, body) => {
+  const key = url.pathname.split('/')[3]!;
+  const { answers, pageIndex } = body as { answers?: Answers; pageIndex?: number };
+  return checkAnswers(pool, { processKey: key, answers: answers ?? {}, pageIndex });
+});
+
+route('POST', /^\/api\/forms\/([a-z0-9_]+)\/draft$/, async ({ pool, url }, body) => {
+  const key = url.pathname.split('/')[3]!;
+  const { token, answers, page } = body as { token?: string; answers?: Answers; page?: number };
+  return saveDraft(pool, { processKey: key, token, answers: answers ?? {}, page: page ?? 0 });
+});
+
+route('GET', /^\/api\/forms\/([a-z0-9_]+)\/draft$/, async ({ pool, url }) => {
+  const token = url.searchParams.get('token');
+  if (!token) throw new HttpError(400, 'token is required');
+  const draft = await loadDraft(pool, token);
+  if (!draft) throw new HttpError(404, 'that link has expired');
+  return draft;
+});
+
+route('POST', /^\/api\/forms\/([a-z0-9_]+)\/submit$/, async ({ pool, engine, url }, body) => {
+  const key = url.pathname.split('/')[3]!;
+  const { token, answers } = body as { token?: string; answers?: Answers };
+  const result = await submitForm(pool, { processKey: key, token, answers: answers ?? {} });
+  // Deliver the receipt before answering, so the confirmation page is not the
+  // only evidence the submission worked.
+  if (result.ok) await engine.drain(new Date(), 'intake');
+  return result;
+});
 
 // ------------------------------------------------------------------ session
 
@@ -241,15 +293,30 @@ async function main(): Promise<void> {
         }
 
         // ---- a respondent's resume link scopes them to one record
+        // ---- a resume link: one record, read or clarify, nothing else
         const resume = url.searchParams.get('resume') ?? readCookie(req, RESUME_COOKIE);
         if (resume) {
-          const scope = await resolveResumeToken(pool, resume);
-          if (!scope) throw new HttpError(401, 'that link has expired');
-          const principal: Principal = { kind: 'respondent', ...scope };
+          if (url.pathname === '/api/status' && req.method === 'GET') {
+            const status = await respondentStatus(pool, resume);
+            if (!status) throw new HttpError(401, 'that link has expired');
+            return send(res, 200, status);
+          }
+          if (url.pathname === '/api/status/update' && req.method === 'POST') {
+            const { patch } = (await readBody(req)) as { patch?: Answers };
+            const result = await respondentUpdate(pool, { resumeToken: resume, patch: patch ?? {} });
+            if (result.advanced) await engine.drain(new Date(), 'intake');
+            return send(res, 200, result);
+          }
+          throw new HttpError(404, 'a resume link does not reach that');
+        }
+
+        // ---- the public form needs no session at all
+        if (url.pathname.startsWith('/api/forms/')) {
           const match = routes.find((r) => r.method === req.method && r.pattern.test(url.pathname));
-          if (!match) throw new HttpError(404, 'not available on a resume link');
-          const result = await match.handler({ engine, pool, principal, actorId: '', url }, {});
-          return send(res, 200, result);
+          if (!match) throw new HttpError(404, `no route for ${req.method} ${url.pathname}`);
+          const body = req.method === 'POST' ? await readBody(req) : {};
+          const anonymous: Principal = { kind: 'respondent', tenantId: '' };
+          return send(res, 200, await match.handler({ engine, pool, principal: anonymous, actorId: '', url }, body));
         }
 
         const session = await resolveSession(pool, readCookie(req, SESSION_COOKIE) ?? '');

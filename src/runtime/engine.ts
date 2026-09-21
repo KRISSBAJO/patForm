@@ -378,7 +378,13 @@ export class Engine {
     patch: Answers;
     principal: Principal;
     now: Date;
-  }): Promise<{ applied: boolean; refused?: string[] }> {
+    /**
+     * `saved` says the answers were written; `advanced` says the record also
+     * moved. They are different questions and were one boolean, so a
+     * respondent whose clarification was stored in a state with nowhere to go
+     * was told nothing had happened.
+     */
+  }): Promise<{ saved: boolean; advanced: boolean; refused?: string[] }> {
     return inTransaction(this.pool, async (client) => {
       const instance = await loadInstance(client, args.instanceId, { lock: true });
       const bp = await loadBlueprint(client, instance.process_version_id);
@@ -393,8 +399,9 @@ export class Engine {
       }, this.pool);
 
       // Holding `edit` is not permission to change every field. A role may
-      // only touch what its editableFields list names (§6.4).
-      if (args.principal.kind === 'actor') {
+      // only touch what its editableFields list names (§6.4) — and that is as
+      // true of a respondent answering a clarification as of a member.
+      if (args.principal.kind !== 'system') {
         const refused = rejectUneditable(bp, decision.roles, args.patch);
         if (refused.length) {
           await recordDenial(
@@ -409,7 +416,7 @@ export class Engine {
             },
             `fields not editable by ${decision.roles.join(', ')}: ${refused.join(', ')}`,
           );
-          return { applied: false, refused };
+          return { saved: false, advanced: false, refused };
         }
       }
 
@@ -433,7 +440,7 @@ export class Engine {
           actor,
           now: args.now,
         });
-        return { applied: false };
+        return { saved: true, advanced: false };
       }
 
       await applyTransition(client, {
@@ -445,7 +452,7 @@ export class Engine {
         actor,
         now: args.now,
       });
-      return { applied: true };
+      return { saved: true, advanced: true };
     });
   }
 

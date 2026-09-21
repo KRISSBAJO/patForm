@@ -4,7 +4,7 @@ import { Blueprint } from './blueprint/index.js';
 import { createPool, describeTarget, resetSchema, type Pool } from './runtime/db.js';
 import { Engine, newWorkerId } from './runtime/engine.js';
 import { AuthorizationError } from './runtime/policy.js';
-import { proveRespondentScope, proveRetention, proveWorkerFiresTimers } from './spike-proofs.js';
+import { proveIntake, proveRespondentScope, proveRetention, proveWorkerFiresTimers } from './spike-proofs.js';
 import { runScenarios } from './runtime/scenarios.js';
 
 const GREEN = '\x1b[32m';
@@ -417,7 +417,7 @@ async function proveAuthorization(pool: Pool, bp: Blueprint): Promise<void> {
       respondent !== null &&
       hiddenRedacted &&
       visibleKept &&
-      edit.applied === false &&
+      edit.saved === false &&
       allowed.applied === true &&
       denials.length >= 4,
     `Refused: a manager from another tenant ("${crossTenant}"), an operator without the capability ` +
@@ -481,6 +481,7 @@ async function main(): Promise<void> {
   const steps: [string, () => Promise<void>][] = [
     ['scenarios', () => proveScenarios(pool, blueprints)],
     ['authorization', () => proveAuthorization(pool, onboarding)],
+    ['intake', () => proveIntake(ctx)],
     ['respondent scope', () => proveRespondentScope(ctx)],
     ['worker', () => proveWorkerFiresTimers(ctx)],
     ['retention', () => proveRetention(ctx)],

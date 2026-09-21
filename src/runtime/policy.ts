@@ -117,15 +117,19 @@ export async function authorize(client: Client, args: AuthorizeArgs): Promise<De
     return { allowed: true, reason: `system:${principal.reason}`, roles: [] };
   }
 
-  // 3. A respondent may start a process, and read the ONE record their resume
-  //    token names. Allowing `view` on the strength of being a respondent —
-  //    which is what this did before — lets anyone holding any public link read
-  //    every record in the tenant. That is §12.3's "broken object
-  //    authorization in public resume and file links", and it is why the
-  //    principal carries an instance rather than a promise.
+  // 3. A respondent may start a process, and read or amend the ONE record
+  //    their resume token names. Allowing `view` on the strength of being a
+  //    respondent — which is what this did before — lets anyone holding any
+  //    public link read every record in the tenant (§12.3, broken object
+  //    authorization in public resume links), so the principal carries an
+  //    instance rather than a promise.
   if (principal.kind === 'respondent') {
     if (action === 'submit') return { allowed: true, reason: 'respondent', roles: [] };
-    if (action !== 'view') {
+
+    // §20.1 step 6: an approver asks for changes and the respondent answers.
+    // The blueprint's respondent role already says which fields that may
+    // touch; refusing `edit` outright made those declarations unreachable.
+    if (action !== 'view' && action !== 'edit') {
       return { allowed: false, reason: `a respondent may not ${action}`, roles: [] };
     }
     if (!principal.instanceId) {
@@ -137,7 +141,23 @@ export async function authorize(client: Client, args: AuthorizeArgs): Promise<De
     if (principal.instanceId !== args.instanceId) {
       return { allowed: false, reason: 'resume token is for a different record', roles: [] };
     }
-    return { allowed: true, reason: 'respondent, via their own resume token', roles: [] };
+
+    // Returning the respondent role means the field-level checks that already
+    // exist — redaction on read, editableFields on write — apply to them
+    // unchanged. The capability opens the door; the role decides how far.
+    const respondentRole = blueprint.roles.find((r) => r.kind === 'respondent');
+    if (action === 'edit' && !respondentRole?.editableFields?.length) {
+      return {
+        allowed: false,
+        reason: 'this process lets respondents change nothing after submitting',
+        roles: [],
+      };
+    }
+    return {
+      allowed: true,
+      reason: 'respondent, via their own resume token',
+      roles: respondentRole ? [respondentRole.key] : [],
+    };
   }
 
   // 4. The actor must exist, be active, and belong to this tenant.
