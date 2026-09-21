@@ -1,4 +1,4 @@
--- Runtime schema for the process platform spike.
+-- Runtime schema for the Patform workflow engine.
 --
 -- Targets PostgreSQL 17, which is what Renviq provisions. Everything here uses
 -- the standard protocol and standard SQL: no extensions beyond pgcrypto, no

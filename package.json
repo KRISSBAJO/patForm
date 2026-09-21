@@ -1,8 +1,8 @@
 {
-  "name": "patform-blueprint",
+  "name": "patform",
   "version": "0.1.0",
   "private": true,
-  "description": "Typed process blueprint schema and compiler for the LogaXP AI process platform",
+  "description": "Patform \u2014 typed process blueprint schema, compiler, and workflow runtime",
   "type": "module",
   "scripts": {
     "build": "tsc",

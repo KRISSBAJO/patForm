@@ -1,6 +1,10 @@
-# Process blueprint schema and compiler
+# Patform
 
-The first artefact for the LogaXP AI process platform, per §23 week 2 of the product document: *"define the process blueprint schema and compile three real processes by hand"* → *"schema v0.1 and failure cases."*
+An AI process platform by LogaXP: describe a process, and get the form, approvals,
+reminders, documents and dashboard built together — then run together afterwards.
+
+This repository is the core of it, built in the order §23 of the product document
+recommends. It starts at §23 week 2: *"define the process blueprint schema and compile three real processes by hand"* → *"schema v0.1 and failure cases."*
 
 This is not the product. It is the typed representation everything else in the product hangs off — the thing the AI proposes, the compiler validates, the editors edit, the runtime executes, and the versioning system pins. Getting it right costs days. Getting it wrong costs the architecture.
 
