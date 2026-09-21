@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { Blueprint } from './blueprint/index.js';
 import { createPool, describeTarget, resetSchema, type Pool } from './runtime/db.js';
 import { Engine, newWorkerId } from './runtime/engine.js';
+import { AuthorizationError } from './runtime/policy.js';
 import { runScenarios } from './runtime/scenarios.js';
 
 const GREEN = '\x1b[32m';
@@ -199,11 +200,13 @@ async function proveTimers(pool: Pool, bp: Blueprint): Promise<void> {
   const reminders = (await engine.emails(instanceId)).filter((e) => e.template_key === 'approval_reminder');
 
   // Leaving the state must cancel its pending timers.
+  const managerId = await engine.createActor(tenantId, 'manager_email@example.test', 'Priya Raman');
+  await engine.grant({ tenantId, actorId: managerId, processKey: bp.key, roleKey: 'hiring_manager' });
   await engine.decide({
     instanceId,
     approvalKey: 'manager_approval',
     decision: 'approved',
-    actor: 'role:hiring_manager',
+    principal: { kind: 'actor', tenantId, actorId: managerId },
     now: new Date(T0.getTime() + hours(50)),
   });
   await engine.drain(new Date(T0.getTime() + hours(50)));
@@ -334,6 +337,96 @@ async function measurePerformance(pool: Pool, bp: Blueprint): Promise<void> {
   );
 }
 
+async function proveAuthorization(pool: Pool, bp: Blueprint): Promise<void> {
+  const engine = new Engine(pool);
+  const tenantId = await engine.createTenant('proof:authorization');
+  const other = await engine.createTenant('proof:another-tenant');
+  const version = await engine.publish(tenantId, bp, 'proof');
+
+  const { instanceId } = await engine.submit({
+    version,
+    answers: completeFor(bp, { personal_email: 'auth@example.test' }),
+    now: T0,
+  });
+  await engine.drain(T0);
+
+  // The person the record actually names as approver.
+  const namedId = await engine.createActor(tenantId, 'manager_email@example.test', 'Named Manager');
+  await engine.grant({ tenantId, actorId: namedId, processKey: bp.key, roleKey: 'hiring_manager' });
+
+  // Someone with the same role and capability, who this record does not name.
+  const otherManagerId = await engine.createActor(tenantId, 'someone.else@example.test', 'Other Manager');
+  await engine.grant({ tenantId, actorId: otherManagerId, processKey: bp.key, roleKey: 'hiring_manager' });
+
+  // An operator with no approve capability at all.
+  const itId = await engine.createActor(tenantId, 'it@example.test', 'IT Operator');
+  await engine.grant({ tenantId, actorId: itId, processKey: bp.key, roleKey: 'it_operator' });
+
+  // A manager in a different workspace entirely.
+  const foreignId = await engine.createActor(other, 'manager_email@example.test', 'Foreign Manager');
+  await engine.grant({ tenantId: other, actorId: foreignId, processKey: bp.key, roleKey: 'hiring_manager' });
+
+  const refused = async (principal: Parameters<Engine['decide']>[0]['principal']) => {
+    try {
+      await engine.decide({ instanceId, approvalKey: 'manager_approval', decision: 'approved', principal, now: T0 });
+      return null;
+    } catch (err) {
+      return err instanceof AuthorizationError ? err.reason : `unexpected: ${String(err)}`;
+    }
+  };
+
+  const crossTenant = await refused({ kind: 'actor', tenantId: other, actorId: foreignId });
+  const wrongCapability = await refused({ kind: 'actor', tenantId, actorId: itId });
+  const notNamed = await refused({ kind: 'actor', tenantId, actorId: otherManagerId });
+  const respondent = await refused({ kind: 'respondent', tenantId });
+
+  // Field-level reads: the hiring manager may open the record but not the
+  // payroll fields the blueprint hides from them.
+  const asManager = await engine.recordFor({ kind: 'actor', tenantId, actorId: namedId }, instanceId);
+  const hiddenRedacted = asManager.data.national_id === '[redacted]' && asManager.data.bank_account === '[redacted]';
+  const visibleKept = typeof asManager.data.job_title === 'string' && asManager.data.job_title !== '[redacted]';
+
+  // Field-level writes: `edit` is not permission to change everything.
+  const newHireId = await engine.createActor(tenantId, 'hire@example.test', 'New Hire');
+  await engine.grant({ tenantId, actorId: newHireId, processKey: bp.key, roleKey: 'hr_admin' });
+  const edit = await engine.updateRecord({
+    instanceId,
+    patch: { national_id: 'TAMPERED' },
+    principal: { kind: 'actor', tenantId, actorId: newHireId },
+    now: T0,
+  });
+
+  // And the one the record does name is allowed through.
+  const allowed = await engine.decide({
+    instanceId,
+    approvalKey: 'manager_approval',
+    decision: 'approved',
+    principal: { kind: 'actor', tenantId, actorId: namedId },
+    now: T0,
+  });
+
+  const denials = await engine.denials(tenantId);
+
+  record(
+    'Authorization is enforced by the runtime, not by the caller',
+    'Section 6.1 IAM-03: every authorization check is enforced server-side. Section 12.1: deny by default.',
+    crossTenant !== null &&
+      wrongCapability !== null &&
+      notNamed !== null &&
+      respondent !== null &&
+      hiddenRedacted &&
+      visibleKept &&
+      edit.applied === false &&
+      allowed.applied === true &&
+      denials.length >= 4,
+    `Refused: a manager from another tenant ("${crossTenant}"), an operator without the capability ` +
+      `("${wrongCapability}"), a manager the request does not name ("${notNamed}"), and a respondent ("${respondent}"). ` +
+      `Payroll fields came back redacted to the hiring manager while the job title did not. ` +
+      `An edit outside the role's editable fields was refused. The named approver was allowed. ` +
+      `${denials.length} refusals are on the audit record.`,
+  );
+}
+
 function completeFor(bp: Blueprint, overrides: Record<string, unknown>): Record<string, unknown> {
   const answers: Record<string, unknown> = { ...overrides };
   for (const field of bp.data.fields) {
@@ -385,6 +478,7 @@ async function main(): Promise<void> {
 
   const steps: [string, () => Promise<void>][] = [
     ['scenarios', () => proveScenarios(pool, blueprints)],
+    ['authorization', () => proveAuthorization(pool, onboarding)],
     ['idempotent email', () => proveIdempotentEmail(pool, onboarding)],
     ['concurrency', () => proveConcurrentWorkers(pool, onboarding)],
     ['crash recovery', () => proveCrashRecovery(pool, onboarding)],

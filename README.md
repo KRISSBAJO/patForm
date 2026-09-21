@@ -13,7 +13,7 @@ This is not the product. It is the typed representation everything else in the p
 ```
 src/blueprint/     the schema — ten sections, two expression languages, no executable code
 src/compiler/      the rules that decide whether a blueprint may be published
-src/runtime/       the workflow engine: outbox, idempotency, timers, scenarios
+src/runtime/       the workflow engine: outbox, idempotency, timers, policy, scenarios
 src/ai/            generation: two providers, a versioned prompt, three gates
 src/spike.ts       eight proofs that the runtime behaves as the document requires
 src/eval.ts        scores generation against the section 7.4 release gates
@@ -74,6 +74,7 @@ performance evidence. `npm run spike` is that, and it proves eight things:
 | Proof | Result |
 |---|---|
 | Every blueprint's own scenarios run against the real engine | 21/21 across three processes |
+| Authorization is enforced by the runtime, not the caller | cross-tenant, wrong capability, and un-named approver all refused |
 | Idempotent email under replay | 3 deliveries, 1 email |
 | Concurrent workers never double-process | 8 workers, 40 instances, 40 emails, 0 duplicates |
 | A dead worker loses nothing and duplicates nothing | recovered after the visibility timeout, 1 email |

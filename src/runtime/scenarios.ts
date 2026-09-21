@@ -2,6 +2,12 @@ import type { Blueprint, ScenarioTest } from '../blueprint/index.js';
 import type { Answers } from './expr.js';
 import { Engine } from './engine.js';
 import type { Pool } from './db.js';
+import type { Principal } from './policy.js';
+
+interface CastMember {
+  principal: Principal;
+  email: string;
+}
 
 export interface ScenarioResult {
   process: string;
@@ -11,7 +17,13 @@ export interface ScenarioResult {
   failures: string[];
 }
 
-const CAPABILITY_FOR_ACTION = {
+/**
+ * A scenario names a role; the runtime needs a person. Each internal role in
+ * the blueprint gets one member for the duration of the scenario, so
+ * `as: "hiring_manager"` becomes a real actor holding a real membership and
+ * every assertion goes through the real policy engine.
+ */
+const ACTION_MAP = {
   submit: 'submit',
   view: 'view',
   edit: 'edit',
@@ -35,7 +47,42 @@ export async function runScenarios(pool: Pool, bp: Blueprint): Promise<ScenarioR
     // scoped to a tenant, does not make one scenario interfere with the next.
     const tenantId = await engine.createTenant(`scenario:${bp.key}:${test.key}`);
     const version = await engine.publish(tenantId, bp, 'scenario-runner');
-    results.push(await runOne(engine, bp, version, test));
+
+    /**
+     * An approval addressed to `{ field: "manager_email" }` names its approver
+     * by address, and nothing in the blueprint links that field to a role
+     * (G5 in docs/failure-cases.md). The scenario says who decides it, and the
+     * record says what address that is — so the member is created holding the
+     * address the record will actually name. Overriding the record to match
+     * the cast instead would be the test bending the data to pass.
+     */
+    const addressFor = new Map<string, string>();
+    const submitted = test.steps.find((step) => step.step === 'submit');
+    const answers = (submitted?.step === 'submit' ? submitted.answers : {}) as Answers;
+    for (const step of test.steps) {
+      if (step.step !== 'decide') continue;
+      const approval = bp.workflow.approvals.find((a) => a.key === step.approval);
+      for (const party of approval?.approvers ?? []) {
+        if (!('field' in party)) continue;
+        const given = answers[party.field];
+        // completeAnswers fills an unspecified email field with this shape.
+        addressFor.set(step.as, typeof given === 'string' && given ? given : `${party.field}@example.test`);
+      }
+    }
+
+    const cast = new Map<string, CastMember>();
+    for (const role of bp.roles) {
+      const email = addressFor.get(role.key) ?? `${role.key}@scenario.test`;
+      if (role.kind === 'respondent') {
+        cast.set(role.key, { principal: { kind: 'respondent', tenantId, label: role.key }, email });
+        continue;
+      }
+      const actorId = await engine.createActor(tenantId, email, role.name);
+      await engine.grant({ tenantId, actorId, processKey: bp.key, roleKey: role.key });
+      cast.set(role.key, { principal: { kind: 'actor', tenantId, actorId }, email });
+    }
+
+    results.push(await runOne(engine, bp, version, test, cast));
   }
 
   return results;
@@ -46,6 +93,7 @@ async function runOne(
   bp: Blueprint,
   version: Awaited<ReturnType<Engine['publish']>>,
   test: ScenarioTest,
+  cast: Map<string, CastMember>,
 ): Promise<ScenarioResult> {
   const failures: string[] = [];
   let now = new Date('2026-09-21T09:00:00.000Z');
@@ -82,15 +130,25 @@ async function runOne(
             fail('decide step ran before a submission created an instance');
             break;
           }
-          const { applied } = await engine.decide({
-            instanceId,
-            approvalKey: step.approval,
-            decision: step.decision,
-            actor: `role:${step.as}`,
-            reason: step.reason,
-            now,
-          });
-          if (!applied) fail(`decision "${step.decision}" on "${step.approval}" did not apply`);
+          const member = cast.get(step.as);
+          if (!member) {
+            fail(`scenario names role "${step.as}", which the blueprint does not define`);
+            break;
+          }
+          const principal = member.principal;
+          try {
+            const { applied } = await engine.decide({
+              instanceId,
+              approvalKey: step.approval,
+              decision: step.decision,
+              principal,
+              reason: step.reason,
+              now,
+            });
+            if (!applied) fail(`decision "${step.decision}" on "${step.approval}" did not apply`);
+          } catch (err) {
+            fail(`"${step.as}" was refused the decision: ${err instanceof Error ? err.message : String(err)}`);
+          }
           await engine.drain(now);
           break;
         }
@@ -100,13 +158,18 @@ async function runOne(
             fail('complete_task step ran before a submission created an instance');
             break;
           }
-          const { applied } = await engine.completeTask({
-            instanceId,
-            taskKey: step.task,
-            actor: `role:${step.as}`,
-            now,
-          });
-          if (!applied) fail(`task "${step.task}" was not open and could not be completed`);
+          const member = cast.get(step.as);
+          if (!member) {
+            fail(`scenario names role "${step.as}", which the blueprint does not define`);
+            break;
+          }
+          const principal = member.principal;
+          try {
+            const { applied } = await engine.completeTask({ instanceId, taskKey: step.task, principal, now });
+            if (!applied) fail(`task "${step.task}" was not open and could not be completed`);
+          } catch (err) {
+            fail(`"${step.as}" was refused the task: ${err instanceof Error ? err.message : String(err)}`);
+          }
           await engine.drain(now);
           break;
         }
@@ -118,14 +181,25 @@ async function runOne(
         }
 
         case 'attempt': {
-          const role = bp.roles.find((r) => r.key === step.as);
-          const needed = CAPABILITY_FOR_ACTION[step.action];
-          const allowed = Boolean(role?.capabilities.includes(needed as never));
+          const member = cast.get(step.as);
+          if (!member) {
+            fail(`scenario names role "${step.as}", which the blueprint does not define`);
+            break;
+          }
+          // The same call the engine makes before it mutates anything.
+          const { allowed, reason } = await engine.can({
+            principal: member.principal,
+            action: ACTION_MAP[step.action],
+            tenantId: version.tenant_id,
+            processKey: bp.key,
+            blueprint: bp,
+            instanceId: instanceId ?? undefined,
+          });
           if (step.expectDenied && allowed) {
-            fail(`role "${step.as}" was allowed to ${step.action} but the scenario expects a refusal`);
+            fail(`"${step.as}" was allowed to ${step.action} but the scenario expects a refusal`);
           }
           if (!step.expectDenied && !allowed) {
-            fail(`role "${step.as}" was refused ${step.action} but the scenario expects it to be allowed`);
+            fail(`"${step.as}" was refused ${step.action} (${reason}) but the scenario expects it to be allowed`);
           }
           break;
         }

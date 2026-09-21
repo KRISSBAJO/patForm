@@ -105,6 +105,26 @@ The `attempt` step accepted view, edit, approve, export and operate — so "can 
 
 **Fixed:** `submit` is now an assertable action.
 
+### 4. The whole permission model was decorative
+
+Blueprints declared roles, capabilities, `hiddenFields` and `editableFields`. The compiler validated every one of them and refused to publish a blueprint whose permissions were incoherent. Three processes passed their permission scenarios.
+
+The runtime checked nothing. `decide()` applied an approval from any caller in any tenant; `completeTask()` the same; field-level visibility was enforced nowhere. The permission scenarios that passed were asserting against a lookup table in `scenarios.ts` — the test harness — not against the engine.
+
+Same shape as the safeguarding task above, one layer up: **present in review, absent at runtime**, and worse than an obviously missing control because a review finds the missing one.
+
+**Fixed** in [ADR-0007](adr/0007-authorization-in-the-runtime.md): one policy engine, deny by default, every mutation through it, and `engine.can()` so scenarios exercise the production path.
+
+### 5. The audit record of a refusal rolled back with the refusal
+
+The first run of the new authorization proof failed on its last assertion: four refusals happened correctly and one reached the audit table.
+
+`require_` wrote the denial on the caller's client and then threw. The throw rolled the transaction back, taking the audit record with it — so a refused action left no trace, which is the exact failure the table had just been added to prevent.
+
+**Fixed:** refusals are written on their own connection, outside any caller transaction.
+
+Worth naming the general shape, because it will recur: **anything written to explain why a transaction failed cannot live inside that transaction.**
+
 ---
 
 ## What the compiler structurally cannot catch

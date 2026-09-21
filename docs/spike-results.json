@@ -1,5 +1,5 @@
 {
-  "ranAt": "2026-09-21T20:17:37.989Z",
+  "ranAt": "2026-09-21T22:40:19.539Z",
   "postgres": "PostgreSQL 17.11 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit",
   "proofs": [
     {
@@ -7,6 +7,12 @@
       "claim": "Every scenario each blueprint declares, executed by the runtime that would run it in production.",
       "passed": true,
       "detail": "21/21 scenarios passed across 3 processes."
+    },
+    {
+      "name": "Authorization is enforced by the runtime, not by the caller",
+      "claim": "Section 6.1 IAM-03: every authorization check is enforced server-side. Section 12.1: deny by default.",
+      "passed": true,
+      "detail": "Refused: a manager from another tenant (\"principal belongs to a different tenant\"), an operator without the capability (\"no role held (it_operator) has the \"approve\" capability\"), a manager the request does not name (\"actor is not named as an approver on this request\"), and a respondent (\"a respondent may not approve\"). Payroll fields came back redacted to the hiring manager while the job title did not. An edit outside the role's editable fields was refused. The named approver was allowed. 5 refusals are on the audit record."
     },
     {
       "name": "Idempotent email under replay",
@@ -48,7 +54,7 @@
       "name": "Submission and workflow start are far inside the section 10.4 budget",
       "claim": "Beta targets: acknowledgment p95 under 1.5s, workflow start p95 under 30s.",
       "passed": true,
-      "detail": "Over 100 submissions: acknowledgment p95 23.5ms (budget 1500ms), first action p95 55.2ms (budget 30000ms). Database round trips only, local container."
+      "detail": "Over 100 submissions: acknowledgment p95 14.2ms (budget 1500ms), first action p95 33.3ms (budget 30000ms). Database round trips only, local container."
     }
   ]
 }

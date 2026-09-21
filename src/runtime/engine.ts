@@ -2,6 +2,15 @@ import { createHash, randomUUID } from 'node:crypto';
 import type { Blueprint, Action, Party, Transition } from '../blueprint/index.js';
 import { evaluate, render, withCalculatedFields, type Answers } from './expr.js';
 import { inTransaction, isUniqueViolation, type Client, type Pool } from './db.js';
+import {
+  authorize,
+  describe as describePrincipal,
+  redact,
+  rejectUneditable,
+  recordDenial,
+  require_,
+  type Principal,
+} from './policy.js';
 
 export interface InstanceRow {
   id: string;
@@ -53,6 +62,35 @@ export class Engine {
     return rows[0]!.id;
   }
 
+  /** Adds a person to the workspace. */
+  async createActor(tenantId: string, email: string, displayName: string): Promise<string> {
+    const { rows } = await this.pool.query<{ id: string }>(
+      'insert into actor (tenant_id, email, display_name) values ($1, $2, $3) returning id',
+      [tenantId, email, displayName],
+    );
+    return rows[0]!.id;
+  }
+
+  /** Grants a blueprint role to a person, in one process. */
+  async grant(args: {
+    tenantId: string;
+    actorId: string;
+    processKey: string;
+    roleKey: string;
+    grantedBy?: string;
+  }): Promise<void> {
+    await this.pool.query(
+      `insert into membership (tenant_id, actor_id, process_key, role_key, granted_by)
+       values ($1, $2, $3, $4, $5)
+       on conflict (tenant_id, actor_id, process_key, role_key) do nothing`,
+      [args.tenantId, args.actorId, args.processKey, args.roleKey, args.grantedBy ?? null],
+    );
+  }
+
+  async deactivateActor(actorId: string): Promise<void> {
+    await this.pool.query('update actor set active = false where id = $1', [actorId]);
+  }
+
   /** Publishing never mutates an existing version; it adds the next one. */
   async publish(tenantId: string, blueprint: Blueprint, publishedBy: string): Promise<VersionRow> {
     return inTransaction(this.pool, async (client) => {
@@ -81,9 +119,12 @@ export class Engine {
     version: VersionRow;
     answers: Answers;
     now: Date;
+    principal?: Principal;
     actor?: string;
   }): Promise<{ instanceId: string; duplicate: boolean; rejected?: string[] }> {
     const bp = args.version.blueprint;
+    const principal: Principal =
+      args.principal ?? { kind: 'respondent', tenantId: args.version.tenant_id, label: args.actor };
     const answers = withCalculatedFields(bp.data.fields, args.answers);
 
     // Requirement 6.3: a submission that does not satisfy the published form
@@ -95,6 +136,14 @@ export class Engine {
     const identityKey = identityFor(bp, answers);
 
     return inTransaction(this.pool, async (client) => {
+      await require_(client, {
+        principal,
+        action: 'submit',
+        tenantId: args.version.tenant_id,
+        processKey: bp.key,
+        blueprint: bp,
+      }, this.pool);
+
       const { rows } = await client.query<{ id: string }>(
         `insert into instance
            (tenant_id, process_key, process_version_id, state, data, identity_key, created_at, state_entered_at)
@@ -127,7 +176,7 @@ export class Engine {
           instanceId,
           type: 'duplicate_submission_ignored',
           payload: { answers },
-          actor: args.actor ?? 'respondent',
+          actor: describePrincipal(principal),
           now: args.now,
         });
         return { instanceId, duplicate: true };
@@ -141,7 +190,7 @@ export class Engine {
         transition,
         eventType: 'submitted',
         payload: { answers },
-        actor: args.actor ?? 'respondent',
+        actor: describePrincipal(principal),
         now: args.now,
       });
       return { instanceId, duplicate: false };
@@ -154,7 +203,7 @@ export class Engine {
     instanceId: string;
     approvalKey: string;
     decision: 'approved' | 'rejected' | 'changes_requested';
-    actor: string;
+    principal: Principal;
     reason?: string;
     now: Date;
   }): Promise<{ applied: boolean }> {
@@ -162,11 +211,32 @@ export class Engine {
       const instance = await loadInstance(client, args.instanceId, { lock: true });
       const bp = await loadBlueprint(client, instance.process_version_id);
 
+      // Read the pending request before deciding: holding the approve
+      // capability is not the same as being named on this one.
+      const { rows: pending } = await client.query<{ approvers: string[] }>(
+        `select approvers from approval_request
+          where instance_id = $1 and approval_key = $2 and status = 'pending'
+          order by id limit 1`,
+        [args.instanceId, args.approvalKey],
+      );
+      if (!pending.length) return { applied: false };
+
+      await require_(client, {
+        principal: args.principal,
+        action: 'approve',
+        tenantId: instance.tenant_id,
+        processKey: instance.process_key,
+        blueprint: bp,
+        instanceId: instance.id,
+        namedApprovers: pending[0]!.approvers,
+      }, this.pool);
+
+      const actor = describePrincipal(args.principal);
       const { rowCount } = await client.query(
         `update approval_request
             set status = 'decided', decision = $1, decided_by = $2, decided_at = $3, reason = $4
           where instance_id = $5 and approval_key = $6 and status = 'pending'`,
-        [args.decision, args.actor, args.now, args.reason ?? null, args.instanceId, args.approvalKey],
+        [args.decision, actor, args.now, args.reason ?? null, args.instanceId, args.approvalKey],
       );
       if (!rowCount) return { applied: false };
 
@@ -176,7 +246,7 @@ export class Engine {
           t.trigger.on === 'approval_decided' &&
           t.trigger.approval === args.approvalKey &&
           t.trigger.decision === args.decision &&
-          passesGuard(t, instance, args.now, args.actor),
+          passesGuard(t, instance, args.now, describePrincipal(args.principal)),
       );
       if (!transition) return { applied: false };
 
@@ -186,7 +256,7 @@ export class Engine {
         transition,
         eventType: 'approval_decided',
         payload: { approval: args.approvalKey, decision: args.decision, reason: args.reason ?? null },
-        actor: args.actor,
+        actor: describePrincipal(args.principal),
         now: args.now,
       });
       return { applied: true };
@@ -196,13 +266,32 @@ export class Engine {
   async completeTask(args: {
     instanceId: string;
     taskKey: string;
-    actor: string;
+    principal: Principal;
     now: Date;
   }): Promise<{ applied: boolean }> {
     return inTransaction(this.pool, async (client) => {
       const instance = await loadInstance(client, args.instanceId, { lock: true });
       const bp = await loadBlueprint(client, instance.process_version_id);
 
+      const { rows: open } = await client.query<{ assignee: string | null }>(
+        `select assignee from task
+          where instance_id = $1 and task_key = $2 and status = 'open'
+          order by id limit 1`,
+        [args.instanceId, args.taskKey],
+      );
+      if (!open.length) return { applied: false };
+
+      await require_(client, {
+        principal: args.principal,
+        action: 'operate',
+        tenantId: instance.tenant_id,
+        processKey: instance.process_key,
+        blueprint: bp,
+        instanceId: instance.id,
+        taskAssignee: open[0]!.assignee,
+      }, this.pool);
+
+      const actor = describePrincipal(args.principal);
       const { rowCount } = await client.query(
         `update task set status = 'done', completed_at = $1, completed_by = $2
           where id = (
@@ -210,7 +299,7 @@ export class Engine {
              where instance_id = $3 and task_key = $4 and status = 'open'
              order by id limit 1
           )`,
-        [args.now, args.actor, args.instanceId, args.taskKey],
+        [args.now, actor, args.instanceId, args.taskKey],
       );
       if (!rowCount) return { applied: false };
 
@@ -219,7 +308,7 @@ export class Engine {
           t.from === instance.state &&
           t.trigger.on === 'task_completed' &&
           t.trigger.task === args.taskKey &&
-          passesGuard(t, instance, args.now, args.actor),
+          passesGuard(t, instance, args.now, actor),
       );
       if (!transition) return { applied: true };
 
@@ -229,7 +318,7 @@ export class Engine {
         transition,
         eventType: 'task_completed',
         payload: { task: args.taskKey },
-        actor: args.actor,
+        actor,
         now: args.now,
       });
       return { applied: true };
@@ -240,13 +329,44 @@ export class Engine {
   async updateRecord(args: {
     instanceId: string;
     patch: Answers;
-    actor: string;
+    principal: Principal;
     now: Date;
-  }): Promise<{ applied: boolean }> {
+  }): Promise<{ applied: boolean; refused?: string[] }> {
     return inTransaction(this.pool, async (client) => {
       const instance = await loadInstance(client, args.instanceId, { lock: true });
       const bp = await loadBlueprint(client, instance.process_version_id);
 
+      const decision = await require_(client, {
+        principal: args.principal,
+        action: 'edit',
+        tenantId: instance.tenant_id,
+        processKey: instance.process_key,
+        blueprint: bp,
+        instanceId: instance.id,
+      }, this.pool);
+
+      // Holding `edit` is not permission to change every field. A role may
+      // only touch what its editableFields list names (§6.4).
+      if (args.principal.kind === 'actor') {
+        const refused = rejectUneditable(bp, decision.roles, args.patch);
+        if (refused.length) {
+          await recordDenial(
+            client,
+            {
+              principal: args.principal,
+              action: 'edit',
+              tenantId: instance.tenant_id,
+              processKey: instance.process_key,
+              blueprint: bp,
+              instanceId: instance.id,
+            },
+            `fields not editable by ${decision.roles.join(', ')}: ${refused.join(', ')}`,
+          );
+          return { applied: false, refused };
+        }
+      }
+
+      const actor = describePrincipal(args.principal);
       const merged = withCalculatedFields(bp.data.fields, { ...instance.data, ...args.patch });
       await client.query('update instance set data = $1 where id = $2', [
         JSON.stringify(merged),
@@ -255,7 +375,7 @@ export class Engine {
       instance.data = merged;
 
       const transition = bp.workflow.transitions.find(
-        (t) => t.from === instance.state && t.trigger.on === 'record_updated' && passesGuard(t, instance, args.now, args.actor),
+        (t) => t.from === instance.state && t.trigger.on === 'record_updated' && passesGuard(t, instance, args.now, actor),
       );
       if (!transition) {
         await appendEvent(client, {
@@ -263,7 +383,7 @@ export class Engine {
           instanceId: instance.id,
           type: 'record_updated',
           payload: { fields: Object.keys(args.patch) },
-          actor: args.actor,
+          actor,
           now: args.now,
         });
         return { applied: false };
@@ -275,7 +395,7 @@ export class Engine {
         transition,
         eventType: 'record_updated',
         payload: { fields: Object.keys(args.patch) },
-        actor: args.actor,
+        actor,
         now: args.now,
       });
       return { applied: true };
@@ -286,8 +406,7 @@ export class Engine {
   async fireManual(args: {
     instanceId: string;
     transitionKey: string;
-    actor: string;
-    role: string;
+    principal: Principal;
     now: Date;
   }): Promise<{ applied: boolean }> {
     return inTransaction(this.pool, async (client) => {
@@ -297,19 +416,48 @@ export class Engine {
       if (
         !transition ||
         transition.from !== instance.state ||
-        transition.trigger.on !== 'manual' ||
-        !transition.trigger.by.includes(args.role) ||
-        !passesGuard(transition, instance, args.now, args.actor)
+        transition.trigger.on !== 'manual'
       ) {
         return { applied: false };
       }
+
+      const decision = await require_(client, {
+        principal: args.principal,
+        action: 'operate',
+        tenantId: instance.tenant_id,
+        processKey: instance.process_key,
+        blueprint: bp,
+        instanceId: instance.id,
+      }, this.pool);
+
+      // The transition names which roles may fire it. Previously the caller
+      // simply told us which role they were, which is not a check.
+      const permitted = transition.trigger.by;
+      if (args.principal.kind === 'actor' && !decision.roles.some((r) => permitted.includes(r))) {
+        await recordDenial(
+          client,
+          {
+            principal: args.principal,
+            action: 'operate',
+            tenantId: instance.tenant_id,
+            processKey: instance.process_key,
+            blueprint: bp,
+            instanceId: instance.id,
+          },
+          `transition "${transition.key}" is restricted to ${permitted.join(', ')}`,
+        );
+        return { applied: false };
+      }
+
+      const actor = describePrincipal(args.principal);
+      if (!passesGuard(transition, instance, args.now, actor)) return { applied: false };
       await applyTransition(client, {
         bp,
         instance,
         transition,
         eventType: 'manual_action',
         payload: { transition: args.transitionKey },
-        actor: args.actor,
+        actor,
         now: args.now,
       });
       return { applied: true };
@@ -452,6 +600,56 @@ export class Engine {
 
   async instance(id: string): Promise<InstanceRow> {
     return this.loadInstanceOutsideTx(id);
+  }
+
+  /**
+   * Reads a record as a principal, with the fields their roles may not see
+   * removed rather than merely hidden in the client (§6.4).
+   */
+  async recordFor(principal: Principal, instanceId: string): Promise<InstanceRow> {
+    return inTransaction(this.pool, async (client) => {
+      const instance = await loadInstance(client, instanceId);
+      const bp = await loadBlueprint(client, instance.process_version_id);
+      const decision = await require_(client, {
+        principal,
+        action: 'view',
+        tenantId: instance.tenant_id,
+        processKey: instance.process_key,
+        blueprint: bp,
+        instanceId,
+      }, this.pool);
+      return { ...instance, data: redact(bp, decision.roles, instance.data) };
+    });
+  }
+
+  /**
+   * Asks the policy engine whether something would be allowed, without doing
+   * it. This is the same code path as the enforcement, so a scenario that
+   * asserts on permissions is testing the real thing.
+   */
+  async can(args: {
+    principal: Principal;
+    action: Parameters<typeof require_>[1]['action'];
+    tenantId: string;
+    processKey: string;
+    blueprint: Blueprint;
+    instanceId?: string;
+  }): Promise<{ allowed: boolean; reason: string }> {
+    const client = await this.pool.connect();
+    try {
+      const { allowed, reason } = await authorize(client, args);
+      return { allowed, reason };
+    } finally {
+      client.release();
+    }
+  }
+
+  async denials(tenantId: string): Promise<{ action: string; reason: string; actor_label: string }[]> {
+    const { rows } = await this.pool.query(
+      'select action, reason, actor_label from access_denial where tenant_id = $1 order by id',
+      [tenantId],
+    );
+    return rows;
   }
 
   async emails(instanceId: string): Promise<{ template_key: string; recipients: string[]; subject: string }[]> {

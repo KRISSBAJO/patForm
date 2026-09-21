@@ -15,6 +15,53 @@ create table tenant (
   created_at  timestamptz not null default now()
 );
 
+-- ------------------------------------------------------------- identity
+
+-- Section 6.1: a person, scoped to one tenant. Deactivating them is a status
+-- change rather than a delete, because their decisions stay in the history.
+create table actor (
+  id          uuid primary key default gen_random_uuid(),
+  tenant_id   uuid not null references tenant(id),
+  email       text not null,
+  display_name text not null,
+  active      boolean not null default true,
+  created_at  timestamptz not null default now(),
+  unique (tenant_id, email)
+);
+
+-- Which blueprint role a person holds, in which process. Roles are defined
+-- per process, so a membership is per process too: being an approver for
+-- expenses grants nothing in onboarding.
+create table membership (
+  id          uuid primary key default gen_random_uuid(),
+  tenant_id   uuid not null references tenant(id),
+  actor_id    uuid not null references actor(id),
+  process_key text not null,
+  role_key    text not null,
+  granted_at  timestamptz not null default now(),
+  granted_by  text,
+  unique (tenant_id, actor_id, process_key, role_key)
+);
+
+create index membership_lookup on membership (tenant_id, actor_id, process_key);
+
+-- Section 12.1: an append-only record of every authorization decision that
+-- was refused. A denial nobody can see is indistinguishable from an attack
+-- nobody noticed.
+create table access_denial (
+  id          bigserial primary key,
+  tenant_id   uuid,
+  actor_id    uuid,
+  actor_label text not null,
+  action      text not null,
+  resource    text not null,
+  instance_id uuid,
+  reason      text not null,
+  occurred_at timestamptz not null
+);
+
+create index access_denial_recent on access_denial (occurred_at desc);
+
 -- ------------------------------------------------------- published versions
 
 create table process_version (
