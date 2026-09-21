@@ -14,7 +14,10 @@ This is not the product. It is the typed representation everything else in the p
 src/blueprint/     the schema — ten sections, two expression languages, no executable code
 src/compiler/      the rules that decide whether a blueprint may be published
 src/runtime/       the workflow engine: outbox, idempotency, timers, scenarios
+src/ai/            generation: two providers, a versioned prompt, three gates
 src/spike.ts       eight proofs that the runtime behaves as the document requires
+src/eval.ts        scores generation against the section 7.4 release gates
+evals/             curated cases, including one that tries to inject an instruction
 processes/         three real processes, compiled by hand
 tests/             the compiler's regression suite
 docs/              schema reference, failure cases, and architecture decisions
@@ -80,6 +83,32 @@ performance evidence. `npm run spike` is that, and it proves eight things:
 | Submission and workflow start are inside the §10.4 budget | ack p95 15ms against a 1500ms budget |
 
 Decisions and their trade-offs are in [docs/adr/](docs/adr/).
+
+## Generating a process
+
+```bash
+npm run generate -- "describe a process in plain English" --provider anthropic --run
+```
+
+A description becomes a blueprint or a refusal. Three gates, in order: Zod
+decides whether it is a blueprint at all, the compiler decides whether the
+runtime could execute it safely, and the blueprint's own scenarios decide
+whether it does what it claims. Failing a gate buys one repair with the
+diagnostics fed back. Failing twice publishes nothing.
+
+Claude and OpenAI each sit behind the provider interface in their own file with
+their own SDK. Adding a third is a file and a case.
+
+```bash
+npm run eval -- --provider anthropic
+```
+
+scores generation against §7.4's release gates. Its control assertions test the
+one thing the compiler structurally cannot: **a model that classifies a bank
+account as `internal` produces a blueprint that compiles clean, passes every
+scenario, and emails salary details to a line manager.** No compiler rule
+catches that, because the compiler knows what shape a field is and not what it
+means. See [docs/adr/0006](docs/adr/0006-the-ai-boundary.md).
 
 ## Where this fits
 
