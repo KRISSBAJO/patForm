@@ -12,7 +12,7 @@ export function Nav() {
     <header className="nav">
       <div className="shell nav__inner">
         <a className="wordmark" href="#top" style={{ color: 'var(--green)' }}>
-          <Mark size={24} />
+          <Mark />
           <span style={{ color: 'var(--ink)' }}>Patform</span>
         </a>
 

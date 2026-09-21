@@ -287,10 +287,14 @@ html {
   color: var(--ink);
 }
 
+/* The nav button only. Sized down against the tightened 68px header — 44px
+   was drawn for the taller one and read as a slab beside 15px links. */
 .btn--sm {
-  height: 44px;
-  padding: 0 22px;
-  font-size: 15px;
+  height: 38px;
+  padding: 0 16px;
+  font-size: 14px;
+  font-weight: 600;
+  border-radius: 7px;
 }
 
 /* --------------------------------------------------------------------- nav */
@@ -299,13 +303,12 @@ html {
   position: sticky;
   top: 0;
   z-index: 20;
-  background: color-mix(in srgb, var(--paper) 88%, transparent);
-  backdrop-filter: saturate(140%) blur(10px);
+  background: var(--paper);
   border-bottom: 1px solid var(--line);
 }
 
 .nav__inner {
-  height: 62px;
+  height: 56px;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -325,6 +328,12 @@ html {
 .wordmark:hover {
   text-decoration: none;
   color: var(--ink);
+}
+
+.wordmark svg {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
 }
 
 .nav__links {
@@ -359,7 +368,7 @@ html {
 /* -------------------------------------------------------------------- hero */
 
 .hero {
-  padding-top: 34px;
+  padding-top: 28px;
 }
 
 .pill {
@@ -1237,19 +1246,25 @@ html {
 
 @media (min-width: 900px) {
   :root {
-    --gutter: 80px;
+    /* 80px is 5.56% of the 1440 board. Holding it constant below that width
+       left a 1024px window wearing chrome drawn for 1440. */
+    --gutter: clamp(32px, 5.56vw, 80px);
   }
 
   .nav__inner {
-    height: 84px;
-    gap: 48px;
+    height: 64px;
+    gap: 32px;
   }
 
   .wordmark {
     font-size: 20px;
   }
 
-  .nav__links,
+  .nav__links {
+    display: flex;
+    gap: 24px;
+  }
+
   .nav__actions {
     display: flex;
   }
@@ -1260,7 +1275,7 @@ html {
 
   /* hero becomes two columns: copy left, the record right */
   .hero {
-    padding-top: 92px;
+    padding-top: 56px;
     display: flex;
     gap: 48px;
     align-items: flex-start;
@@ -1299,9 +1314,9 @@ html {
   }
 
   .btn--sm {
-    height: 44px;
-    padding: 0 22px;
-    font-size: 15px;
+    height: 38px;
+    padding: 0 16px;
+    font-size: 14px;
   }
 
   .pill {
@@ -1900,6 +1915,24 @@ html {
 /* ================================================ the design width, exactly */
 
 @media (min-width: 1440px) {
+  :root {
+    --gutter: 80px;
+  }
+
+  .nav__inner {
+    height: 68px;
+    gap: 48px;
+  }
+
+  .nav__links {
+    gap: 32px;
+  }
+
+  .wordmark svg {
+    width: 26px;
+    height: 26px;
+  }
+
   .hero {
     gap: 72px;
   }
