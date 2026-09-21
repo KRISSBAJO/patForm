@@ -1,0 +1,54 @@
+{
+  "ranAt": "2026-09-21T20:17:37.989Z",
+  "postgres": "PostgreSQL 17.11 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit",
+  "proofs": [
+    {
+      "name": "Blueprint scenarios run against the real engine",
+      "claim": "Every scenario each blueprint declares, executed by the runtime that would run it in production.",
+      "passed": true,
+      "detail": "21/21 scenarios passed across 3 processes."
+    },
+    {
+      "name": "Idempotent email under replay",
+      "claim": "Section 6.5: a stable action key prevents duplicate emails, documents, webhooks, or charges.",
+      "passed": true,
+      "detail": "1 email(s) after first delivery, 1 after two full replays. The outbox row was delivered 3 times; the action ran 3 time(s) and every replay short-circuited on the idempotency key."
+    },
+    {
+      "name": "Concurrent workers never double-process",
+      "claim": "FOR UPDATE SKIP LOCKED gives each outbox row to exactly one worker, with no lock waits between them.",
+      "passed": true,
+      "detail": "8 workers claimed 40 rows across 4 distinct worker ids; 40 emails for 40 instances (1 each), 0 duplicated effects."
+    },
+    {
+      "name": "A dead worker loses nothing and duplicates nothing",
+      "claim": "A claimed row is invisible for its visibility timeout, then returns to the queue for someone else.",
+      "passed": true,
+      "detail": "Another worker saw 0 rows at +5s and 1 at +45s. The record reached \"manager_review\" with 1 email sent, not 2."
+    },
+    {
+      "name": "Timers fire once, on time, and are cancelled on exit",
+      "claim": "Section 6.5: relative deadlines and reminders, stored canonically in UTC.",
+      "passed": true,
+      "detail": "Nothing at +47h, 1 firing at +49h, 0 on a second sweep at the same instant. 1 reminder sent; 1 pending timer(s) cancelled when the record moved on."
+    },
+    {
+      "name": "A double submission makes one case",
+      "claim": "Section 4.2: duplicates are handled without losing the original audit trail.",
+      "passed": true,
+      "detail": "1 instance from 2 concurrent submissions, 1 receipt sent. The second attempt is still on the record as \"duplicate_submission_ignored\"."
+    },
+    {
+      "name": "A published version cannot be edited, and a live record keeps the version it started under",
+      "claim": "Section 9.2: published versions are immutable; every instance records the version that governs it.",
+      "passed": true,
+      "detail": "Editing v1 was refused by the database, not by convention. Editing its event history was refused too. v2 is live, and the in-flight record still runs under v1."
+    },
+    {
+      "name": "Submission and workflow start are far inside the section 10.4 budget",
+      "claim": "Beta targets: acknowledgment p95 under 1.5s, workflow start p95 under 30s.",
+      "passed": true,
+      "detail": "Over 100 submissions: acknowledgment p95 23.5ms (budget 1500ms), first action p95 55.2ms (budget 30000ms). Database round trips only, local container."
+    }
+  ]
+}

@@ -1252,9 +1252,9 @@
       }
     },
     {
-      "key": "class_not_done",
-      "kind": "missing_data",
-      "name": "A volunteer without the foundation class is routed to the class, not to the leader",
+      "key": "class_not_done_routes_to_class",
+      "kind": "happy_path",
+      "name": "A complete application from someone who has not done the class routes to the class, not to the leader",
       "steps": [
         {
           "step": "submit",
@@ -1277,6 +1277,25 @@
           "submission_receipt",
           "class_invitation"
         ]
+      }
+    },
+    {
+      "key": "incomplete_application",
+      "kind": "missing_data",
+      "name": "An application missing required answers never becomes a record",
+      "steps": [
+        {
+          "step": "submit",
+          "answers": {
+            "full_name": "Test Person",
+            "email": "t@example.com"
+          }
+        }
+      ],
+      "expect": {
+        "state": "draft",
+        "instanceCount": 0,
+        "emails": []
       }
     },
     {

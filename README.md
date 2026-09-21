@@ -9,9 +9,11 @@ This is not the product. It is the typed representation everything else in the p
 ```
 src/blueprint/     the schema — ten sections, two expression languages, no executable code
 src/compiler/      the rules that decide whether a blueprint may be published
+src/runtime/       the workflow engine: outbox, idempotency, timers, scenarios
+src/spike.ts       eight proofs that the runtime behaves as the document requires
 processes/         three real processes, compiled by hand
 tests/             the compiler's regression suite
-docs/              schema reference, and what broke while hand-compiling
+docs/              schema reference, failure cases, and architecture decisions
 schema/            generated JSON Schema for AI structured output
 ```
 
@@ -41,9 +43,39 @@ All three compile with zero errors and zero warnings. [`_broken-example`](proces
 
 ```bash
 npm install
-npm test
-npm run check
+npm test          # compiler rules
+npm run check     # compile every process
 ```
+
+To run the runtime proofs you need a PostgreSQL 17 database. Either start a
+throwaway one:
+
+```bash
+npm run db:up && npm run spike
+```
+
+or point `DATABASE_URL` in `.env` at a [Renviq](https://renviq.com) connection
+string and run `npm run spike` against managed Postgres. Nothing in the runtime
+is specific to either.
+
+## The runtime spike
+
+Section 23 week 3 asks for a spike of workflow state, timers, idempotent email,
+versioning, and migration, producing architecture decision records and
+performance evidence. `npm run spike` is that, and it proves eight things:
+
+| Proof | Result |
+|---|---|
+| Every blueprint's own scenarios run against the real engine | 21/21 across three processes |
+| Idempotent email under replay | 3 deliveries, 1 email |
+| Concurrent workers never double-process | 8 workers, 40 instances, 40 emails, 0 duplicates |
+| A dead worker loses nothing and duplicates nothing | recovered after the visibility timeout, 1 email |
+| Timers fire once, on time, cancelled on exit | nothing at +47h, once at +49h, nothing on a second sweep |
+| A double submission makes one case | 2 concurrent submissions, 1 instance, 1 receipt |
+| Published versions cannot be edited | refused by the database, not by convention |
+| Submission and workflow start are inside the §10.4 budget | ack p95 15ms against a 1500ms budget |
+
+Decisions and their trade-offs are in [docs/adr/](docs/adr/).
 
 ## Where this fits
 

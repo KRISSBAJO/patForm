@@ -10,15 +10,20 @@
     "check": "tsx src/cli.ts processes/*.blueprint.json",
     "schema": "tsx src/emit-json-schema.ts",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test tests/*.test.ts"
+    "test": "tsx --test tests/*.test.ts",
+    "spike": "node --env-file=.env node_modules/tsx/dist/cli.mjs src/spike.ts",
+    "db:up": "docker run -d --name patform-pg -e POSTGRES_PASSWORD=spike -e POSTGRES_USER=spike -e POSTGRES_DB=patform -p 55801:5432 postgres:17-alpine",
+    "db:down": "docker rm -f patform-pg"
   },
   "dependencies": {
+    "@types/pg": "^8.23.1",
+    "pg": "^8.23.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@types/node": "^22.7.5",
     "tsx": "^4.19.2",
     "typescript": "^5.6.3",
-    "zod-to-json-schema": "^3.23.5",
-    "@types/node": "^22.7.5"
+    "zod-to-json-schema": "^3.23.5"
   }
 }

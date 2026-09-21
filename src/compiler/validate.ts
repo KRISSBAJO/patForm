@@ -420,6 +420,24 @@ export function validate(bp: Blueprint): Diagnostics {
     }
   }
 
+  // An unguarded submission transition always matches, so a second one beside
+  // it makes the route depend on declaration order. Guards that merely might
+  // overlap cannot be proved apart without a solver, and are left alone.
+  const submissions = bp.workflow.transitions.filter((t) => t.trigger.on === 'submission');
+  if (submissions.length > 1) {
+    const unguarded = submissions.filter((t) => !t.when);
+    if (unguarded.length) {
+      d.error(
+        'FLOW011',
+        'workflow.transitions',
+        `Submission transition "${unguarded[0]!.key}" has no condition but competes with ${
+          submissions.length - 1
+        } other submission transition(s).`,
+        'An unconditional route always matches, so which one runs would depend on declaration order. Give it a condition.',
+      );
+    }
+  }
+
   // ------------------------------------------------------- reachability walk
   const start = initial[0];
   if (start) {
