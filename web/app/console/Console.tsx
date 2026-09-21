@@ -3,19 +3,16 @@
 import { useCallback, useEffect, useState } from 'react';
 import './console.css';
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3310';
-
 /**
- * The seats you can sit in. There is no sign-in yet — the API reads an actor
- * header and believes it — so switching seat is the whole "login". It is also
- * the most useful thing on this screen: the same records, seen by four people
- * with different roles, show four different sets of actions.
+ * Calls go to the same origin so the HttpOnly, SameSite=Lax session cookie is
+ * actually sent — see app/api/[...path]/route.ts for why the API is not
+ * called directly.
  */
-interface Seat {
+interface Me {
   id: string;
-  name: string;
-  role: string;
-  workspace: string;
+  display_name: string;
+  email: string;
+  workspace_role: string;
 }
 
 interface Work {
@@ -45,41 +42,43 @@ interface Work {
 
 interface Health {
   totals: { runs: number; retried: number; suppressed: number; failing: number };
-  failures: {
-    outboxId: number;
-    reference: string;
-    transitionKey: string;
-    attempts: number;
-    lastError: string;
-  }[];
+  failures: { outboxId: number; reference: string; transitionKey: string; attempts: number; lastError: string }[];
 }
 
 interface RecordDetail {
   reference: string;
-  processName: string;
   version: number;
   stateName: string;
-  outcome: string | null;
   nextAction: string;
   viewerRoles: string[];
   fields: { key: string; label: string; classification: string; value: unknown }[];
-  events: { seq: number; type: string; actor: string | null; occurred_at: string }[];
+}
+
+interface SessionInfo {
+  actor: Me;
+  processes: { process_key: string; name: string; version: number; open_records: number; roles: string[] }[];
+  devices: { id: string; user_agent: string | null; last_seen_at: string }[];
 }
 
 type Toast = { message: string; refused?: boolean } | null;
 
-async function call<T>(path: string, actorId: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API}${path}`, {
+class Unauthenticated extends Error {}
+
+async function call<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(path, {
     ...init,
-    headers: { 'content-type': 'application/json', 'x-actor-id': actorId, ...(init?.headers ?? {}) },
+    credentials: 'same-origin',
+    headers: { 'content-type': 'application/json', ...(init?.headers ?? {}) },
   });
-  const body = await res.json();
+  const body = await res.json().catch(() => ({}));
+  if (res.status === 401) throw new Unauthenticated(body.error ?? 'sign in first');
   if (!res.ok) throw new Error(body.reason ?? body.error ?? `HTTP ${res.status}`);
   return body as T;
 }
 
-export function Console({ seats }: { seats: Seat[] }) {
-  const [seatId, setSeatId] = useState(seats[0]?.id ?? '');
+export function Console() {
+  const [session, setSession] = useState<SessionInfo | null>(null);
+  const [checking, setChecking] = useState(true);
   const [processKey, setProcessKey] = useState('employee_onboarding');
   const [work, setWork] = useState<Work | null>(null);
   const [health, setHealth] = useState<Health | null>(null);
@@ -88,26 +87,40 @@ export function Console({ seats }: { seats: Seat[] }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const seat = seats.find((s) => s.id === seatId);
+  const refreshSession = useCallback(async () => {
+    try {
+      const info = await call<SessionInfo>('/api/session');
+      setSession(info);
+      if (info.processes[0]) setProcessKey((current) => current || info.processes[0]!.process_key);
+    } catch {
+      setSession(null);
+    } finally {
+      setChecking(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshSession();
+  }, [refreshSession]);
 
   const load = useCallback(async () => {
-    if (!seatId) return;
+    if (!session) return;
     setError(null);
     try {
-      const w = await call<Work>(`/api/work?process=${processKey}`, seatId);
-      setWork(w);
+      setWork(await call<Work>(`/api/work?process=${processKey}`));
     } catch (err) {
       setWork(null);
+      if (err instanceof Unauthenticated) return setSession(null);
       setError(err instanceof Error ? err.message : String(err));
     }
     try {
-      setHealth(await call<Health>(`/api/automation?process=${processKey}`, seatId));
+      setHealth(await call<Health>(`/api/automation?process=${processKey}`));
     } catch {
-      // Automation health needs `report`. A seat without it simply does not
-      // get the panel, which is the right answer rather than an error.
+      // Automation health needs `report`. Someone without it does not get the
+      // panel, which is the right answer rather than an error.
       setHealth(null);
     }
-  }, [seatId, processKey]);
+  }, [session, processKey]);
 
   useEffect(() => {
     void load();
@@ -124,9 +137,10 @@ export function Console({ seats }: { seats: Seat[] }) {
     try {
       await fn();
       setToast({ message: success });
-      await load();
       setRecord(null);
+      await load();
     } catch (err) {
+      if (err instanceof Unauthenticated) return setSession(null);
       // A refusal is information, not a crash: it says whether to ask for
       // access or to ask a different person.
       setToast({ message: err instanceof Error ? err.message : String(err), refused: true });
@@ -137,11 +151,11 @@ export function Console({ seats }: { seats: Seat[] }) {
 
   const decide = (instanceId: string, approvalKey: string, decision: 'approved' | 'rejected') =>
     act(
-      `${instanceId}:${approvalKey}:${decision}`,
+      `${instanceId}:${approvalKey}`,
       () =>
-        call(`/api/records/${instanceId}/decide`, seatId, {
+        call(`/api/records/${instanceId}/decide`, {
           method: 'POST',
-          body: JSON.stringify({ approvalKey, decision, reason: `Decided in the console by ${seat?.name}` }),
+          body: JSON.stringify({ approvalKey, decision, reason: 'Decided in the console' }),
         }),
       decision === 'approved' ? 'Approved. The process moved on.' : 'Rejected. The record is closed.',
     );
@@ -149,26 +163,37 @@ export function Console({ seats }: { seats: Seat[] }) {
   const completeTask = (instanceId: string, taskKey: string) =>
     act(
       `${instanceId}:${taskKey}`,
-      () => call(`/api/records/${instanceId}/tasks/${taskKey}/complete`, seatId, { method: 'POST' }),
+      () => call(`/api/records/${instanceId}/tasks/${taskKey}/complete`, { method: 'POST' }),
       'Task completed.',
     );
 
   const replay = (outboxId: number) =>
-    act(`replay:${outboxId}`, () => call(`/api/automation/${outboxId}/replay`, seatId, { method: 'POST' }), 'Queued for replay.');
+    act(`replay:${outboxId}`, () => call(`/api/automation/${outboxId}/replay`, { method: 'POST' }), 'Queued for replay.');
 
   const open = async (instanceId: string) => {
     try {
-      setRecord(await call<RecordDetail>(`/api/records/${instanceId}`, seatId));
+      setRecord(await call<RecordDetail>(`/api/records/${instanceId}`));
     } catch (err) {
+      if (err instanceof Unauthenticated) return setSession(null);
       setToast({ message: err instanceof Error ? err.message : String(err), refused: true });
     }
   };
 
+  const signOut = async () => {
+    await call('/api/auth/logout', { method: 'POST' }).catch(() => {});
+    setSession(null);
+    setWork(null);
+    setHealth(null);
+  };
+
+  if (checking) return <div className="cs__boot">Checking your session…</div>;
+  if (!session) return <SignIn onSignedIn={() => void refreshSession()} />;
+
+  const me = session.actor;
   const counts = work?.counts ?? { arrived: 0, needsYou: 0, late: 0, failed: 0 };
 
   return (
     <div className="cs">
-      {/* ------------------------------------------------------- sidebar */}
       <aside className="cs__side">
         <div className="cs__brand">
           <svg width="22" height="22" viewBox="0 0 26 26" fill="none" aria-hidden="true">
@@ -197,53 +222,58 @@ export function Console({ seats }: { seats: Seat[] }) {
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <span className="cs__sectionLabel">PROCESSES</span>
-          <button
-            type="button"
-            className="cs__process"
-            aria-current={processKey === 'employee_onboarding'}
-            onClick={() => setProcessKey('employee_onboarding')}
-          >
-            <span className="cs__dot" aria-hidden="true" />
-            {work?.processName ?? 'Employee onboarding'}
-          </button>
+          {session.processes.map((p) => (
+            <button
+              key={p.process_key}
+              type="button"
+              className="cs__process"
+              aria-current={processKey === p.process_key}
+              onClick={() => setProcessKey(p.process_key)}
+            >
+              <span className="cs__dot" aria-hidden="true" />
+              {p.name}
+            </button>
+          ))}
         </div>
 
         <div className="cs__seat">
           <div className="cs__seatRow">
             <span className="cs__avatar">
-              {(seat?.name ?? '?')
+              {me.display_name
                 .split(' ')
                 .map((p) => p[0])
                 .join('')
                 .slice(0, 2)}
             </span>
             <div style={{ minWidth: 0 }}>
-              <div className="cs__seatName">{seat?.name ?? 'Nobody'}</div>
+              <div className="cs__seatName">{me.display_name}</div>
               <div className="cs__seatRole">
-                {seat?.role} · {seat?.workspace}
+                {session.processes[0]?.roles.join(', ') || 'no process role'} · {me.workspace_role}
               </div>
             </div>
           </div>
-          <label>
-            <span className="cs__seatNote" style={{ display: 'block', marginTop: 10 }}>
-              Sit in another seat
-            </span>
-            <select className="cs__seatPicker" value={seatId} onChange={(e) => setSeatId(e.target.value)}>
-              {seats.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name} — {s.role}
-                </option>
-              ))}
-            </select>
-          </label>
-          <p className="cs__seatNote">
-            No sign-in yet. The API reads an actor header and believes it; everything past that header is
-            really enforced.
-          </p>
+          <button type="button" className="cs__seatPicker" onClick={() => void signOut()}>
+            Sign out
+          </button>
+          {session.devices.length > 1 && (
+            <p className="cs__seatNote">
+              {session.devices.length} active sessions.{' '}
+              <button
+                type="button"
+                className="cs__linkBtn"
+                onClick={() =>
+                  void act('revoke', () => call('/api/session/revoke-all', { method: 'POST' }), 'Signed out everywhere.').then(
+                    () => setSession(null),
+                  )
+                }
+              >
+                Sign out everywhere
+              </button>
+            </p>
+          )}
         </div>
       </aside>
 
-      {/* ---------------------------------------------------------- main */}
       <main className="cs__main">
         <div className="cs__head">
           <h1>My work</h1>
@@ -266,36 +296,15 @@ export function Console({ seats }: { seats: Seat[] }) {
             ) : (
               <>
                 <div className="cs__tiles">
-                  <div className="cs__tile">
-                    <div className="cs__tileLabel">ARRIVED</div>
-                    <div className="cs__tileValue">
-                      <span className="cs__tileNumber">{counts.arrived}</span>
-                      <span className="cs__tileMeta">last 30 days</span>
-                    </div>
-                  </div>
-                  <div className="cs__tile cs__tile--needs">
-                    <div className="cs__tileLabel">NEEDS YOU</div>
-                    <div className="cs__tileValue">
-                      <span className="cs__tileNumber">{counts.needsYou}</span>
-                      <span className="cs__tileMeta">
-                        {work?.approvals.length ?? 0} approvals, {work?.tasks.length ?? 0} tasks
-                      </span>
-                    </div>
-                  </div>
-                  <div className="cs__tile cs__tile--late">
-                    <div className="cs__tileLabel">LATE</div>
-                    <div className="cs__tileValue">
-                      <span className="cs__tileNumber">{counts.late}</span>
-                      <span className="cs__tileMeta">past SLA</span>
-                    </div>
-                  </div>
-                  <div className="cs__tile cs__tile--failed">
-                    <div className="cs__tileLabel">FAILED</div>
-                    <div className="cs__tileValue">
-                      <span className="cs__tileNumber">{counts.failed}</span>
-                      <span className="cs__tileMeta">safe to replay</span>
-                    </div>
-                  </div>
+                  <Tile label="ARRIVED" value={counts.arrived} meta="last 30 days" />
+                  <Tile
+                    label="NEEDS YOU"
+                    value={counts.needsYou}
+                    meta={`${work?.approvals.length ?? 0} approvals, ${work?.tasks.length ?? 0} tasks`}
+                    tone="needs"
+                  />
+                  <Tile label="LATE" value={counts.late} meta="past SLA" tone="late" />
+                  <Tile label="FAILED" value={counts.failed} meta="safe to replay" tone="failed" />
                 </div>
 
                 <div className="cs__panel">
@@ -317,8 +326,7 @@ export function Console({ seats }: { seats: Seat[] }) {
                           <div className="cs__rowMain">
                             <div className="cs__rowTitle">{a.summary}</div>
                             <div className="cs__rowMeta">
-                              {a.approvalName} · waiting {a.waitingHours}h
-                              {a.late ? ' · past its SLA' : ''}
+                              {a.approvalName} · waiting {a.waitingHours}h{a.late ? ' · past its SLA' : ''}
                             </div>
                           </div>
                           <button type="button" className="cs__btn" onClick={() => void open(a.instanceId)}>
@@ -411,24 +419,15 @@ export function Console({ seats }: { seats: Seat[] }) {
             )}
           </div>
 
-          {/* ------------------------------------------------- right column */}
           <div className="cs__right">
             {health ? (
               <div className="cs__card">
                 <span className="cs__cardLabel">AUTOMATION HEALTH</span>
                 <div style={{ marginTop: 14 }}>
-                  <div className="cs__stat">
-                    Actions run <span className="cs__statValue">{health.totals.runs}</span>
-                  </div>
-                  <div className="cs__stat">
-                    Retried and recovered <span className="cs__statValue">{health.totals.retried}</span>
-                  </div>
-                  <div className="cs__stat">
-                    Duplicates suppressed <span className="cs__statValue">{health.totals.suppressed}</span>
-                  </div>
-                  <div className="cs__stat" style={{ color: health.totals.failing ? 'var(--red-text)' : undefined }}>
-                    Permanently failed <span className="cs__statValue">{health.totals.failing}</span>
-                  </div>
+                  <Stat label="Actions run" value={health.totals.runs} />
+                  <Stat label="Retried and recovered" value={health.totals.retried} />
+                  <Stat label="Duplicates suppressed" value={health.totals.suppressed} />
+                  <Stat label="Permanently failed" value={health.totals.failing} bad={health.totals.failing > 0} />
                 </div>
 
                 {health.failures.map((f) => (
@@ -453,8 +452,8 @@ export function Console({ seats }: { seats: Seat[] }) {
               <div className="cs__card">
                 <span className="cs__cardLabel">AUTOMATION HEALTH</span>
                 <p className="cs__failureBody" style={{ marginTop: 10 }}>
-                  Your roles do not include reporting, so this panel is not shown. That is the policy engine,
-                  not an error.
+                  Your roles do not include reporting, so this panel is not shown. That is the policy engine, not
+                  an error.
                 </p>
               </div>
             )}
@@ -462,8 +461,8 @@ export function Console({ seats }: { seats: Seat[] }) {
             <div className="cs__card cs__card--dark">
               <span className="cs__cardLabel">WHAT THIS SCREEN IS</span>
               <p style={{ marginTop: 10, fontSize: 13.5, lineHeight: 1.5, color: 'var(--on-dark-2)' }}>
-                Four questions, in order: what arrived, what needs you, what is late, what failed. Change seat
-                in the sidebar and the same records offer different actions — every one of them checked by the
+                Four questions, in order: what arrived, what needs you, what is late, what failed. Sign in as
+                someone else and the same records offer different actions — every one of them checked by the
                 runtime, not by this page.
               </p>
             </div>
@@ -477,6 +476,110 @@ export function Console({ seats }: { seats: Seat[] }) {
           {toast.message}
         </div>
       )}
+    </div>
+  );
+}
+
+function Tile({
+  label,
+  value,
+  meta,
+  tone,
+}: {
+  label: string;
+  value: number;
+  meta: string;
+  tone?: 'needs' | 'late' | 'failed';
+}) {
+  return (
+    <div className={`cs__tile ${tone ? `cs__tile--${tone}` : ''}`}>
+      <div className="cs__tileLabel">{label}</div>
+      <div className="cs__tileValue">
+        <span className="cs__tileNumber">{value}</span>
+        <span className="cs__tileMeta">{meta}</span>
+      </div>
+    </div>
+  );
+}
+
+function Stat({ label, value, bad }: { label: string; value: number; bad?: boolean }) {
+  return (
+    <div className="cs__stat" style={bad ? { color: 'var(--red-text)' } : undefined}>
+      {label} <span className="cs__statValue">{value}</span>
+    </div>
+  );
+}
+
+function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await call('/api/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) });
+      onSignedIn();
+    } catch (err) {
+      // One message for every failure. Saying "no such account" would let a
+      // stranger enumerate who works here.
+      setError(err instanceof Error ? err.message : 'those details do not match an account');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="cs__login">
+      <form className="cs__loginBox" onSubmit={submit}>
+        <div className="cs__brand" style={{ color: 'var(--ink)', padding: 0 }}>
+          <svg width="24" height="24" viewBox="0 0 26 26" fill="none" aria-hidden="true">
+            <rect x="1.5" y="1.5" width="23" height="23" rx="6" stroke="var(--green)" strokeWidth="1.8" />
+            <path d="M7 13.2L11 17L19 9" stroke="var(--green)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          Patform
+        </div>
+        <h1 className="cs__loginTitle">Sign in to the console</h1>
+
+        <label className="cs__label" htmlFor="email">
+          Email
+        </label>
+        <input
+          id="email"
+          className="cs__input"
+          type="email"
+          autoComplete="username"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          required
+        />
+
+        <label className="cs__label" htmlFor="password">
+          Password
+        </label>
+        <input
+          id="password"
+          className="cs__input"
+          type="password"
+          autoComplete="current-password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          required
+        />
+
+        {error && <p className="cs__loginError">{error}</p>}
+
+        <button type="submit" className="cs__btn cs__btn--primary" style={{ marginTop: 18, width: '100%', height: 44 }} disabled={busy}>
+          {busy ? 'Signing in…' : 'Sign in'}
+        </button>
+
+        <p className="cs__loginNote">
+          A seeded workspace prints its accounts when you run <code>npm run seed</code>.
+        </p>
+      </form>
     </div>
   );
 }

@@ -15,7 +15,8 @@ src/blueprint/     the schema — ten sections, two expression languages, no exe
 src/compiler/      the rules that decide whether a blueprint may be published
 src/runtime/       the workflow engine: outbox, idempotency, timers, policy, scenarios
 src/ai/            generation: two providers, a versioned prompt, three gates
-src/api/           the console API — no auth yet, and it says so loudly
+src/api/           the console API: session cookies, scrypt passwords
+src/worker.ts      the durable worker — without it, no deadline ever fires
 src/seed.ts        a workspace that looks like a Tuesday, for the console
 web/               the landing page, and the operator console at /console
 src/spike.ts       eight proofs that the runtime behaves as the document requires
@@ -96,17 +97,28 @@ npm --prefix web run dev                        # console at localhost:3210/cons
 ```
 
 §8.2's four questions — what arrived, what needs you, what is late, what
-failed — over the real engine. There is **no sign-in**: the API reads an
-`x-actor-id` header and believes it, which is identification and not
-authentication. Everything past that header is really enforced, so switching
-seat in the sidebar is the most useful control on the screen:
+failed — over the real engine. Sign in with any seeded account; `npm run seed`
+prints them. Who you sign in as is the most useful control on the screen:
 
-| Seat | Sees |
+| Signed in as | Sees |
 |---|---|
 | Joy — hr_admin / admin | 5 tasks, including ones assigned to other roles (break-glass) |
 | Priya — hiring_manager / approver | 2 approvals, 0 tasks, and no automation panel at all |
 | Ini — it_operator / operator | only the 2 IT tasks, not HR's |
 | Dana — hiring_manager / read_only | refused: *not named as an approver on this request* |
+
+## What is not built
+
+Named here rather than implied by silence:
+
+- **Email verification, MFA, OAuth/OIDC, password reset.** Sign-in is a scrypt
+  password and a session cookie; §12.1's other authentication rows are not done.
+- **Rate limiting and spam control on public submission** (§12.3).
+- **Malware scanning and upload quarantine** (§12.1). Files are metadata only.
+- **A real email provider.** `email_log` records what would be sent. Wiring SES
+  means passing `action_run.id` as the provider's idempotency key (ADR-0002).
+- **Parallel task joins, approval quorums, date-relative timers, separation of
+  duties** — the v0.2 list in [docs/failure-cases.md](docs/failure-cases.md).
 
 Open a record as Priya and the payroll fields come back `hidden from your
 role` — the same `hiddenFields` the blueprint declares and the compiler

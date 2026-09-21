@@ -18,8 +18,12 @@ import type { Answers } from './expr.js';
 export type Principal =
   /** A signed-in member of the workspace. */
   | { kind: 'actor'; tenantId: string; actorId: string }
-  /** Someone filling in a public form. Holds no capability but `submit`. */
-  | { kind: 'respondent'; tenantId: string; label?: string }
+  /**
+   * Someone filling in a public form. `instanceId` is set once they have a
+   * resume token, and it is the ONLY thing that scopes them to a record — a
+   * respondent without it may submit and read nothing.
+   */
+  | { kind: 'respondent'; tenantId: string; instanceId?: string; label?: string }
   /** The runtime itself: timers firing, workers draining the outbox. */
   | { kind: 'system'; reason: 'timer' | 'worker' | 'migration' };
 
@@ -113,10 +117,27 @@ export async function authorize(client: Client, args: AuthorizeArgs): Promise<De
     return { allowed: true, reason: `system:${principal.reason}`, roles: [] };
   }
 
-  // 3. A respondent can start a process and see their own record. Nothing else.
+  // 3. A respondent may start a process, and read the ONE record their resume
+  //    token names. Allowing `view` on the strength of being a respondent —
+  //    which is what this did before — lets anyone holding any public link read
+  //    every record in the tenant. That is §12.3's "broken object
+  //    authorization in public resume and file links", and it is why the
+  //    principal carries an instance rather than a promise.
   if (principal.kind === 'respondent') {
-    const allowed = action === 'submit' || action === 'view';
-    return { allowed, reason: allowed ? 'respondent' : `a respondent may not ${action}`, roles: [] };
+    if (action === 'submit') return { allowed: true, reason: 'respondent', roles: [] };
+    if (action !== 'view') {
+      return { allowed: false, reason: `a respondent may not ${action}`, roles: [] };
+    }
+    if (!principal.instanceId) {
+      return { allowed: false, reason: 'respondent has no resume token for any record', roles: [] };
+    }
+    if (!args.instanceId) {
+      return { allowed: false, reason: 'a respondent may not browse records', roles: [] };
+    }
+    if (principal.instanceId !== args.instanceId) {
+      return { allowed: false, reason: 'resume token is for a different record', roles: [] };
+    }
+    return { allowed: true, reason: 'respondent, via their own resume token', roles: [] };
   }
 
   // 4. The actor must exist, be active, and belong to this tenant.

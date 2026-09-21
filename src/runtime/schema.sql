@@ -34,6 +34,30 @@ create table actor (
   unique (tenant_id, email)
 );
 
+-- §12.1 authentication. The hash is scrypt with a per-credential salt; the
+-- plaintext never reaches this table and never reaches a log.
+create table credential (
+  actor_id     uuid primary key references actor(id),
+  password_hash text not null,
+  updated_at   timestamptz not null default now()
+);
+
+-- A session is a random token the browser holds; this table stores only its
+-- SHA-256, so a dump of this table cannot be replayed as a login.
+create table session (
+  id          uuid primary key default gen_random_uuid(),
+  token_hash  text not null unique,
+  actor_id    uuid not null references actor(id),
+  tenant_id   uuid not null references tenant(id),
+  user_agent  text,
+  created_at  timestamptz not null default now(),
+  last_seen_at timestamptz not null default now(),
+  expires_at  timestamptz not null,
+  revoked_at  timestamptz
+);
+
+create index session_live on session (actor_id) where revoked_at is null;
+
 -- Which blueprint role a person holds, in which process. Roles are defined
 -- per process, so a membership is per process too: being an approver for
 -- expenses grants nothing in onboarding.
@@ -118,6 +142,18 @@ create unique index instance_identity_uq
 
 create index instance_open on instance (tenant_id, process_key, state) where completed_at is null;
 
+-- §6.3: "Autosave and secure resume link for authenticated or tokenized
+-- respondents." The token is what scopes a respondent to ONE record — without
+-- it, "a respondent may view" means they may view anybody's.
+create table resume_token (
+  token_hash  text primary key,
+  tenant_id   uuid not null references tenant(id),
+  instance_id uuid not null references instance(id),
+  created_at  timestamptz not null default now(),
+  expires_at  timestamptz not null,
+  revoked_at  timestamptz
+);
+
 -- ------------------------------------------------------------ event history
 
 create table event (
@@ -136,9 +172,32 @@ create table event (
 -- evidence is prohibited."
 create or replace function event_is_append_only() returns trigger as $$
 begin
+  -- §9.2 and §12.1 require configurable retention, which means SOMETHING has
+  -- to be able to delete history eventually. That door is this setting, which
+  -- only runtime/retention.ts opens, only inside its own transaction, and only
+  -- after writing a retention_run row saying what it is about to do.
+  if coalesce(current_setting('patform.retention_run', true), '') = 'on'
+     and tg_op = 'DELETE' then
+    return old;
+  end if;
   raise exception 'event history is append-only; % is not permitted', lower(tg_op);
 end;
 $$ language plpgsql;
+
+-- §12.1 "Data lifecycle": every deletion pass says what it removed and why,
+-- and the record of the deletion outlives the data.
+create table retention_run (
+  id              bigserial primary key,
+  tenant_id       uuid not null references tenant(id),
+  process_key     text not null,
+  retention_days  int not null,
+  instances_deleted int not null,
+  events_deleted  int not null,
+  oldest_removed  timestamptz,
+  newest_removed  timestamptz,
+  run_by          text not null,
+  ran_at          timestamptz not null default now()
+);
 
 create trigger event_no_update before update or delete on event
   for each row execute function event_is_append_only();

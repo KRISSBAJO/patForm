@@ -3,6 +3,10 @@ import { Blueprint } from './blueprint/index.js';
 import { createPool, describeTarget, resetSchema } from './runtime/db.js';
 import { Engine } from './runtime/engine.js';
 import type { Principal } from './runtime/policy.js';
+import { setPassword } from './runtime/auth.js';
+
+/** Every seeded account gets this. It only ever exists in a local database. */
+const DEV_PASSWORD = 'patform-dev-password';
 
 /**
  * Fills a local database with a workspace that looks like a Tuesday: records
@@ -74,6 +78,7 @@ async function main(): Promise<void> {
   for (const person of PEOPLE) {
     const id = await engine.createActor(tenantId, person.email, person.name, person.workspace);
     await engine.grant({ tenantId, actorId: id, processKey: bp.key, roleKey: person.role });
+    await setPassword(pool, id, DEV_PASSWORD);
     actors.set(person.key, { id, principal: { kind: 'actor', tenantId, actorId: id } });
   }
 
@@ -157,9 +162,10 @@ async function main(): Promise<void> {
   console.log(`  Emails      ${counts[0]!.emails} sent`);
   console.log(`  Open tasks  ${counts[0]!.tasks}`);
   console.log(`  Failures    ${failed.length}\n`);
-  console.log('  Sign in as (x-actor-id):\n');
+  console.log(`  Sign in at /console with any of these. Password: ${DEV_PASSWORD}`);
+
   for (const person of PEOPLE) {
-    console.log(`    ${actors.get(person.key)!.id}  ${person.name.padEnd(16)} ${person.role} / ${person.workspace}`);
+    console.log(`    ${person.email.padEnd(22)} ${person.name.padEnd(16)} ${person.role} / ${person.workspace}`);
   }
   console.log('');
 

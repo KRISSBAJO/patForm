@@ -4,6 +4,7 @@ import { Blueprint } from './blueprint/index.js';
 import { createPool, describeTarget, resetSchema, type Pool } from './runtime/db.js';
 import { Engine, newWorkerId } from './runtime/engine.js';
 import { AuthorizationError } from './runtime/policy.js';
+import { proveRespondentScope, proveRetention, proveWorkerFiresTimers } from './spike-proofs.js';
 import { runScenarios } from './runtime/scenarios.js';
 
 const GREEN = '\x1b[32m';
@@ -475,10 +476,14 @@ async function main(): Promise<void> {
 
   const blueprints = loadBlueprints();
   const onboarding = blueprints.find((b) => b.key === 'employee_onboarding')!;
+  const ctx = { pool, bp: onboarding, T0, record, completeFor };
 
   const steps: [string, () => Promise<void>][] = [
     ['scenarios', () => proveScenarios(pool, blueprints)],
     ['authorization', () => proveAuthorization(pool, onboarding)],
+    ['respondent scope', () => proveRespondentScope(ctx)],
+    ['worker', () => proveWorkerFiresTimers(ctx)],
+    ['retention', () => proveRetention(ctx)],
     ['idempotent email', () => proveIdempotentEmail(pool, onboarding)],
     ['concurrency', () => proveConcurrentWorkers(pool, onboarding)],
     ['crash recovery', () => proveCrashRecovery(pool, onboarding)],

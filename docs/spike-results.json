@@ -1,5 +1,5 @@
 {
-  "ranAt": "2026-09-21T22:54:33.066Z",
+  "ranAt": "2026-09-21T23:16:30.191Z",
   "postgres": "PostgreSQL 17.11 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit",
   "proofs": [
     {
@@ -13,6 +13,24 @@
       "claim": "Section 6.1 IAM-03: every authorization check is enforced server-side. Section 12.1: deny by default.",
       "passed": true,
       "detail": "Refused: a manager from another tenant (\"principal belongs to a different tenant\"), an operator without the capability (\"no role held (it_operator) has the \"approve\" capability\"), a manager the request does not name (\"actor is not named as an approver on this request\"), and a respondent (\"a respondent may not approve\"). Payroll fields came back redacted to the hiring manager while the job title did not. An edit outside the role's editable fields was refused. The named approver was allowed. 5 refusals are on the audit record."
+    },
+    {
+      "name": "A resume link opens one record and no others",
+      "claim": "Section 12.3: broken object authorization in public resume and file links.",
+      "passed": true,
+      "detail": "The holder read their own record and was refused somebody else's (\"resume token is for a different record\"). A respondent with no token was refused even their own (\"respondent has no resume token for any record\"), and approving was refused (\"a respondent may not approve\"). Revoking the link made it resolve to nothing. Before this, \"a respondent may view\" meant any record in the tenant."
+    },
+    {
+      "name": "A worker fires deadlines with nobody watching",
+      "claim": "Section 10.1: queue-backed workers. A deadline that needs an operator to open a page is not a deadline.",
+      "passed": true,
+      "detail": "Forty-nine hours passed with no request of any kind. The loop settled in 3 round(s), sent 1 reminder and left 0 due timers unfired."
+    },
+    {
+      "name": "Retention deletes, only for an administrator, and says what it removed",
+      "claim": "Sections 9.2 and 12.1: configurable retention and deletion jobs, against an append-only history.",
+      "passed": true,
+      "detail": "An operator was refused (\"neither the roles held (it_operator) nor workspace role \"operator\" grant \"administer\"\"). The preview reported 1 instance and 1 events and deleted nothing. The real run removed 1 instance and 1 events, leaving a retention_run row naming what went. The record still inside its retention period survived, and deleting its history outside the procedure is still refused."
     },
     {
       "name": "Idempotent email under replay",
@@ -54,7 +72,7 @@
       "name": "Submission and workflow start are far inside the section 10.4 budget",
       "claim": "Beta targets: acknowledgment p95 under 1.5s, workflow start p95 under 30s.",
       "passed": true,
-      "detail": "Over 100 submissions: acknowledgment p95 13.8ms (budget 1500ms), first action p95 34.8ms (budget 30000ms). Database round trips only, local container."
+      "detail": "Over 100 submissions: acknowledgment p95 22.4ms (budget 1500ms), first action p95 47.6ms (budget 30000ms). Database round trips only, local container."
     }
   ]
 }

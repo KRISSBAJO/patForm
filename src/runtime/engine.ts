@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { issueResumeToken } from './auth.js';
 import type { Blueprint, Action, Party, Transition } from '../blueprint/index.js';
 import { evaluate, render, withCalculatedFields, type Answers } from './expr.js';
 import { inTransaction, isUniqueViolation, type Client, type Pool } from './db.js';
@@ -155,7 +156,7 @@ export class Engine {
     now: Date;
     principal?: Principal;
     actor?: string;
-  }): Promise<{ instanceId: string; duplicate: boolean; rejected?: string[] }> {
+  }): Promise<{ instanceId: string; duplicate: boolean; rejected?: string[]; resumeToken?: string }> {
     const bp = args.version.blueprint;
     const principal: Principal =
       args.principal ?? { kind: 'respondent', tenantId: args.version.tenant_id, label: args.actor };
@@ -227,7 +228,15 @@ export class Engine {
         actor: describePrincipal(principal),
         now: args.now,
       });
-      return { instanceId, duplicate: false };
+
+      // §6.3's resume link, issued in the same transaction as the record so a
+      // submission can never exist without a way for its author to return to
+      // it — and so a respondent principal is scoped to exactly one instance.
+      const resumeToken = args.version.blueprint.experience.saveAndResume
+        ? await issueResumeToken(client, { tenantId: args.version.tenant_id, instanceId })
+        : undefined;
+
+      return { instanceId, duplicate: false, resumeToken };
     });
   }
 

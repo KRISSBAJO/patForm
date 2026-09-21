@@ -17,7 +17,9 @@
     "generate": "node --env-file=.env node_modules/tsx/dist/cli.mjs src/generate.ts",
     "eval": "node --env-file=.env node_modules/tsx/dist/cli.mjs src/eval.ts",
     "seed": "node --env-file=.env node_modules/tsx/dist/cli.mjs src/seed.ts",
-    "api": "node --env-file=.env node_modules/tsx/dist/cli.mjs src/api/server.ts"
+    "api": "node --env-file=.env node_modules/tsx/dist/cli.mjs src/api/server.ts",
+    "worker": "node --env-file=.env node_modules/tsx/dist/cli.mjs src/worker.ts",
+    "retention": "node --env-file=.env node_modules/tsx/dist/cli.mjs src/retention-cli.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.127.0",
