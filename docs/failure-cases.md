@@ -89,6 +89,41 @@ This is the most likely fraud vector in the whole expense process and the bluepr
 
 **Recommendation:** this is a runtime identity concern, not a blueprint one, but the blueprint needs a way to *declare* it — something like `approvers: [{ field: "manager_email", notTheSubmitter: true }]`. Worth deciding before an expense pack ships.
 
+### G7. Values an operator fills in later had nowhere to live
+
+**Found by the first live AI generation, not by hand-compiling.**
+
+Asked to model incident reporting, the model produced a triage severity, an investigation reference, a set of follow-up actions and a closure flag — all of them things somebody fills in *during* the process, not things the reporter types on the intake form. The schema had only one place to put a field, so the compiler warned six times that they would never be collected.
+
+Three hand-compiled processes never hit this, because when you write a blueprint by hand you unconsciously avoid the shapes the schema makes awkward. A generator has no such instinct, which is exactly why it found the gap.
+
+**Fixed:** a field may declare `setBy: "respondent" | "operator" | "system"`. Only respondent fields must appear in the experience. `REF003` skips the other two.
+
+### G8. A permission scenario could not test submission
+
+The `attempt` step accepted view, edit, approve, export and operate — so "can a stranger start this process?" was the one permission question a scenario could not ask. gpt-4o-mini tried to write it and failed the schema.
+
+**Fixed:** `submit` is now an assertable action.
+
+---
+
+## What the compiler structurally cannot catch
+
+This is the most important thing to come out of wiring a generator to the compiler, and it is worth stating separately from everything above.
+
+**A model that labels a bank account `internal` produces a blueprint that compiles with zero errors and zero warnings, passes all six of its own scenarios, and emails salary details to a line manager.**
+
+Every structural rule is satisfied. References resolve, the graph is sound, no restricted field appears in a message — because the field is not marked restricted. The blueprint is internally correct and externally wrong.
+
+No amount of additional compiler rules closes this, because the compiler knows what shape a field is and has no idea what it *means*. Closing it needs case-specific expectations held outside the blueprint: this description mentions paying a salary, therefore a field matching `bank|account|iban` must exist, must be at least `restricted`, and must not appear in any email body.
+
+That is what `evals/cases.json` is, and it is why control assertions carry §7.4's zero-tolerance gate while ordinary omissions are allowed 2%.
+
+Two things learned building that harness, both of which made it *less* alarming and more useful:
+
+- **Matching label prose produces false control failures.** The first run flagged a yes/no field called `confirm_accuracy` whose label read "I confirm my bank account details are correct". A checkbox cannot hold an account number, so `internal` was the right answer and the eval was wrong. A control gate that cries wolf gets ignored, which is worse than not having one. Classification rules now only consider field types that can actually carry the value.
+- **A control gate with nothing to check must not report PASS.** The same run reported "0 control failures" for a provider that had produced no blueprints at all. Zero of zero is not a pass. It now reports "not evaluated" and fails the suite.
+
 ### G6. Field-level permission is per role, not per state
 
 A hiring manager should see the start date before approval and the employee reference after it. Roles carry a fixed `hiddenFields` list, so visibility cannot change as the record moves.

@@ -12,6 +12,7 @@ export interface ScenarioResult {
 }
 
 const CAPABILITY_FOR_ACTION = {
+  submit: 'submit',
   view: 'view',
   edit: 'edit',
   approve: 'approve',

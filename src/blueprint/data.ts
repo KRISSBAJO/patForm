@@ -102,6 +102,13 @@ export interface Field {
   /** repeating_group only */
   fields?: Field[];
   /**
+   * Who supplies this value. `respondent` fields belong on a form page;
+   * `operator` fields are filled in during the process (a triage severity, a
+   * reference number) and `system` fields are written by the runtime. Only
+   * respondent fields are required to appear in the experience.
+   */
+  setBy?: 'respondent' | 'operator' | 'system';
+  /**
    * Personal data that the process does not strictly need should not be
    * collected at all. Recording the reason makes over-collection visible in
    * review rather than discoverable later in an audit.
@@ -123,6 +130,7 @@ export const Field: z.ZodType<Field> = z.lazy(() =>
       default: z.union([z.string(), z.number(), z.boolean(), z.null()]).optional(),
       compute: Calc.optional(),
       fields: z.array(Field).optional(),
+      setBy: z.enum(['respondent', 'operator', 'system']).optional(),
       collectionReason: z.string().optional(),
     })
     .strict(),

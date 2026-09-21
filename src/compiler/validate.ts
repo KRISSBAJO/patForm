@@ -194,10 +194,12 @@ export function validate(bp: Blueprint): Diagnostics {
     }
   }
   for (const { path, field } of allFields) {
-    // Nested fields live inside their group, and hidden or calculated fields
-    // are never rendered, so none of these need a place on a page.
+    // Nested fields live inside their group; hidden and calculated fields are
+    // never rendered; and operator or system fields are filled in during the
+    // process rather than on the intake form. None of these need a page.
     const nested = path.includes('.');
     if (nested || field.type === 'hidden' || field.type === 'calculated') continue;
+    if (field.setBy === 'operator' || field.setBy === 'system') continue;
     if (placed.has(field.key)) continue;
     if (field.required) {
       d.error(

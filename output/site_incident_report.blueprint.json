@@ -1,0 +1,1818 @@
+{
+  "schemaVersion": "0.1",
+  "key": "site_incident_report",
+  "name": "Site Incident Report and Follow-Up",
+  "description": "Staff report incidents at any site. The safety lead classifies severity, serious incidents are escalated immediately to the site manager and safety lead, follow-up actions are tracked to closure, and a permanent record is kept for insurers.",
+  "intent": {
+    "outcome": "Every reported site incident is classified for severity within 24 hours, serious incidents are escalated immediately to the site manager and safety lead, all follow-up actions are recorded and closed out, and a complete signed-off incident record is retained for insurer and regulator enquiries. Assumptions made where the description was silent: severity is classified by the safety lead on a four-point scale plus a 'not reportable' outcome; closure is signed off by the site manager; follow-up actions are tracked as a repeating list on the record rather than in a separate tool; records are retained for ten years.",
+    "owner": "safety_lead",
+    "respondents": "Any staff member working at or visiting one of our sites",
+    "expectedVolume": {
+      "count": 40,
+      "per": "month"
+    },
+    "sensitivityCeiling": "restricted",
+    "completionState": "closed_verified",
+    "retentionDays": 3650
+  },
+  "roles": [
+    {
+      "key": "reporter",
+      "name": "Reporting staff member",
+      "kind": "respondent",
+      "capabilities": [
+        "submit",
+        "view"
+      ],
+      "hiddenFields": [
+        "severity_classification",
+        "triage_notes",
+        "insurer_notifiable",
+        "investigation_reference",
+        "follow_up_actions",
+        "action_description",
+        "action_owner_email",
+        "action_due_date",
+        "action_status",
+        "action_completion_note",
+        "total_actions",
+        "all_actions_closed"
+      ]
+    },
+    {
+      "key": "safety_lead",
+      "name": "Safety lead",
+      "kind": "internal",
+      "capabilities": [
+        "view",
+        "edit",
+        "operate",
+        "report"
+      ],
+      "editableFields": [
+        "severity_classification",
+        "triage_notes",
+        "insurer_notifiable",
+        "investigation_reference",
+        "follow_up_actions",
+        "action_description",
+        "action_owner_email",
+        "action_due_date",
+        "action_status",
+        "action_completion_note",
+        "all_actions_closed"
+      ]
+    },
+    {
+      "key": "site_manager",
+      "name": "Site manager",
+      "kind": "internal",
+      "capabilities": [
+        "view",
+        "edit",
+        "approve",
+        "report"
+      ],
+      "hiddenFields": [
+        "injury_nature",
+        "medical_treatment"
+      ],
+      "editableFields": [
+        "follow_up_actions",
+        "action_status",
+        "action_completion_note"
+      ]
+    },
+    {
+      "key": "action_owner",
+      "name": "Follow-up action owner",
+      "kind": "internal",
+      "capabilities": [
+        "view",
+        "edit"
+      ],
+      "hiddenFields": [
+        "injury_nature",
+        "medical_treatment",
+        "injured_person_name"
+      ],
+      "editableFields": [
+        "action_status",
+        "action_completion_note"
+      ]
+    },
+    {
+      "key": "process_admin",
+      "name": "Safety systems administrator",
+      "kind": "internal",
+      "capabilities": [
+        "view",
+        "operate",
+        "administer",
+        "report"
+      ]
+    }
+  ],
+  "data": {
+    "fields": [
+      {
+        "key": "reporter_name",
+        "type": "short_text",
+        "label": "Your name",
+        "required": true,
+        "classification": "confidential"
+      },
+      {
+        "key": "reporter_email",
+        "type": "email",
+        "label": "Your work email",
+        "help": "We send you updates on this report here.",
+        "required": true,
+        "classification": "confidential"
+      },
+      {
+        "key": "reporter_phone",
+        "type": "phone",
+        "label": "Contact number (optional)",
+        "required": false,
+        "classification": "confidential"
+      },
+      {
+        "key": "site_location",
+        "type": "dropdown",
+        "label": "Which site did this happen at?",
+        "required": true,
+        "classification": "internal",
+        "choices": [
+          {
+            "value": "north_depot",
+            "label": "North Depot"
+          },
+          {
+            "value": "south_depot",
+            "label": "South Depot"
+          },
+          {
+            "value": "warehouse_a",
+            "label": "Warehouse A"
+          },
+          {
+            "value": "head_office",
+            "label": "Head Office"
+          },
+          {
+            "value": "client_site",
+            "label": "Client site / off-site work"
+          }
+        ]
+      },
+      {
+        "key": "exact_location_on_site",
+        "type": "short_text",
+        "label": "Where exactly on site?",
+        "help": "For example: loading bay 3, mezzanine stairs, yard gate.",
+        "required": true,
+        "classification": "confidential"
+      },
+      {
+        "key": "incident_date",
+        "type": "date",
+        "label": "Date of the incident",
+        "required": true,
+        "classification": "confidential",
+        "constraints": {
+          "message": "Report incidents from the last 90 days. Older events: contact the safety lead directly.",
+          "minDaysFromToday": -90,
+          "maxDaysFromToday": 0
+        }
+      },
+      {
+        "key": "incident_time",
+        "type": "time",
+        "label": "Approximate time of the incident",
+        "required": true,
+        "classification": "confidential"
+      },
+      {
+        "key": "incident_category",
+        "type": "single_choice",
+        "label": "What kind of incident was it?",
+        "required": true,
+        "classification": "confidential",
+        "choices": [
+          {
+            "value": "injury",
+            "label": "Injury or ill health"
+          },
+          {
+            "value": "near_miss",
+            "label": "Near miss"
+          },
+          {
+            "value": "property_damage",
+            "label": "Property or equipment damage"
+          },
+          {
+            "value": "vehicle",
+            "label": "Vehicle or plant incident"
+          },
+          {
+            "value": "environmental",
+            "label": "Spill or environmental"
+          },
+          {
+            "value": "security",
+            "label": "Security or violence"
+          },
+          {
+            "value": "other",
+            "label": "Something else"
+          }
+        ]
+      },
+      {
+        "key": "incident_description",
+        "type": "long_text",
+        "label": "What happened?",
+        "help": "Describe what you saw, in order. Stick to facts.",
+        "required": true,
+        "classification": "confidential",
+        "constraints": {
+          "minLength": 20,
+          "maxLength": 4000
+        }
+      },
+      {
+        "key": "immediate_action_taken",
+        "type": "long_text",
+        "label": "What was done straight away?",
+        "help": "For example: area cordoned off, machine isolated, first aider called.",
+        "required": true,
+        "classification": "confidential",
+        "constraints": {
+          "maxLength": 2000
+        }
+      },
+      {
+        "key": "photos",
+        "type": "file",
+        "label": "Photos of the scene",
+        "help": "Up to 10 images. Do not photograph anyone's injuries.",
+        "required": false,
+        "classification": "confidential",
+        "constraints": {
+          "accept": [
+            "image/jpeg",
+            "image/png",
+            "application/pdf"
+          ],
+          "maxSizeMb": 20,
+          "maxFiles": 10
+        }
+      },
+      {
+        "key": "anyone_injured",
+        "type": "yes_no",
+        "label": "Was anyone hurt?",
+        "required": true,
+        "classification": "confidential"
+      },
+      {
+        "key": "injured_person_name",
+        "type": "short_text",
+        "label": "Name of the person who was hurt",
+        "required": false,
+        "classification": "confidential"
+      },
+      {
+        "key": "injury_nature",
+        "type": "long_text",
+        "label": "Nature of the injury",
+        "help": "Body part affected and what kind of harm. Visible only to the safety lead.",
+        "required": false,
+        "classification": "restricted",
+        "constraints": {
+          "maxLength": 1000
+        },
+        "collectionReason": "Health information required to decide whether the incident is statutorily reportable and to support any insurer or workers' compensation claim. Restricted to the safety lead and never included in emails, documents or webhooks."
+      },
+      {
+        "key": "medical_treatment",
+        "type": "single_choice",
+        "label": "What treatment was given?",
+        "required": false,
+        "classification": "restricted",
+        "choices": [
+          {
+            "value": "none",
+            "label": "None"
+          },
+          {
+            "value": "first_aid",
+            "label": "On-site first aid"
+          },
+          {
+            "value": "paramedic",
+            "label": "Paramedic attended"
+          },
+          {
+            "value": "hospital",
+            "label": "Taken to hospital"
+          }
+        ],
+        "collectionReason": "Level of medical treatment determines regulatory reporting thresholds and insurer notification. Restricted to the safety lead and never shared outside the platform."
+      },
+      {
+        "key": "witness_present",
+        "type": "yes_no",
+        "label": "Did anyone else see it happen?",
+        "required": true,
+        "classification": "confidential"
+      },
+      {
+        "key": "witness_name",
+        "type": "short_text",
+        "label": "Witness name",
+        "required": false,
+        "classification": "confidential"
+      },
+      {
+        "key": "witness_email",
+        "type": "email",
+        "label": "Witness email",
+        "required": false,
+        "classification": "confidential"
+      },
+      {
+        "key": "property_damage",
+        "type": "yes_no",
+        "label": "Was property, plant or equipment damaged?",
+        "required": true,
+        "classification": "confidential"
+      },
+      {
+        "key": "estimated_damage_cost",
+        "type": "currency",
+        "label": "Rough cost of the damage",
+        "required": false,
+        "classification": "confidential",
+        "constraints": {
+          "min": 0,
+          "currencyCode": "GBP"
+        }
+      },
+      {
+        "key": "report_declaration",
+        "type": "signature_ack",
+        "label": "I confirm this report is accurate to the best of my knowledge",
+        "required": true,
+        "classification": "internal"
+      },
+      {
+        "key": "severity_classification",
+        "type": "single_choice",
+        "label": "Severity classification (safety lead)",
+        "required": false,
+        "classification": "internal",
+        "choices": [
+          {
+            "value": "minor",
+            "label": "Minor"
+          },
+          {
+            "value": "moderate",
+            "label": "Moderate"
+          },
+          {
+            "value": "serious",
+            "label": "Serious"
+          },
+          {
+            "value": "critical",
+            "label": "Critical"
+          },
+          {
+            "value": "not_reportable",
+            "label": "Not a reportable incident"
+          }
+        ]
+      },
+      {
+        "key": "triage_notes",
+        "type": "long_text",
+        "label": "Triage notes",
+        "required": false,
+        "classification": "internal"
+      },
+      {
+        "key": "insurer_notifiable",
+        "type": "yes_no",
+        "label": "Insurer must be notified",
+        "required": false,
+        "classification": "internal"
+      },
+      {
+        "key": "investigation_reference",
+        "type": "short_text",
+        "label": "Investigation record reference",
+        "help": "Reference of the investigation file held in the safety folder, so it can be located later without copying it here.",
+        "required": false,
+        "classification": "internal"
+      },
+      {
+        "key": "follow_up_actions",
+        "type": "repeating_group",
+        "label": "Follow-up actions",
+        "required": false,
+        "classification": "internal",
+        "fields": [
+          {
+            "key": "action_description",
+            "type": "short_text",
+            "label": "Action to be taken",
+            "required": false,
+            "classification": "internal"
+          },
+          {
+            "key": "action_owner_email",
+            "type": "email",
+            "label": "Action owner",
+            "required": false,
+            "classification": "confidential"
+          },
+          {
+            "key": "action_due_date",
+            "type": "date",
+            "label": "Due by",
+            "required": false,
+            "classification": "internal"
+          },
+          {
+            "key": "action_status",
+            "type": "single_choice",
+            "label": "Status",
+            "required": false,
+            "classification": "internal",
+            "choices": [
+              {
+                "value": "open",
+                "label": "Open"
+              },
+              {
+                "value": "closed",
+                "label": "Closed"
+              }
+            ]
+          },
+          {
+            "key": "action_completion_note",
+            "type": "long_text",
+            "label": "How it was closed",
+            "required": false,
+            "classification": "internal"
+          }
+        ]
+      },
+      {
+        "key": "total_actions",
+        "type": "calculated",
+        "label": "Number of follow-up actions",
+        "classification": "internal",
+        "compute": {
+          "op": "count",
+          "over": "follow_up_actions"
+        }
+      },
+      {
+        "key": "all_actions_closed",
+        "type": "yes_no",
+        "label": "All follow-up actions are closed",
+        "required": false,
+        "classification": "internal"
+      }
+    ],
+    "identity": [
+      "reporter_email",
+      "incident_date",
+      "site_location"
+    ]
+  },
+  "experience": {
+    "pages": [
+      {
+        "key": "page_reporter",
+        "title": "About you",
+        "description": "So we can come back to you if we need more detail.",
+        "sections": [
+          {
+            "key": "sec_reporter",
+            "title": "Your details",
+            "fields": [
+              "reporter_name",
+              "reporter_email",
+              "reporter_phone"
+            ]
+          }
+        ]
+      },
+      {
+        "key": "page_incident",
+        "title": "What happened",
+        "sections": [
+          {
+            "key": "sec_when_where",
+            "title": "When and where",
+            "fields": [
+              "site_location",
+              "exact_location_on_site",
+              "incident_date",
+              "incident_time"
+            ]
+          },
+          {
+            "key": "sec_what",
+            "title": "The incident",
+            "fields": [
+              "incident_category",
+              "incident_description",
+              "immediate_action_taken",
+              "photos"
+            ]
+          }
+        ]
+      },
+      {
+        "key": "page_people",
+        "title": "People involved",
+        "sections": [
+          {
+            "key": "sec_injury_check",
+            "title": "Injury",
+            "fields": [
+              "anyone_injured"
+            ]
+          },
+          {
+            "key": "sec_injury_detail",
+            "title": "Injury details",
+            "description": "Seen only by the safety lead.",
+            "fields": [
+              "injured_person_name",
+              "injury_nature",
+              "medical_treatment"
+            ],
+            "visibleWhen": {
+              "op": "eq",
+              "left": {
+                "field": "anyone_injured"
+              },
+              "right": {
+                "literal": true
+              }
+            }
+          },
+          {
+            "key": "sec_witness_check",
+            "title": "Witnesses",
+            "fields": [
+              "witness_present"
+            ]
+          },
+          {
+            "key": "sec_witness_detail",
+            "title": "Witness details",
+            "fields": [
+              "witness_name",
+              "witness_email"
+            ],
+            "visibleWhen": {
+              "op": "eq",
+              "left": {
+                "field": "witness_present"
+              },
+              "right": {
+                "literal": true
+              }
+            }
+          }
+        ]
+      },
+      {
+        "key": "page_damage",
+        "title": "Damage and declaration",
+        "sections": [
+          {
+            "key": "sec_damage_check",
+            "title": "Damage",
+            "fields": [
+              "property_damage"
+            ]
+          },
+          {
+            "key": "sec_damage_detail",
+            "title": "Damage details",
+            "fields": [
+              "estimated_damage_cost"
+            ],
+            "visibleWhen": {
+              "op": "eq",
+              "left": {
+                "field": "property_damage"
+              },
+              "right": {
+                "literal": true
+              }
+            }
+          },
+          {
+            "key": "sec_declaration",
+            "title": "Declaration",
+            "fields": [
+              "report_declaration"
+            ]
+          }
+        ]
+      }
+    ],
+    "showProgress": true,
+    "saveAndResume": true,
+    "confirmation": {
+      "message": "Thank you. Your incident report has been sent to the safety lead, who will classify it within 24 hours. If anyone is still at risk right now, call the site emergency number as well.",
+      "showStatusLink": true
+    },
+    "locales": [
+      "en"
+    ]
+  },
+  "workflow": {
+    "states": [
+      {
+        "key": "received",
+        "name": "Report received",
+        "type": "initial",
+        "publicLabel": "Received"
+      },
+      {
+        "key": "with_safety_lead",
+        "name": "With the safety lead for classification",
+        "type": "active",
+        "slaHours": 24,
+        "publicLabel": "Being classified"
+      },
+      {
+        "key": "awaiting_more_information",
+        "name": "Back with the reporter for more detail",
+        "type": "waiting",
+        "slaHours": 336,
+        "publicLabel": "We need more detail from you"
+      },
+      {
+        "key": "under_investigation",
+        "name": "Under investigation",
+        "type": "active",
+        "slaHours": 72,
+        "publicLabel": "Under investigation"
+      },
+      {
+        "key": "actions_in_progress",
+        "name": "Follow-up actions in progress",
+        "type": "waiting",
+        "slaHours": 168,
+        "publicLabel": "Follow-up actions open"
+      },
+      {
+        "key": "pending_closure_approval",
+        "name": "With the site manager for closure sign-off",
+        "type": "active",
+        "slaHours": 48,
+        "publicLabel": "Awaiting closure sign-off"
+      },
+      {
+        "key": "closed_verified",
+        "name": "Closed and signed off",
+        "type": "terminal",
+        "outcome": "success",
+        "publicLabel": "Closed"
+      },
+      {
+        "key": "closed_no_action",
+        "name": "Closed - not a reportable incident",
+        "type": "terminal",
+        "outcome": "rejected",
+        "publicLabel": "Closed, no action"
+      },
+      {
+        "key": "closed_incomplete",
+        "name": "Closed - reporter did not respond",
+        "type": "terminal",
+        "outcome": "expired",
+        "publicLabel": "Closed, incomplete"
+      },
+      {
+        "key": "closed_duplicate",
+        "name": "Closed - duplicate of another report",
+        "type": "terminal",
+        "outcome": "cancelled",
+        "publicLabel": "Closed, duplicate"
+      }
+    ],
+    "transitions": [
+      {
+        "key": "t_submit",
+        "from": "received",
+        "to": "with_safety_lead",
+        "trigger": {
+          "on": "submission"
+        },
+        "actions": [
+          {
+            "do": "assign",
+            "key": "a_assign_safety_lead",
+            "to": {
+              "role": "safety_lead"
+            }
+          },
+          {
+            "do": "create_task",
+            "key": "a_create_triage",
+            "task": "triage_and_classify"
+          },
+          {
+            "do": "send_email",
+            "key": "a_ack_reporter",
+            "template": "report_acknowledgement"
+          },
+          {
+            "do": "call_webhook",
+            "key": "a_emit_reported",
+            "event": "incident.reported",
+            "includeFields": [
+              "site_location",
+              "incident_date",
+              "incident_time",
+              "incident_category",
+              "exact_location_on_site"
+            ]
+          }
+        ]
+      },
+      {
+        "key": "t_triage_overdue",
+        "from": "with_safety_lead",
+        "to": "with_safety_lead",
+        "trigger": {
+          "on": "timer",
+          "afterHoursInState": 24
+        },
+        "actions": [
+          {
+            "do": "send_email",
+            "key": "a_triage_overdue",
+            "template": "triage_overdue_reminder"
+          }
+        ]
+      },
+      {
+        "key": "t_triage_serious",
+        "from": "with_safety_lead",
+        "to": "under_investigation",
+        "trigger": {
+          "on": "task_completed",
+          "task": "triage_and_classify"
+        },
+        "when": {
+          "op": "in",
+          "left": {
+            "field": "severity_classification"
+          },
+          "right": [
+            {
+              "literal": "serious"
+            },
+            {
+              "literal": "critical"
+            }
+          ]
+        },
+        "actions": [
+          {
+            "do": "send_email",
+            "key": "a_alert_leaders",
+            "template": "serious_incident_alert"
+          },
+          {
+            "do": "create_task",
+            "key": "a_create_investigation",
+            "task": "investigate_incident"
+          },
+          {
+            "do": "call_webhook",
+            "key": "a_emit_escalated",
+            "event": "incident.escalated",
+            "includeFields": [
+              "site_location",
+              "incident_date",
+              "incident_category",
+              "severity_classification"
+            ]
+          }
+        ]
+      },
+      {
+        "key": "t_triage_routine",
+        "from": "with_safety_lead",
+        "to": "actions_in_progress",
+        "trigger": {
+          "on": "task_completed",
+          "task": "triage_and_classify"
+        },
+        "when": {
+          "op": "in",
+          "left": {
+            "field": "severity_classification"
+          },
+          "right": [
+            {
+              "literal": "minor"
+            },
+            {
+              "literal": "moderate"
+            }
+          ]
+        },
+        "actions": [
+          {
+            "do": "create_task",
+            "key": "a_create_closeout_routine",
+            "task": "close_out_actions"
+          },
+          {
+            "do": "send_email",
+            "key": "a_notify_reporter_triage",
+            "template": "triage_outcome_reporter"
+          }
+        ]
+      },
+      {
+        "key": "t_triage_not_reportable",
+        "from": "with_safety_lead",
+        "to": "closed_no_action",
+        "trigger": {
+          "on": "task_completed",
+          "task": "triage_and_classify"
+        },
+        "when": {
+          "op": "eq",
+          "left": {
+            "field": "severity_classification"
+          },
+          "right": {
+            "literal": "not_reportable"
+          }
+        },
+        "actions": [
+          {
+            "do": "send_email",
+            "key": "a_not_reportable",
+            "template": "not_reportable_notice"
+          },
+          {
+            "do": "call_webhook",
+            "key": "a_emit_no_action",
+            "event": "incident.closed_no_action",
+            "includeFields": [
+              "site_location",
+              "incident_date",
+              "incident_category"
+            ]
+          }
+        ]
+      },
+      {
+        "key": "t_request_more_info",
+        "from": "with_safety_lead",
+        "to": "awaiting_more_information",
+        "trigger": {
+          "on": "manual",
+          "by": [
+            "safety_lead"
+          ]
+        },
+        "actions": [
+          {
+            "do": "send_email",
+            "key": "a_info_request",
+            "template": "info_request"
+          }
+        ]
+      },
+      {
+        "key": "t_mark_duplicate",
+        "from": "with_safety_lead",
+        "to": "closed_duplicate",
+        "trigger": {
+          "on": "manual",
+          "by": [
+            "safety_lead"
+          ]
+        },
+        "actions": [
+          {
+            "do": "call_webhook",
+            "key": "a_emit_duplicate",
+            "event": "incident.closed_duplicate",
+            "includeFields": [
+              "site_location",
+              "incident_date",
+              "incident_category"
+            ]
+          }
+        ]
+      },
+      {
+        "key": "t_info_provided",
+        "from": "awaiting_more_information",
+        "to": "with_safety_lead",
+        "trigger": {
+          "on": "record_updated"
+        },
+        "actions": [
+          {
+            "do": "create_task",
+            "key": "a_recreate_triage",
+            "task": "triage_and_classify"
+          }
+        ]
+      },
+      {
+        "key": "t_info_never_provided",
+        "from": "awaiting_more_information",
+        "to": "closed_incomplete",
+        "trigger": {
+          "on": "timer",
+          "afterHoursInState": 336
+        },
+        "actions": [
+          {
+            "do": "send_email",
+            "key": "a_incomplete_notice",
+            "template": "incomplete_notice"
+          }
+        ]
+      },
+      {
+        "key": "t_investigation_overdue",
+        "from": "under_investigation",
+        "to": "under_investigation",
+        "trigger": {
+          "on": "timer",
+          "afterHoursInState": 72
+        },
+        "actions": [
+          {
+            "do": "send_email",
+            "key": "a_investigation_overdue",
+            "template": "investigation_overdue_reminder"
+          }
+        ]
+      },
+      {
+        "key": "t_investigation_complete",
+        "from": "under_investigation",
+        "to": "actions_in_progress",
+        "trigger": {
+          "on": "task_completed",
+          "task": "investigate_incident"
+        },
+        "actions": [
+          {
+            "do": "create_task",
+            "key": "a_create_closeout_serious",
+            "task": "close_out_actions"
+          },
+          {
+            "do": "send_email",
+            "key": "a_actions_underway",
+            "template": "actions_underway_notice"
+          }
+        ]
+      },
+      {
+        "key": "t_open_actions_reminder",
+        "from": "actions_in_progress",
+        "to": "actions_in_progress",
+        "trigger": {
+          "on": "timer",
+          "afterHoursInState": 168
+        },
+        "actions": [
+          {
+            "do": "send_email",
+            "key": "a_open_actions_reminder",
+            "template": "open_actions_reminder"
+          }
+        ]
+      },
+      {
+        "key": "t_actions_still_open",
+        "from": "actions_in_progress",
+        "to": "actions_in_progress",
+        "trigger": {
+          "on": "task_completed",
+          "task": "close_out_actions"
+        },
+        "when": {
+          "op": "ne",
+          "left": {
+            "field": "all_actions_closed"
+          },
+          "right": {
+            "literal": true
+          }
+        },
+        "actions": [
+          {
+            "do": "create_task",
+            "key": "a_recreate_closeout",
+            "task": "close_out_actions"
+          }
+        ]
+      },
+      {
+        "key": "t_actions_all_closed",
+        "from": "actions_in_progress",
+        "to": "pending_closure_approval",
+        "trigger": {
+          "on": "task_completed",
+          "task": "close_out_actions"
+        },
+        "when": {
+          "op": "eq",
+          "left": {
+            "field": "all_actions_closed"
+          },
+          "right": {
+            "literal": true
+          }
+        },
+        "actions": [
+          {
+            "do": "request_approval",
+            "key": "a_request_signoff",
+            "approval": "closure_signoff"
+          }
+        ]
+      },
+      {
+        "key": "t_signoff_reminder",
+        "from": "pending_closure_approval",
+        "to": "pending_closure_approval",
+        "trigger": {
+          "on": "timer",
+          "afterHoursInState": 48
+        },
+        "actions": [
+          {
+            "do": "send_email",
+            "key": "a_approval_reminder",
+            "template": "approval_reminder"
+          }
+        ]
+      },
+      {
+        "key": "t_signoff_approved",
+        "from": "pending_closure_approval",
+        "to": "closed_verified",
+        "trigger": {
+          "on": "approval_decided",
+          "approval": "closure_signoff",
+          "decision": "approved"
+        },
+        "actions": [
+          {
+            "do": "generate_document",
+            "key": "a_generate_record",
+            "document": "incident_record"
+          },
+          {
+            "do": "send_email",
+            "key": "a_closure_notice",
+            "template": "closure_notice"
+          },
+          {
+            "do": "call_webhook",
+            "key": "a_emit_closed",
+            "event": "incident.closed",
+            "includeFields": [
+              "site_location",
+              "incident_date",
+              "incident_category",
+              "severity_classification",
+              "total_actions"
+            ]
+          }
+        ]
+      },
+      {
+        "key": "t_signoff_rejected",
+        "from": "pending_closure_approval",
+        "to": "actions_in_progress",
+        "trigger": {
+          "on": "approval_decided",
+          "approval": "closure_signoff",
+          "decision": "rejected"
+        },
+        "actions": [
+          {
+            "do": "create_task",
+            "key": "a_reopen_closeout",
+            "task": "close_out_actions"
+          },
+          {
+            "do": "send_email",
+            "key": "a_closure_rejected",
+            "template": "closure_rejected_notice"
+          }
+        ]
+      },
+      {
+        "key": "t_signoff_changes",
+        "from": "pending_closure_approval",
+        "to": "actions_in_progress",
+        "trigger": {
+          "on": "approval_decided",
+          "approval": "closure_signoff",
+          "decision": "changes_requested"
+        },
+        "actions": [
+          {
+            "do": "create_task",
+            "key": "a_changes_closeout",
+            "task": "close_out_actions"
+          },
+          {
+            "do": "send_email",
+            "key": "a_changes_requested",
+            "template": "closure_rejected_notice"
+          }
+        ]
+      }
+    ],
+    "approvals": [
+      {
+        "key": "closure_signoff",
+        "name": "Incident closure sign-off",
+        "approvers": [
+          {
+            "role": "site_manager"
+          }
+        ],
+        "mode": "single",
+        "allowRequestChanges": true,
+        "reasonRequired": true,
+        "contextFields": [
+          "incident_description",
+          "severity_classification",
+          "total_actions",
+          "all_actions_closed",
+          "investigation_reference"
+        ],
+        "dueInHours": 48
+      }
+    ],
+    "tasks": [
+      {
+        "key": "triage_and_classify",
+        "name": "Classify severity and record triage notes",
+        "description": "Read the report, set the severity classification, note whether the insurer must be told, and record triage notes. Serious and critical incidents alert the site manager as soon as you complete this.",
+        "assignee": {
+          "role": "safety_lead"
+        },
+        "dueInHours": 24,
+        "blocking": true
+      },
+      {
+        "key": "investigate_incident",
+        "name": "Investigate the incident and log follow-up actions",
+        "description": "Complete the investigation, store the investigation file in the safety folder and record its reference here, then log each follow-up action with an owner and a due date.",
+        "assignee": {
+          "role": "safety_lead"
+        },
+        "dueInHours": 72,
+        "blocking": true
+      },
+      {
+        "key": "close_out_actions",
+        "name": "Confirm every follow-up action is closed",
+        "description": "Chase the action owners, mark each action closed with a completion note, then set 'all follow-up actions are closed' and complete this task.",
+        "assignee": {
+          "role": "safety_lead"
+        },
+        "dueInHours": 168,
+        "blocking": true
+      }
+    ],
+    "timezone": "Europe/London"
+  },
+  "communications": {
+    "email": [
+      {
+        "key": "report_acknowledgement",
+        "name": "Report received",
+        "class": "transactional",
+        "to": [
+          {
+            "field": "reporter_email"
+          }
+        ],
+        "cc": [],
+        "subject": "We have your incident report from {{site_location}}",
+        "body": "Hi {{reporter_name}},\n\nThanks for reporting what happened at {{site_location}} on {{incident_date}}. The safety lead will classify it within 24 hours and will contact you if anything is unclear.\n\nIf anyone is still at risk, call the site emergency number now rather than waiting for this report to be processed.\n\nSafety team",
+        "attachments": []
+      },
+      {
+        "key": "serious_incident_alert",
+        "name": "Serious incident alert",
+        "class": "notification",
+        "to": [
+          {
+            "role": "site_manager"
+          },
+          {
+            "role": "safety_lead"
+          }
+        ],
+        "cc": [],
+        "subject": "SERIOUS INCIDENT - {{site_location}}, {{incident_date}}",
+        "body": "A report from {{site_location}} has been classified as {{severity_classification}}.\n\nWhere: {{exact_location_on_site}}\nWhen: {{incident_date}} at {{incident_time}}\nType: {{incident_category}}\nWhat happened: {{incident_description}}\nImmediate action taken: {{immediate_action_taken}}\n\nGo to the record now: confirm the area is safe, and expect an investigation task within 72 hours. Any injury detail is on the record itself and is restricted to the safety lead.\n\nSafety team",
+        "attachments": []
+      },
+      {
+        "key": "triage_overdue_reminder",
+        "name": "Triage overdue reminder",
+        "class": "reminder",
+        "to": [
+          {
+            "role": "safety_lead"
+          }
+        ],
+        "cc": [
+          {
+            "role": "site_manager"
+          }
+        ],
+        "subject": "Still unclassified: incident at {{site_location}} on {{incident_date}}",
+        "body": "This incident report has been waiting more than 24 hours for a severity classification.\n\nSite: {{site_location}} ({{exact_location_on_site}})\nReported by: {{reporter_name}}\n\nPlease open the record and complete the triage task today.",
+        "attachments": []
+      },
+      {
+        "key": "triage_outcome_reporter",
+        "name": "Classified, follow-up under way",
+        "class": "transactional",
+        "to": [
+          {
+            "field": "reporter_email"
+          }
+        ],
+        "cc": [],
+        "subject": "Your incident report has been classified",
+        "body": "Hi {{reporter_name}},\n\nYour report about {{site_location}} on {{incident_date}} has been classified as {{severity_classification}}. We are now logging and tracking the follow-up actions.\n\nThe report stays open until every action is closed. You will hear from us again when it is signed off.\n\nSafety team",
+        "attachments": []
+      },
+      {
+        "key": "not_reportable_notice",
+        "name": "Closed with no further action",
+        "class": "transactional",
+        "to": [
+          {
+            "field": "reporter_email"
+          }
+        ],
+        "cc": [
+          {
+            "role": "site_manager"
+          }
+        ],
+        "subject": "Your report has been closed with no further action",
+        "body": "Hi {{reporter_name}},\n\nThanks for reporting the event at {{site_location}} on {{incident_date}}. After review, the safety lead has recorded it as not a reportable incident, so no follow-up actions have been raised.\n\nThe report is kept on file. If you think that is wrong, reply to this email within 7 days and we will look again.\n\nSafety team",
+        "attachments": []
+      },
+      {
+        "key": "info_request",
+        "name": "More detail needed",
+        "class": "transactional",
+        "to": [
+          {
+            "field": "reporter_email"
+          }
+        ],
+        "cc": [],
+        "subject": "We need a bit more detail on your incident report",
+        "body": "Hi {{reporter_name}},\n\nBefore we can classify your report about {{site_location}} on {{incident_date}}, the safety lead needs more detail. Open your report from the link on your confirmation and update it, or reply to this email.\n\nIf we hear nothing within 14 days we will close the report as incomplete.\n\nSafety team",
+        "attachments": []
+      },
+      {
+        "key": "incomplete_notice",
+        "name": "Closed as incomplete",
+        "class": "transactional",
+        "to": [
+          {
+            "field": "reporter_email"
+          }
+        ],
+        "cc": [
+          {
+            "role": "safety_lead"
+          }
+        ],
+        "subject": "Incident report closed as incomplete",
+        "body": "Hi {{reporter_name}},\n\nWe asked for more detail about the incident at {{site_location}} on {{incident_date}} and have not had a reply in 14 days, so the report has been closed as incomplete. The record is retained.\n\nIf the detail is still available, submit a new report and mention this one.\n\nSafety team",
+        "attachments": []
+      },
+      {
+        "key": "actions_underway_notice",
+        "name": "Investigation finished, actions open",
+        "class": "notification",
+        "to": [
+          {
+            "field": "reporter_email"
+          }
+        ],
+        "cc": [
+          {
+            "role": "site_manager"
+          }
+        ],
+        "subject": "Investigation complete for the {{site_location}} incident",
+        "body": "Hi {{reporter_name}},\n\nThe investigation into the incident at {{site_location}} on {{incident_date}} is complete. {{total_actions}} follow-up action(s) have been logged and the report stays open until all of them are closed.\n\nSafety team",
+        "attachments": []
+      },
+      {
+        "key": "investigation_overdue_reminder",
+        "name": "Investigation overdue",
+        "class": "reminder",
+        "to": [
+          {
+            "role": "safety_lead"
+          }
+        ],
+        "cc": [
+          {
+            "role": "site_manager"
+          }
+        ],
+        "subject": "Investigation overdue: {{site_location}}, {{incident_date}}",
+        "body": "The investigation for this {{severity_classification}} incident at {{site_location}} has been open for more than 72 hours.\n\nPlease complete it, record the investigation reference, and log the follow-up actions.",
+        "attachments": []
+      },
+      {
+        "key": "open_actions_reminder",
+        "name": "Weekly open actions reminder",
+        "class": "reminder",
+        "to": [
+          {
+            "role": "safety_lead"
+          }
+        ],
+        "cc": [
+          {
+            "role": "site_manager"
+          }
+        ],
+        "subject": "Follow-up actions still open: {{site_location}}, {{incident_date}}",
+        "body": "This incident still has follow-up actions open ({{total_actions}} logged in total).\n\nChase the owners, mark each action closed with a completion note, then complete the close-out task so the site manager can sign the report off.",
+        "attachments": []
+      },
+      {
+        "key": "approval_reminder",
+        "name": "Closure sign-off reminder",
+        "class": "reminder",
+        "to": [
+          {
+            "role": "site_manager"
+          }
+        ],
+        "cc": [],
+        "subject": "Sign-off needed: incident at {{site_location}} on {{incident_date}}",
+        "body": "All follow-up actions for this incident are marked closed and it is waiting for your sign-off.\n\nReview the actions and either approve the closure or send it back with a reason.",
+        "attachments": []
+      },
+      {
+        "key": "closure_rejected_notice",
+        "name": "Closure sent back",
+        "class": "notification",
+        "to": [
+          {
+            "role": "safety_lead"
+          }
+        ],
+        "cc": [],
+        "subject": "Closure sent back: {{site_location}}, {{incident_date}}",
+        "body": "The site manager has not accepted the closure of this incident. See their reason on the record, reopen or add the actions needed, and resubmit for sign-off.",
+        "attachments": []
+      },
+      {
+        "key": "closure_notice",
+        "name": "Incident closed",
+        "class": "transactional",
+        "to": [
+          {
+            "field": "reporter_email"
+          }
+        ],
+        "cc": [
+          {
+            "role": "site_manager"
+          },
+          {
+            "role": "safety_lead"
+          }
+        ],
+        "subject": "Incident at {{site_location}} on {{incident_date}} is now closed",
+        "body": "Hi {{reporter_name}},\n\nAll {{total_actions}} follow-up action(s) from your report about {{site_location}} on {{incident_date}} are closed and the site manager has signed the report off.\n\nThe full record, including the actions and their completion notes, is retained for ten years in case the insurer or regulator asks for it.\n\nThanks for reporting it.\n\nSafety team",
+        "attachments": [
+          "incident_record"
+        ]
+      }
+    ],
+    "sms": [],
+    "fromName": "Site Safety Team"
+  },
+  "outputs": {
+    "documents": [
+      {
+        "key": "incident_record",
+        "name": "Incident record and close-out summary",
+        "source": "html",
+        "templateRef": "incident_record_v1",
+        "mapping": {
+          "reporter": "reporter_name",
+          "site": "site_location",
+          "location_on_site": "exact_location_on_site",
+          "date": "incident_date",
+          "time": "incident_time",
+          "category": "incident_category",
+          "description": "incident_description",
+          "immediate_action": "immediate_action_taken",
+          "severity": "severity_classification",
+          "triage_notes": "triage_notes",
+          "investigation_ref": "investigation_reference",
+          "insurer_notifiable": "insurer_notifiable",
+          "actions": "follow_up_actions",
+          "action_count": "total_actions"
+        },
+        "filename": "incident-record-{{incident_date}}-{{site_location}}.html",
+        "deliver": [
+          "attach_to_record",
+          "email"
+        ]
+      }
+    ],
+    "dashboard": {
+      "metrics": [
+        {
+          "key": "reports_received",
+          "name": "Incident reports received",
+          "kind": "intake"
+        },
+        {
+          "key": "triage_aging",
+          "name": "Time waiting for classification",
+          "kind": "stage_aging",
+          "state": "with_safety_lead"
+        },
+        {
+          "key": "open_action_aging",
+          "name": "Time with follow-up actions open",
+          "kind": "stage_aging",
+          "state": "actions_in_progress"
+        },
+        {
+          "key": "signoff_time",
+          "name": "Closure sign-off time",
+          "kind": "approval_time"
+        },
+        {
+          "key": "incident_cycle_time",
+          "name": "Report to signed-off closure",
+          "kind": "cycle_time"
+        },
+        {
+          "key": "closure_rate",
+          "name": "Reports closed and signed off",
+          "kind": "completion_rate"
+        },
+        {
+          "key": "reopened_closures",
+          "name": "Closures sent back by the site manager",
+          "kind": "rework_rate"
+        },
+        {
+          "key": "abandoned_reports",
+          "name": "Reports closed as incomplete",
+          "kind": "abandonment"
+        }
+      ]
+    },
+    "webhookEvents": [
+      "incident.reported",
+      "incident.escalated",
+      "incident.closed",
+      "incident.closed_no_action",
+      "incident.closed_duplicate"
+    ],
+    "exportFields": [
+      "reporter_name",
+      "site_location",
+      "exact_location_on_site",
+      "incident_date",
+      "incident_time",
+      "incident_category",
+      "incident_description",
+      "immediate_action_taken",
+      "anyone_injured",
+      "property_damage",
+      "estimated_damage_cost",
+      "severity_classification",
+      "insurer_notifiable",
+      "investigation_reference",
+      "total_actions",
+      "all_actions_closed"
+    ]
+  },
+  "tests": [
+    {
+      "key": "serious_incident_full_route",
+      "kind": "happy_path",
+      "name": "Serious incident is escalated, investigated, actioned and signed off",
+      "steps": [
+        {
+          "step": "submit",
+          "answers": {
+            "reporter_name": "Dana Ruiz",
+            "reporter_email": "dana.ruiz@example.com",
+            "site_location": "warehouse_a",
+            "exact_location_on_site": "Loading bay 3",
+            "incident_date": "2024-05-02",
+            "incident_time": "09:15",
+            "incident_category": "injury",
+            "incident_description": "A pallet fell from the second rack level and struck an operator on the shoulder.",
+            "immediate_action_taken": "Area cordoned off, first aider called, forklift taken out of service.",
+            "anyone_injured": true,
+            "witness_present": true,
+            "property_damage": false,
+            "report_declaration": true,
+            "severity_classification": "serious",
+            "all_actions_closed": true
+          }
+        },
+        {
+          "step": "complete_task",
+          "task": "triage_and_classify",
+          "as": "safety_lead"
+        },
+        {
+          "step": "complete_task",
+          "task": "investigate_incident",
+          "as": "safety_lead"
+        },
+        {
+          "step": "complete_task",
+          "task": "close_out_actions",
+          "as": "safety_lead"
+        },
+        {
+          "step": "decide",
+          "approval": "closure_signoff",
+          "as": "site_manager",
+          "decision": "approved",
+          "reason": "All three actions evidenced and closed."
+        }
+      ],
+      "expect": {
+        "state": "closed_verified",
+        "emails": [
+          "report_acknowledgement",
+          "serious_incident_alert",
+          "actions_underway_notice",
+          "closure_notice"
+        ],
+        "documents": [
+          "incident_record"
+        ]
+      }
+    },
+    {
+      "key": "closure_sent_back",
+      "kind": "rejection",
+      "name": "Site manager refuses sign-off because an action is not evidenced",
+      "steps": [
+        {
+          "step": "submit",
+          "answers": {
+            "reporter_name": "Sam Ellis",
+            "reporter_email": "sam.ellis@example.com",
+            "site_location": "north_depot",
+            "exact_location_on_site": "Yard gate",
+            "incident_date": "2024-05-06",
+            "incident_time": "14:40",
+            "incident_category": "near_miss",
+            "incident_description": "A delivery van reversed towards a pedestrian walking through the yard gate.",
+            "immediate_action_taken": "Driver stopped and briefed on the one-way route.",
+            "anyone_injured": false,
+            "witness_present": false,
+            "property_damage": false,
+            "report_declaration": true,
+            "severity_classification": "moderate",
+            "all_actions_closed": true
+          }
+        },
+        {
+          "step": "complete_task",
+          "task": "triage_and_classify",
+          "as": "safety_lead"
+        },
+        {
+          "step": "complete_task",
+          "task": "close_out_actions",
+          "as": "safety_lead"
+        },
+        {
+          "step": "decide",
+          "approval": "closure_signoff",
+          "as": "site_manager",
+          "decision": "rejected",
+          "reason": "No evidence the yard markings were repainted."
+        }
+      ],
+      "expect": {
+        "state": "actions_in_progress",
+        "emails": [
+          "closure_rejected_notice"
+        ],
+        "openTasks": [
+          "close_out_actions"
+        ]
+      }
+    },
+    {
+      "key": "incomplete_form_not_accepted",
+      "kind": "missing_data",
+      "name": "Report with no description of what happened is not accepted",
+      "steps": [
+        {
+          "step": "submit",
+          "answers": {
+            "reporter_name": "Kim Patel",
+            "reporter_email": "kim.patel@example.com",
+            "site_location": "south_depot",
+            "exact_location_on_site": "Mezzanine stairs",
+            "incident_date": "2024-05-08",
+            "incident_time": "08:05",
+            "incident_category": "other",
+            "immediate_action_taken": "Nothing yet.",
+            "anyone_injured": false,
+            "witness_present": false,
+            "property_damage": false,
+            "report_declaration": true
+          }
+        }
+      ],
+      "expect": {
+        "instanceCount": 0
+      }
+    },
+    {
+      "key": "triage_sla_breached",
+      "kind": "timeout",
+      "name": "Unclassified report after 24 hours chases the safety lead",
+      "steps": [
+        {
+          "step": "submit",
+          "answers": {
+            "reporter_name": "Alex Moore",
+            "reporter_email": "alex.moore@example.com",
+            "site_location": "head_office",
+            "exact_location_on_site": "Basement plant room",
+            "incident_date": "2024-05-09",
+            "incident_time": "17:20",
+            "incident_category": "environmental",
+            "incident_description": "Coolant leak of about five litres spreading across the plant room floor.",
+            "immediate_action_taken": "Spill kit used and room locked.",
+            "anyone_injured": false,
+            "witness_present": false,
+            "property_damage": false,
+            "report_declaration": true
+          }
+        },
+        {
+          "step": "advance_hours",
+          "hours": 25
+        }
+      ],
+      "expect": {
+        "state": "with_safety_lead",
+        "emails": [
+          "report_acknowledgement",
+          "triage_overdue_reminder"
+        ],
+        "openTasks": [
+          "triage_and_classify"
+        ]
+      }
+    },
+    {
+      "key": "same_incident_reported_twice",
+      "kind": "duplicate",
+      "name": "Same reporter files the same site and date twice",
+      "steps": [
+        {
+          "step": "submit",
+          "answers": {
+            "reporter_name": "Dana Ruiz",
+            "reporter_email": "dana.ruiz@example.com",
+            "site_location": "warehouse_a",
+            "exact_location_on_site": "Loading bay 3",
+            "incident_date": "2024-05-02",
+            "incident_time": "09:15",
+            "incident_category": "injury",
+            "incident_description": "A pallet fell from the second rack level and struck an operator on the shoulder.",
+            "immediate_action_taken": "Area cordoned off, first aider called.",
+            "anyone_injured": true,
+            "witness_present": true,
+            "property_damage": false,
+            "report_declaration": true
+          }
+        },
+        {
+          "step": "submit",
+          "answers": {
+            "reporter_name": "Dana Ruiz",
+            "reporter_email": "dana.ruiz@example.com",
+            "site_location": "warehouse_a",
+            "exact_location_on_site": "Loading bay 3",
+            "incident_date": "2024-05-02",
+            "incident_time": "09:15",
+            "incident_category": "injury",
+            "incident_description": "A pallet fell from the second rack level and struck an operator on the shoulder.",
+            "immediate_action_taken": "Area cordoned off, first aider called.",
+            "anyone_injured": true,
+            "witness_present": true,
+            "property_damage": false,
+            "report_declaration": true
+          }
+        }
+      ],
+      "expect": {
+        "state": "with_safety_lead",
+        "instanceCount": 1
+      }
+    },
+    {
+      "key": "reporter_cannot_sign_off",
+      "kind": "permission",
+      "name": "Reporting staff member cannot approve closure or operate the process",
+      "steps": [
+        {
+          "step": "submit",
+          "answers": {
+            "reporter_name": "Sam Ellis",
+            "reporter_email": "sam.ellis@example.com",
+            "site_location": "north_depot",
+            "exact_location_on_site": "Yard gate",
+            "incident_date": "2024-05-06",
+            "incident_time": "14:40",
+            "incident_category": "near_miss",
+            "incident_description": "A delivery van reversed towards a pedestrian walking through the yard gate.",
+            "immediate_action_taken": "Driver stopped and briefed on the one-way route.",
+            "anyone_injured": false,
+            "witness_present": false,
+            "property_damage": false,
+            "report_declaration": true
+          }
+        },
+        {
+          "step": "attempt",
+          "as": "reporter",
+          "action": "approve",
+          "expectDenied": true
+        },
+        {
+          "step": "attempt",
+          "as": "reporter",
+          "action": "operate",
+          "expectDenied": true
+        },
+        {
+          "step": "attempt",
+          "as": "action_owner",
+          "action": "approve",
+          "expectDenied": true
+        }
+      ],
+      "expect": {
+        "state": "with_safety_lead"
+      }
+    }
+  ]
+}

@@ -362,6 +362,14 @@
                       "$ref": "#/definitions/ProcessBlueprint/properties/data/properties/fields/items"
                     }
                   },
+                  "setBy": {
+                    "type": "string",
+                    "enum": [
+                      "respondent",
+                      "operator",
+                      "system"
+                    ]
+                  },
                   "collectionReason": {
                     "type": "string"
                   }
@@ -1588,6 +1596,7 @@
                         "action": {
                           "type": "string",
                           "enum": [
+                            "submit",
                             "view",
                             "edit",
                             "approve",

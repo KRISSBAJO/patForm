@@ -34,7 +34,7 @@ export const Step = z.discriminatedUnion('step', [
     .object({
       step: z.literal('attempt'),
       as: Key,
-      action: z.enum(['view', 'edit', 'approve', 'export', 'operate']),
+      action: z.enum(['submit', 'view', 'edit', 'approve', 'export', 'operate']),
       /** Set when the point of the step is that it must be refused. */
       expectDenied: z.boolean().default(false),
     })

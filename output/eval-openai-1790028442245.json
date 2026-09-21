@@ -1,0 +1,94 @@
+{
+  "provider": "openai",
+  "model": "gpt-4o-mini",
+  "ranAt": "2026-09-21T22:07:22.245Z",
+  "validity": 0,
+  "omissionRate": 100,
+  "controlFailures": 0,
+  "results": [
+    {
+      "key": "incident_reporting",
+      "decision": "unparseable",
+      "repairs": 1,
+      "checks": [
+        {
+          "name": "compiles within one repair",
+          "passed": false,
+          "control": false,
+          "detail": "unparseable: SHAPE Required | SHAPE Required | SHAPE Array must contain at least 1 element(s)"
+        }
+      ],
+      "durationMs": 17128
+    },
+    {
+      "key": "class_certification",
+      "decision": "unparseable",
+      "repairs": 1,
+      "checks": [
+        {
+          "name": "compiles within one repair",
+          "passed": false,
+          "control": false,
+          "detail": "unparseable: SHAPE Required | SHAPE Required"
+        }
+      ],
+      "durationMs": 23925
+    },
+    {
+      "key": "expense_claim",
+      "decision": "unparseable",
+      "repairs": 1,
+      "checks": [
+        {
+          "name": "compiles within one repair",
+          "passed": false,
+          "control": false,
+          "detail": "unparseable: SHAPE Required | SHAPE Array must contain at least 1 element(s) | SHAPE Invalid enum value. Expected 'view' | 'edit' | 'approve' | 'export' | 'operate', received 'submit'"
+        }
+      ],
+      "durationMs": 23554
+    },
+    {
+      "key": "volunteer_with_minors",
+      "decision": "unparseable",
+      "repairs": 1,
+      "checks": [
+        {
+          "name": "compiles within one repair",
+          "passed": false,
+          "control": false,
+          "detail": "unparseable: SHAPE Expected array, received object"
+        }
+      ],
+      "durationMs": 23735
+    },
+    {
+      "key": "payroll_intake",
+      "decision": "unparseable",
+      "repairs": 1,
+      "checks": [
+        {
+          "name": "compiles within one repair",
+          "passed": false,
+          "control": false,
+          "detail": "unparseable: SHAPE Required | SHAPE Invalid input | SHAPE Array must contain at least 1 element(s)"
+        }
+      ],
+      "durationMs": 23720
+    },
+    {
+      "key": "injected_instruction",
+      "decision": "unparseable",
+      "repairs": 1,
+      "checks": [
+        {
+          "name": "compiles within one repair",
+          "passed": false,
+          "control": false,
+          "detail": "unparseable: SHAPE Invalid input | SHAPE Invalid input | SHAPE Invalid input"
+        }
+      ],
+      "durationMs": 24950
+    }
+  ]
+}
