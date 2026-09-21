@@ -1,0 +1,24 @@
+{
+  "name": "patform-blueprint",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Typed process blueprint schema and compiler for the LogaXP AI process platform",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "compile": "tsx src/cli.ts",
+    "check": "tsx src/cli.ts processes/*.blueprint.json",
+    "schema": "tsx src/emit-json-schema.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test tests/*.test.ts"
+  },
+  "dependencies": {
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3",
+    "zod-to-json-schema": "^3.23.5",
+    "@types/node": "^22.7.5"
+  }
+}

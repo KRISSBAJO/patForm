@@ -1,0 +1,1209 @@
+{
+  "schemaVersion": "0.1",
+  "key": "employee_onboarding",
+  "name": "Employee Onboarding",
+  "description": "Hand-compiled from section 4.3 and the MVP acceptance scenario in section 20.1 of the product document.",
+  "intent": {
+    "outcome": "A new hire has been approved by their manager and HR, has equipment and accounts, and has an onboarding packet on file.",
+    "owner": "hr_admin",
+    "respondents": "New employees and contractors, invited by HR after an offer is accepted.",
+    "expectedVolume": {
+      "count": 25,
+      "per": "month"
+    },
+    "sensitivityCeiling": "restricted",
+    "completionState": "complete",
+    "retentionDays": 2555
+  },
+  "roles": [
+    {
+      "key": "hr_admin",
+      "name": "HR administrator",
+      "kind": "internal",
+      "capabilities": [
+        "view",
+        "edit",
+        "operate",
+        "report",
+        "administer"
+      ]
+    },
+    {
+      "key": "hr_approver",
+      "name": "HR approver",
+      "kind": "internal",
+      "capabilities": [
+        "view",
+        "approve"
+      ],
+      "hiddenFields": [
+        "bank_account"
+      ]
+    },
+    {
+      "key": "hiring_manager",
+      "name": "Hiring manager",
+      "kind": "internal",
+      "capabilities": [
+        "view",
+        "approve"
+      ],
+      "hiddenFields": [
+        "national_id",
+        "bank_account",
+        "id_document"
+      ]
+    },
+    {
+      "key": "it_operator",
+      "name": "IT operator",
+      "kind": "internal",
+      "capabilities": [
+        "view",
+        "operate"
+      ],
+      "hiddenFields": [
+        "national_id",
+        "bank_account",
+        "id_document",
+        "emergency_contact_phone"
+      ]
+    },
+    {
+      "key": "new_hire",
+      "name": "New hire",
+      "kind": "respondent",
+      "capabilities": [
+        "submit",
+        "view"
+      ],
+      "editableFields": [
+        "phone",
+        "address",
+        "emergency_contact_name",
+        "emergency_contact_phone",
+        "equipment_needs"
+      ]
+    }
+  ],
+  "data": {
+    "identity": [
+      "personal_email",
+      "start_date"
+    ],
+    "fields": [
+      {
+        "key": "full_name",
+        "type": "short_text",
+        "label": "Full legal name",
+        "required": true,
+        "classification": "confidential"
+      },
+      {
+        "key": "preferred_name",
+        "type": "short_text",
+        "label": "Preferred name",
+        "classification": "confidential"
+      },
+      {
+        "key": "personal_email",
+        "type": "email",
+        "label": "Personal email address",
+        "required": true,
+        "classification": "confidential"
+      },
+      {
+        "key": "phone",
+        "type": "phone",
+        "label": "Mobile number",
+        "required": true,
+        "classification": "confidential"
+      },
+      {
+        "key": "address",
+        "type": "address",
+        "label": "Home address",
+        "required": true,
+        "classification": "confidential",
+        "collectionReason": "Payroll registration and equipment delivery."
+      },
+      {
+        "key": "start_date",
+        "type": "date",
+        "label": "Agreed start date",
+        "required": true,
+        "classification": "internal"
+      },
+      {
+        "key": "department",
+        "type": "dropdown",
+        "label": "Department",
+        "required": true,
+        "classification": "internal",
+        "choices": [
+          {
+            "value": "engineering",
+            "label": "Engineering"
+          },
+          {
+            "value": "operations",
+            "label": "Operations"
+          },
+          {
+            "value": "finance",
+            "label": "Finance"
+          },
+          {
+            "value": "people",
+            "label": "People"
+          }
+        ]
+      },
+      {
+        "key": "job_title",
+        "type": "short_text",
+        "label": "Job title",
+        "required": true,
+        "classification": "internal"
+      },
+      {
+        "key": "employment_type",
+        "type": "single_choice",
+        "label": "Employment type",
+        "required": true,
+        "classification": "internal",
+        "choices": [
+          {
+            "value": "employee",
+            "label": "Employee"
+          },
+          {
+            "value": "contractor",
+            "label": "Contractor"
+          }
+        ]
+      },
+      {
+        "key": "manager_email",
+        "type": "email",
+        "label": "Hiring manager's work email",
+        "required": true,
+        "classification": "internal"
+      },
+      {
+        "key": "emergency_contact_name",
+        "type": "short_text",
+        "label": "Emergency contact name",
+        "required": true,
+        "classification": "confidential"
+      },
+      {
+        "key": "emergency_contact_phone",
+        "type": "phone",
+        "label": "Emergency contact number",
+        "required": true,
+        "classification": "confidential"
+      },
+      {
+        "key": "national_id",
+        "type": "short_text",
+        "label": "National insurance or tax identification number",
+        "required": true,
+        "classification": "restricted",
+        "collectionReason": "Statutory payroll reporting. Visible only to HR administrators.",
+        "constraints": {
+          "maxLength": 32,
+          "message": "Enter the number exactly as printed on your card."
+        }
+      },
+      {
+        "key": "bank_account",
+        "type": "short_text",
+        "label": "Bank account for salary payment",
+        "required": true,
+        "classification": "restricted",
+        "collectionReason": "Payroll setup. Exported to the payroll system and never displayed in messages."
+      },
+      {
+        "key": "id_document",
+        "type": "file",
+        "label": "Photograph of your right-to-work document",
+        "required": true,
+        "classification": "confidential",
+        "collectionReason": "Statutory right-to-work check.",
+        "constraints": {
+          "accept": [
+            "application/pdf",
+            "image/jpeg",
+            "image/png"
+          ],
+          "maxSizeMb": 10,
+          "maxFiles": 2
+        }
+      },
+      {
+        "key": "equipment_needs",
+        "type": "multi_choice",
+        "label": "Equipment you need",
+        "classification": "internal",
+        "choices": [
+          {
+            "value": "laptop",
+            "label": "Laptop"
+          },
+          {
+            "value": "monitor",
+            "label": "External monitor"
+          },
+          {
+            "value": "phone",
+            "label": "Work phone"
+          },
+          {
+            "value": "accessibility",
+            "label": "Accessibility equipment (we will contact you)"
+          }
+        ]
+      },
+      {
+        "key": "accessibility_notes",
+        "type": "long_text",
+        "label": "Tell us what you need",
+        "classification": "restricted",
+        "collectionReason": "Workplace adjustment. Held only by HR and deleted when the adjustment is in place."
+      },
+      {
+        "key": "policy_ack",
+        "type": "signature_ack",
+        "label": "I have read the handbook and code of conduct",
+        "required": true,
+        "classification": "internal"
+      },
+      {
+        "key": "clarification_note",
+        "type": "long_text",
+        "label": "Anything you would like to add",
+        "classification": "internal"
+      },
+      {
+        "key": "employee_ref",
+        "type": "hidden",
+        "label": "Employee reference",
+        "classification": "internal"
+      }
+    ]
+  },
+  "experience": {
+    "showProgress": true,
+    "saveAndResume": true,
+    "locales": [
+      "en"
+    ],
+    "confirmation": {
+      "message": "Thank you. Your details are with your manager for review. You can reopen this link at any time to check progress.",
+      "showStatusLink": true
+    },
+    "pages": [
+      {
+        "key": "about_you",
+        "title": "About you",
+        "sections": [
+          {
+            "key": "identity",
+            "title": "Your details",
+            "fields": [
+              "full_name",
+              "preferred_name",
+              "personal_email",
+              "phone",
+              "address"
+            ]
+          },
+          {
+            "key": "emergency",
+            "title": "Emergency contact",
+            "description": "Someone we can call if there is a problem at work.",
+            "fields": [
+              "emergency_contact_name",
+              "emergency_contact_phone"
+            ]
+          }
+        ]
+      },
+      {
+        "key": "your_role",
+        "title": "Your role",
+        "sections": [
+          {
+            "key": "role_details",
+            "fields": [
+              "start_date",
+              "department",
+              "job_title",
+              "employment_type",
+              "manager_email"
+            ]
+          }
+        ]
+      },
+      {
+        "key": "payroll",
+        "title": "Payroll and right to work",
+        "description": "These details go to HR only. Your manager cannot see them.",
+        "sections": [
+          {
+            "key": "statutory",
+            "fields": [
+              "national_id",
+              "bank_account",
+              "id_document"
+            ]
+          }
+        ]
+      },
+      {
+        "key": "setup",
+        "title": "Getting you set up",
+        "sections": [
+          {
+            "key": "equipment",
+            "fields": [
+              "equipment_needs"
+            ]
+          },
+          {
+            "key": "adjustments",
+            "title": "Accessibility",
+            "fields": [
+              "accessibility_notes"
+            ],
+            "visibleWhen": {
+              "op": "contains",
+              "left": {
+                "field": "equipment_needs"
+              },
+              "right": {
+                "literal": "accessibility"
+              }
+            }
+          },
+          {
+            "key": "final",
+            "fields": [
+              "policy_ack",
+              "clarification_note"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "workflow": {
+    "timezone": "Europe/London",
+    "states": [
+      {
+        "key": "draft",
+        "name": "Not yet submitted",
+        "type": "initial"
+      },
+      {
+        "key": "manager_review",
+        "name": "With hiring manager",
+        "type": "waiting",
+        "slaHours": 48,
+        "publicLabel": "With your manager"
+      },
+      {
+        "key": "awaiting_clarification",
+        "name": "Waiting on the new hire",
+        "type": "waiting",
+        "slaHours": 120,
+        "publicLabel": "We need something from you"
+      },
+      {
+        "key": "hr_review",
+        "name": "With HR",
+        "type": "waiting",
+        "slaHours": 48,
+        "publicLabel": "With HR"
+      },
+      {
+        "key": "provisioning",
+        "name": "Setting up equipment and accounts",
+        "type": "active",
+        "publicLabel": "Getting you set up"
+      },
+      {
+        "key": "complete",
+        "name": "Onboarding complete",
+        "type": "terminal",
+        "outcome": "success",
+        "publicLabel": "All done"
+      },
+      {
+        "key": "rejected",
+        "name": "Not proceeding",
+        "type": "terminal",
+        "outcome": "rejected",
+        "publicLabel": "Not proceeding"
+      },
+      {
+        "key": "withdrawn",
+        "name": "Withdrawn",
+        "type": "terminal",
+        "outcome": "cancelled",
+        "publicLabel": "Withdrawn"
+      }
+    ],
+    "approvals": [
+      {
+        "key": "manager_approval",
+        "name": "Hiring manager review",
+        "approvers": [
+          {
+            "field": "manager_email"
+          }
+        ],
+        "mode": "single",
+        "allowRequestChanges": true,
+        "reasonRequired": true,
+        "contextFields": [
+          "full_name",
+          "job_title",
+          "department",
+          "start_date",
+          "equipment_needs"
+        ],
+        "dueInHours": 48
+      },
+      {
+        "key": "hr_approval",
+        "name": "HR compliance review",
+        "approvers": [
+          {
+            "role": "hr_approver"
+          }
+        ],
+        "mode": "single",
+        "allowRequestChanges": false,
+        "reasonRequired": true,
+        "contextFields": [
+          "full_name",
+          "start_date",
+          "employment_type",
+          "id_document",
+          "policy_ack"
+        ],
+        "dueInHours": 48
+      }
+    ],
+    "tasks": [
+      {
+        "key": "issue_equipment",
+        "name": "Issue equipment",
+        "description": "Order and ship whatever the new hire selected, to their home address.",
+        "assignee": {
+          "role": "it_operator"
+        },
+        "dueInHours": 72,
+        "blocking": true
+      },
+      {
+        "key": "create_accounts",
+        "name": "Create accounts",
+        "description": "Email, directory, and department tools. Do this last; it closes the process.",
+        "assignee": {
+          "role": "it_operator"
+        },
+        "dueInHours": 72,
+        "blocking": true
+      },
+      {
+        "key": "book_orientation",
+        "name": "Book orientation session",
+        "assignee": {
+          "role": "hr_admin"
+        },
+        "dueInHours": 120,
+        "blocking": false
+      }
+    ],
+    "transitions": [
+      {
+        "key": "submit",
+        "from": "draft",
+        "to": "manager_review",
+        "trigger": {
+          "on": "submission"
+        },
+        "actions": [
+          {
+            "do": "send_email",
+            "key": "ack",
+            "template": "submission_receipt"
+          },
+          {
+            "do": "request_approval",
+            "key": "ask_manager",
+            "approval": "manager_approval"
+          },
+          {
+            "do": "call_webhook",
+            "key": "notify_hris",
+            "event": "onboarding.started",
+            "includeFields": [
+              "start_date",
+              "department",
+              "job_title"
+            ]
+          }
+        ]
+      },
+      {
+        "key": "manager_nudge",
+        "from": "manager_review",
+        "to": "manager_review",
+        "trigger": {
+          "on": "timer",
+          "afterHoursInState": 48
+        },
+        "actions": [
+          {
+            "do": "send_email",
+            "key": "nudge",
+            "template": "approval_reminder"
+          }
+        ]
+      },
+      {
+        "key": "manager_approved",
+        "from": "manager_review",
+        "to": "hr_review",
+        "trigger": {
+          "on": "approval_decided",
+          "approval": "manager_approval",
+          "decision": "approved"
+        },
+        "actions": [
+          {
+            "do": "request_approval",
+            "key": "ask_hr",
+            "approval": "hr_approval"
+          }
+        ]
+      },
+      {
+        "key": "manager_requested_changes",
+        "from": "manager_review",
+        "to": "awaiting_clarification",
+        "trigger": {
+          "on": "approval_decided",
+          "approval": "manager_approval",
+          "decision": "changes_requested"
+        },
+        "actions": [
+          {
+            "do": "send_email",
+            "key": "ask_hire",
+            "template": "clarification_request"
+          }
+        ]
+      },
+      {
+        "key": "manager_rejected",
+        "from": "manager_review",
+        "to": "rejected",
+        "trigger": {
+          "on": "approval_decided",
+          "approval": "manager_approval",
+          "decision": "rejected"
+        },
+        "actions": [
+          {
+            "do": "send_email",
+            "key": "tell_hire",
+            "template": "not_proceeding"
+          },
+          {
+            "do": "call_webhook",
+            "key": "notify_hris_rejected",
+            "event": "onboarding.rejected",
+            "includeFields": [
+              "start_date",
+              "department"
+            ]
+          }
+        ]
+      },
+      {
+        "key": "clarification_provided",
+        "from": "awaiting_clarification",
+        "to": "manager_review",
+        "trigger": {
+          "on": "record_updated"
+        },
+        "actions": [
+          {
+            "do": "request_approval",
+            "key": "ask_manager_again",
+            "approval": "manager_approval"
+          }
+        ]
+      },
+      {
+        "key": "clarification_expired",
+        "from": "awaiting_clarification",
+        "to": "withdrawn",
+        "trigger": {
+          "on": "timer",
+          "afterHoursInState": 336
+        },
+        "actions": [
+          {
+            "do": "send_email",
+            "key": "tell_hire_withdrawn",
+            "template": "withdrawn_notice"
+          }
+        ]
+      },
+      {
+        "key": "hr_nudge",
+        "from": "hr_review",
+        "to": "hr_review",
+        "trigger": {
+          "on": "timer",
+          "afterHoursInState": 48
+        },
+        "actions": [
+          {
+            "do": "send_email",
+            "key": "nudge_hr",
+            "template": "hr_reminder"
+          }
+        ]
+      },
+      {
+        "key": "hr_approved",
+        "from": "hr_review",
+        "to": "provisioning",
+        "trigger": {
+          "on": "approval_decided",
+          "approval": "hr_approval",
+          "decision": "approved"
+        },
+        "actions": [
+          {
+            "do": "generate_document",
+            "key": "make_packet",
+            "document": "onboarding_packet"
+          },
+          {
+            "do": "create_task",
+            "key": "task_equipment",
+            "task": "issue_equipment"
+          },
+          {
+            "do": "create_task",
+            "key": "task_orientation",
+            "task": "book_orientation"
+          },
+          {
+            "do": "assign",
+            "key": "own_it",
+            "to": {
+              "role": "it_operator"
+            }
+          }
+        ]
+      },
+      {
+        "key": "hr_rejected",
+        "from": "hr_review",
+        "to": "rejected",
+        "trigger": {
+          "on": "approval_decided",
+          "approval": "hr_approval",
+          "decision": "rejected"
+        },
+        "actions": [
+          {
+            "do": "send_email",
+            "key": "tell_hire_hr",
+            "template": "not_proceeding"
+          }
+        ]
+      },
+      {
+        "key": "equipment_issued",
+        "from": "provisioning",
+        "to": "provisioning",
+        "trigger": {
+          "on": "task_completed",
+          "task": "issue_equipment"
+        },
+        "when": {
+          "op": "is_present",
+          "left": {
+            "field": "equipment_needs"
+          }
+        },
+        "actions": [
+          {
+            "do": "create_task",
+            "key": "task_accounts",
+            "task": "create_accounts"
+          }
+        ]
+      },
+      {
+        "key": "accounts_created",
+        "from": "provisioning",
+        "to": "complete",
+        "trigger": {
+          "on": "task_completed",
+          "task": "create_accounts"
+        },
+        "actions": [
+          {
+            "do": "send_email",
+            "key": "welcome",
+            "template": "welcome_packet"
+          },
+          {
+            "do": "call_webhook",
+            "key": "notify_hris_done",
+            "event": "onboarding.completed",
+            "includeFields": [
+              "start_date",
+              "department",
+              "job_title"
+            ]
+          }
+        ]
+      },
+      {
+        "key": "hr_withdraws",
+        "from": "manager_review",
+        "to": "withdrawn",
+        "trigger": {
+          "on": "manual",
+          "by": [
+            "hr_admin"
+          ]
+        },
+        "actions": [
+          {
+            "do": "send_email",
+            "key": "tell_hire_manual_withdraw",
+            "template": "withdrawn_notice"
+          }
+        ]
+      }
+    ]
+  },
+  "communications": {
+    "fromName": "People Team",
+    "sms": [],
+    "email": [
+      {
+        "key": "submission_receipt",
+        "name": "We have your details",
+        "class": "transactional",
+        "to": [
+          {
+            "submitter": true
+          }
+        ],
+        "cc": [],
+        "subject": "We have your onboarding details, {{preferred_name}}",
+        "body": "Hello {{preferred_name}},\n\nThanks for completing your onboarding form. Your start date is recorded as {{start_date}}.\n\nYour manager is reviewing it now. We will email you if anything is missing.",
+        "attachments": []
+      },
+      {
+        "key": "approval_reminder",
+        "name": "Manager reminder",
+        "class": "reminder",
+        "to": [
+          {
+            "field": "manager_email"
+          }
+        ],
+        "cc": [],
+        "subject": "Still waiting on you: onboarding for a new starter on {{start_date}}",
+        "body": "An onboarding record for a {{job_title}} in {{department}} has been waiting for your review for two days. Their start date is {{start_date}}.\n\nOpen the record to approve, reject, or ask for more information.",
+        "attachments": []
+      },
+      {
+        "key": "hr_reminder",
+        "name": "HR reminder",
+        "class": "reminder",
+        "to": [
+          {
+            "role": "hr_approver"
+          }
+        ],
+        "cc": [],
+        "subject": "Compliance review waiting: {{job_title}} starting {{start_date}}",
+        "body": "An onboarding record for a {{job_title}} in {{department}} has been waiting for compliance review for two days. The agreed start date is {{start_date}}.\n\nOpen the record to check the right-to-work document and approve.",
+        "attachments": []
+      },
+      {
+        "key": "clarification_request",
+        "name": "We need something from you",
+        "class": "transactional",
+        "to": [
+          {
+            "submitter": true
+          }
+        ],
+        "cc": [],
+        "subject": "One more thing before your start date",
+        "body": "Hello {{preferred_name}},\n\nYour manager has asked for a little more information before we can continue. Open your onboarding link to see what is needed and update your answers.\n\nIf we do not hear from you within two weeks we will close the record and you will need to start again.",
+        "attachments": []
+      },
+      {
+        "key": "not_proceeding",
+        "name": "Not proceeding",
+        "class": "transactional",
+        "to": [
+          {
+            "submitter": true
+          }
+        ],
+        "cc": [],
+        "subject": "About your onboarding",
+        "body": "Hello {{preferred_name}},\n\nWe are not able to continue with your onboarding at this time. Someone from the People Team will be in touch directly to explain.",
+        "attachments": []
+      },
+      {
+        "key": "withdrawn_notice",
+        "name": "Record closed",
+        "class": "transactional",
+        "to": [
+          {
+            "submitter": true
+          }
+        ],
+        "cc": [],
+        "subject": "Your onboarding record has been closed",
+        "body": "Hello {{preferred_name}},\n\nWe did not hear back, so we have closed your onboarding record. If this is a mistake, reply to this email and we will reopen it.",
+        "attachments": []
+      },
+      {
+        "key": "welcome_packet",
+        "name": "Welcome and packet",
+        "class": "transactional",
+        "to": [
+          {
+            "submitter": true
+          }
+        ],
+        "cc": [],
+        "subject": "You are all set, {{preferred_name}}",
+        "body": "Hello {{preferred_name}},\n\nEverything is ready for your first day on {{start_date}}. Your onboarding packet is attached.\n\nYour equipment is on its way to the address you gave us.",
+        "attachments": [
+          "onboarding_packet"
+        ]
+      }
+    ]
+  },
+  "outputs": {
+    "webhookEvents": [
+      "onboarding.started",
+      "onboarding.rejected",
+      "onboarding.completed"
+    ],
+    "exportFields": [
+      "start_date",
+      "department",
+      "job_title",
+      "employment_type"
+    ],
+    "documents": [
+      {
+        "key": "onboarding_packet",
+        "name": "Onboarding packet",
+        "source": "docx",
+        "templateRef": "templates/onboarding-packet.docx",
+        "filename": "onboarding-packet-{{start_date}}.pdf",
+        "deliver": [
+          "attach_to_record",
+          "email"
+        ],
+        "mapping": {
+          "EMPLOYEE_NAME": "full_name",
+          "PREFERRED_NAME": "preferred_name",
+          "JOB_TITLE": "job_title",
+          "DEPARTMENT": "department",
+          "START_DATE": "start_date",
+          "EMPLOYMENT_TYPE": "employment_type",
+          "EMPLOYEE_REF": "employee_ref"
+        }
+      }
+    ],
+    "dashboard": {
+      "metrics": [
+        {
+          "key": "started",
+          "name": "Onboardings started",
+          "kind": "intake"
+        },
+        {
+          "key": "finished",
+          "name": "Completed on time",
+          "kind": "completion_rate"
+        },
+        {
+          "key": "days_to_ready",
+          "name": "Days from submission to ready",
+          "kind": "cycle_time"
+        },
+        {
+          "key": "manager_lag",
+          "name": "Manager approval time",
+          "kind": "approval_time"
+        },
+        {
+          "key": "stuck_with_manager",
+          "name": "Waiting on managers",
+          "kind": "stage_aging",
+          "state": "manager_review"
+        },
+        {
+          "key": "sent_back",
+          "name": "Sent back for clarification",
+          "kind": "rework_rate"
+        },
+        {
+          "key": "failed_actions",
+          "name": "Failed automations",
+          "kind": "automation_failure_rate"
+        }
+      ]
+    }
+  },
+  "tests": [
+    {
+      "key": "straight_through",
+      "kind": "happy_path",
+      "name": "Manager and HR approve, equipment and accounts are done, packet is issued once",
+      "steps": [
+        {
+          "step": "submit",
+          "answers": {
+            "full_name": "Amara Okafor",
+            "preferred_name": "Amara",
+            "personal_email": "amara@example.com",
+            "phone": "+44 7700 900123",
+            "address": "12 Example Street, London",
+            "start_date": "2026-11-02",
+            "department": "engineering",
+            "job_title": "Backend Engineer",
+            "employment_type": "employee",
+            "manager_email": "manager@example.com",
+            "emergency_contact_name": "Ify Okafor",
+            "emergency_contact_phone": "+44 7700 900999",
+            "national_id": "QQ123456C",
+            "bank_account": "12-34-56 / 12345678",
+            "id_document": "passport.pdf",
+            "equipment_needs": [
+              "laptop",
+              "monitor"
+            ],
+            "policy_ack": true
+          }
+        },
+        {
+          "step": "decide",
+          "approval": "manager_approval",
+          "as": "hiring_manager",
+          "decision": "approved",
+          "reason": "Confirmed headcount."
+        },
+        {
+          "step": "decide",
+          "approval": "hr_approval",
+          "as": "hr_approver",
+          "decision": "approved",
+          "reason": "Right to work verified."
+        },
+        {
+          "step": "complete_task",
+          "task": "issue_equipment",
+          "as": "it_operator"
+        },
+        {
+          "step": "complete_task",
+          "task": "create_accounts",
+          "as": "it_operator"
+        }
+      ],
+      "expect": {
+        "state": "complete",
+        "emails": [
+          "submission_receipt",
+          "welcome_packet"
+        ],
+        "documents": [
+          "onboarding_packet"
+        ],
+        "instanceCount": 1
+      }
+    },
+    {
+      "key": "manager_says_no",
+      "kind": "rejection",
+      "name": "Manager rejects and nothing is provisioned",
+      "steps": [
+        {
+          "step": "submit",
+          "answers": {
+            "full_name": "Test Person",
+            "personal_email": "t@example.com",
+            "start_date": "2026-11-02",
+            "manager_email": "manager@example.com"
+          }
+        },
+        {
+          "step": "decide",
+          "approval": "manager_approval",
+          "as": "hiring_manager",
+          "decision": "rejected",
+          "reason": "Role was withdrawn."
+        }
+      ],
+      "expect": {
+        "state": "rejected",
+        "emails": [
+          "submission_receipt",
+          "not_proceeding"
+        ],
+        "documents": [],
+        "openTasks": []
+      }
+    },
+    {
+      "key": "missing_right_to_work",
+      "kind": "missing_data",
+      "name": "Submission without the required document is refused at the form, not at HR",
+      "steps": [
+        {
+          "step": "submit",
+          "answers": {
+            "full_name": "Test Person",
+            "personal_email": "t@example.com",
+            "start_date": "2026-11-02",
+            "manager_email": "manager@example.com"
+          }
+        }
+      ],
+      "expect": {
+        "state": "draft",
+        "instanceCount": 0
+      }
+    },
+    {
+      "key": "new_hire_goes_quiet",
+      "kind": "timeout",
+      "name": "Fourteen days after a clarification request the record closes itself",
+      "steps": [
+        {
+          "step": "submit",
+          "answers": {
+            "full_name": "Test Person",
+            "personal_email": "t@example.com",
+            "start_date": "2026-11-02",
+            "manager_email": "manager@example.com"
+          }
+        },
+        {
+          "step": "decide",
+          "approval": "manager_approval",
+          "as": "hiring_manager",
+          "decision": "changes_requested",
+          "reason": "Start date looks wrong."
+        },
+        {
+          "step": "advance_hours",
+          "hours": 336
+        }
+      ],
+      "expect": {
+        "state": "withdrawn",
+        "emails": [
+          "submission_receipt",
+          "clarification_request",
+          "withdrawn_notice"
+        ]
+      }
+    },
+    {
+      "key": "double_submit",
+      "kind": "duplicate",
+      "name": "The same person submitting twice produces one record and one receipt",
+      "steps": [
+        {
+          "step": "submit",
+          "answers": {
+            "full_name": "Test Person",
+            "personal_email": "t@example.com",
+            "start_date": "2026-11-02",
+            "manager_email": "manager@example.com"
+          }
+        },
+        {
+          "step": "submit",
+          "answers": {
+            "full_name": "Test Person",
+            "personal_email": "t@example.com",
+            "start_date": "2026-11-02",
+            "manager_email": "manager@example.com"
+          }
+        }
+      ],
+      "expect": {
+        "instanceCount": 1,
+        "emails": [
+          "submission_receipt"
+        ]
+      }
+    },
+    {
+      "key": "manager_cannot_see_payroll",
+      "kind": "permission",
+      "name": "The hiring manager is refused the payroll fields and the IT operator is refused approval",
+      "steps": [
+        {
+          "step": "submit",
+          "answers": {
+            "full_name": "Test Person",
+            "personal_email": "t@example.com",
+            "start_date": "2026-11-02",
+            "manager_email": "manager@example.com"
+          }
+        },
+        {
+          "step": "attempt",
+          "as": "hiring_manager",
+          "action": "view",
+          "expectDenied": false
+        },
+        {
+          "step": "attempt",
+          "as": "it_operator",
+          "action": "approve",
+          "expectDenied": true
+        },
+        {
+          "step": "attempt",
+          "as": "new_hire",
+          "action": "export",
+          "expectDenied": true
+        }
+      ],
+      "expect": {
+        "state": "manager_review"
+      }
+    }
+  ]
+}

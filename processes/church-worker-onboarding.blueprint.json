@@ -1,0 +1,1415 @@
+{
+  "schemaVersion": "0.1",
+  "key": "church_worker_onboarding",
+  "name": "Church Worker Onboarding",
+  "description": "Hand-compiled from section 4.1. Note the deliberate decision not to hold background-check evidence in the platform; see docs/failure-cases.md.",
+  "intent": {
+    "outcome": "A volunteer has been vetted, trained, approved by their department leader and a pastor, and has an active worker profile.",
+    "owner": "membership_clerk",
+    "respondents": "Members volunteering for a ministry department, applying through a link shared after a membership class.",
+    "expectedVolume": {
+      "count": 40,
+      "per": "month"
+    },
+    "sensitivityCeiling": "confidential",
+    "completionState": "active_worker",
+    "retentionDays": 1825
+  },
+  "roles": [
+    {
+      "key": "membership_clerk",
+      "name": "Membership clerk",
+      "kind": "internal",
+      "capabilities": [
+        "view",
+        "edit",
+        "operate",
+        "report",
+        "administer"
+      ]
+    },
+    {
+      "key": "department_leader",
+      "name": "Department leader",
+      "kind": "internal",
+      "capabilities": [
+        "view",
+        "approve"
+      ],
+      "hiddenFields": [
+        "date_of_birth",
+        "safeguarding_reference"
+      ]
+    },
+    {
+      "key": "pastor",
+      "name": "Pastor",
+      "kind": "internal",
+      "capabilities": [
+        "view",
+        "approve",
+        "report"
+      ]
+    },
+    {
+      "key": "volunteer",
+      "name": "Volunteer",
+      "kind": "respondent",
+      "capabilities": [
+        "submit",
+        "view"
+      ],
+      "editableFields": [
+        "phone",
+        "address",
+        "ministry_interest",
+        "foundation_class_complete",
+        "foundation_class_date",
+        "availability"
+      ]
+    }
+  ],
+  "data": {
+    "identity": [
+      "email",
+      "full_name"
+    ],
+    "fields": [
+      {
+        "key": "full_name",
+        "type": "short_text",
+        "label": "Full name",
+        "required": true,
+        "classification": "confidential"
+      },
+      {
+        "key": "email",
+        "type": "email",
+        "label": "Email address",
+        "required": true,
+        "classification": "confidential"
+      },
+      {
+        "key": "phone",
+        "type": "phone",
+        "label": "Mobile number",
+        "required": true,
+        "classification": "confidential"
+      },
+      {
+        "key": "date_of_birth",
+        "type": "date",
+        "label": "Date of birth",
+        "required": true,
+        "classification": "confidential",
+        "collectionReason": "Confirms the volunteer is over 18, which is required for every serving role."
+      },
+      {
+        "key": "address",
+        "type": "address",
+        "label": "Home address",
+        "classification": "confidential"
+      },
+      {
+        "key": "member_since",
+        "type": "date",
+        "label": "When did you join the church?",
+        "classification": "internal"
+      },
+      {
+        "key": "ministry_interest",
+        "type": "multi_choice",
+        "label": "Where would you like to serve?",
+        "required": true,
+        "classification": "internal",
+        "choices": [
+          {
+            "value": "children",
+            "label": "Children's ministry"
+          },
+          {
+            "value": "youth",
+            "label": "Youth"
+          },
+          {
+            "value": "worship",
+            "label": "Worship team"
+          },
+          {
+            "value": "ushering",
+            "label": "Ushering and welcome"
+          },
+          {
+            "value": "media",
+            "label": "Media and sound"
+          },
+          {
+            "value": "prayer",
+            "label": "Prayer team"
+          }
+        ]
+      },
+      {
+        "key": "availability",
+        "type": "long_text",
+        "label": "Which services can you usually make?",
+        "classification": "internal"
+      },
+      {
+        "key": "prior_service",
+        "type": "long_text",
+        "label": "Have you served anywhere before?",
+        "classification": "internal"
+      },
+      {
+        "key": "foundation_class_complete",
+        "type": "yes_no",
+        "label": "Have you finished the foundation class?",
+        "required": true,
+        "classification": "internal"
+      },
+      {
+        "key": "foundation_class_date",
+        "type": "date",
+        "label": "When did you finish it?",
+        "classification": "internal"
+      },
+      {
+        "key": "works_with_minors",
+        "type": "yes_no",
+        "label": "Does this role involve working with children or young people?",
+        "required": true,
+        "classification": "internal",
+        "help": "Answer yes if any part of the role means unsupervised contact with under-18s."
+      },
+      {
+        "key": "safeguarding_confirmed",
+        "type": "yes_no",
+        "label": "Safeguarding check completed",
+        "classification": "internal",
+        "help": "Completed by the safeguarding officer in the diocesan system, not here."
+      },
+      {
+        "key": "safeguarding_reference",
+        "type": "short_text",
+        "label": "Safeguarding certificate reference",
+        "classification": "internal",
+        "help": "The reference number only. Do not upload the certificate itself.",
+        "collectionReason": "Lets the clerk look the check up in the external system without this platform holding the check."
+      },
+      {
+        "key": "reference_name",
+        "type": "short_text",
+        "label": "Reference: name",
+        "required": true,
+        "classification": "confidential"
+      },
+      {
+        "key": "reference_phone",
+        "type": "phone",
+        "label": "Reference: phone number",
+        "required": true,
+        "classification": "confidential"
+      },
+      {
+        "key": "covenant_ack",
+        "type": "signature_ack",
+        "label": "I have read and accept the worker covenant",
+        "required": true,
+        "classification": "internal"
+      },
+      {
+        "key": "worker_id",
+        "type": "hidden",
+        "label": "Worker reference",
+        "classification": "internal"
+      }
+    ]
+  },
+  "experience": {
+    "showProgress": true,
+    "saveAndResume": true,
+    "locales": [
+      "en"
+    ],
+    "confirmation": {
+      "message": "Thank you for offering to serve. We will check your foundation class record and pass this to your department leader.",
+      "showStatusLink": true
+    },
+    "pages": [
+      {
+        "key": "about_you",
+        "title": "About you",
+        "sections": [
+          {
+            "key": "basics",
+            "fields": [
+              "full_name",
+              "email",
+              "phone",
+              "date_of_birth",
+              "address",
+              "member_since"
+            ]
+          }
+        ]
+      },
+      {
+        "key": "serving",
+        "title": "Where you would like to serve",
+        "sections": [
+          {
+            "key": "interest",
+            "fields": [
+              "ministry_interest",
+              "availability",
+              "prior_service"
+            ]
+          },
+          {
+            "key": "safeguarding",
+            "title": "Working with children and young people",
+            "description": "If your role involves under-18s we need a safeguarding check before you can start. The check itself is done in the diocesan system; we only record its reference here.",
+            "fields": [
+              "works_with_minors",
+              "safeguarding_confirmed",
+              "safeguarding_reference"
+            ]
+          }
+        ]
+      },
+      {
+        "key": "training",
+        "title": "Foundation class",
+        "sections": [
+          {
+            "key": "class",
+            "fields": [
+              "foundation_class_complete"
+            ]
+          },
+          {
+            "key": "class_date",
+            "fields": [
+              "foundation_class_date"
+            ],
+            "visibleWhen": {
+              "op": "eq",
+              "left": {
+                "field": "foundation_class_complete"
+              },
+              "right": {
+                "literal": true
+              }
+            }
+          }
+        ]
+      },
+      {
+        "key": "references",
+        "title": "Reference and covenant",
+        "sections": [
+          {
+            "key": "referee",
+            "fields": [
+              "reference_name",
+              "reference_phone"
+            ]
+          },
+          {
+            "key": "covenant",
+            "fields": [
+              "covenant_ack"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "workflow": {
+    "timezone": "Africa/Lagos",
+    "states": [
+      {
+        "key": "draft",
+        "name": "Not yet submitted",
+        "type": "initial"
+      },
+      {
+        "key": "class_check",
+        "name": "Checking foundation class",
+        "type": "active",
+        "slaHours": 72,
+        "publicLabel": "We are checking your class record"
+      },
+      {
+        "key": "awaiting_class",
+        "name": "Waiting for the foundation class",
+        "type": "waiting",
+        "slaHours": 2160,
+        "publicLabel": "Finish the foundation class"
+      },
+      {
+        "key": "safeguarding_check",
+        "name": "Waiting on the safeguarding check",
+        "type": "waiting",
+        "slaHours": 168,
+        "publicLabel": "We are confirming your safeguarding check"
+      },
+      {
+        "key": "leader_review",
+        "name": "With the department leader",
+        "type": "waiting",
+        "slaHours": 120,
+        "publicLabel": "With your department leader"
+      },
+      {
+        "key": "orientation",
+        "name": "Orientation",
+        "type": "waiting",
+        "slaHours": 336,
+        "publicLabel": "Come to orientation"
+      },
+      {
+        "key": "final_approval",
+        "name": "With the pastor",
+        "type": "waiting",
+        "slaHours": 168,
+        "publicLabel": "Final approval"
+      },
+      {
+        "key": "active_worker",
+        "name": "Serving",
+        "type": "terminal",
+        "outcome": "success",
+        "publicLabel": "You are on the team"
+      },
+      {
+        "key": "declined",
+        "name": "Not approved",
+        "type": "terminal",
+        "outcome": "rejected",
+        "publicLabel": "Not approved at this time"
+      },
+      {
+        "key": "lapsed",
+        "name": "Lapsed",
+        "type": "terminal",
+        "outcome": "expired",
+        "publicLabel": "Application closed"
+      }
+    ],
+    "approvals": [
+      {
+        "key": "leader_approval",
+        "name": "Department leader review",
+        "approvers": [
+          {
+            "role": "department_leader"
+          }
+        ],
+        "mode": "single",
+        "allowRequestChanges": true,
+        "reasonRequired": true,
+        "contextFields": [
+          "full_name",
+          "ministry_interest",
+          "availability",
+          "prior_service",
+          "foundation_class_date"
+        ],
+        "dueInHours": 120
+      },
+      {
+        "key": "pastor_approval",
+        "name": "Pastoral sign-off",
+        "approvers": [
+          {
+            "role": "pastor"
+          }
+        ],
+        "mode": "single",
+        "allowRequestChanges": false,
+        "reasonRequired": true,
+        "contextFields": [
+          "full_name",
+          "ministry_interest",
+          "works_with_minors",
+          "safeguarding_confirmed"
+        ],
+        "dueInHours": 168
+      }
+    ],
+    "tasks": [
+      {
+        "key": "verify_class",
+        "name": "Verify foundation class attendance",
+        "description": "Check the class register for this person and set the completion answer if they have finished.",
+        "assignee": {
+          "role": "membership_clerk"
+        },
+        "dueInHours": 72,
+        "blocking": true
+      },
+      {
+        "key": "verify_safeguarding",
+        "name": "Verify safeguarding check",
+        "description": "Look up the certificate reference in the diocesan system. Do not upload the certificate here.",
+        "assignee": {
+          "role": "membership_clerk"
+        },
+        "dueInHours": 168,
+        "blocking": true
+      },
+      {
+        "key": "attend_orientation",
+        "name": "Attend orientation session",
+        "description": "Mark complete once the volunteer has attended.",
+        "assignee": {
+          "role": "membership_clerk"
+        },
+        "dueInHours": 336,
+        "blocking": true
+      }
+    ],
+    "transitions": [
+      {
+        "key": "submit",
+        "from": "draft",
+        "to": "class_check",
+        "trigger": {
+          "on": "submission"
+        },
+        "actions": [
+          {
+            "do": "send_email",
+            "key": "ack",
+            "template": "submission_receipt"
+          },
+          {
+            "do": "create_task",
+            "key": "task_class",
+            "task": "verify_class"
+          }
+        ]
+      },
+      {
+        "key": "class_confirmed",
+        "from": "class_check",
+        "to": "leader_review",
+        "trigger": {
+          "on": "task_completed",
+          "task": "verify_class"
+        },
+        "when": {
+          "op": "and",
+          "operands": [
+            {
+              "op": "eq",
+              "left": {
+                "field": "foundation_class_complete"
+              },
+              "right": {
+                "literal": true
+              }
+            },
+            {
+              "op": "or",
+              "operands": [
+                {
+                  "op": "not",
+                  "operand": {
+                    "op": "eq",
+                    "left": {
+                      "field": "works_with_minors"
+                    },
+                    "right": {
+                      "literal": true
+                    }
+                  }
+                },
+                {
+                  "op": "eq",
+                  "left": {
+                    "field": "safeguarding_confirmed"
+                  },
+                  "right": {
+                    "literal": true
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "actions": [
+          {
+            "do": "request_approval",
+            "key": "ask_leader",
+            "approval": "leader_approval"
+          }
+        ]
+      },
+      {
+        "key": "safeguarding_required",
+        "from": "class_check",
+        "to": "safeguarding_check",
+        "trigger": {
+          "on": "task_completed",
+          "task": "verify_class"
+        },
+        "when": {
+          "op": "and",
+          "operands": [
+            {
+              "op": "eq",
+              "left": {
+                "field": "foundation_class_complete"
+              },
+              "right": {
+                "literal": true
+              }
+            },
+            {
+              "op": "eq",
+              "left": {
+                "field": "works_with_minors"
+              },
+              "right": {
+                "literal": true
+              }
+            },
+            {
+              "op": "not",
+              "operand": {
+                "op": "eq",
+                "left": {
+                  "field": "safeguarding_confirmed"
+                },
+                "right": {
+                  "literal": true
+                }
+              }
+            }
+          ]
+        },
+        "actions": [
+          {
+            "do": "create_task",
+            "key": "task_safeguarding",
+            "task": "verify_safeguarding"
+          },
+          {
+            "do": "send_email",
+            "key": "tell_volunteer_safeguarding",
+            "template": "safeguarding_pending"
+          }
+        ]
+      },
+      {
+        "key": "safeguarding_cleared",
+        "from": "safeguarding_check",
+        "to": "leader_review",
+        "trigger": {
+          "on": "task_completed",
+          "task": "verify_safeguarding"
+        },
+        "when": {
+          "op": "eq",
+          "left": {
+            "field": "safeguarding_confirmed"
+          },
+          "right": {
+            "literal": true
+          }
+        },
+        "actions": [
+          {
+            "do": "request_approval",
+            "key": "ask_leader_after_check",
+            "approval": "leader_approval"
+          }
+        ]
+      },
+      {
+        "key": "safeguarding_not_cleared",
+        "from": "safeguarding_check",
+        "to": "declined",
+        "trigger": {
+          "on": "task_completed",
+          "task": "verify_safeguarding"
+        },
+        "when": {
+          "op": "not",
+          "operand": {
+            "op": "eq",
+            "left": {
+              "field": "safeguarding_confirmed"
+            },
+            "right": {
+              "literal": true
+            }
+          }
+        },
+        "actions": [
+          {
+            "do": "send_email",
+            "key": "decline_safeguarding",
+            "template": "not_approved"
+          }
+        ]
+      },
+      {
+        "key": "safeguarding_nudge",
+        "from": "safeguarding_check",
+        "to": "safeguarding_check",
+        "trigger": {
+          "on": "timer",
+          "afterHoursInState": 168
+        },
+        "actions": [
+          {
+            "do": "send_email",
+            "key": "nudge_clerk_safeguarding",
+            "template": "clerk_reminder"
+          }
+        ]
+      },
+      {
+        "key": "class_outstanding",
+        "from": "class_check",
+        "to": "awaiting_class",
+        "trigger": {
+          "on": "task_completed",
+          "task": "verify_class"
+        },
+        "when": {
+          "op": "ne",
+          "left": {
+            "field": "foundation_class_complete"
+          },
+          "right": {
+            "literal": true
+          }
+        },
+        "actions": [
+          {
+            "do": "send_email",
+            "key": "invite",
+            "template": "class_invitation"
+          }
+        ]
+      },
+      {
+        "key": "class_finished_later",
+        "from": "awaiting_class",
+        "to": "class_check",
+        "trigger": {
+          "on": "record_updated"
+        },
+        "when": {
+          "op": "eq",
+          "left": {
+            "field": "foundation_class_complete"
+          },
+          "right": {
+            "literal": true
+          }
+        },
+        "actions": [
+          {
+            "do": "create_task",
+            "key": "task_class_again",
+            "task": "verify_class"
+          }
+        ]
+      },
+      {
+        "key": "class_never_finished",
+        "from": "awaiting_class",
+        "to": "lapsed",
+        "trigger": {
+          "on": "timer",
+          "afterHoursInState": 2160
+        },
+        "actions": [
+          {
+            "do": "send_email",
+            "key": "lapse_note",
+            "template": "application_lapsed"
+          }
+        ]
+      },
+      {
+        "key": "class_check_nudge",
+        "from": "class_check",
+        "to": "class_check",
+        "trigger": {
+          "on": "timer",
+          "afterHoursInState": 72
+        },
+        "actions": [
+          {
+            "do": "send_email",
+            "key": "nudge_clerk",
+            "template": "clerk_reminder"
+          }
+        ]
+      },
+      {
+        "key": "leader_nudge",
+        "from": "leader_review",
+        "to": "leader_review",
+        "trigger": {
+          "on": "timer",
+          "afterHoursInState": 120
+        },
+        "actions": [
+          {
+            "do": "send_email",
+            "key": "nudge_leader",
+            "template": "leader_reminder"
+          }
+        ]
+      },
+      {
+        "key": "leader_approved",
+        "from": "leader_review",
+        "to": "orientation",
+        "trigger": {
+          "on": "approval_decided",
+          "approval": "leader_approval",
+          "decision": "approved"
+        },
+        "actions": [
+          {
+            "do": "create_task",
+            "key": "task_orientation",
+            "task": "attend_orientation"
+          },
+          {
+            "do": "send_email",
+            "key": "orientation_invite",
+            "template": "orientation_invitation"
+          }
+        ]
+      },
+      {
+        "key": "leader_declined",
+        "from": "leader_review",
+        "to": "declined",
+        "trigger": {
+          "on": "approval_decided",
+          "approval": "leader_approval",
+          "decision": "rejected"
+        },
+        "actions": [
+          {
+            "do": "send_email",
+            "key": "decline_note",
+            "template": "not_approved"
+          }
+        ]
+      },
+      {
+        "key": "leader_wants_more",
+        "from": "leader_review",
+        "to": "class_check",
+        "trigger": {
+          "on": "approval_decided",
+          "approval": "leader_approval",
+          "decision": "changes_requested"
+        },
+        "actions": [
+          {
+            "do": "send_email",
+            "key": "more_info",
+            "template": "more_information"
+          }
+        ]
+      },
+      {
+        "key": "orientation_attended",
+        "from": "orientation",
+        "to": "final_approval",
+        "trigger": {
+          "on": "task_completed",
+          "task": "attend_orientation"
+        },
+        "actions": [
+          {
+            "do": "request_approval",
+            "key": "ask_pastor",
+            "approval": "pastor_approval"
+          }
+        ]
+      },
+      {
+        "key": "orientation_missed",
+        "from": "orientation",
+        "to": "lapsed",
+        "trigger": {
+          "on": "timer",
+          "afterHoursInState": 336
+        },
+        "actions": [
+          {
+            "do": "send_email",
+            "key": "lapse_note_orientation",
+            "template": "application_lapsed"
+          }
+        ]
+      },
+      {
+        "key": "pastor_nudge",
+        "from": "final_approval",
+        "to": "final_approval",
+        "trigger": {
+          "on": "timer",
+          "afterHoursInState": 168
+        },
+        "actions": [
+          {
+            "do": "send_email",
+            "key": "nudge_pastor",
+            "template": "pastor_reminder"
+          }
+        ]
+      },
+      {
+        "key": "pastor_approved",
+        "from": "final_approval",
+        "to": "active_worker",
+        "trigger": {
+          "on": "approval_decided",
+          "approval": "pastor_approval",
+          "decision": "approved"
+        },
+        "actions": [
+          {
+            "do": "generate_document",
+            "key": "make_card",
+            "document": "worker_card"
+          },
+          {
+            "do": "send_email",
+            "key": "welcome",
+            "template": "welcome_to_the_team"
+          },
+          {
+            "do": "call_webhook",
+            "key": "notify_directory",
+            "event": "worker.activated",
+            "includeFields": [
+              "ministry_interest",
+              "worker_id"
+            ]
+          }
+        ]
+      },
+      {
+        "key": "pastor_declined",
+        "from": "final_approval",
+        "to": "declined",
+        "trigger": {
+          "on": "approval_decided",
+          "approval": "pastor_approval",
+          "decision": "rejected"
+        },
+        "actions": [
+          {
+            "do": "send_email",
+            "key": "decline_note_pastor",
+            "template": "not_approved"
+          }
+        ]
+      }
+    ]
+  },
+  "communications": {
+    "fromName": "Church Office",
+    "sms": [],
+    "email": [
+      {
+        "key": "submission_receipt",
+        "name": "Thanks for volunteering",
+        "class": "transactional",
+        "to": [
+          {
+            "submitter": true
+          }
+        ],
+        "cc": [],
+        "subject": "Thank you for offering to serve, {{full_name}}",
+        "body": "Hello {{full_name}},\n\nWe have your application to serve. The office is checking your foundation class record, and then your department leader will be in touch.\n\nYou can check where things are at any time using the link on your confirmation page."
+      },
+      {
+        "key": "clerk_reminder",
+        "name": "Clerk reminder",
+        "class": "reminder",
+        "to": [
+          {
+            "role": "membership_clerk"
+          }
+        ],
+        "cc": [],
+        "subject": "A volunteer application is waiting on a class check",
+        "body": "An application has been waiting three days for a foundation class check. Open the record to confirm attendance or mark the class as outstanding."
+      },
+      {
+        "key": "class_invitation",
+        "name": "Come to the foundation class",
+        "class": "transactional",
+        "to": [
+          {
+            "submitter": true
+          }
+        ],
+        "cc": [],
+        "subject": "Next step: the foundation class",
+        "body": "Hello {{full_name}},\n\nBefore you can join a serving team we need you to finish the foundation class. The next one runs on the first Saturday of the month.\n\nOnce you have attended, reopen your application and mark the class as complete. If we do not hear from you within three months we will close the application."
+      },
+      {
+        "key": "leader_reminder",
+        "name": "Leader reminder",
+        "class": "reminder",
+        "to": [
+          {
+            "role": "department_leader"
+          }
+        ],
+        "cc": [],
+        "subject": "A volunteer is waiting for your review",
+        "body": "Someone has offered to serve in your department and has been waiting five days for a decision. Open the record to approve, decline, or ask for more information."
+      },
+      {
+        "key": "more_information",
+        "name": "We need a little more",
+        "class": "transactional",
+        "to": [
+          {
+            "submitter": true
+          }
+        ],
+        "cc": [],
+        "subject": "One more question about your application",
+        "body": "Hello {{full_name}},\n\nYour department leader has asked for a little more information. Reopen your application to update your answers."
+      },
+      {
+        "key": "orientation_invitation",
+        "name": "Orientation invitation",
+        "class": "transactional",
+        "to": [
+          {
+            "submitter": true
+          }
+        ],
+        "cc": [],
+        "subject": "You are through to orientation",
+        "body": "Hello {{full_name}},\n\nGood news, your department leader has approved your application. The last step is orientation. The office will be in touch with dates.\n\nIf you cannot make one within two weeks, let us know so we can hold your place."
+      },
+      {
+        "key": "pastor_reminder",
+        "name": "Pastor reminder",
+        "class": "reminder",
+        "to": [
+          {
+            "role": "pastor"
+          }
+        ],
+        "cc": [],
+        "subject": "Worker applications waiting for sign-off",
+        "body": "A volunteer has completed orientation and is waiting for final sign-off."
+      },
+      {
+        "key": "welcome_to_the_team",
+        "name": "Welcome to the team",
+        "class": "transactional",
+        "to": [
+          {
+            "submitter": true
+          }
+        ],
+        "cc": [],
+        "subject": "Welcome to the team, {{full_name}}",
+        "body": "Hello {{full_name}},\n\nYou are now an approved worker. Your worker card is attached. Your department leader will let you know your first rota date.\n\nThank you for serving.",
+        "attachments": [
+          "worker_card"
+        ]
+      },
+      {
+        "key": "not_approved",
+        "name": "Not approved",
+        "class": "transactional",
+        "to": [
+          {
+            "submitter": true
+          }
+        ],
+        "cc": [],
+        "subject": "About your application to serve",
+        "body": "Hello {{full_name}},\n\nWe are not able to place you in a serving team at the moment. Someone from the office will call you to talk it through."
+      },
+      {
+        "key": "application_lapsed",
+        "name": "Application closed",
+        "class": "transactional",
+        "to": [
+          {
+            "submitter": true
+          }
+        ],
+        "cc": [],
+        "subject": "We have closed your application to serve",
+        "body": "Hello {{full_name}},\n\nWe did not hear back from you, so we have closed your application. You are very welcome to apply again whenever you are ready."
+      },
+      {
+        "key": "safeguarding_pending",
+        "name": "Safeguarding check in progress",
+        "class": "transactional",
+        "to": [
+          {
+            "submitter": true
+          }
+        ],
+        "cc": [],
+        "subject": "One more check before you can start",
+        "body": "Hello {{full_name}},\n\nBecause your role involves children or young people, we need to confirm your safeguarding check before you go any further. The office is doing that now and will be in touch if anything is missing."
+      }
+    ]
+  },
+  "outputs": {
+    "webhookEvents": [
+      "worker.activated"
+    ],
+    "exportFields": [
+      "ministry_interest",
+      "member_since",
+      "foundation_class_complete",
+      "works_with_minors"
+    ],
+    "documents": [
+      {
+        "key": "worker_card",
+        "name": "Worker identification card",
+        "source": "html",
+        "templateRef": "templates/worker-card.html",
+        "filename": "worker-card-{{worker_id}}.pdf",
+        "deliver": [
+          "attach_to_record",
+          "email"
+        ],
+        "mapping": {
+          "NAME": "full_name",
+          "MINISTRY": "ministry_interest",
+          "WORKER_REF": "worker_id",
+          "ISSUED": "member_since"
+        }
+      }
+    ],
+    "dashboard": {
+      "metrics": [
+        {
+          "key": "applications",
+          "name": "Applications received",
+          "kind": "intake"
+        },
+        {
+          "key": "placed",
+          "name": "Volunteers placed",
+          "kind": "completion_rate"
+        },
+        {
+          "key": "time_to_serve",
+          "name": "Days from application to serving",
+          "kind": "cycle_time"
+        },
+        {
+          "key": "waiting_on_class",
+          "name": "Waiting on the foundation class",
+          "kind": "stage_aging",
+          "state": "awaiting_class"
+        },
+        {
+          "key": "waiting_on_leaders",
+          "name": "Waiting on department leaders",
+          "kind": "stage_aging",
+          "state": "leader_review"
+        },
+        {
+          "key": "leader_decision_time",
+          "name": "Leader decision time",
+          "kind": "approval_time"
+        },
+        {
+          "key": "dropped_out",
+          "name": "Applications that went quiet",
+          "kind": "abandonment"
+        },
+        {
+          "key": "waiting_on_safeguarding",
+          "name": "Waiting on safeguarding checks",
+          "kind": "stage_aging",
+          "state": "safeguarding_check"
+        }
+      ]
+    }
+  },
+  "tests": [
+    {
+      "key": "straight_through",
+      "kind": "happy_path",
+      "name": "Class already done, leader and pastor approve, card issued",
+      "steps": [
+        {
+          "step": "submit",
+          "answers": {
+            "full_name": "Grace Adeyemi",
+            "email": "grace@example.com",
+            "phone": "+234 801 000 0000",
+            "date_of_birth": "1991-04-12",
+            "ministry_interest": [
+              "ushering"
+            ],
+            "foundation_class_complete": true,
+            "foundation_class_date": "2026-06-06",
+            "works_with_minors": false,
+            "reference_name": "Pastor Sam",
+            "reference_phone": "+234 802 000 0000",
+            "covenant_ack": true
+          }
+        },
+        {
+          "step": "complete_task",
+          "task": "verify_class",
+          "as": "membership_clerk"
+        },
+        {
+          "step": "decide",
+          "approval": "leader_approval",
+          "as": "department_leader",
+          "decision": "approved",
+          "reason": "Good fit for the welcome team."
+        },
+        {
+          "step": "complete_task",
+          "task": "attend_orientation",
+          "as": "membership_clerk"
+        },
+        {
+          "step": "decide",
+          "approval": "pastor_approval",
+          "as": "pastor",
+          "decision": "approved",
+          "reason": "Approved."
+        }
+      ],
+      "expect": {
+        "state": "active_worker",
+        "emails": [
+          "submission_receipt",
+          "orientation_invitation",
+          "welcome_to_the_team"
+        ],
+        "documents": [
+          "worker_card"
+        ],
+        "instanceCount": 1
+      }
+    },
+    {
+      "key": "leader_declines",
+      "kind": "rejection",
+      "name": "Department leader declines and no card is issued",
+      "steps": [
+        {
+          "step": "submit",
+          "answers": {
+            "full_name": "Test Person",
+            "email": "t@example.com",
+            "foundation_class_complete": true,
+            "works_with_minors": false
+          }
+        },
+        {
+          "step": "complete_task",
+          "task": "verify_class",
+          "as": "membership_clerk"
+        },
+        {
+          "step": "decide",
+          "approval": "leader_approval",
+          "as": "department_leader",
+          "decision": "rejected",
+          "reason": "No capacity this term."
+        }
+      ],
+      "expect": {
+        "state": "declined",
+        "documents": [],
+        "emails": [
+          "submission_receipt",
+          "not_approved"
+        ]
+      }
+    },
+    {
+      "key": "class_not_done",
+      "kind": "missing_data",
+      "name": "A volunteer without the foundation class is routed to the class, not to the leader",
+      "steps": [
+        {
+          "step": "submit",
+          "answers": {
+            "full_name": "Test Person",
+            "email": "t@example.com",
+            "foundation_class_complete": false,
+            "works_with_minors": false
+          }
+        },
+        {
+          "step": "complete_task",
+          "task": "verify_class",
+          "as": "membership_clerk"
+        }
+      ],
+      "expect": {
+        "state": "awaiting_class",
+        "emails": [
+          "submission_receipt",
+          "class_invitation"
+        ]
+      }
+    },
+    {
+      "key": "never_attends_class",
+      "kind": "timeout",
+      "name": "Ninety days without finishing the class closes the application",
+      "steps": [
+        {
+          "step": "submit",
+          "answers": {
+            "full_name": "Test Person",
+            "email": "t@example.com",
+            "foundation_class_complete": false,
+            "works_with_minors": false
+          }
+        },
+        {
+          "step": "complete_task",
+          "task": "verify_class",
+          "as": "membership_clerk"
+        },
+        {
+          "step": "advance_hours",
+          "hours": 2160
+        }
+      ],
+      "expect": {
+        "state": "lapsed",
+        "emails": [
+          "submission_receipt",
+          "class_invitation",
+          "application_lapsed"
+        ]
+      }
+    },
+    {
+      "key": "applies_twice",
+      "kind": "duplicate",
+      "name": "The same person applying twice produces one record",
+      "steps": [
+        {
+          "step": "submit",
+          "answers": {
+            "full_name": "Test Person",
+            "email": "t@example.com",
+            "foundation_class_complete": true,
+            "works_with_minors": false
+          }
+        },
+        {
+          "step": "submit",
+          "answers": {
+            "full_name": "Test Person",
+            "email": "t@example.com",
+            "foundation_class_complete": true,
+            "works_with_minors": false
+          }
+        }
+      ],
+      "expect": {
+        "instanceCount": 1,
+        "emails": [
+          "submission_receipt"
+        ]
+      }
+    },
+    {
+      "key": "leader_cannot_see_dob",
+      "kind": "permission",
+      "name": "The department leader can open the record but not the date of birth or safeguarding reference",
+      "steps": [
+        {
+          "step": "submit",
+          "answers": {
+            "full_name": "Test Person",
+            "email": "t@example.com",
+            "foundation_class_complete": true,
+            "works_with_minors": true
+          }
+        },
+        {
+          "step": "attempt",
+          "as": "department_leader",
+          "action": "view",
+          "expectDenied": false
+        },
+        {
+          "step": "attempt",
+          "as": "volunteer",
+          "action": "operate",
+          "expectDenied": true
+        },
+        {
+          "step": "attempt",
+          "as": "department_leader",
+          "action": "export",
+          "expectDenied": true
+        }
+      ],
+      "expect": {
+        "state": "class_check"
+      }
+    },
+    {
+      "key": "minors_without_check",
+      "kind": "permission",
+      "name": "A role involving under-18s stops at the safeguarding gate, not at the leader",
+      "steps": [
+        {
+          "step": "submit",
+          "answers": {
+            "full_name": "Test Person",
+            "email": "t@example.com",
+            "foundation_class_complete": true,
+            "works_with_minors": true,
+            "ministry_interest": [
+              "children"
+            ]
+          }
+        },
+        {
+          "step": "complete_task",
+          "task": "verify_class",
+          "as": "membership_clerk"
+        }
+      ],
+      "expect": {
+        "state": "safeguarding_check",
+        "emails": [
+          "submission_receipt",
+          "safeguarding_pending"
+        ]
+      }
+    }
+  ]
+}

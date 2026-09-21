@@ -1,0 +1,1190 @@
+{
+  "schemaVersion": "0.1",
+  "key": "expense_approval",
+  "name": "Expense Approval",
+  "description": "Hand-compiled from section 4.4. Exercises repeating groups, calculated totals, and threshold routing.",
+  "intent": {
+    "outcome": "A claimed expense has been checked against its receipts, approved at the right level for its value, and handed to finance for payment.",
+    "owner": "finance_ops",
+    "respondents": "Any member of staff claiming money back.",
+    "expectedVolume": {
+      "count": 300,
+      "per": "month"
+    },
+    "sensitivityCeiling": "confidential",
+    "completionState": "approved",
+    "retentionDays": 2555
+  },
+  "roles": [
+    {
+      "key": "finance_ops",
+      "name": "Finance operations",
+      "kind": "internal",
+      "capabilities": [
+        "view",
+        "edit",
+        "operate",
+        "report",
+        "administer"
+      ]
+    },
+    {
+      "key": "line_manager",
+      "name": "Line manager",
+      "kind": "internal",
+      "capabilities": [
+        "view",
+        "approve"
+      ]
+    },
+    {
+      "key": "finance_approver",
+      "name": "Finance approver",
+      "kind": "internal",
+      "capabilities": [
+        "view",
+        "approve",
+        "report"
+      ]
+    },
+    {
+      "key": "claimant",
+      "name": "Claimant",
+      "kind": "respondent",
+      "capabilities": [
+        "submit",
+        "view"
+      ],
+      "editableFields": [
+        "business_purpose",
+        "receipt",
+        "line_items",
+        "claim_note"
+      ]
+    }
+  ],
+  "data": {
+    "identity": [
+      "employee_email",
+      "expense_date",
+      "cost_centre"
+    ],
+    "fields": [
+      {
+        "key": "claimant_name",
+        "type": "short_text",
+        "label": "Your name",
+        "required": true,
+        "classification": "confidential"
+      },
+      {
+        "key": "employee_email",
+        "type": "email",
+        "label": "Your work email",
+        "required": true,
+        "classification": "internal"
+      },
+      {
+        "key": "manager_email",
+        "type": "email",
+        "label": "Your manager's email",
+        "required": true,
+        "classification": "internal"
+      },
+      {
+        "key": "expense_date",
+        "type": "date",
+        "label": "Date of the expense",
+        "required": true,
+        "classification": "internal",
+        "constraints": {
+          "maxDaysFromToday": 0,
+          "minDaysFromToday": -90,
+          "message": "Claims must be made within 90 days and cannot be dated in the future."
+        }
+      },
+      {
+        "key": "cost_centre",
+        "type": "dropdown",
+        "label": "Cost centre",
+        "required": true,
+        "classification": "internal",
+        "choices": [
+          {
+            "value": "eng",
+            "label": "Engineering"
+          },
+          {
+            "value": "sales",
+            "label": "Sales"
+          },
+          {
+            "value": "ops",
+            "label": "Operations"
+          },
+          {
+            "value": "admin",
+            "label": "Administration"
+          }
+        ]
+      },
+      {
+        "key": "category",
+        "type": "dropdown",
+        "label": "Category",
+        "required": true,
+        "classification": "internal",
+        "choices": [
+          {
+            "value": "travel",
+            "label": "Travel"
+          },
+          {
+            "value": "accommodation",
+            "label": "Accommodation"
+          },
+          {
+            "value": "subsistence",
+            "label": "Meals"
+          },
+          {
+            "value": "equipment",
+            "label": "Equipment"
+          },
+          {
+            "value": "training",
+            "label": "Training"
+          },
+          {
+            "value": "other",
+            "label": "Other"
+          }
+        ]
+      },
+      {
+        "key": "business_purpose",
+        "type": "long_text",
+        "label": "What was it for?",
+        "required": true,
+        "classification": "internal",
+        "constraints": {
+          "minLength": 15,
+          "message": "Please give finance enough detail to understand the claim."
+        }
+      },
+      {
+        "key": "line_items",
+        "type": "repeating_group",
+        "label": "Items claimed",
+        "required": true,
+        "classification": "confidential",
+        "fields": [
+          {
+            "key": "line_description",
+            "type": "short_text",
+            "label": "Description",
+            "required": true,
+            "classification": "internal"
+          },
+          {
+            "key": "line_amount",
+            "type": "currency",
+            "label": "Amount",
+            "required": true,
+            "classification": "confidential",
+            "constraints": {
+              "min": 0.01,
+              "currencyCode": "GBP"
+            }
+          }
+        ]
+      },
+      {
+        "key": "expense_total",
+        "type": "calculated",
+        "label": "Total claimed",
+        "classification": "confidential",
+        "compute": {
+          "op": "sum",
+          "over": "line_items",
+          "of": "line_amount"
+        }
+      },
+      {
+        "key": "receipt",
+        "type": "file",
+        "label": "Receipts",
+        "required": true,
+        "classification": "confidential",
+        "collectionReason": "Evidence required by the finance policy and by HMRC.",
+        "constraints": {
+          "accept": [
+            "application/pdf",
+            "image/jpeg",
+            "image/png",
+            "image/heic"
+          ],
+          "maxSizeMb": 15,
+          "maxFiles": 10
+        }
+      },
+      {
+        "key": "claim_note",
+        "type": "long_text",
+        "label": "Anything else finance should know?",
+        "classification": "internal"
+      },
+      {
+        "key": "payment_reference",
+        "type": "hidden",
+        "label": "Payment reference",
+        "classification": "internal"
+      }
+    ]
+  },
+  "experience": {
+    "showProgress": true,
+    "saveAndResume": true,
+    "locales": [
+      "en"
+    ],
+    "confirmation": {
+      "message": "Your claim has been logged. Anything under £100 with a receipt is approved straight away; anything larger goes to your manager.",
+      "showStatusLink": true
+    },
+    "pages": [
+      {
+        "key": "who",
+        "title": "Your claim",
+        "sections": [
+          {
+            "key": "claimant",
+            "fields": [
+              "claimant_name",
+              "employee_email",
+              "manager_email"
+            ]
+          },
+          {
+            "key": "context",
+            "fields": [
+              "expense_date",
+              "cost_centre",
+              "category",
+              "business_purpose"
+            ]
+          }
+        ]
+      },
+      {
+        "key": "what",
+        "title": "What you are claiming",
+        "description": "Add one line per item. The total is worked out for you.",
+        "sections": [
+          {
+            "key": "items",
+            "fields": [
+              "line_items"
+            ]
+          },
+          {
+            "key": "evidence",
+            "title": "Receipts",
+            "fields": [
+              "receipt",
+              "claim_note"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "workflow": {
+    "timezone": "Europe/London",
+    "states": [
+      {
+        "key": "draft",
+        "name": "Not yet submitted",
+        "type": "initial"
+      },
+      {
+        "key": "manager_review",
+        "name": "With your manager",
+        "type": "waiting",
+        "slaHours": 72,
+        "publicLabel": "With your manager"
+      },
+      {
+        "key": "finance_review",
+        "name": "With finance",
+        "type": "waiting",
+        "slaHours": 72,
+        "publicLabel": "With finance"
+      },
+      {
+        "key": "awaiting_evidence",
+        "name": "Waiting on you",
+        "type": "waiting",
+        "slaHours": 336,
+        "publicLabel": "We need something from you"
+      },
+      {
+        "key": "approved",
+        "name": "Approved for payment",
+        "type": "terminal",
+        "outcome": "success",
+        "publicLabel": "Approved"
+      },
+      {
+        "key": "rejected",
+        "name": "Rejected",
+        "type": "terminal",
+        "outcome": "rejected",
+        "publicLabel": "Rejected"
+      },
+      {
+        "key": "abandoned",
+        "name": "Abandoned",
+        "type": "terminal",
+        "outcome": "expired",
+        "publicLabel": "Closed"
+      }
+    ],
+    "approvals": [
+      {
+        "key": "manager_approval",
+        "name": "Line manager approval",
+        "approvers": [
+          {
+            "field": "manager_email"
+          }
+        ],
+        "mode": "single",
+        "allowRequestChanges": true,
+        "reasonRequired": true,
+        "contextFields": [
+          "claimant_name",
+          "expense_total",
+          "category",
+          "business_purpose",
+          "receipt"
+        ],
+        "dueInHours": 72
+      },
+      {
+        "key": "finance_approval",
+        "name": "Finance approval",
+        "approvers": [
+          {
+            "role": "finance_approver"
+          }
+        ],
+        "mode": "single",
+        "allowRequestChanges": true,
+        "reasonRequired": true,
+        "contextFields": [
+          "claimant_name",
+          "expense_total",
+          "cost_centre",
+          "line_items",
+          "receipt"
+        ],
+        "dueInHours": 72
+      }
+    ],
+    "tasks": [],
+    "transitions": [
+      {
+        "key": "submit_small",
+        "from": "draft",
+        "to": "approved",
+        "trigger": {
+          "on": "submission"
+        },
+        "when": {
+          "op": "lte",
+          "left": {
+            "field": "expense_total"
+          },
+          "right": {
+            "literal": 100
+          }
+        },
+        "actions": [
+          {
+            "do": "generate_document",
+            "key": "summary_small",
+            "document": "claim_summary"
+          },
+          {
+            "do": "send_email",
+            "key": "auto_ok",
+            "template": "auto_approved"
+          },
+          {
+            "do": "call_webhook",
+            "key": "pay_small",
+            "event": "expense.approved",
+            "includeFields": [
+              "employee_email",
+              "cost_centre",
+              "expense_date",
+              "payment_reference"
+            ]
+          }
+        ]
+      },
+      {
+        "key": "submit_for_approval",
+        "from": "draft",
+        "to": "manager_review",
+        "trigger": {
+          "on": "submission"
+        },
+        "when": {
+          "op": "gt",
+          "left": {
+            "field": "expense_total"
+          },
+          "right": {
+            "literal": 100
+          }
+        },
+        "actions": [
+          {
+            "do": "send_email",
+            "key": "ack",
+            "template": "submission_receipt"
+          },
+          {
+            "do": "request_approval",
+            "key": "ask_manager",
+            "approval": "manager_approval"
+          }
+        ]
+      },
+      {
+        "key": "manager_nudge",
+        "from": "manager_review",
+        "to": "manager_review",
+        "trigger": {
+          "on": "timer",
+          "afterHoursInState": 72
+        },
+        "actions": [
+          {
+            "do": "send_email",
+            "key": "nudge_manager",
+            "template": "manager_reminder"
+          }
+        ]
+      },
+      {
+        "key": "manager_approved_within_limit",
+        "from": "manager_review",
+        "to": "approved",
+        "trigger": {
+          "on": "approval_decided",
+          "approval": "manager_approval",
+          "decision": "approved"
+        },
+        "when": {
+          "op": "lte",
+          "left": {
+            "field": "expense_total"
+          },
+          "right": {
+            "literal": 1000
+          }
+        },
+        "actions": [
+          {
+            "do": "generate_document",
+            "key": "summary_mid",
+            "document": "claim_summary"
+          },
+          {
+            "do": "send_email",
+            "key": "tell_claimant_ok",
+            "template": "claim_approved"
+          },
+          {
+            "do": "call_webhook",
+            "key": "pay_mid",
+            "event": "expense.approved",
+            "includeFields": [
+              "employee_email",
+              "cost_centre",
+              "expense_date",
+              "payment_reference"
+            ]
+          }
+        ]
+      },
+      {
+        "key": "manager_approved_over_limit",
+        "from": "manager_review",
+        "to": "finance_review",
+        "trigger": {
+          "on": "approval_decided",
+          "approval": "manager_approval",
+          "decision": "approved"
+        },
+        "when": {
+          "op": "gt",
+          "left": {
+            "field": "expense_total"
+          },
+          "right": {
+            "literal": 1000
+          }
+        },
+        "actions": [
+          {
+            "do": "request_approval",
+            "key": "ask_finance",
+            "approval": "finance_approval"
+          }
+        ]
+      },
+      {
+        "key": "manager_rejected",
+        "from": "manager_review",
+        "to": "rejected",
+        "trigger": {
+          "on": "approval_decided",
+          "approval": "manager_approval",
+          "decision": "rejected"
+        },
+        "actions": [
+          {
+            "do": "send_email",
+            "key": "tell_claimant_no",
+            "template": "claim_rejected"
+          }
+        ]
+      },
+      {
+        "key": "manager_wants_evidence",
+        "from": "manager_review",
+        "to": "awaiting_evidence",
+        "trigger": {
+          "on": "approval_decided",
+          "approval": "manager_approval",
+          "decision": "changes_requested"
+        },
+        "actions": [
+          {
+            "do": "send_email",
+            "key": "ask_claimant",
+            "template": "evidence_request"
+          }
+        ]
+      },
+      {
+        "key": "evidence_provided",
+        "from": "awaiting_evidence",
+        "to": "manager_review",
+        "trigger": {
+          "on": "record_updated"
+        },
+        "actions": [
+          {
+            "do": "request_approval",
+            "key": "ask_manager_again",
+            "approval": "manager_approval"
+          }
+        ]
+      },
+      {
+        "key": "evidence_never_came",
+        "from": "awaiting_evidence",
+        "to": "abandoned",
+        "trigger": {
+          "on": "timer",
+          "afterHoursInState": 336
+        },
+        "actions": [
+          {
+            "do": "send_email",
+            "key": "tell_claimant_closed",
+            "template": "claim_abandoned"
+          }
+        ]
+      },
+      {
+        "key": "finance_nudge",
+        "from": "finance_review",
+        "to": "finance_review",
+        "trigger": {
+          "on": "timer",
+          "afterHoursInState": 72
+        },
+        "actions": [
+          {
+            "do": "send_email",
+            "key": "nudge_finance",
+            "template": "finance_reminder"
+          }
+        ]
+      },
+      {
+        "key": "finance_approved",
+        "from": "finance_review",
+        "to": "approved",
+        "trigger": {
+          "on": "approval_decided",
+          "approval": "finance_approval",
+          "decision": "approved"
+        },
+        "actions": [
+          {
+            "do": "generate_document",
+            "key": "summary_large",
+            "document": "claim_summary"
+          },
+          {
+            "do": "send_email",
+            "key": "tell_claimant_ok_large",
+            "template": "claim_approved"
+          },
+          {
+            "do": "call_webhook",
+            "key": "pay_large",
+            "event": "expense.approved",
+            "includeFields": [
+              "employee_email",
+              "cost_centre",
+              "expense_date",
+              "payment_reference"
+            ]
+          }
+        ]
+      },
+      {
+        "key": "finance_rejected",
+        "from": "finance_review",
+        "to": "rejected",
+        "trigger": {
+          "on": "approval_decided",
+          "approval": "finance_approval",
+          "decision": "rejected"
+        },
+        "actions": [
+          {
+            "do": "send_email",
+            "key": "tell_claimant_no_finance",
+            "template": "claim_rejected"
+          }
+        ]
+      },
+      {
+        "key": "finance_wants_evidence",
+        "from": "finance_review",
+        "to": "awaiting_evidence",
+        "trigger": {
+          "on": "approval_decided",
+          "approval": "finance_approval",
+          "decision": "changes_requested"
+        },
+        "actions": [
+          {
+            "do": "send_email",
+            "key": "ask_claimant_finance",
+            "template": "evidence_request"
+          }
+        ]
+      }
+    ]
+  },
+  "communications": {
+    "fromName": "Finance",
+    "sms": [],
+    "email": [
+      {
+        "key": "submission_receipt",
+        "name": "Claim received",
+        "class": "transactional",
+        "to": [
+          {
+            "submitter": true
+          }
+        ],
+        "cc": [],
+        "subject": "We have your expense claim",
+        "body": "Hello {{claimant_name}},\n\nYour claim dated {{expense_date}} is with your manager for approval. You will hear from us when a decision is made."
+      },
+      {
+        "key": "auto_approved",
+        "name": "Approved automatically",
+        "class": "transactional",
+        "to": [
+          {
+            "submitter": true
+          }
+        ],
+        "cc": [],
+        "subject": "Your expense claim is approved",
+        "body": "Hello {{claimant_name}},\n\nYour claim dated {{expense_date}} is under the £100 threshold and has been approved automatically. It will be paid in the next payment run.\n\nA summary is attached.",
+        "attachments": [
+          "claim_summary"
+        ]
+      },
+      {
+        "key": "manager_reminder",
+        "name": "Manager reminder",
+        "class": "reminder",
+        "to": [
+          {
+            "field": "manager_email"
+          }
+        ],
+        "cc": [],
+        "subject": "An expense claim is waiting for your decision",
+        "body": "A claim in cost centre {{cost_centre}}, dated {{expense_date}}, has been waiting three days for a decision.\n\nOpen the record to approve it, reject it, or ask for more evidence."
+      },
+      {
+        "key": "finance_reminder",
+        "name": "Finance reminder",
+        "class": "reminder",
+        "to": [
+          {
+            "role": "finance_approver"
+          }
+        ],
+        "cc": [],
+        "subject": "An expense claim is waiting for finance approval",
+        "body": "A claim in cost centre {{cost_centre}}, dated {{expense_date}}, has been waiting three days for a decision.\n\nOpen the record to approve it, reject it, or ask for more evidence."
+      },
+      {
+        "key": "evidence_request",
+        "name": "We need more evidence",
+        "class": "transactional",
+        "to": [
+          {
+            "submitter": true
+          }
+        ],
+        "cc": [],
+        "subject": "More information needed for your claim",
+        "body": "Hello {{claimant_name}},\n\nYour claim dated {{expense_date}} needs a little more evidence before it can be approved. Reopen your claim to add it.\n\nIf we do not hear from you within two weeks the claim will be closed."
+      },
+      {
+        "key": "claim_approved",
+        "name": "Claim approved",
+        "class": "transactional",
+        "to": [
+          {
+            "submitter": true
+          }
+        ],
+        "cc": [],
+        "subject": "Your expense claim is approved",
+        "body": "Hello {{claimant_name}},\n\nYour claim dated {{expense_date}} has been approved and passed to finance for payment. A summary is attached.",
+        "attachments": [
+          "claim_summary"
+        ]
+      },
+      {
+        "key": "claim_rejected",
+        "name": "Claim rejected",
+        "class": "transactional",
+        "to": [
+          {
+            "submitter": true
+          }
+        ],
+        "cc": [],
+        "subject": "Your expense claim was not approved",
+        "body": "Hello {{claimant_name}},\n\nYour claim dated {{expense_date}} was not approved. The reason given is on the record; open your claim to read it and reply if you think it is wrong."
+      },
+      {
+        "key": "claim_abandoned",
+        "name": "Claim closed",
+        "class": "transactional",
+        "to": [
+          {
+            "submitter": true
+          }
+        ],
+        "cc": [],
+        "subject": "Your expense claim has been closed",
+        "body": "Hello {{claimant_name}},\n\nWe did not receive the extra evidence, so your claim dated {{expense_date}} has been closed. You can submit it again if you still have the receipts."
+      }
+    ]
+  },
+  "outputs": {
+    "webhookEvents": [
+      "expense.approved"
+    ],
+    "exportFields": [
+      "employee_email",
+      "expense_date",
+      "cost_centre",
+      "category",
+      "payment_reference"
+    ],
+    "documents": [
+      {
+        "key": "claim_summary",
+        "name": "Claim summary",
+        "source": "html",
+        "templateRef": "templates/claim-summary.html",
+        "filename": "expense-{{payment_reference}}.pdf",
+        "deliver": [
+          "attach_to_record",
+          "email"
+        ],
+        "mapping": {
+          "CLAIMANT": "claimant_name",
+          "CLAIM_DATE": "expense_date",
+          "COST_CENTRE": "cost_centre",
+          "CATEGORY": "category",
+          "PURPOSE": "business_purpose",
+          "ITEMS": "line_items",
+          "TOTAL": "expense_total",
+          "REFERENCE": "payment_reference"
+        }
+      }
+    ],
+    "dashboard": {
+      "metrics": [
+        {
+          "key": "claims",
+          "name": "Claims submitted",
+          "kind": "intake"
+        },
+        {
+          "key": "paid",
+          "name": "Claims approved",
+          "kind": "completion_rate"
+        },
+        {
+          "key": "days_to_decision",
+          "name": "Days to decision",
+          "kind": "cycle_time"
+        },
+        {
+          "key": "manager_lag",
+          "name": "Manager decision time",
+          "kind": "approval_time"
+        },
+        {
+          "key": "stuck_with_managers",
+          "name": "Sitting with managers",
+          "kind": "stage_aging",
+          "state": "manager_review"
+        },
+        {
+          "key": "sent_back",
+          "name": "Sent back for evidence",
+          "kind": "rework_rate"
+        },
+        {
+          "key": "touched_by_hand",
+          "name": "Claims needing finance intervention",
+          "kind": "manual_touch_rate"
+        },
+        {
+          "key": "failed_payments",
+          "name": "Failed hand-offs to payment",
+          "kind": "automation_failure_rate"
+        }
+      ]
+    }
+  },
+  "tests": [
+    {
+      "key": "small_claim_auto",
+      "kind": "happy_path",
+      "name": "A claim under the threshold is approved on submission with no human touch",
+      "steps": [
+        {
+          "step": "submit",
+          "answers": {
+            "claimant_name": "Sam Trent",
+            "employee_email": "sam@example.com",
+            "manager_email": "manager@example.com",
+            "expense_date": "2026-09-10",
+            "cost_centre": "eng",
+            "category": "subsistence",
+            "business_purpose": "Team lunch after the release, four people.",
+            "line_items": [
+              {
+                "line_description": "Lunch",
+                "line_amount": 64.5
+              }
+            ],
+            "receipt": "lunch.jpg"
+          }
+        }
+      ],
+      "expect": {
+        "state": "approved",
+        "emails": [
+          "auto_approved"
+        ],
+        "documents": [
+          "claim_summary"
+        ],
+        "instanceCount": 1
+      }
+    },
+    {
+      "key": "large_claim_two_approvals",
+      "kind": "happy_path",
+      "name": "A claim over £1000 needs the manager and then finance",
+      "steps": [
+        {
+          "step": "submit",
+          "answers": {
+            "claimant_name": "Sam Trent",
+            "employee_email": "sam@example.com",
+            "manager_email": "manager@example.com",
+            "expense_date": "2026-09-01",
+            "cost_centre": "eng",
+            "category": "training",
+            "business_purpose": "Conference ticket, flights, and two nights accommodation.",
+            "line_items": [
+              {
+                "line_description": "Conference ticket",
+                "line_amount": 850
+              },
+              {
+                "line_description": "Flights",
+                "line_amount": 310
+              },
+              {
+                "line_description": "Hotel",
+                "line_amount": 240
+              }
+            ],
+            "receipt": "conference.pdf"
+          }
+        },
+        {
+          "step": "decide",
+          "approval": "manager_approval",
+          "as": "line_manager",
+          "decision": "approved",
+          "reason": "Budgeted."
+        },
+        {
+          "step": "decide",
+          "approval": "finance_approval",
+          "as": "finance_approver",
+          "decision": "approved",
+          "reason": "Receipts match."
+        }
+      ],
+      "expect": {
+        "state": "approved",
+        "emails": [
+          "submission_receipt",
+          "claim_approved"
+        ],
+        "documents": [
+          "claim_summary"
+        ],
+        "instanceCount": 1
+      }
+    },
+    {
+      "key": "manager_says_no",
+      "kind": "rejection",
+      "name": "A rejected claim generates no summary and no payment hand-off",
+      "steps": [
+        {
+          "step": "submit",
+          "answers": {
+            "claimant_name": "Sam Trent",
+            "employee_email": "sam@example.com",
+            "manager_email": "manager@example.com",
+            "expense_date": "2026-09-01",
+            "line_items": [
+              {
+                "line_description": "Item",
+                "line_amount": 400
+              }
+            ]
+          }
+        },
+        {
+          "step": "decide",
+          "approval": "manager_approval",
+          "as": "line_manager",
+          "decision": "rejected",
+          "reason": "Not a business expense."
+        }
+      ],
+      "expect": {
+        "state": "rejected",
+        "emails": [
+          "submission_receipt",
+          "claim_rejected"
+        ],
+        "documents": []
+      }
+    },
+    {
+      "key": "no_receipt",
+      "kind": "missing_data",
+      "name": "A claim without a receipt never reaches a manager",
+      "steps": [
+        {
+          "step": "submit",
+          "answers": {
+            "claimant_name": "Sam Trent",
+            "employee_email": "sam@example.com",
+            "manager_email": "manager@example.com",
+            "expense_date": "2026-09-01",
+            "line_items": [
+              {
+                "line_description": "Item",
+                "line_amount": 400
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "state": "draft",
+        "instanceCount": 0
+      }
+    },
+    {
+      "key": "claimant_goes_quiet",
+      "kind": "timeout",
+      "name": "Two weeks without the extra evidence closes the claim",
+      "steps": [
+        {
+          "step": "submit",
+          "answers": {
+            "claimant_name": "Sam Trent",
+            "employee_email": "sam@example.com",
+            "manager_email": "manager@example.com",
+            "expense_date": "2026-09-01",
+            "line_items": [
+              {
+                "line_description": "Item",
+                "line_amount": 400
+              }
+            ],
+            "receipt": "blurry.jpg"
+          }
+        },
+        {
+          "step": "decide",
+          "approval": "manager_approval",
+          "as": "line_manager",
+          "decision": "changes_requested",
+          "reason": "Receipt is unreadable."
+        },
+        {
+          "step": "advance_hours",
+          "hours": 336
+        }
+      ],
+      "expect": {
+        "state": "abandoned",
+        "emails": [
+          "submission_receipt",
+          "evidence_request",
+          "claim_abandoned"
+        ]
+      }
+    },
+    {
+      "key": "submitted_twice",
+      "kind": "duplicate",
+      "name": "The same claim submitted twice pays once",
+      "steps": [
+        {
+          "step": "submit",
+          "answers": {
+            "claimant_name": "Sam Trent",
+            "employee_email": "sam@example.com",
+            "expense_date": "2026-09-10",
+            "cost_centre": "eng",
+            "line_items": [
+              {
+                "line_description": "Lunch",
+                "line_amount": 64.5
+              }
+            ],
+            "receipt": "lunch.jpg"
+          }
+        },
+        {
+          "step": "submit",
+          "answers": {
+            "claimant_name": "Sam Trent",
+            "employee_email": "sam@example.com",
+            "expense_date": "2026-09-10",
+            "cost_centre": "eng",
+            "line_items": [
+              {
+                "line_description": "Lunch",
+                "line_amount": 64.5
+              }
+            ],
+            "receipt": "lunch.jpg"
+          }
+        }
+      ],
+      "expect": {
+        "instanceCount": 1,
+        "emails": [
+          "auto_approved"
+        ],
+        "documents": [
+          "claim_summary"
+        ]
+      }
+    },
+    {
+      "key": "claimant_cannot_approve",
+      "kind": "permission",
+      "name": "A claimant cannot approve their own claim or export the ledger",
+      "steps": [
+        {
+          "step": "submit",
+          "answers": {
+            "claimant_name": "Sam Trent",
+            "employee_email": "sam@example.com",
+            "manager_email": "manager@example.com",
+            "expense_date": "2026-09-01",
+            "line_items": [
+              {
+                "line_description": "Item",
+                "line_amount": 400
+              }
+            ],
+            "receipt": "r.jpg"
+          }
+        },
+        {
+          "step": "attempt",
+          "as": "claimant",
+          "action": "approve",
+          "expectDenied": true
+        },
+        {
+          "step": "attempt",
+          "as": "claimant",
+          "action": "export",
+          "expectDenied": true
+        },
+        {
+          "step": "attempt",
+          "as": "line_manager",
+          "action": "approve",
+          "expectDenied": false
+        }
+      ],
+      "expect": {
+        "state": "manager_review"
+      }
+    }
+  ]
+}

@@ -1,0 +1,1674 @@
+{
+  "$ref": "#/definitions/ProcessBlueprint",
+  "definitions": {
+    "ProcessBlueprint": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "type": "string",
+          "const": "0.1"
+        },
+        "key": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "maxLength": 64
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string"
+        },
+        "intent": {
+          "type": "object",
+          "properties": {
+            "outcome": {
+              "type": "string",
+              "minLength": 10
+            },
+            "owner": {
+              "$ref": "#/definitions/ProcessBlueprint/properties/key"
+            },
+            "respondents": {
+              "type": "string",
+              "minLength": 1
+            },
+            "expectedVolume": {
+              "type": "object",
+              "properties": {
+                "count": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0
+                },
+                "per": {
+                  "type": "string",
+                  "enum": [
+                    "day",
+                    "week",
+                    "month",
+                    "year"
+                  ]
+                }
+              },
+              "required": [
+                "count",
+                "per"
+              ],
+              "additionalProperties": false
+            },
+            "sensitivityCeiling": {
+              "type": "string",
+              "enum": [
+                "public",
+                "internal",
+                "confidential",
+                "restricted"
+              ]
+            },
+            "completionState": {
+              "$ref": "#/definitions/ProcessBlueprint/properties/key"
+            },
+            "retentionDays": {
+              "type": "integer",
+              "exclusiveMinimum": 0
+            }
+          },
+          "required": [
+            "outcome",
+            "owner",
+            "respondents",
+            "expectedVolume",
+            "sensitivityCeiling",
+            "completionState"
+          ],
+          "additionalProperties": false
+        },
+        "roles": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "$ref": "#/definitions/ProcessBlueprint/properties/key"
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "internal",
+                  "respondent"
+                ]
+              },
+              "capabilities": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "submit",
+                    "view",
+                    "edit",
+                    "approve",
+                    "operate",
+                    "report",
+                    "administer"
+                  ]
+                },
+                "minItems": 1
+              },
+              "hiddenFields": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/ProcessBlueprint/properties/key"
+                }
+              },
+              "editableFields": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/ProcessBlueprint/properties/key"
+                }
+              }
+            },
+            "required": [
+              "key",
+              "name",
+              "kind",
+              "capabilities"
+            ],
+            "additionalProperties": false
+          },
+          "minItems": 1
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "fields": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "$ref": "#/definitions/ProcessBlueprint/properties/key"
+                  },
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "short_text",
+                      "long_text",
+                      "email",
+                      "phone",
+                      "number",
+                      "currency",
+                      "url",
+                      "address",
+                      "date",
+                      "time",
+                      "single_choice",
+                      "multi_choice",
+                      "dropdown",
+                      "yes_no",
+                      "rating",
+                      "matrix",
+                      "file",
+                      "signature_ack",
+                      "content",
+                      "hidden",
+                      "calculated",
+                      "repeating_group"
+                    ]
+                  },
+                  "label": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "help": {
+                    "type": "string"
+                  },
+                  "required": {
+                    "type": "boolean"
+                  },
+                  "classification": {
+                    "$ref": "#/definitions/ProcessBlueprint/properties/intent/properties/sensitivityCeiling"
+                  },
+                  "constraints": {
+                    "type": "object",
+                    "properties": {
+                      "minLength": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "maxLength": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0
+                      },
+                      "min": {
+                        "type": "number"
+                      },
+                      "max": {
+                        "type": "number"
+                      },
+                      "pattern": {
+                        "type": "string"
+                      },
+                      "message": {
+                        "type": "string"
+                      },
+                      "accept": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "maxSizeMb": {
+                        "type": "number",
+                        "exclusiveMinimum": 0,
+                        "maximum": 100
+                      },
+                      "maxFiles": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0
+                      },
+                      "currencyCode": {
+                        "type": "string",
+                        "minLength": 3,
+                        "maxLength": 3
+                      },
+                      "scale": {
+                        "type": "integer",
+                        "minimum": 2,
+                        "maximum": 10
+                      },
+                      "minDaysFromToday": {
+                        "type": "integer"
+                      },
+                      "maxDaysFromToday": {
+                        "type": "integer"
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "choices": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "value": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "label": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      "required": [
+                        "value",
+                        "label"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "default": {
+                    "type": [
+                      "string",
+                      "number",
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "compute": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "op": {
+                            "type": "string",
+                            "enum": [
+                              "add",
+                              "subtract",
+                              "multiply",
+                              "divide"
+                            ]
+                          },
+                          "operands": {
+                            "type": "array",
+                            "items": {
+                              "$ref": "#/definitions/ProcessBlueprint/properties/data/properties/fields/items/properties/compute"
+                            },
+                            "minItems": 2
+                          }
+                        },
+                        "required": [
+                          "op",
+                          "operands"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "op": {
+                            "type": "string",
+                            "enum": [
+                              "sum",
+                              "count"
+                            ]
+                          },
+                          "over": {
+                            "$ref": "#/definitions/ProcessBlueprint/properties/key"
+                          },
+                          "of": {
+                            "$ref": "#/definitions/ProcessBlueprint/properties/key"
+                          }
+                        },
+                        "required": [
+                          "op",
+                          "over"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "field": {
+                            "$ref": "#/definitions/ProcessBlueprint/properties/key"
+                          }
+                        },
+                        "required": [
+                          "field"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "literal": {
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "literal"
+                        ],
+                        "additionalProperties": false
+                      }
+                    ]
+                  },
+                  "fields": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/definitions/ProcessBlueprint/properties/data/properties/fields/items"
+                    }
+                  },
+                  "collectionReason": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "key",
+                  "type",
+                  "label",
+                  "classification"
+                ],
+                "additionalProperties": false
+              },
+              "minItems": 1
+            },
+            "identity": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/ProcessBlueprint/properties/key"
+              }
+            }
+          },
+          "required": [
+            "fields"
+          ],
+          "additionalProperties": false
+        },
+        "experience": {
+          "type": "object",
+          "properties": {
+            "pages": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "$ref": "#/definitions/ProcessBlueprint/properties/key"
+                  },
+                  "title": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "sections": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "key": {
+                          "$ref": "#/definitions/ProcessBlueprint/properties/key"
+                        },
+                        "title": {
+                          "type": "string"
+                        },
+                        "description": {
+                          "type": "string"
+                        },
+                        "fields": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/definitions/ProcessBlueprint/properties/key"
+                          },
+                          "minItems": 1
+                        },
+                        "visibleWhen": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "op": {
+                                  "type": "string",
+                                  "enum": [
+                                    "and",
+                                    "or"
+                                  ]
+                                },
+                                "operands": {
+                                  "type": "array",
+                                  "items": {
+                                    "$ref": "#/definitions/ProcessBlueprint/properties/experience/properties/pages/items/properties/sections/items/properties/visibleWhen"
+                                  },
+                                  "minItems": 1
+                                }
+                              },
+                              "required": [
+                                "op",
+                                "operands"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "op": {
+                                  "type": "string",
+                                  "const": "not"
+                                },
+                                "operand": {
+                                  "$ref": "#/definitions/ProcessBlueprint/properties/experience/properties/pages/items/properties/sections/items/properties/visibleWhen"
+                                }
+                              },
+                              "required": [
+                                "op",
+                                "operand"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "op": {
+                                  "type": "string",
+                                  "enum": [
+                                    "eq",
+                                    "ne",
+                                    "gt",
+                                    "gte",
+                                    "lt",
+                                    "lte"
+                                  ]
+                                },
+                                "left": {
+                                  "anyOf": [
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "field": {
+                                          "$ref": "#/definitions/ProcessBlueprint/properties/key"
+                                        }
+                                      },
+                                      "required": [
+                                        "field"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "literal": {
+                                          "type": [
+                                            "string",
+                                            "number",
+                                            "boolean",
+                                            "null"
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "literal"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "context": {
+                                          "type": "string",
+                                          "enum": [
+                                            "now",
+                                            "today",
+                                            "actor",
+                                            "current_state"
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "context"
+                                      ],
+                                      "additionalProperties": false
+                                    }
+                                  ]
+                                },
+                                "right": {
+                                  "$ref": "#/definitions/ProcessBlueprint/properties/experience/properties/pages/items/properties/sections/items/properties/visibleWhen/anyOf/2/properties/left"
+                                }
+                              },
+                              "required": [
+                                "op",
+                                "left",
+                                "right"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "op": {
+                                  "type": "string",
+                                  "enum": [
+                                    "in",
+                                    "not_in"
+                                  ]
+                                },
+                                "left": {
+                                  "$ref": "#/definitions/ProcessBlueprint/properties/experience/properties/pages/items/properties/sections/items/properties/visibleWhen/anyOf/2/properties/left"
+                                },
+                                "right": {
+                                  "type": "array",
+                                  "items": {
+                                    "$ref": "#/definitions/ProcessBlueprint/properties/experience/properties/pages/items/properties/sections/items/properties/visibleWhen/anyOf/2/properties/left"
+                                  },
+                                  "minItems": 1
+                                }
+                              },
+                              "required": [
+                                "op",
+                                "left",
+                                "right"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "op": {
+                                  "type": "string",
+                                  "const": "contains"
+                                },
+                                "left": {
+                                  "$ref": "#/definitions/ProcessBlueprint/properties/experience/properties/pages/items/properties/sections/items/properties/visibleWhen/anyOf/2/properties/left"
+                                },
+                                "right": {
+                                  "$ref": "#/definitions/ProcessBlueprint/properties/experience/properties/pages/items/properties/sections/items/properties/visibleWhen/anyOf/2/properties/left"
+                                }
+                              },
+                              "required": [
+                                "op",
+                                "left",
+                                "right"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "op": {
+                                  "type": "string",
+                                  "enum": [
+                                    "is_empty",
+                                    "is_present"
+                                  ]
+                                },
+                                "left": {
+                                  "$ref": "#/definitions/ProcessBlueprint/properties/experience/properties/pages/items/properties/sections/items/properties/visibleWhen/anyOf/2/properties/left"
+                                }
+                              },
+                              "required": [
+                                "op",
+                                "left"
+                              ],
+                              "additionalProperties": false
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "key",
+                        "fields"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "minItems": 1
+                  },
+                  "visibleWhen": {
+                    "$ref": "#/definitions/ProcessBlueprint/properties/experience/properties/pages/items/properties/sections/items/properties/visibleWhen"
+                  }
+                },
+                "required": [
+                  "key",
+                  "title",
+                  "sections"
+                ],
+                "additionalProperties": false
+              },
+              "minItems": 1
+            },
+            "showProgress": {
+              "type": "boolean",
+              "default": true
+            },
+            "saveAndResume": {
+              "type": "boolean",
+              "default": false
+            },
+            "confirmation": {
+              "type": "object",
+              "properties": {
+                "message": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "showStatusLink": {
+                  "type": "boolean",
+                  "default": false
+                }
+              },
+              "required": [
+                "message"
+              ],
+              "additionalProperties": false
+            },
+            "locales": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "default": [
+                "en"
+              ]
+            }
+          },
+          "required": [
+            "pages",
+            "confirmation"
+          ],
+          "additionalProperties": false
+        },
+        "workflow": {
+          "type": "object",
+          "properties": {
+            "states": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "$ref": "#/definitions/ProcessBlueprint/properties/key"
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "initial",
+                      "active",
+                      "waiting",
+                      "terminal"
+                    ]
+                  },
+                  "outcome": {
+                    "type": "string",
+                    "enum": [
+                      "success",
+                      "rejected",
+                      "cancelled",
+                      "expired"
+                    ]
+                  },
+                  "slaHours": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  },
+                  "publicLabel": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "key",
+                  "name",
+                  "type"
+                ],
+                "additionalProperties": false
+              },
+              "minItems": 2
+            },
+            "transitions": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "$ref": "#/definitions/ProcessBlueprint/properties/key"
+                  },
+                  "from": {
+                    "$ref": "#/definitions/ProcessBlueprint/properties/key"
+                  },
+                  "to": {
+                    "$ref": "#/definitions/ProcessBlueprint/properties/key"
+                  },
+                  "trigger": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "on": {
+                            "type": "string",
+                            "const": "submission"
+                          }
+                        },
+                        "required": [
+                          "on"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "on": {
+                            "type": "string",
+                            "const": "record_updated"
+                          }
+                        },
+                        "required": [
+                          "on"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "on": {
+                            "type": "string",
+                            "const": "approval_decided"
+                          },
+                          "approval": {
+                            "$ref": "#/definitions/ProcessBlueprint/properties/key"
+                          },
+                          "decision": {
+                            "type": "string",
+                            "enum": [
+                              "approved",
+                              "rejected",
+                              "changes_requested"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "on",
+                          "approval",
+                          "decision"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "on": {
+                            "type": "string",
+                            "const": "task_completed"
+                          },
+                          "task": {
+                            "$ref": "#/definitions/ProcessBlueprint/properties/key"
+                          }
+                        },
+                        "required": [
+                          "on",
+                          "task"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "on": {
+                            "type": "string",
+                            "const": "timer"
+                          },
+                          "afterHoursInState": {
+                            "type": "number",
+                            "exclusiveMinimum": 0
+                          }
+                        },
+                        "required": [
+                          "on",
+                          "afterHoursInState"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "on": {
+                            "type": "string",
+                            "const": "inbound_webhook"
+                          },
+                          "event": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        },
+                        "required": [
+                          "on",
+                          "event"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "on": {
+                            "type": "string",
+                            "const": "manual"
+                          },
+                          "by": {
+                            "type": "array",
+                            "items": {
+                              "$ref": "#/definitions/ProcessBlueprint/properties/key"
+                            },
+                            "minItems": 1
+                          }
+                        },
+                        "required": [
+                          "on",
+                          "by"
+                        ],
+                        "additionalProperties": false
+                      }
+                    ]
+                  },
+                  "when": {
+                    "$ref": "#/definitions/ProcessBlueprint/properties/experience/properties/pages/items/properties/sections/items/properties/visibleWhen"
+                  },
+                  "actions": {
+                    "type": "array",
+                    "items": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "do": {
+                              "type": "string",
+                              "const": "set_state"
+                            },
+                            "key": {
+                              "$ref": "#/definitions/ProcessBlueprint/properties/key"
+                            },
+                            "state": {
+                              "$ref": "#/definitions/ProcessBlueprint/properties/key"
+                            }
+                          },
+                          "required": [
+                            "do",
+                            "key",
+                            "state"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "do": {
+                              "type": "string",
+                              "const": "assign"
+                            },
+                            "key": {
+                              "$ref": "#/definitions/ProcessBlueprint/properties/key"
+                            },
+                            "to": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "role": {
+                                      "$ref": "#/definitions/ProcessBlueprint/properties/key"
+                                    }
+                                  },
+                                  "required": [
+                                    "role"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "field": {
+                                      "$ref": "#/definitions/ProcessBlueprint/properties/key"
+                                    }
+                                  },
+                                  "required": [
+                                    "field"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "user": {
+                                      "type": "string",
+                                      "format": "email"
+                                    }
+                                  },
+                                  "required": [
+                                    "user"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "assignee": {
+                                      "type": "string",
+                                      "const": "current"
+                                    }
+                                  },
+                                  "required": [
+                                    "assignee"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "submitter": {
+                                      "type": "boolean",
+                                      "const": true
+                                    }
+                                  },
+                                  "required": [
+                                    "submitter"
+                                  ],
+                                  "additionalProperties": false
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "do",
+                            "key",
+                            "to"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "do": {
+                              "type": "string",
+                              "const": "create_task"
+                            },
+                            "key": {
+                              "$ref": "#/definitions/ProcessBlueprint/properties/key"
+                            },
+                            "task": {
+                              "$ref": "#/definitions/ProcessBlueprint/properties/key"
+                            }
+                          },
+                          "required": [
+                            "do",
+                            "key",
+                            "task"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "do": {
+                              "type": "string",
+                              "const": "request_approval"
+                            },
+                            "key": {
+                              "$ref": "#/definitions/ProcessBlueprint/properties/key"
+                            },
+                            "approval": {
+                              "$ref": "#/definitions/ProcessBlueprint/properties/key"
+                            }
+                          },
+                          "required": [
+                            "do",
+                            "key",
+                            "approval"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "do": {
+                              "type": "string",
+                              "const": "send_email"
+                            },
+                            "key": {
+                              "$ref": "#/definitions/ProcessBlueprint/properties/key"
+                            },
+                            "template": {
+                              "$ref": "#/definitions/ProcessBlueprint/properties/key"
+                            }
+                          },
+                          "required": [
+                            "do",
+                            "key",
+                            "template"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "do": {
+                              "type": "string",
+                              "const": "generate_document"
+                            },
+                            "key": {
+                              "$ref": "#/definitions/ProcessBlueprint/properties/key"
+                            },
+                            "document": {
+                              "$ref": "#/definitions/ProcessBlueprint/properties/key"
+                            }
+                          },
+                          "required": [
+                            "do",
+                            "key",
+                            "document"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "do": {
+                              "type": "string",
+                              "const": "call_webhook"
+                            },
+                            "key": {
+                              "$ref": "#/definitions/ProcessBlueprint/properties/key"
+                            },
+                            "event": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "includeFields": {
+                              "type": "array",
+                              "items": {
+                                "$ref": "#/definitions/ProcessBlueprint/properties/key"
+                              },
+                              "default": []
+                            }
+                          },
+                          "required": [
+                            "do",
+                            "key",
+                            "event"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "do": {
+                              "type": "string",
+                              "const": "wait"
+                            },
+                            "key": {
+                              "$ref": "#/definitions/ProcessBlueprint/properties/key"
+                            },
+                            "hours": {
+                              "type": "number",
+                              "exclusiveMinimum": 0
+                            }
+                          },
+                          "required": [
+                            "do",
+                            "key",
+                            "hours"
+                          ],
+                          "additionalProperties": false
+                        }
+                      ]
+                    },
+                    "default": []
+                  }
+                },
+                "required": [
+                  "key",
+                  "from",
+                  "to",
+                  "trigger"
+                ],
+                "additionalProperties": false
+              },
+              "minItems": 1
+            },
+            "approvals": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "$ref": "#/definitions/ProcessBlueprint/properties/key"
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "approvers": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/definitions/ProcessBlueprint/properties/workflow/properties/transitions/items/properties/actions/items/anyOf/1/properties/to"
+                    },
+                    "minItems": 1
+                  },
+                  "mode": {
+                    "type": "string",
+                    "enum": [
+                      "single",
+                      "sequential",
+                      "any_of"
+                    ]
+                  },
+                  "allowRequestChanges": {
+                    "type": "boolean",
+                    "default": true
+                  },
+                  "reasonRequired": {
+                    "type": "boolean",
+                    "default": false
+                  },
+                  "contextFields": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/definitions/ProcessBlueprint/properties/key"
+                    }
+                  },
+                  "dueInHours": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  }
+                },
+                "required": [
+                  "key",
+                  "name",
+                  "approvers",
+                  "mode"
+                ],
+                "additionalProperties": false
+              },
+              "default": []
+            },
+            "tasks": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "$ref": "#/definitions/ProcessBlueprint/properties/key"
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "assignee": {
+                    "$ref": "#/definitions/ProcessBlueprint/properties/workflow/properties/transitions/items/properties/actions/items/anyOf/1/properties/to"
+                  },
+                  "dueInHours": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  },
+                  "blocking": {
+                    "type": "boolean",
+                    "default": true
+                  }
+                },
+                "required": [
+                  "key",
+                  "name",
+                  "assignee"
+                ],
+                "additionalProperties": false
+              },
+              "default": []
+            },
+            "timezone": {
+              "type": "string",
+              "default": "UTC"
+            }
+          },
+          "required": [
+            "states",
+            "transitions"
+          ],
+          "additionalProperties": false
+        },
+        "communications": {
+          "type": "object",
+          "properties": {
+            "email": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "$ref": "#/definitions/ProcessBlueprint/properties/key"
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "class": {
+                    "type": "string",
+                    "enum": [
+                      "transactional",
+                      "reminder",
+                      "notification",
+                      "marketing"
+                    ]
+                  },
+                  "to": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/definitions/ProcessBlueprint/properties/workflow/properties/transitions/items/properties/actions/items/anyOf/1/properties/to"
+                    },
+                    "minItems": 1
+                  },
+                  "cc": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/definitions/ProcessBlueprint/properties/workflow/properties/transitions/items/properties/actions/items/anyOf/1/properties/to"
+                    },
+                    "default": []
+                  },
+                  "replyTo": {
+                    "$ref": "#/definitions/ProcessBlueprint/properties/workflow/properties/transitions/items/properties/actions/items/anyOf/1/properties/to"
+                  },
+                  "subject": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "body": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "attachments": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/definitions/ProcessBlueprint/properties/key"
+                    },
+                    "default": []
+                  },
+                  "skipWhen": {
+                    "$ref": "#/definitions/ProcessBlueprint/properties/experience/properties/pages/items/properties/sections/items/properties/visibleWhen"
+                  }
+                },
+                "required": [
+                  "key",
+                  "name",
+                  "class",
+                  "to",
+                  "subject",
+                  "body"
+                ],
+                "additionalProperties": false
+              },
+              "default": []
+            },
+            "sms": {
+              "type": "array",
+              "items": {
+                "not": {}
+              },
+              "default": []
+            },
+            "fromName": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "fromName"
+          ],
+          "additionalProperties": false
+        },
+        "outputs": {
+          "type": "object",
+          "properties": {
+            "documents": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "$ref": "#/definitions/ProcessBlueprint/properties/key"
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "source": {
+                    "type": "string",
+                    "enum": [
+                      "docx",
+                      "html"
+                    ]
+                  },
+                  "templateRef": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "mapping": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "$ref": "#/definitions/ProcessBlueprint/properties/key"
+                    }
+                  },
+                  "filename": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "deliver": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "attach_to_record",
+                        "email"
+                      ]
+                    },
+                    "minItems": 1
+                  }
+                },
+                "required": [
+                  "key",
+                  "name",
+                  "source",
+                  "templateRef",
+                  "mapping",
+                  "filename",
+                  "deliver"
+                ],
+                "additionalProperties": false
+              },
+              "default": []
+            },
+            "dashboard": {
+              "type": "object",
+              "properties": {
+                "metrics": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "key": {
+                        "$ref": "#/definitions/ProcessBlueprint/properties/key"
+                      },
+                      "name": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "intake",
+                          "completion_rate",
+                          "cycle_time",
+                          "stage_aging",
+                          "approval_time",
+                          "rework_rate",
+                          "automation_failure_rate",
+                          "manual_touch_rate",
+                          "abandonment"
+                        ]
+                      },
+                      "state": {
+                        "$ref": "#/definitions/ProcessBlueprint/properties/key"
+                      }
+                    },
+                    "required": [
+                      "key",
+                      "name",
+                      "kind"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "minItems": 1
+                }
+              },
+              "required": [
+                "metrics"
+              ],
+              "additionalProperties": false
+            },
+            "webhookEvents": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "default": []
+            },
+            "exportFields": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/ProcessBlueprint/properties/key"
+              },
+              "default": []
+            }
+          },
+          "required": [
+            "dashboard"
+          ],
+          "additionalProperties": false
+        },
+        "tests": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "$ref": "#/definitions/ProcessBlueprint/properties/key"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "happy_path",
+                  "rejection",
+                  "missing_data",
+                  "timeout",
+                  "duplicate",
+                  "permission"
+                ]
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "steps": {
+                "type": "array",
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "step": {
+                          "type": "string",
+                          "const": "submit"
+                        },
+                        "answers": {
+                          "type": "object",
+                          "additionalProperties": {}
+                        }
+                      },
+                      "required": [
+                        "step",
+                        "answers"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "step": {
+                          "type": "string",
+                          "const": "decide"
+                        },
+                        "approval": {
+                          "$ref": "#/definitions/ProcessBlueprint/properties/key"
+                        },
+                        "as": {
+                          "$ref": "#/definitions/ProcessBlueprint/properties/key"
+                        },
+                        "decision": {
+                          "type": "string",
+                          "enum": [
+                            "approved",
+                            "rejected",
+                            "changes_requested"
+                          ]
+                        },
+                        "reason": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "step",
+                        "approval",
+                        "as",
+                        "decision"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "step": {
+                          "type": "string",
+                          "const": "complete_task"
+                        },
+                        "task": {
+                          "$ref": "#/definitions/ProcessBlueprint/properties/key"
+                        },
+                        "as": {
+                          "$ref": "#/definitions/ProcessBlueprint/properties/key"
+                        }
+                      },
+                      "required": [
+                        "step",
+                        "task",
+                        "as"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "step": {
+                          "type": "string",
+                          "const": "advance_hours"
+                        },
+                        "hours": {
+                          "type": "number",
+                          "exclusiveMinimum": 0
+                        }
+                      },
+                      "required": [
+                        "step",
+                        "hours"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "step": {
+                          "type": "string",
+                          "const": "attempt"
+                        },
+                        "as": {
+                          "$ref": "#/definitions/ProcessBlueprint/properties/key"
+                        },
+                        "action": {
+                          "type": "string",
+                          "enum": [
+                            "view",
+                            "edit",
+                            "approve",
+                            "export",
+                            "operate"
+                          ]
+                        },
+                        "expectDenied": {
+                          "type": "boolean",
+                          "default": false
+                        }
+                      },
+                      "required": [
+                        "step",
+                        "as",
+                        "action"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                },
+                "minItems": 1
+              },
+              "expect": {
+                "type": "object",
+                "properties": {
+                  "state": {
+                    "$ref": "#/definitions/ProcessBlueprint/properties/key"
+                  },
+                  "emails": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/definitions/ProcessBlueprint/properties/key"
+                    }
+                  },
+                  "documents": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/definitions/ProcessBlueprint/properties/key"
+                    }
+                  },
+                  "openTasks": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/definitions/ProcessBlueprint/properties/key"
+                    }
+                  },
+                  "instanceCount": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "key",
+              "kind",
+              "name",
+              "steps",
+              "expect"
+            ],
+            "additionalProperties": false
+          },
+          "default": []
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "key",
+        "name",
+        "intent",
+        "roles",
+        "data",
+        "experience",
+        "workflow",
+        "communications",
+        "outputs"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#"
+}

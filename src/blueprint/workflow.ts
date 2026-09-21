@@ -1,0 +1,127 @@
+import { z } from 'zod';
+import { Expr, Key } from './common.js';
+
+export const State = z
+  .object({
+    key: Key,
+    name: z.string().min(1),
+    type: z.enum(['initial', 'active', 'waiting', 'terminal']),
+    /**
+     * Terminal states must say what kind of ending they are. Completion rate
+     * and cycle time (section 13.1) are otherwise not computable.
+     */
+    outcome: z.enum(['success', 'rejected', 'cancelled', 'expired']).optional(),
+    /** Hours after entry at which the record is considered late. */
+    slaHours: z.number().positive().optional(),
+    /** Shown to the respondent on the status page, if one is enabled. */
+    publicLabel: z.string().optional(),
+  })
+  .strict();
+export type State = z.infer<typeof State>;
+
+/** Who a task, approval, or message is aimed at. Resolved at runtime, checked at compile time. */
+export const Party = z.union([
+  z.object({ role: Key }).strict(),
+  /** An email address supplied by the respondent, e.g. their manager. */
+  z.object({ field: Key }).strict(),
+  z.object({ user: z.string().email() }).strict(),
+  z.object({ assignee: z.literal('current') }).strict(),
+  z.object({ submitter: z.literal(true) }).strict(),
+]);
+export type Party = z.infer<typeof Party>;
+
+export const Approval = z
+  .object({
+    key: Key,
+    name: z.string().min(1),
+    approvers: z.array(Party).min(1),
+    /** `sequential` runs approvers in the order listed (section 6.5). */
+    mode: z.enum(['single', 'sequential', 'any_of']),
+    /** Section 6.5: approve, reject, request changes. */
+    allowRequestChanges: z.boolean().default(true),
+    reasonRequired: z.boolean().default(false),
+    /** Fields the approver needs to decide; drives the approval queue summary. */
+    contextFields: z.array(Key).optional(),
+    dueInHours: z.number().positive().optional(),
+  })
+  .strict();
+export type Approval = z.infer<typeof Approval>;
+
+export const Task = z
+  .object({
+    key: Key,
+    name: z.string().min(1),
+    description: z.string().optional(),
+    assignee: Party,
+    dueInHours: z.number().positive().optional(),
+    /** A task that blocks progress keeps the record out of its next state. */
+    blocking: z.boolean().default(true),
+  })
+  .strict();
+export type Task = z.infer<typeof Task>;
+
+/**
+ * Every action carries an `key` so the runtime can build a stable idempotency
+ * key from (instance, transition, action) and satisfy section 6.5: no duplicate
+ * emails, documents, webhooks, or charges.
+ */
+export const Action = z.discriminatedUnion('do', [
+  z.object({ do: z.literal('set_state'), key: Key, state: Key }).strict(),
+  z.object({ do: z.literal('assign'), key: Key, to: Party }).strict(),
+  z.object({ do: z.literal('create_task'), key: Key, task: Key }).strict(),
+  z.object({ do: z.literal('request_approval'), key: Key, approval: Key }).strict(),
+  z.object({ do: z.literal('send_email'), key: Key, template: Key }).strict(),
+  z.object({ do: z.literal('generate_document'), key: Key, document: Key }).strict(),
+  z
+    .object({
+      do: z.literal('call_webhook'),
+      key: Key,
+      event: z.string().min(1),
+      /** Section 11.2: sensitive payload fields are opt-in. */
+      includeFields: z.array(Key).default([]),
+    })
+    .strict(),
+  z.object({ do: z.literal('wait'), key: Key, hours: z.number().positive() }).strict(),
+]);
+export type Action = z.infer<typeof Action>;
+
+export const Trigger = z.discriminatedUnion('on', [
+  z.object({ on: z.literal('submission') }).strict(),
+  z.object({ on: z.literal('record_updated') }).strict(),
+  z.object({ on: z.literal('approval_decided'), approval: Key, decision: z.enum(['approved', 'rejected', 'changes_requested']) }).strict(),
+  z.object({ on: z.literal('task_completed'), task: Key }).strict(),
+  z
+    .object({
+      on: z.literal('timer'),
+      /** Hours after the record entered the `from` state. */
+      afterHoursInState: z.number().positive(),
+    })
+    .strict(),
+  z.object({ on: z.literal('inbound_webhook'), event: z.string().min(1) }).strict(),
+  z.object({ on: z.literal('manual'), by: z.array(Key).min(1) }).strict(),
+]);
+export type Trigger = z.infer<typeof Trigger>;
+
+export const Transition = z
+  .object({
+    key: Key,
+    from: Key,
+    to: Key,
+    trigger: Trigger,
+    when: Expr.optional(),
+    actions: z.array(Action).default([]),
+  })
+  .strict();
+export type Transition = z.infer<typeof Transition>;
+
+export const Workflow = z
+  .object({
+    states: z.array(State).min(2),
+    transitions: z.array(Transition).min(1),
+    approvals: z.array(Approval).default([]),
+    tasks: z.array(Task).default([]),
+    /** Section 6.5: tenant timezone for timers, stored canonically in UTC. */
+    timezone: z.string().default('UTC'),
+  })
+  .strict();
+export type Workflow = z.infer<typeof Workflow>;
