@@ -23,14 +23,31 @@ export type Principal =
   /** The runtime itself: timers firing, workers draining the outbox. */
   | { kind: 'system'; reason: 'timer' | 'worker' | 'migration' };
 
-export type Action =
-  | 'submit'
-  | 'view'
-  | 'edit'
-  | 'approve'
-  | 'operate'
-  | 'report'
-  | 'administer';
+/**
+ * §6.1 IAM-02, sitting above the per-process roles: what someone may do across
+ * the workspace, including in processes they hold no role in.
+ *
+ * Note what is absent from every row. A workspace role NEVER grants `approve`.
+ * Deciding a record requires a process role and being named on that particular
+ * request — an administrator can unstick a process, reassign work and read
+ * anything, and still cannot approve your expense claim. Separation of duties
+ * is not a feature you add later; it is an absence you have to preserve.
+ */
+export const WORKSPACE_GRANTS = {
+  owner: ['administer', 'view', 'edit', 'operate', 'report'],
+  admin: ['administer', 'view', 'edit', 'operate', 'report'],
+  builder: ['administer', 'view', 'report'],
+  operator: ['view', 'operate', 'report'],
+  approver: ['view'],
+  analyst: ['view', 'report'],
+  read_only: ['view'],
+} as const satisfies Record<string, readonly Capability[]>;
+
+export type WorkspaceRole = keyof typeof WORKSPACE_GRANTS;
+
+export const WORKSPACE_ROLES = Object.keys(WORKSPACE_GRANTS) as WorkspaceRole[];
+
+export type Action = 'submit' | 'view' | 'edit' | 'approve' | 'operate' | 'report' | 'administer';
 
 const CAPABILITY_FOR: Record<Action, Capability> = {
   submit: 'submit',
@@ -47,6 +64,7 @@ export interface Decision {
   reason: string;
   /** Blueprint roles this principal holds in this process. */
   roles: string[];
+  workspaceRole?: WorkspaceRole;
 }
 
 export class AuthorizationError extends Error {
@@ -72,8 +90,8 @@ export interface AuthorizeArgs {
    * with the approve capability is not enough — you must be on the request.
    */
   namedApprovers?: string[];
-  /** For `complete_task`: who the task was assigned to. */
-  taskAssignee?: string | null;
+  /** For completing a task: its assignee and its own completion rule. */
+  task?: { assignee: string | null; completableBy: 'assignee' | 'any_operator' };
 }
 
 /**
@@ -83,8 +101,8 @@ export interface AuthorizeArgs {
 export async function authorize(client: Client, args: AuthorizeArgs): Promise<Decision> {
   const { principal, action, tenantId, processKey, blueprint } = args;
 
-  // 1. Tenancy, before anything else. Section 10.3: a principal from another
-  //    tenant is refused whatever role they hold in their own.
+  // 1. Tenancy, before anything else. §10.3: a principal from another tenant
+  //    is refused whatever role they hold in their own.
   if (principal.kind !== 'system' && principal.tenantId !== tenantId) {
     return { allowed: false, reason: 'principal belongs to a different tenant', roles: [] };
   }
@@ -98,18 +116,18 @@ export async function authorize(client: Client, args: AuthorizeArgs): Promise<De
   // 3. A respondent can start a process and see their own record. Nothing else.
   if (principal.kind === 'respondent') {
     const allowed = action === 'submit' || action === 'view';
-    return {
-      allowed,
-      reason: allowed ? 'respondent' : `a respondent may not ${action}`,
-      roles: [],
-    };
+    return { allowed, reason: allowed ? 'respondent' : `a respondent may not ${action}`, roles: [] };
   }
 
   // 4. The actor must exist, be active, and belong to this tenant.
-  const { rows: actors } = await client.query<{ active: boolean; email: string }>(
-    'select active, email from actor where id = $1 and tenant_id = $2',
-    [principal.actorId, tenantId],
-  );
+  const { rows: actors } = await client.query<{
+    active: boolean;
+    email: string;
+    workspace_role: WorkspaceRole;
+  }>('select active, email, workspace_role from actor where id = $1 and tenant_id = $2', [
+    principal.actorId,
+    tenantId,
+  ]);
   const actor = actors[0];
   if (!actor) return { allowed: false, reason: 'no such actor in this tenant', roles: [] };
   if (!actor.active) return { allowed: false, reason: 'actor is deactivated', roles: [] };
@@ -120,37 +138,88 @@ export async function authorize(client: Client, args: AuthorizeArgs): Promise<De
     [tenantId, principal.actorId, processKey],
   );
   const roleKeys = memberships.map((m) => m.role_key);
-  if (!roleKeys.length) {
-    return { allowed: false, reason: 'actor holds no role in this process', roles: [] };
-  }
-
-  const roles = blueprint.roles.filter((r) => roleKeys.includes(r.key));
   const needed = CAPABILITY_FOR[action];
-  if (!roles.some((r) => r.capabilities.includes(needed))) {
+  const workspaceRole = actor.workspace_role;
+
+  // 6. Approving comes only from a process role. See WORKSPACE_GRANTS above.
+  if (action === 'approve') {
+    if (!roleKeys.length) {
+      return { allowed: false, reason: 'actor holds no role in this process', roles: [], workspaceRole };
+    }
+    const canApprove = blueprint.roles
+      .filter((r) => roleKeys.includes(r.key))
+      .some((r) => r.capabilities.includes('approve'));
+    if (!canApprove) {
+      return {
+        allowed: false,
+        reason: `no role held (${roleKeys.join(', ')}) has the "approve" capability`,
+        roles: roleKeys,
+        workspaceRole,
+      };
+    }
+    if (args.namedApprovers) {
+      const addresses = new Set(args.namedApprovers);
+      const isNamed = addresses.has(actor.email) || roleKeys.some((k) => addresses.has(`role:${k}`));
+      if (!isNamed) {
+        return {
+          allowed: false,
+          reason: 'actor is not named as an approver on this request',
+          roles: roleKeys,
+          workspaceRole,
+        };
+      }
+    }
     return {
-      allowed: false,
-      reason: `no role held (${roleKeys.join(', ')}) has the "${needed}" capability`,
+      allowed: true,
+      reason: `named approver via ${roleKeys.join(', ')}`,
       roles: roleKeys,
+      workspaceRole,
     };
   }
 
-  // 6. Approving is not a capability alone. The pending request names its
-  //    approvers, and holding the capability does not put you on that list —
-  //    otherwise any approver in the workspace could decide any record.
-  if (action === 'approve' && args.namedApprovers) {
-    const addresses = new Set(args.namedApprovers);
-    const isNamed =
-      addresses.has(actor.email) || roleKeys.some((key) => addresses.has(`role:${key}`));
-    if (!isNamed) {
-      return {
-        allowed: false,
-        reason: 'actor is not named as an approver on this request',
-        roles: roleKeys,
-      };
+  // 7. Everything else may come from either level.
+  const fromProcess = blueprint.roles
+    .filter((r) => roleKeys.includes(r.key))
+    .some((r) => r.capabilities.includes(needed));
+  const grants = WORKSPACE_GRANTS[workspaceRole] as readonly Capability[];
+  const fromWorkspace = grants.includes(needed);
+
+  if (!fromProcess && !fromWorkspace) {
+    return {
+      allowed: false,
+      reason: roleKeys.length
+        ? `neither the roles held (${roleKeys.join(', ')}) nor workspace role "${workspaceRole}" grant "${needed}"`
+        : `actor holds no role in this process, and workspace role "${workspaceRole}" does not grant "${needed}"`,
+      roles: roleKeys,
+      workspaceRole,
+    };
+  }
+
+  // 8. Completing a task is checked against that task's own rule. A task
+  //    addressed to a role is completable by anyone holding it, which is the
+  //    ordinary case; one addressed to a person stays theirs until somebody
+  //    reassigns it.
+  //
+  //    Stepping in over an assignment is break-glass, so it needs `administer`
+  //    rather than merely `operate`. A workspace-level operator who could
+  //    complete anybody's task would make per-task assignment decorative —
+  //    which is the failure this whole area was fixed to stop repeating.
+  if (action === 'operate' && args.task && args.task.completableBy === 'assignee') {
+    const { assignee } = args.task;
+    if (assignee) {
+      const breakGlass = grants.includes('administer');
+      const isAssignee =
+        assignee === actor.email || roleKeys.some((k) => assignee === `role:${k}`) || breakGlass;
+      if (!isAssignee) {
+        return { allowed: false, reason: `task is assigned to ${assignee}`, roles: roleKeys, workspaceRole };
+      }
     }
   }
 
-  return { allowed: true, reason: `via ${roleKeys.join(', ')}`, roles: roleKeys };
+  const via = [fromProcess ? roleKeys.join(', ') : null, fromWorkspace ? `workspace:${workspaceRole}` : null]
+    .filter(Boolean)
+    .join(' + ');
+  return { allowed: true, reason: `via ${via}`, roles: roleKeys, workspaceRole };
 }
 
 /**
@@ -258,11 +327,7 @@ export function editableFields(blueprint: Blueprint, roleKeys: string[]): Set<st
   return allowed;
 }
 
-export function rejectUneditable(
-  blueprint: Blueprint,
-  roleKeys: string[],
-  patch: Answers,
-): string[] {
+export function rejectUneditable(blueprint: Blueprint, roleKeys: string[], patch: Answers): string[] {
   const allowed = editableFields(blueprint, roleKeys);
   return Object.keys(patch).filter((key) => !allowed.has(key));
 }

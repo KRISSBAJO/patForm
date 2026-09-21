@@ -15,6 +15,9 @@ src/blueprint/     the schema — ten sections, two expression languages, no exe
 src/compiler/      the rules that decide whether a blueprint may be published
 src/runtime/       the workflow engine: outbox, idempotency, timers, policy, scenarios
 src/ai/            generation: two providers, a versioned prompt, three gates
+src/api/           the console API — no auth yet, and it says so loudly
+src/seed.ts        a workspace that looks like a Tuesday, for the console
+web/               the landing page, and the operator console at /console
 src/spike.ts       eight proofs that the runtime behaves as the document requires
 src/eval.ts        scores generation against the section 7.4 release gates
 evals/             curated cases, including one that tries to inject an instruction
@@ -84,6 +87,30 @@ performance evidence. `npm run spike` is that, and it proves eight things:
 | Submission and workflow start are inside the §10.4 budget | ack p95 15ms against a 1500ms budget |
 
 Decisions and their trade-offs are in [docs/adr/](docs/adr/).
+
+## The operator console
+
+```bash
+npm run db:up && npm run seed && npm run api    # API on 3310
+npm --prefix web run dev                        # console at localhost:3210/console
+```
+
+§8.2's four questions — what arrived, what needs you, what is late, what
+failed — over the real engine. There is **no sign-in**: the API reads an
+`x-actor-id` header and believes it, which is identification and not
+authentication. Everything past that header is really enforced, so switching
+seat in the sidebar is the most useful control on the screen:
+
+| Seat | Sees |
+|---|---|
+| Joy — hr_admin / admin | 5 tasks, including ones assigned to other roles (break-glass) |
+| Priya — hiring_manager / approver | 2 approvals, 0 tasks, and no automation panel at all |
+| Ini — it_operator / operator | only the 2 IT tasks, not HR's |
+| Dana — hiring_manager / read_only | refused: *not named as an approver on this request* |
+
+Open a record as Priya and the payroll fields come back `hidden from your
+role` — the same `hiddenFields` the blueprint declares and the compiler
+validates.
 
 ## Generating a process
 

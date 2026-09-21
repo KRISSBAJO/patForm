@@ -77,7 +77,18 @@ export async function runScenarios(pool: Pool, bp: Blueprint): Promise<ScenarioR
         cast.set(role.key, { principal: { kind: 'respondent', tenantId, label: role.key }, email });
         continue;
       }
-      const actorId = await engine.createActor(tenantId, email, role.name);
+      // A member's workspace role is inferred from what their process role is
+      // allowed to do, so a scenario cast behaves like a real workspace.
+      const workspaceRole = role.capabilities.includes('administer')
+        ? 'admin'
+        : role.capabilities.includes('operate')
+          ? 'operator'
+          : role.capabilities.includes('approve')
+            ? 'approver'
+            : role.capabilities.includes('report')
+              ? 'analyst'
+              : 'read_only';
+      const actorId = await engine.createActor(tenantId, email, role.name, workspaceRole);
       await engine.grant({ tenantId, actorId, processKey: bp.key, roleKey: role.key });
       cast.set(role.key, { principal: { kind: 'actor', tenantId, actorId }, email });
     }

@@ -1,5 +1,5 @@
 {
-  "ranAt": "2026-09-21T22:40:19.539Z",
+  "ranAt": "2026-09-21T22:54:33.066Z",
   "postgres": "PostgreSQL 17.11 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit",
   "proofs": [
     {
@@ -54,7 +54,7 @@
       "name": "Submission and workflow start are far inside the section 10.4 budget",
       "claim": "Beta targets: acknowledgment p95 under 1.5s, workflow start p95 under 30s.",
       "passed": true,
-      "detail": "Over 100 submissions: acknowledgment p95 14.2ms (budget 1500ms), first action p95 33.3ms (budget 30000ms). Database round trips only, local container."
+      "detail": "Over 100 submissions: acknowledgment p95 13.8ms (budget 1500ms), first action p95 34.8ms (budget 30000ms). Database round trips only, local container."
     }
   ]
 }

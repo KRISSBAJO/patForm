@@ -1,0 +1,607 @@
+/*
+ * The operator console, from the Console artboard.
+ *
+ * §8.2: the home screen answers four questions — what arrived, what needs me,
+ * what is late, what failed — before anything else competes for attention.
+ */
+
+.cs {
+  display: flex;
+  min-height: 100vh;
+  background: var(--paper);
+}
+
+/* ------------------------------------------------------------- sidebar */
+
+.cs__side {
+  width: 236px;
+  flex-shrink: 0;
+  background: var(--ink);
+  padding: 20px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+}
+
+.cs__brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 8px;
+  font-family: var(--font-display), Georgia, serif;
+  font-size: 16.5px;
+  font-weight: 600;
+  color: var(--on-dark-1);
+}
+
+.cs__nav {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.cs__navItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 38px;
+  padding: 0 10px;
+  border-radius: 7px;
+  border: none;
+  background: transparent;
+  color: var(--on-dark-4);
+  font-size: 14px;
+  text-align: left;
+  width: 100%;
+}
+
+.cs__navItem:hover {
+  color: var(--on-dark-2);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.cs__navItem[aria-current='page'] {
+  background: #23302a;
+  color: var(--on-dark-1);
+  font-weight: 500;
+}
+
+.cs__navCount {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 19px;
+  padding: 0 6px;
+  border-radius: 5px;
+  background: var(--green);
+  color: var(--white);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.cs__navCount--bad {
+  background: #4a2420;
+  color: #e8a9a2;
+}
+
+.cs__sectionLabel {
+  padding: 0 10px;
+  font-family: var(--font-mono), monospace;
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  color: var(--on-dark-6);
+}
+
+.cs__process {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--on-dark-2);
+  font-size: 13.5px;
+  width: 100%;
+  text-align: left;
+}
+
+.cs__process[aria-current='true'] {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--on-dark-1);
+}
+
+.cs__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--green-mint);
+  flex-shrink: 0;
+}
+
+.cs__seat {
+  margin-top: auto;
+  padding: 12px;
+  border-radius: 9px;
+  background: var(--ink-raised);
+}
+
+.cs__seatRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.cs__avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: #2f4139;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--on-dark-2);
+  flex-shrink: 0;
+}
+
+.cs__seatName {
+  font-size: 13px;
+  color: var(--on-dark-1);
+}
+
+.cs__seatRole {
+  font-size: 11.5px;
+  color: var(--on-dark-5);
+}
+
+.cs__seatPicker {
+  margin-top: 10px;
+  width: 100%;
+  height: 32px;
+  border-radius: 6px;
+  border: 1px solid #3a4a42;
+  background: #131a17;
+  color: var(--on-dark-2);
+  font-size: 12.5px;
+  font-family: inherit;
+  padding: 0 8px;
+}
+
+.cs__seatNote {
+  margin-top: 8px;
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--on-dark-6);
+}
+
+/* ---------------------------------------------------------------- main */
+
+.cs__main {
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.cs__head {
+  height: 62px;
+  flex-shrink: 0;
+  padding: 0 28px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--paper-3);
+}
+
+.cs__head h1 {
+  font-size: 20px;
+}
+
+.cs__version {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 6px;
+  background: var(--paper-2);
+  font-family: var(--font-mono), monospace;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.cs__body {
+  flex-grow: 1;
+  padding: 24px 28px;
+  display: flex;
+  gap: 22px;
+  align-items: flex-start;
+  min-height: 0;
+}
+
+.cs__left {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.cs__right {
+  width: 320px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* --------------------------------------------------------------- tiles */
+
+.cs__tiles {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.cs__tile {
+  padding: 16px 17px;
+  border-radius: 11px;
+  background: var(--white);
+  border: 1px solid var(--line);
+}
+
+.cs__tile--needs {
+  border: 1.5px solid var(--green);
+}
+.cs__tile--late {
+  border-color: var(--ochre-border);
+}
+.cs__tile--failed {
+  border-color: var(--red-border);
+}
+
+.cs__tileLabel {
+  font-family: var(--font-mono), monospace;
+  font-size: 10.5px;
+  letter-spacing: 0.09em;
+  color: var(--muted);
+}
+.cs__tile--needs .cs__tileLabel {
+  color: var(--green-deep);
+}
+.cs__tile--late .cs__tileLabel {
+  color: var(--ochre-text);
+}
+.cs__tile--failed .cs__tileLabel {
+  color: var(--red-text);
+}
+
+.cs__tileValue {
+  margin-top: 8px;
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+}
+
+.cs__tileNumber {
+  font-family: var(--font-display), Georgia, serif;
+  font-size: 32px;
+  font-weight: 600;
+  line-height: 1;
+}
+.cs__tile--needs .cs__tileNumber {
+  color: var(--green-deep);
+}
+.cs__tile--late .cs__tileNumber {
+  color: var(--ochre-text);
+}
+.cs__tile--failed .cs__tileNumber {
+  color: var(--red-text);
+}
+
+.cs__tileMeta {
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+/* --------------------------------------------------------------- queue */
+
+.cs__panel {
+  border-radius: 12px;
+  background: var(--white);
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+
+.cs__panelHead {
+  height: 46px;
+  padding: 0 18px;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  border-bottom: 1px solid var(--paper-2);
+}
+
+.cs__tab {
+  height: 45px;
+  display: inline-flex;
+  align-items: center;
+  border: none;
+  background: transparent;
+  font-size: 14px;
+  color: var(--muted);
+  box-sizing: border-box;
+  padding: 0;
+}
+
+.cs__tab[aria-selected='true'] {
+  font-weight: 600;
+  color: var(--ink);
+  border-bottom: 2px solid var(--ink);
+}
+
+.cs__sort {
+  margin-left: auto;
+  font-family: var(--font-mono), monospace;
+  font-size: 11.5px;
+  color: var(--muted-2);
+}
+
+.cs__row {
+  padding: 14px 18px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.cs__row:last-child {
+  border-bottom: none;
+}
+
+.cs__stripe {
+  width: 3px;
+  height: 34px;
+  border-radius: 2px;
+  flex-shrink: 0;
+  background: var(--line-strong);
+}
+.cs__stripe--late {
+  background: var(--red-text);
+}
+.cs__stripe--waiting {
+  background: var(--ochre);
+}
+
+.cs__ref {
+  font-family: var(--font-mono), monospace;
+  font-size: 11.5px;
+  color: var(--muted);
+  width: 78px;
+  flex-shrink: 0;
+}
+
+.cs__rowMain {
+  flex-grow: 1;
+  min-width: 0;
+}
+
+.cs__rowTitle {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.cs__rowMeta {
+  font-size: 12.5px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.cs__btn {
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 7px;
+  border: 1px solid var(--line-strong);
+  background: var(--white);
+  color: var(--ink);
+  font-size: 13.5px;
+  white-space: nowrap;
+}
+
+.cs__btn:hover:not(:disabled) {
+  border-color: var(--muted);
+}
+
+.cs__btn--primary {
+  border-color: transparent;
+  background: var(--green);
+  color: var(--white);
+  font-weight: 600;
+}
+
+.cs__btn--primary:hover:not(:disabled) {
+  background: var(--green-deep);
+}
+
+.cs__btn--danger {
+  border-color: var(--red-border);
+  color: var(--red-text);
+}
+
+.cs__btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.cs__empty {
+  padding: 40px 18px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+/* ------------------------------------------------------- right column */
+
+.cs__card {
+  padding: 18px;
+  border-radius: 12px;
+  background: var(--white);
+  border: 1px solid var(--line);
+}
+
+.cs__card--dark {
+  background: var(--ink);
+  border-color: var(--ink);
+}
+
+.cs__cardLabel {
+  font-family: var(--font-mono), monospace;
+  font-size: 10.5px;
+  letter-spacing: 0.09em;
+  color: var(--muted);
+}
+
+.cs__card--dark .cs__cardLabel {
+  color: var(--on-dark-5);
+}
+
+.cs__stat {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13.5px;
+  color: var(--ink-soft);
+}
+
+.cs__stat + .cs__stat {
+  margin-top: 11px;
+}
+
+.cs__statValue {
+  margin-left: auto;
+  font-family: var(--font-mono), monospace;
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.cs__failure {
+  margin-top: 15px;
+  padding: 13px;
+  border-radius: 9px;
+  background: #fdf6f5;
+  border: 1px solid #efd3d0;
+}
+
+.cs__failureTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--red-text);
+}
+
+.cs__failureBody {
+  margin-top: 4px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.cs__toast {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  max-width: 420px;
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: var(--ink);
+  color: var(--on-dark-1);
+  font-size: 13.5px;
+  line-height: 1.45;
+  box-shadow: 0 18px 40px -20px rgba(0, 0, 0, 0.6);
+  z-index: 50;
+}
+
+.cs__toast--refused {
+  background: #4a2420;
+}
+
+.cs__toastLabel {
+  font-family: var(--font-mono), monospace;
+  font-size: 10.5px;
+  letter-spacing: 0.09em;
+  color: var(--on-dark-5);
+  display: block;
+  margin-bottom: 5px;
+}
+
+/* --------------------------------------------------------------- record */
+
+.cs__field {
+  display: flex;
+  gap: 14px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 13.5px;
+}
+
+.cs__field:last-child {
+  border-bottom: none;
+}
+
+.cs__fieldLabel {
+  width: 240px;
+  flex-shrink: 0;
+  color: var(--muted);
+}
+
+.cs__fieldValue {
+  flex-grow: 1;
+  min-width: 0;
+  word-break: break-word;
+}
+
+.cs__redacted {
+  font-family: var(--font-mono), monospace;
+  font-size: 12px;
+  color: var(--muted-2);
+  background: var(--line-soft);
+  padding: 1px 7px;
+  border-radius: 4px;
+}
+
+.cs__class {
+  font-family: var(--font-mono), monospace;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--line-soft);
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.cs__class--restricted {
+  background: var(--red-pale);
+  color: var(--red-text);
+}
+
+.cs__class--confidential {
+  background: var(--ochre-pale);
+  color: var(--ochre-text);
+}
+
+@media (max-width: 1100px) {
+  .cs__body {
+    flex-direction: column;
+  }
+  .cs__right {
+    width: 100%;
+  }
+  .cs__tiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

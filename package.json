@@ -15,7 +15,9 @@
     "db:up": "docker run -d --name patform-pg -e POSTGRES_PASSWORD=spike -e POSTGRES_USER=spike -e POSTGRES_DB=patform -p 55801:5432 postgres:17-alpine",
     "db:down": "docker rm -f patform-pg",
     "generate": "node --env-file=.env node_modules/tsx/dist/cli.mjs src/generate.ts",
-    "eval": "node --env-file=.env node_modules/tsx/dist/cli.mjs src/eval.ts"
+    "eval": "node --env-file=.env node_modules/tsx/dist/cli.mjs src/eval.ts",
+    "seed": "node --env-file=.env node_modules/tsx/dist/cli.mjs src/seed.ts",
+    "api": "node --env-file=.env node_modules/tsx/dist/cli.mjs src/api/server.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.127.0",

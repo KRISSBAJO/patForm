@@ -24,6 +24,11 @@ create table actor (
   tenant_id   uuid not null references tenant(id),
   email       text not null,
   display_name text not null,
+  -- Section 6.1 IAM-02. This sits ABOVE the per-process roles: it says what
+  -- someone may do across the workspace, including in processes they hold no
+  -- role in. It never confers the power to approve; see runtime/policy.ts.
+  workspace_role text not null default 'read_only'
+    check (workspace_role in ('owner','admin','builder','operator','approver','analyst','read_only')),
   active      boolean not null default true,
   created_at  timestamptz not null default now(),
   unique (tenant_id, email)

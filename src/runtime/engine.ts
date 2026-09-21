@@ -3,6 +3,14 @@ import type { Blueprint, Action, Party, Transition } from '../blueprint/index.js
 import { evaluate, render, withCalculatedFields, type Answers } from './expr.js';
 import { inTransaction, isUniqueViolation, type Client, type Pool } from './db.js';
 import {
+  automationHealth,
+  listRecords,
+  myWork,
+  processesFor,
+  recordDetail,
+  replayAction,
+} from './console-queries.js';
+import {
   authorize,
   describe as describePrincipal,
   redact,
@@ -10,6 +18,7 @@ import {
   recordDenial,
   require_,
   type Principal,
+  type WorkspaceRole,
 } from './policy.js';
 
 export interface InstanceRow {
@@ -63,12 +72,37 @@ export class Engine {
   }
 
   /** Adds a person to the workspace. */
-  async createActor(tenantId: string, email: string, displayName: string): Promise<string> {
+  async createActor(
+    tenantId: string,
+    email: string,
+    displayName: string,
+    workspaceRole: WorkspaceRole = 'read_only',
+  ): Promise<string> {
     const { rows } = await this.pool.query<{ id: string }>(
-      'insert into actor (tenant_id, email, display_name) values ($1, $2, $3) returning id',
-      [tenantId, email, displayName],
+      `insert into actor (tenant_id, email, display_name, workspace_role)
+       values ($1, $2, $3, $4) returning id`,
+      [tenantId, email, displayName, workspaceRole],
     );
     return rows[0]!.id;
+  }
+
+  async setWorkspaceRole(actorId: string, workspaceRole: WorkspaceRole): Promise<void> {
+    await this.pool.query('update actor set workspace_role = $1 where id = $2', [workspaceRole, actorId]);
+  }
+
+  async actor(actorId: string): Promise<{
+    id: string;
+    tenant_id: string;
+    email: string;
+    display_name: string;
+    workspace_role: WorkspaceRole;
+    active: boolean;
+  } | null> {
+    const { rows } = await this.pool.query(
+      'select id, tenant_id, email, display_name, workspace_role, active from actor where id = $1',
+      [actorId],
+    );
+    return rows[0] ?? null;
   }
 
   /** Grants a blueprint role to a person, in one process. */
@@ -281,6 +315,7 @@ export class Engine {
       );
       if (!open.length) return { applied: false };
 
+      const declared = bp.workflow.tasks.find((t) => t.key === args.taskKey);
       await require_(client, {
         principal: args.principal,
         action: 'operate',
@@ -288,7 +323,10 @@ export class Engine {
         processKey: instance.process_key,
         blueprint: bp,
         instanceId: instance.id,
-        taskAssignee: open[0]!.assignee,
+        task: {
+          assignee: open[0]!.assignee,
+          completableBy: declared?.completableBy ?? 'assignee',
+        },
       }, this.pool);
 
       const actor = describePrincipal(args.principal);
@@ -642,6 +680,32 @@ export class Engine {
     } finally {
       client.release();
     }
+  }
+
+  // ----------------------------------------------------- console reads
+
+  processesFor(tenantId: string, actorId: string) {
+    return processesFor(this.pool, tenantId, actorId);
+  }
+
+  myWork(args: { principal: Principal; actorId: string; processKey: string }) {
+    return myWork(this.pool, args);
+  }
+
+  listRecords(args: { principal: Principal; processKey: string; state?: string; limit: number }) {
+    return listRecords(this.pool, args);
+  }
+
+  recordDetail(principal: Principal, instanceId: string) {
+    return recordDetail(this.pool, principal, instanceId);
+  }
+
+  automationHealth(args: { principal: Principal; processKey: string }) {
+    return automationHealth(this.pool, args);
+  }
+
+  replayAction(args: { principal: Principal; outboxId: number; now: Date }) {
+    return replayAction(this.pool, args);
   }
 
   async denials(tenantId: string): Promise<{ action: string; reason: string; actor_label: string }[]> {

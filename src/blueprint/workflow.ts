@@ -56,6 +56,16 @@ export const Task = z
     dueInHours: z.number().positive().optional(),
     /** A task that blocks progress keeps the record out of its next state. */
     blocking: z.boolean().default(true),
+    /**
+     * Who may mark it done.
+     *
+     * `assignee` (the default) means the person it is assigned to: literally
+     * them when it is addressed to an email, or anyone holding the role when
+     * it is addressed to a role — which is the ordinary case and not as tight
+     * as it sounds. `any_operator` opens it to anyone who may operate the
+     * process, for shared queues where whoever is free picks the next thing up.
+     */
+    completableBy: z.enum(['assignee', 'any_operator']).default('assignee'),
   })
   .strict();
 export type Task = z.infer<typeof Task>;
