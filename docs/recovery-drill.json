@@ -1,0 +1,55 @@
+{
+  "ranAt": "2026-09-22T02:19:03.589Z",
+  "target": "127.0.0.1:55801/patform",
+  "server": "PostgreSQL 17.11 on x86_64-pc-linux-musl",
+  "tooling": "pg_dump inside the \"patform-pg\" container",
+  "objectives": {
+    "rpoMinutes": 15,
+    "rtoHours": 4
+  },
+  "measured": {
+    "backupSeconds": 0.714,
+    "restoreSeconds": 1.035,
+    "backupBytes": 112908,
+    "rows": 1124
+  },
+  "steps": [
+    {
+      "name": "A backup can be taken",
+      "passed": true,
+      "detail": "Using pg_dump inside the \"patform-pg\" container, against a PostgreSQL 17 server."
+    },
+    {
+      "name": "The backup completes inside the recovery point objective",
+      "passed": true,
+      "detail": "110 KB covering 1124 rows across 23 tables. A backup taking longer than the 15-minute RPO cannot be run often enough to meet it.",
+      "seconds": 0.714
+    },
+    {
+      "name": "The restore completes inside the recovery time objective",
+      "passed": true,
+      "detail": "Restored into a scratch database. The RTO is 4 hours end to end, which has to cover noticing, deciding, provisioning and cutover — not just this.",
+      "seconds": 1.035
+    },
+    {
+      "name": "The restored database is the same database",
+      "passed": true,
+      "detail": "Every one of 23 tables matched on row count and on a content hash of its rows — not just counts, which would miss a dropped column or a lost timezone."
+    },
+    {
+      "name": "The safeguards survive the restore",
+      "passed": true,
+      "detail": "published versions still immutable: held. event history still append-only: held. 30 foreign keys present: held. A restored database that accepts an edit to a published version or to an event is an audit hole no row count would show."
+    },
+    {
+      "name": "Replaying jobs after a restore finishes the unfinished and repeats nothing else",
+      "passed": true,
+      "detail": "2 of the drill's outbox row(s) were undelivered in the backup; 2 were completed by the replay. The record that had never been drained went from 0 to 1 message(s) — the work actually ran, rather than the queue being empty and the check being vacuous. The record whose effects had already happened but whose queue rows were marked undelivered — the crash window — stayed at 1 message(s) and produced 0 duplicate(s), because the idempotency ledger was inside the backup too. A restore replays the queue, not the work."
+    },
+    {
+      "name": "The recovery point window is measured, not assumed",
+      "passed": true,
+      "detail": "A record submitted after the backup is absent from the restore, along with the 1 message(s) it had already sent. That is the RPO working as designed, and it is worth stating plainly: the window is not only lost data. Those messages reached real inboxes, and the restored system has no memory of having sent them — so it will send them again when the work is redone. Anything with an external effect inside the window happens twice."
+    }
+  ]
+}

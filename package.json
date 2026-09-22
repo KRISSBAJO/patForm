@@ -20,7 +20,8 @@
     "api": "node --env-file=.env node_modules/tsx/dist/cli.mjs src/api/server.ts",
     "worker": "node --env-file=.env node_modules/tsx/dist/cli.mjs src/worker.ts",
     "retention": "node --env-file=.env node_modules/tsx/dist/cli.mjs src/retention-cli.ts",
-    "send-test": "node --env-file=.env node_modules/tsx/dist/cli.mjs src/send-test.ts"
+    "send-test": "node --env-file=.env node_modules/tsx/dist/cli.mjs src/send-test.ts",
+    "drill": "node --env-file=.env node_modules/tsx/dist/cli.mjs src/drill.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.127.0",

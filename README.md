@@ -210,6 +210,41 @@ Then `npm run retention` applies the configured action. The order in that
 sentence is the requirement: retention deletes the record and its events, so
 afterwards there is nothing left to export.
 
+## Recovering from a backup
+
+```bash
+npm run drill
+```
+
+§20.2's recovery gate, as an exercise rather than a runbook. §10.4's targets —
+RPO 15 minutes, RTO 4 hours, quarterly drill — were numbers nobody had
+measured, and nothing had ever restored this system.
+
+Seven steps: a backup can be taken at all, it completes inside the RPO, the
+restore completes inside the RTO, the restored database matches the source on a
+content hash of every table, the immutability triggers survive, replaying jobs
+finishes the unfinished and repeats nothing else, and the RPO window is
+measured.
+
+Nothing touches the source but the drill's own records. The restore goes to a
+scratch database that is dropped at the end, and delivery is suppressed first,
+because a recovery exercise that emails customers is an incident.
+
+**It found that the backup command on this machine produced no backup** —
+`pg_dump` 16.4 refuses a 17.11 server. That is invisible until somebody tries,
+which is the argument for a drill.
+
+The last step is the one to read aloud:
+
+> A record submitted after the backup is absent from the restore, along with
+> the message it had already sent. The window is not only lost data — those
+> messages reached real inboxes, and the restored system has no memory of
+> having sent them, so it will send them again when the work is redone.
+> **Anything with an external effect inside the window happens twice.**
+
+Fifteen minutes of RPO is fifteen minutes of duplicate email, not fifteen
+minutes of missing rows. Evidence is written to `docs/recovery-drill.json`.
+
 ## The respondent side
 
 ```bash
@@ -257,6 +292,12 @@ Named here rather than implied by silence:
   states, approvals, tasks and roles; everything else goes through its JSON
   tab. There is also no draft locking, so two people editing one process will
   overwrite each other.
+- **Point-in-time recovery.** The drill exercises a full backup and restore.
+  Continuous archiving, which is what actually gets the RPO down from a backup
+  interval to minutes, is a deployment concern and is not set up.
+- **An effect log outside the database.** The idempotency ledger protects every
+  effect the backup knows about and nothing inside the RPO window, so anything
+  with an external effect in that window happens twice after a restore.
 - **Parallel task joins, approval quorums, date-relative timers, separation of
   duties** — the v0.2 list in [docs/failure-cases.md](docs/failure-cases.md).
 

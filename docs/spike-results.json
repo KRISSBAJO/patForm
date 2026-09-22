@@ -1,5 +1,5 @@
 {
-  "ranAt": "2026-09-22T01:59:16.138Z",
+  "ranAt": "2026-09-22T02:19:43.316Z",
   "postgres": "PostgreSQL 17.11 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit",
   "proofs": [
     {
@@ -48,7 +48,7 @@
       "name": "An administrator exports the record with its history, and only then is it deleted",
       "claim": "Section 20.1 step 11, and 6.4: corrections append history; destructive overwriting of audit evidence is prohibited.",
       "passed": true,
-      "detail": "The bundle carried 5 history entries for a finished record — submission, both decisions with the reasons given, and every task completion — plus 2 approval(s), 2 message(s) and 1 document(s). An approver could not export at all (\"neither the roles held (hiring_manager) nor workspace role \"approver\" grant \"administer\"\"). An administrator holding no process role saw every field; one who is also a hiring manager had 3 withheld (id_document, national_id, bank_account) — named in the bundle rather than quietly absent, and not left in the answers as the literal string \"[redacted]\". The export is itself on the record's history, and a second export of an unchanged record produced the same checksum (c3713843c69f), so a file can be verified later. Retention then deleted 1 instance and 8 event(s) — in that order, because afterwards there is nothing left to export."
+      "detail": "The bundle carried 5 history entries for a finished record — submission, both decisions with the reasons given, and every task completion — plus 2 approval(s), 2 message(s) and 1 document(s). An approver could not export at all (\"neither the roles held (hiring_manager) nor workspace role \"approver\" grant \"administer\"\"). An administrator holding no process role saw every field; one who is also a hiring manager had 3 withheld (id_document, national_id, bank_account) — named in the bundle rather than quietly absent, and not left in the answers as the literal string \"[redacted]\". The export is itself on the record's history, and a second export of an unchanged record produced the same checksum (5f052592f595), so a file can be verified later. Retention then deleted 1 instance and 8 event(s) — in that order, because afterwards there is nothing left to export."
     },
     {
       "name": "A worker fires deadlines with nobody watching",
@@ -72,7 +72,7 @@
       "name": "Concurrent workers never double-process",
       "claim": "FOR UPDATE SKIP LOCKED gives each outbox row to exactly one worker, with no lock waits between them.",
       "passed": true,
-      "detail": "8 workers claimed 40 rows across 5 distinct worker ids; 40 emails for 40 instances (1 each), 0 duplicated effects."
+      "detail": "8 workers claimed 40 rows across 4 distinct worker ids; 40 emails for 40 instances (1 each), 0 duplicated effects."
     },
     {
       "name": "A dead worker loses nothing and duplicates nothing",
@@ -102,7 +102,7 @@
       "name": "Submission and workflow start are far inside the section 10.4 budget",
       "claim": "Beta targets: acknowledgment p95 under 1.5s, workflow start p95 under 30s.",
       "passed": true,
-      "detail": "Over 100 submissions: acknowledgment p95 21.5ms (budget 1500ms), first action p95 44.5ms (budget 30000ms). Database round trips only, local container."
+      "detail": "Over 100 submissions: acknowledgment p95 17.1ms (budget 1500ms), first action p95 36.3ms (budget 30000ms). Database round trips only, local container."
     }
   ]
 }

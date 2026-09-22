@@ -190,6 +190,31 @@ The export fetched history, approvals, tasks, messages and documents with `Promi
 
 **Fixed:** awaited in sequence.
 
+### 12. The backup command produced no backup
+
+```
+pg_dump: error: aborting because of server version mismatch
+pg_dump: detail: server version: 17.11; pg_dump version: 16.4
+```
+
+pg_dump refuses a server newer than itself. Correct behaviour, and a surprising thing to meet during an incident. The failure that makes a backup policy worthless is usually this one rather than a disk, and it is invisible until somebody actually tries — which is the whole argument for a drill rather than a runbook.
+
+**Fixed:** `npm run drill` searches for a usable client and refuses with the versions it found, rather than a generic error.
+
+### 13. A digest taken outside the dump's snapshot is not a comparison
+
+The drill passed, then failed, then passed, depending on whether the worker happened to be running. pg_dump takes a consistent snapshot of its own; computing the comparison digest on a separate connection reads a *different* moment, so any write in between looks like the restore disagreeing with the source.
+
+**Fixed** with `pg_export_snapshot`: open a repeatable-read transaction, publish its snapshot id, digest inside it, and pass `--snapshot` to pg_dump. The transaction stays open until the dump finishes, because the snapshot dies with it.
+
+Worth more than the bug: this is the technique for a consistent backup alongside anything else that reads.
+
+### 14. A held row needs its availability cleared, not just its completion
+
+Simulating a crash by setting `done_at = null` left `available_at` thirty seconds ahead from the original claim, so the replay was never offered the row.
+
+That is not only a flaw in the simulation. Rows held by a worker that no longer exists come back only after the visibility timeout elapses, so **a restore does not resume instantly even once the database is up.** That delay belongs inside the RTO, not beside it.
+
 ---
 
 ## What the compiler structurally cannot catch

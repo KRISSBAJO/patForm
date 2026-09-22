@@ -44,8 +44,11 @@ export function describeTarget(url = connectionString()): string {
   }
 }
 
-export function createPool(max = 10): Pool {
-  const url = connectionString();
+/**
+ * `url` overrides DATABASE_URL, which the recovery drill needs: it restores
+ * into a scratch database on the same server and has to talk to both.
+ */
+export function createPool(max = 10, url = connectionString()): Pool {
   return new pg.Pool({
     connectionString: url,
     max,
