@@ -1,5 +1,5 @@
 {
-  "ranAt": "2026-09-22T10:38:46.418Z",
+  "ranAt": "2026-09-22T11:54:01.179Z",
   "postgres": "PostgreSQL 17.11 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit",
   "proofs": [
     {
@@ -48,19 +48,25 @@
       "name": "Every action traces back to the request that caused it, across the worker boundary",
       "claim": "Section 20.2 observability: traceable request, event, job, attempt and result identifiers.",
       "passed": true,
-      "detail": "One submission produced 1 event(s), 1 job(s) and 3 action run(s), every one carrying \"proof-request-0001\" and 0 unattributed. The actions ran in a later drain that knew nothing about the submission — the link survived because the request id is stamped on the outbox row and read back when the job runs. A timer firing got an id of its own (req_e82a854199d9…) rather than inheriting one, because a deadline is its own cause. The support view joined them into 2 step(s) with every attempt count present, and answered in a sentence: \"Queued: 1 job(s) scheduled and not yet run. If this does not clear, no worker is\". Asking by request id found 1 record; an admin of another workspace asking the same id found 0."
+      "detail": "One submission produced 1 event(s), 1 job(s) and 3 action run(s), every one carrying \"proof-request-0001\" and 0 unattributed. The actions ran in a later drain that knew nothing about the submission — the link survived because the request id is stamped on the outbox row and read back when the job runs. A timer firing got an id of its own (req_f900171a4d36…) rather than inheriting one, because a deadline is its own cause. The support view joined them into 2 step(s) with every attempt count present, and answered in a sentence: \"Queued: 1 job(s) scheduled and not yet run. If this does not clear, no worker is\". Asking by request id found 1 record; an admin of another workspace asking the same id found 0."
     },
     {
       "name": "An administrator exports the record with its history, and only then is it deleted",
       "claim": "Section 20.1 step 11, and 6.4: corrections append history; destructive overwriting of audit evidence is prohibited.",
       "passed": true,
-      "detail": "The bundle carried 5 history entries for a finished record — submission, both decisions with the reasons given, and every task completion — plus 2 approval(s), 2 message(s) and 1 document(s). An approver could not export at all (\"neither the roles held (hiring_manager) nor workspace role \"approver\" grant \"administer\"\"). An administrator holding no process role saw every field; one who is also a hiring manager had 3 withheld (id_document, national_id, bank_account) — named in the bundle rather than quietly absent, and not left in the answers as the literal string \"[redacted]\". The export is itself on the record's history, and a second export of an unchanged record produced the same checksum (3e225fd240e0), so a file can be verified later. Retention then deleted 1 instance and 8 event(s) — in that order, because afterwards there is nothing left to export."
+      "detail": "The bundle carried 5 history entries for a finished record — submission, both decisions with the reasons given, and every task completion — plus 2 approval(s), 2 message(s) and 1 document(s). An approver could not export at all (\"neither the roles held (hiring_manager) nor workspace role \"approver\" grant \"administer\"\"). An administrator holding no process role saw every field; one who is also a hiring manager had 3 withheld (id_document, national_id, bank_account) — named in the bundle rather than quietly absent, and not left in the answers as the literal string \"[redacted]\". The export is itself on the record's history, and a second export of an unchanged record produced the same checksum (7e7d8ab756d5), so a file can be verified later. Retention then deleted 1 instance and 8 event(s) — in that order, because afterwards there is nothing left to export."
     },
     {
       "name": "A workspace can be created and joined, and nobody can grant more than they hold",
       "claim": "Section 6.1: IAM-01, IAM-04 and IAM-05 — three of the four Must rows that were not met.",
       "passed": true,
-      "detail": "A workspace was created from nothing and its owner signed in; a five-character password was refused (\"a password of at least 12 characters, pl\"). The invitation showed the invitee the workspace name, their role and who asked — and nothing else — then created their account; the same link a second time was refused (\"that invitation is not valid any more\"). A builder holds \"administer\", so the capability check alone would have let them invite an owner and accept it themselves; they may grant builder, approver, analyst, read_only and were refused (\"you hold \"builder\", which cannot grant \"owner\" — y\"). Deactivating them revoked 1 live session and their token stopped resolving immediately. The only owner could neither deactivate nor demote themselves, because a workspace with no owner has nobody who can invite one. An external identity resolved by subject, and still resolved after the email address changed — matching on the address is how one person ends up with two accounts."
+      "detail": "A workspace was created from nothing and its owner signed in; a five-character password was refused (\"a password of at least 12 characters, pl\"). Before confirming their own address they could not invite anybody (\"confirm your own email address first — we sent y…\"), because the invitation goes out under their name. The invitation showed the invitee the workspace name, their role and who asked — and nothing else — then created their account; the same link a second time was refused (\"that invitation is not valid any more\"). A builder holds \"administer\", so the capability check alone would have let them invite an owner and accept it themselves; they may grant builder, approver, analyst, read_only and were refused (\"you hold \"builder\", which cannot grant \"owner\" — y\"). Deactivating them revoked 1 live session and their token stopped resolving immediately. The only owner could neither deactivate nor demote themselves, because a workspace with no owner has nobody who can invite one. Accepting the invitation marked the new member's address verified, because following a link that was emailed to it is the proof a verification link asks for. An external identity resolved by subject, and still resolved after the email address changed — matching on the address is how one person ends up with two accounts."
+    },
+    {
+      "name": "Account recovery proves control of an address and cannot be used to find out who has one",
+      "claim": "Section 12.1: verified email and password reset — the last two authentication rows.",
+      "passed": true,
+      "detail": "A verification link confirmed the address and was refused the second time (\"that link is not valid any more — ask for a new one\"). A link issued for one address did not verify a different one after the address changed (\"that link was for a different address — ask …\") — without that check, requesting a link and then editing your address verifies an address you never proved. A reset request for an address with an account and one without returned the same shape, and 0 messages went to the stranger. Spending the link revoked 1 live session, the old password stopped working, the new one worked, and the link was refused a second time. A deactivated member got no link at all — a reset would be the way back in for somebody an owner deliberately removed. Searching auth_token for either plaintext token found 0 rows: only the SHA-256 is stored, so a dump of that table is not a set of keys."
     },
     {
       "name": "A privacy request erases one person without destroying anybody else",
@@ -126,7 +132,7 @@
       "name": "Submission and workflow start are far inside the section 10.4 budget",
       "claim": "Beta targets: acknowledgment p95 under 1.5s, workflow start p95 under 30s.",
       "passed": true,
-      "detail": "Over 100 submissions: acknowledgment p95 18.8ms (budget 1500ms), first action p95 39.6ms (budget 30000ms). Database round trips only, local container."
+      "detail": "Over 100 submissions: acknowledgment p95 17.0ms (budget 1500ms), first action p95 42.1ms (budget 30000ms). Database round trips only, local container."
     }
   ]
 }

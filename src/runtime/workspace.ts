@@ -4,6 +4,9 @@ import { setPassword } from './auth.js';
 import { WORKSPACE_GRANTS, requireWorkspaceCapability, type Principal, type WorkspaceRole } from './policy.js';
 import type { Capability } from '../blueprint/roles.js';
 import { logIfEnabled } from './trace.js';
+import { InvalidInput } from './errors.js';
+import { isVerified, sendVerification } from './account.js';
+import { invitationMail, sendPlatformMail } from './platform-mail.js';
 
 /**
  * Workspaces and the people in them — §6.1's IAM-01 and IAM-04.
@@ -36,16 +39,9 @@ import { logIfEnabled } from './trace.js';
 
 const INVITE_TTL_DAYS = 7;
 
-/**
- * Something the caller got wrong and can fix.
- *
- * Distinguished from a plain Error because the API maps unknown errors to 500,
- * and a password three characters too short reported as "internal error" is
- * wrong twice: the person cannot tell it was their mistake, and it logs as an
- * outage that nobody can reproduce. These are the only endpoints a stranger
- * can reach, so it matters most here.
- */
-export class InvalidInput extends Error {}
+// Re-exported so existing callers keep one import; defined in errors.ts
+// because account recovery needs it too.
+export { InvalidInput } from './errors.js';
 
 function hash(value: string): string {
   return createHash('sha256').update(value).digest('hex');
@@ -68,11 +64,13 @@ export interface NewWorkspace {
  * write with, so the guards are here rather than in the caller: a real
  * address, a password long enough to be worth hashing, and a workspace name.
  *
- * What is *not* here, and is named in the README rather than implied: email
- * verification. Without it this creates a workspace for an address nobody has
- * proved they own. That is acceptable for a pilot and not for a public
- * sign-up, and the shape that fixes it is a verification token on the same
- * pattern as `invitation` below.
+ * The address is unverified when this returns, and a verification link is on
+ * its way. What that gate actually costs the owner is one thing: they cannot
+ * invite anybody else until they follow it. That is the abuse worth stopping —
+ * a workspace created under somebody else's address, used to send invitations
+ * that look like they came from them — and it is the only thing blocked,
+ * because a sign-up that cannot do anything at all until the mail arrives is
+ * how a pilot loses its first user.
  */
 export async function createWorkspace(
   pool: Pool,
@@ -103,6 +101,12 @@ export async function createWorkspace(
 
     logIfEnabled('info', 'workspace.created', { tenantId, actorId });
     return { tenantId, actorId };
+  }).then(async (created) => {
+    // After the commit, not inside it. The send is a network call: holding a
+    // transaction open across one is how a slow provider becomes a lock
+    // timeout, and a rollback after a delivered email cannot be undone.
+    await sendVerification(pool, { actorId: created.actorId });
+    return created;
   });
 }
 
@@ -172,14 +176,29 @@ export interface InviteArgs {
 export async function invite(
   pool: Pool,
   args: InviteArgs,
-): Promise<{ id: string; token: string; expiresAt: string }> {
+): Promise<{ id: string; token: string; expiresAt: string; delivered: string }> {
   await requireWorkspaceCapability(pool, args.principal, 'administer', 'invitations');
   const principal = args.principal;
   if (principal.kind !== 'actor') throw new Error('unreachable');
   const tenantId = principal.tenantId;
   const email = args.email.trim().toLowerCase();
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new InvalidInput('that is not an email address');
 
-  return inTransaction(pool, async (client) => {
+  /*
+   * The verification gate, and the only thing it guards.
+   *
+   * Without it, anybody can create a workspace under a colleague's address and
+   * send invitations that arrive saying that colleague invited you. The
+   * invitation is the one thing a sign-up does that reaches a third party, so
+   * it is the one thing that waits for proof the address is theirs.
+   */
+  if (!(await isVerified(pool, principal.actorId))) {
+    throw new InvalidInput(
+      'confirm your own email address first — we sent you a link when you created the workspace, and invitations go out under your name',
+    );
+  }
+
+  const sent = await inTransaction(pool, async (client) => {
     const granterRole = await roleOf(client, principal.actorId);
     if (!grantableRoles(granterRole).includes(args.workspaceRole)) {
       // Otherwise every role holding `administer` is an escalation with one
@@ -222,9 +241,49 @@ export async function invite(
       ],
     );
 
-    logIfEnabled('info', 'invitation.sent', { tenantId, role: args.workspaceRole });
-    return { id: rows[0]!.id, token, expiresAt: rows[0]!.expires_at.toISOString() };
+    const { rows: about } = await client.query<{ workspace_name: string; invited_by: string }>(
+      `select t.name as workspace_name, a.display_name as invited_by
+         from tenant t, actor a where t.id = $1 and a.id = $2`,
+      [tenantId, principal.actorId],
+    );
+
+    logIfEnabled('info', 'invitation.created', { tenantId, role: args.workspaceRole });
+    return {
+      id: rows[0]!.id,
+      token,
+      expiresAt: rows[0]!.expires_at.toISOString(),
+      workspaceName: about[0]!.workspace_name,
+      invitedBy: about[0]!.invited_by,
+    };
   });
+
+  // Outside the transaction: a provider timeout must not roll back the
+  // invitation. If the mail fails the row is still there and it can be resent.
+  const mail = invitationMail({
+    to: email,
+    token: sent.token,
+    workspaceName: sent.workspaceName,
+    invitedBy: sent.invitedBy,
+    workspaceRole: args.workspaceRole,
+    message: args.message,
+    expiresAt: sent.expiresAt,
+  });
+  const delivery = await sendPlatformMail(pool, {
+    kind: 'invitation',
+    to: email,
+    subject: mail.subject,
+    text: mail.text,
+    tenantId,
+    actorId: principal.actorId,
+    idempotencyKey: `invite:${sent.id}`,
+  });
+
+  return {
+    id: sent.id,
+    token: sent.token,
+    expiresAt: sent.expiresAt,
+    delivered: delivery?.status ?? 'failed',
+  };
 }
 
 /**
@@ -318,6 +377,11 @@ export async function acceptInvitation(
     const actorId = actors[0]!.id;
 
     await setPassword(client, actorId, args.password);
+
+    // Verified by arrival. They followed a link that was emailed to that
+    // address, which is exactly what a verification link proves — asking them
+    // to do it twice would be ceremony.
+    await client.query('update actor set email_verified_at = now() where id = $1', [actorId]);
 
     // The process roles they were invited for, so they arrive able to do the
     // job rather than able to see nothing.

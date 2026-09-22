@@ -8,6 +8,7 @@ import { OPENAPI } from '../src/api/openapi.js';
 import { parseCsv } from '../src/runtime/import.js';
 import { DEFINITIONS, MIN_COHORT } from '../src/runtime/metrics.js';
 import { WORKSPACE_GRANTS } from '../src/runtime/policy.js';
+import { appUrl, invitationMail, resetMail, verificationMail } from '../src/runtime/platform-mail.js';
 
 const bp = Blueprint.parse(
   JSON.parse(readFileSync(join('processes', 'employee-onboarding.blueprint.json'), 'utf8')),
@@ -118,4 +119,52 @@ test('every §13.1 metric has a definition that travels with it', () => {
     assert.ok(['count', 'percent', 'hours'].includes(d.unit));
   }
   assert.ok(MIN_COHORT >= 5, 'small cohort suppression must be meaningful');
+});
+
+test('an account link points at the configured app, and says when it stops working', () => {
+  const previous = process.env.APP_URL;
+  process.env.APP_URL = 'https://patform.logaxp.com/';
+  const expiresAt = '2026-10-01T12:00:00.000Z';
+
+  const invitation = invitationMail({
+    to: 'new@example.test',
+    token: 'inv_abc',
+    workspaceName: 'Operations',
+    invitedBy: 'Dana',
+    workspaceRole: 'approver',
+    expiresAt,
+  });
+
+  // The trailing slash is trimmed rather than doubled. A link with `//join`
+  // in it is the kind of thing that works on one router and 404s on the next.
+  assert.ok(invitation.text.includes('https://patform.logaxp.com/join/inv_abc'));
+  assert.ok(!invitation.text.includes('.com//join'));
+  assert.match(invitation.subject, /Dana invited you to Operations/);
+
+  // Three things every one of these has to say: it is single use, when it
+  // expires, and what to do if it was not you.
+  for (const mail of [
+    invitation,
+    verificationMail({ to: 'a@example.test', token: 'ver_abc', expiresAt }),
+    resetMail({ to: 'a@example.test', token: 'rst_abc', expiresAt }),
+  ]) {
+    assert.match(mail.text, /works once|ignore it|do not need to do anything/);
+    assert.ok(mail.text.includes('2026'), 'the expiry is stated, not implied');
+  }
+
+  // The reset mail says what spending it costs, because it is the one that
+  // logs the person out of everything.
+  assert.match(resetMail({ to: 'a@example.test', token: 'rst_abc', expiresAt }).text, /sign this account out/);
+
+  if (previous === undefined) delete process.env.APP_URL;
+  else process.env.APP_URL = previous;
+});
+
+test('the app url falls back to the dev console rather than to something plausible', () => {
+  const previous = process.env.APP_URL;
+  delete process.env.APP_URL;
+  // A default that looks like production is how mail goes out with links to a
+  // host that is not serving this deployment.
+  assert.equal(appUrl(), 'http://localhost:3210');
+  if (previous !== undefined) process.env.APP_URL = previous;
 });

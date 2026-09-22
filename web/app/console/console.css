@@ -1055,3 +1055,38 @@
   gap: 14px;
   padding: 12px 18px;
 }
+
+/* ------------------------------------------------------- account recovery */
+/*
+ * §12.1's verification and reset, on screen.
+ *
+ * `.cs__linkBtn` is mint, which is right on the dark sidebar it was written
+ * for and 1.6:1 on paper. Both places these were added — the sign-in card and
+ * the banner below — are light, so they get the dark green instead. A token
+ * that is safe on one surface is not a token that is safe.
+ */
+
+.cs__linkBtn--onLight {
+  color: var(--green-deep);
+  font-weight: 600;
+}
+
+.cs__banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  margin: 0 0 18px;
+  padding: 12px 16px;
+  background: var(--green-pale);
+  border: 1px solid var(--green-border);
+  border-radius: 8px;
+  color: var(--ink);
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
+/* 2.5.8: the resend control keeps a 24px target even in a one-line banner. */
+.cs__banner .cs__linkBtn {
+  min-height: 24px;
+}

@@ -15,10 +15,16 @@
  *
  *   node scripts/a11y.mjs            against http://localhost:3210
  *   BASE=... node scripts/a11y.mjs   somewhere else
+ *
+ * The account pages need live single-use tokens, so this mints them first and
+ * puts the scan account's verification back afterwards. A token that has
+ * already been spent renders a different and much simpler screen than the one
+ * anybody actually sees, so auditing a stale link would prove nothing.
  */
 import { chromium } from 'playwright';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { execFileSync } from 'node:child_process';
 
 const BASE = process.env.BASE ?? 'http://localhost:3210';
 const EMAIL = process.env.A11Y_EMAIL ?? 'joy@example.test';
@@ -57,7 +63,19 @@ async function audit(page, name) {
   return violations;
 }
 
+/** Mints live tokens and clears the scan account's verification. */
+function fixtures(mode) {
+  const out = execFileSync(
+    'node',
+    ['--env-file=.env', 'node_modules/tsx/dist/cli.mjs', 'scripts/account-fixtures.ts', ...(mode ? [mode] : [])],
+    { encoding: 'utf8' },
+  );
+  const last = out.replace(/\r/g, '').trim().split('\n').pop();
+  return mode ? null : JSON.parse(last);
+}
+
 async function main() {
+  const links = fixtures();
   const browser = await chromium.launch();
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
   const all = [];
@@ -79,11 +97,34 @@ async function main() {
   await page.goto(`${BASE}/console`, { waitUntil: 'networkidle' });
   all.push(...(await audit(page, 'Console sign-in')));
 
+  // ---- account recovery: three pages an emailed link lands on, plus the
+  //      state the sign-in card enters when somebody has lost their password.
+  const forgot = page.locator('button', { hasText: /Forgotten your password/i }).first();
+  if (await forgot.count()) {
+    await forgot.click();
+    await page.waitForTimeout(500);
+    all.push(...(await audit(page, 'Sign-in, asking for a reset link')));
+  }
+
+  for (const [name, path] of [
+    ['Invitation, join a workspace', `/join/${links.join}`],
+    ['Email verification', `/verify/${links.verify}`],
+    ['Choose a new password', `/reset/${links.reset}`],
+  ]) {
+    await page.goto(`${BASE}${path}`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(1200);
+    all.push(...(await audit(page, name)));
+  }
+
+  await page.goto(`${BASE}/console`, { waitUntil: 'networkidle' });
   await page.fill('input[type=email]', EMAIL);
   await page.fill('input[type=password]', PASSWORD);
   await page.click('button[type=submit]');
   await page.waitForTimeout(4000);
-  all.push(...(await audit(page, 'Operator queue and approvals')));
+  // The fixtures cleared this account's verification, so the banner is on
+  // screen for this audit — it is a live region on a coloured surface and is
+  // exactly the kind of thing that passes review and fails a contrast check.
+  all.push(...(await audit(page, 'Operator queue, with the unverified-address banner')));
 
   const openRecord = page.locator('button', { hasText: /^Open$/ }).first();
   if (await openRecord.count()) {
@@ -155,6 +196,7 @@ async function main() {
   }
 
   await browser.close();
+  fixtures('restore');
 
   console.log(
     all.length

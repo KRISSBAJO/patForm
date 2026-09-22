@@ -15,6 +15,7 @@ interface Me {
   display_name: string;
   email: string;
   workspace_role: string;
+  email_verified_at: string | null;
 }
 
 interface Work {
@@ -335,6 +336,7 @@ export function Console() {
       </aside>
 
       <main className="cs__main" id="console-main" tabIndex={-1}>
+        {!me.email_verified_at && <VerifyBanner email={me.email} />}
         <div className="cs__head">
           <h1>
             {view === 'ask'
@@ -615,11 +617,67 @@ function Stat({ label, value, bad }: { label: string; value: number; bad?: boole
   );
 }
 
+/**
+ * Says what is actually blocked, and nothing else.
+ *
+ * A banner that says "please verify your email" without saying what it costs
+ * you gets dismissed; one that says you cannot invite anybody gets acted on
+ * the day somebody needs to invite somebody.
+ */
+function VerifyBanner({ email }: { email: string }) {
+  const [state, setState] = useState<'idle' | 'sending' | 'sent'>('idle');
+  const [note, setNote] = useState<string | null>(null);
+
+  const resend = async () => {
+    setState('sending');
+    try {
+      const body = await call<{ sent: boolean; reason: string | null }>(
+        '/api/account/resend-verification',
+        { method: 'POST' },
+      );
+      setNote(body.sent ? null : body.reason);
+    } catch (err) {
+      setNote(err instanceof Error ? err.message : 'that did not work');
+    } finally {
+      setState('sent');
+    }
+  };
+
+  return (
+    <div className="cs__banner" role="status">
+      <span>
+        Confirm <strong>{email}</strong> to invite people into this workspace. Everything else works
+        already.
+      </span>
+      {state === 'sent' ? (
+        <span>{note ?? 'Sent — check your inbox, including spam.'}</span>
+      ) : (
+        <button type="button" className="cs__linkBtn cs__linkBtn--onLight" onClick={() => void resend()} disabled={state === 'sending'}>
+          {state === 'sending' ? 'Sending…' : 'Send the link again'}
+        </button>
+      )}
+    </div>
+  );
+}
+
 function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [forgot, setForgot] = useState<'no' | 'asking' | 'asked'>('no');
+
+  const askForReset = async () => {
+    setBusy(true);
+    try {
+      await call('/api/auth/forgot', { method: 'POST', body: JSON.stringify({ email }) });
+    } finally {
+      // The same outcome whatever happened, including a failure. Anything
+      // that varies here tells a stranger whether the address has an account.
+      setForgot('asked');
+      setBusy(false);
+    }
+  };
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -686,6 +744,31 @@ function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
         <button type="submit" className="cs__btn cs__btn--primary" style={{ marginTop: 18, width: '100%', height: 44 }} disabled={busy}>
           {busy ? 'Signing in…' : 'Sign in'}
         </button>
+
+        {forgot === 'asked' ? (
+          <p className="cs__loginNote" role="status">
+            If that address has an account, a reset link is on its way. It expires in half an hour.
+          </p>
+        ) : forgot === 'asking' ? (
+          <p className="cs__loginNote">
+            Type your address above, then{' '}
+            <button
+              type="button"
+              className="cs__linkBtn cs__linkBtn--onLight"
+              onClick={() => void askForReset()}
+              disabled={busy || !email}
+            >
+              send me a reset link
+            </button>
+            .
+          </p>
+        ) : (
+          <p className="cs__loginNote">
+            <button type="button" className="cs__linkBtn cs__linkBtn--onLight" onClick={() => setForgot('asking')}>
+              Forgotten your password?
+            </button>
+          </p>
+        )}
 
         <p className="cs__loginNote">
           A seeded workspace prints its accounts when you run <code>npm run seed</code>.

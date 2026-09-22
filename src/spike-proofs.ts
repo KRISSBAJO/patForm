@@ -20,6 +20,12 @@ import {
   readInvitation,
   setMemberActive,
 } from './runtime/workspace.js';
+import {
+  requestPasswordReset,
+  resetPassword,
+  sendVerification,
+  verifyEmail,
+} from './runtime/account.js';
 import { resolveSession, signIn } from './runtime/auth.js';
 import { createServer } from 'node:http';
 import {
@@ -1497,6 +1503,18 @@ export async function proveIdentity({ pool, record }: ProofCtx): Promise<void> {
     shortPassword = err instanceof Error ? err.message : String(err);
   }
 
+  // ---- the invitation gate: an unverified owner cannot invite anybody,
+  //      because the invitation would arrive under their name.
+  let unverifiedInvite: string | null = null;
+  try {
+    await invite(pool, { principal: owner, email: 'early@proof-identity.test', workspaceRole: 'analyst' });
+  } catch (err) {
+    unverifiedInvite = err instanceof Error ? err.message : String(err);
+  }
+
+  const verification = await sendVerification(pool, { actorId: created.actorId });
+  await verifyEmail(pool, verification.token!);
+
   // ---- IAM-01: and joining one
   const invitation = await invite(pool, {
     principal: owner,
@@ -1577,8 +1595,8 @@ export async function proveIdentity({ pool, record }: ProofCtx): Promise<void> {
   // The same subject from a different provider is a different person.
   const otherProvider = await actorForIdentity(pool, { provider: 'oidc:other', subject: 'sub-0001' });
 
-  const { rows: provisioning } = await pool.query<{ provisioned_by: string }>(
-    'select provisioned_by from actor where id = $1',
+  const { rows: provisioning } = await pool.query<{ provisioned_by: string; email_verified_at: Date | null }>(
+    'select provisioned_by, email_verified_at from actor where id = $1',
     [joined.actorId],
   );
 
@@ -1602,14 +1620,145 @@ export async function proveIdentity({ pool, record }: ProofCtx): Promise<void> {
       bySubject?.actorId === created.actorId &&
       afterRename?.actorId === created.actorId &&
       otherProvider === null &&
-      provisioning[0]?.provisioned_by === 'invite',
+      provisioning[0]?.provisioned_by === 'invite' &&
+      unverifiedInvite !== null &&
+      provisioning[0]?.email_verified_at !== null,
     `A workspace was created from nothing and its owner signed in; a five-character password was refused ("${shortPassword?.slice(0, 40)}"). ` +
+      `Before confirming their own address they could not invite anybody ("${unverifiedInvite?.slice(0, 48)}…"), because the invitation goes out under their name. ` +
       `The invitation showed the invitee the workspace name, their role and who asked — and nothing else — then created their account; ` +
       `the same link a second time was refused ("${replayed}"). ` +
       `A builder holds "administer", so the capability check alone would have let them invite an owner and accept it themselves; ` +
       `they may grant ${builderMayGrant.join(', ')} and were refused ("${escalation?.slice(0, 50)}"). ` +
       `Deactivating them revoked ${deactivated.sessionsRevoked} live session and their token stopped resolving immediately. ` +
       `The only owner could neither deactivate nor demote themselves, because a workspace with no owner has nobody who can invite one. ` +
+      `Accepting the invitation marked the new member's address verified, because following a link that was emailed to it is the proof a verification link asks for. ` +
       `An external identity resolved by subject, and still resolved after the email address changed — matching on the address is how one person ends up with two accounts.`,
+  );
+}
+
+/**
+ * §12.1's last two authentication rows: verified email and password reset.
+ *
+ * The assertions worth having here are all refusals, and most of them are
+ * about what the system declines to *tell* you. A reset endpoint that answers
+ * differently for a member and a stranger is an account-enumeration oracle;
+ * one that leaves old sessions alive turns a compromise into a formality; one
+ * that stores the token it emailed turns a database dump into a set of keys.
+ */
+export async function proveAccountRecovery({ pool, record }: ProofCtx): Promise<void> {
+  const created = await createWorkspace(pool, {
+    workspaceName: 'Proof Recovery',
+    ownerEmail: 'owner@proof-recovery.test',
+    ownerName: 'An Owner',
+    password: 'the-first-password',
+  });
+
+  // ---- verification: single use, and bound to the address it was sent to
+  const first = await sendVerification(pool, { actorId: created.actorId });
+  const verified = await verifyEmail(pool, first.token!);
+
+  let replayedVerify: string | null = null;
+  try {
+    await verifyEmail(pool, first.token!);
+  } catch (err) {
+    replayedVerify = err instanceof Error ? err.message : String(err);
+  }
+
+  // A link issued for one address must not verify a different one. Otherwise:
+  // request the link, change the address, follow the link, and an address
+  // nobody proved anything about is marked verified.
+  await pool.query('update actor set email_verified_at = null where id = $1', [created.actorId]);
+  const forOldAddress = await sendVerification(pool, { actorId: created.actorId });
+  await pool.query('update actor set email = $1 where id = $2', [
+    'moved@proof-recovery.test',
+    created.actorId,
+  ]);
+  let crossAddress: string | null = null;
+  try {
+    await verifyEmail(pool, forOldAddress.token!);
+  } catch (err) {
+    crossAddress = err instanceof Error ? err.message : String(err);
+  }
+
+  // ---- reset: the same answer for an address that exists and one that does not
+  const known = await requestPasswordReset(pool, { email: 'moved@proof-recovery.test' });
+  const unknown = await requestPasswordReset(pool, { email: 'nobody@proof-recovery.test' });
+  const sameShape =
+    JSON.stringify(Object.keys(known).filter((k) => k !== 'token')) ===
+    JSON.stringify(Object.keys(unknown).filter((k) => k !== 'token'));
+
+  // Nothing was sent to the stranger, which is the part the caller cannot see
+  // and the part that matters.
+  const { rows: mailed } = await pool.query<{ count: number }>(
+    `select count(*)::int as count from platform_email
+      where recipient = 'nobody@proof-recovery.test'`,
+  );
+
+  // ---- a live session, so the revocation has something to revoke
+  const before = await signIn(pool, {
+    email: 'moved@proof-recovery.test',
+    password: 'the-first-password',
+  });
+  const liveBefore = await resolveSession(pool, before!.token);
+
+  const reset = await resetPassword(pool, { token: known.token!, password: 'the-second-password' });
+  const liveAfter = await resolveSession(pool, before!.token);
+
+  const oldPassword = await signIn(pool, {
+    email: 'moved@proof-recovery.test',
+    password: 'the-first-password',
+  });
+  const newPassword = await signIn(pool, {
+    email: 'moved@proof-recovery.test',
+    password: 'the-second-password',
+  });
+
+  let replayedReset: string | null = null;
+  try {
+    await resetPassword(pool, { token: known.token!, password: 'a-third-password-x' });
+  } catch (err) {
+    replayedReset = err instanceof Error ? err.message : String(err);
+  }
+
+  // ---- a deactivated account cannot be reset back into existence
+  const other = await createWorkspace(pool, {
+    workspaceName: 'Proof Recovery Two',
+    ownerEmail: 'gone@proof-recovery.test',
+    ownerName: 'Departed',
+    password: 'a-fourth-password',
+  });
+  await pool.query('update actor set active = false where id = $1', [other.actorId]);
+  const deactivated = await requestPasswordReset(pool, { email: 'gone@proof-recovery.test' });
+
+  // ---- the token is the credential, so only its hash is stored
+  const { rows: stored } = await pool.query<{ count: number }>(
+    `select count(*)::int as count from auth_token
+      where token_hash = $1 or token_hash = $2`,
+    [known.token!, first.token!],
+  );
+
+  record(
+    'Account recovery proves control of an address and cannot be used to find out who has one',
+    'Section 12.1: verified email and password reset — the last two authentication rows.',
+    verified.email === 'owner@proof-recovery.test' &&
+      replayedVerify !== null &&
+      crossAddress !== null &&
+      sameShape &&
+      mailed[0]!.count === 0 &&
+      liveBefore !== null &&
+      liveAfter === null &&
+      reset.sessionsRevoked === 1 &&
+      oldPassword === null &&
+      newPassword !== null &&
+      replayedReset !== null &&
+      deactivated.token === undefined &&
+      stored[0]!.count === 0,
+    `A verification link confirmed the address and was refused the second time ("${replayedVerify}"). ` +
+      `A link issued for one address did not verify a different one after the address changed ("${crossAddress?.slice(0, 44)}…") — ` +
+      `without that check, requesting a link and then editing your address verifies an address you never proved. ` +
+      `A reset request for an address with an account and one without returned the same shape, and ${mailed[0]!.count} messages went to the stranger. ` +
+      `Spending the link revoked ${reset.sessionsRevoked} live session, the old password stopped working, the new one worked, and the link was refused a second time. ` +
+      `A deactivated member got no link at all — a reset would be the way back in for somebody an owner deliberately removed. ` +
+      `Searching auth_token for either plaintext token found ${stored[0]!.count} rows: only the SHA-256 is stored, so a dump of that table is not a set of keys.`,
   );
 }

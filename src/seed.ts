@@ -93,11 +93,24 @@ async function main(): Promise<void> {
   );
   const version = await engine.publish(tenantId, bp, 'seed');
 
+  /*
+   * Seeded accounts are verified.
+   *
+   * The verification gate exists because a stranger can type somebody else's
+   * address into a sign-up form. Nobody typed these: they were written by an
+   * operator with a connection string, which is strictly stronger proof than
+   * clicking a link. Leaving them unverified would only mean the seeded owner
+   * cannot invite anybody, for no safety gained.
+   */
+  const verify = async (id: string) =>
+    pool.query('update actor set email_verified_at = now() where id = $1', [id]);
+
   const actors = new Map<string, { id: string; principal: Principal }>();
   for (const person of PEOPLE) {
     const id = await engine.createActor(tenantId, person.email, person.name, person.workspace);
     await engine.grant({ tenantId, actorId: id, processKey: bp.key, roleKey: person.role });
     await setPassword(pool, id, DEV_PASSWORD);
+    await verify(id);
     actors.set(person.key, { id, principal: { kind: 'actor', tenantId, actorId: id } });
   }
 
@@ -105,6 +118,7 @@ async function main(): Promise<void> {
     const id = await engine.createActor(tenantId, OWNER.email, OWNER.name, OWNER.workspace);
     await engine.grant({ tenantId, actorId: id, processKey: bp.key, roleKey: OWNER.role });
     await setPassword(pool, id, OWNER_PASSWORD!);
+    await verify(id);
     actors.set('owner', { id, principal: { kind: 'actor', tenantId, actorId: id } });
   }
 

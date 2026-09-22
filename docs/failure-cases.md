@@ -341,6 +341,36 @@ The gate lives in the pipeline, not the compiler, because a *hand-written* bluep
 
 **Fixed** with an `InvalidInput` type the API maps to 400. Worth noting that every other runtime module still throws plain errors for this class of thing; it matters most here because these are the only unauthenticated write paths.
 
+### 31. Three emails pointing at pages that did not exist
+
+Invitation, verification and reset mail all went out with links to `/join/…`, `/verify/…` and `/reset/…`. The Next.js app served none of those routes. Every proof passed: the tokens were minted, hashed, single-use and correctly refused — and the person holding the email would have got a 404.
+
+This is the seventh instance of the same shape in this project: **a control that is present in review and absent at runtime.** The safeguarding task nothing waited for, the permission model only checked in tests, `editableFields` unreachable, SEC009's unapprovable approver, `aria-modal` with no focus trap, the restricted field hidden from nobody, webhooks that were never sent — and now a link to nowhere.
+
+**Fixed** by building the three pages and adding them to the accessibility scan, which is also what makes the regression visible: the scan mints live tokens, so a route that stops existing fails it.
+
+**Generalisable:** when a system emits a reference to something — a URL, a file path, a queue name — something automated has to follow that reference. The proof that the reference was *generated correctly* is not the proof that it *resolves*.
+
+### 32. A colour token that was safe on one surface
+
+The forgot-password and resend controls reused `.cs__linkBtn`, which is mint green. That class was written for the dark sidebar, where mint is right. Both new uses are on paper, where mint is 1.6:1 — invisible.
+
+The §20.2 gate had already established that a token has to be checked against every surface it appears on, and the check was not repeated when the class was reused rather than the colour.
+
+**Fixed** with an explicit `--onLight` variant. **Generalisable:** a token is not safe; a token *on a surface* is safe. Reusing a class moves it to a new surface.
+
+### 33. A password left the transaction that created the account
+
+`createWorkspace` originally sent nothing. Adding verification put a network call in reach of the transaction that creates the tenant, the actor and the credential. Holding a transaction open across a provider call turns a slow provider into a lock timeout, and a rollback after a delivered email cannot be undone.
+
+**Fixed** by sending after the commit, in a `.then` on the transaction rather than inside it. The same applies to the invitation. **Generalisable:** this is the counterpart to the rule already in this file that *anything written to explain why a transaction failed cannot live inside that transaction* — anything that reaches outside the database cannot live inside one either.
+
+### 34. A helpful `\` that was not there
+
+Several edits to `.mjs` and `.ts` files were made through a shell heredoc, and the heredoc collapsed `\r` to a real carriage return before Python saw it — so `split(/\r?\n/)` was written into the file as a regex containing an actual newline, which is a syntax error. Three attempts to fix it re-introduced it, because each fix went through the same heredoc.
+
+**Fixed** by building the backslash from `chr(92)`. **Generalisable:** when the same edit fails the same way three times, the tool doing the editing is a suspect, not just the edit.
+
 ---
 
 ## What the compiler structurally cannot catch

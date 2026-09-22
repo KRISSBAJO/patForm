@@ -544,7 +544,46 @@ Three rules, each because the obvious implementation gets it wrong:
 
 Invitations are single-use, expire in seven days, and only the hash is stored —
 the link is the credential. The preview a stranger can read shows the workspace
-name, the role and who asked, and nothing else.
+name, the role and who asked, and nothing else. The token is **not** returned
+over HTTP: it is emailed, and the response says `delivered` instead. Returning
+it as well would let any member who can invite mint a working link for an
+address whose owner never sees it.
+
+### Confirming an address, and getting back in
+
+Creating a workspace sends a verification link and marks the address
+unverified. That gates exactly one thing — **inviting other people** — because
+that is the only thing a fresh sign-up does that reaches a third party, and a
+sign-up that can do nothing until an email arrives is how a pilot loses its
+first user. Accepting an invitation, or spending a reset link, verifies the
+address without a second round trip: following a link that was emailed to it is
+the proof a verification link asks for.
+
+```bash
+curl -X POST http://localhost:3310/api/auth/forgot -H 'content-type: application/json' -d '{"email":"you@acme.test"}'
+```
+
+The answer is the same sentence for an address with an account, one without, a
+deactivated member, and one that has asked five times this hour:
+
+```
+{"message":"If that address has an account, a reset link is on its way."}
+```
+
+Anything that varies is an account-enumeration oracle (§12.3). Spending the
+link revokes every session in the same transaction that sets the password —
+a reset is what somebody does when they think an account is compromised.
+
+Set **`APP_URL`** in any deployment. The links point there, the default is the
+dev console, and a link to a plausible-but-wrong host fails silently: the mail
+arrives, looks right, and the token cannot be spent.
+
+Platform mail — these three messages, and only these three — is logged in
+`platform_email` rather than `email_log`. That table requires an instance and
+an action run, which is what makes "every process email is traceable to the
+action that sent it" a guarantee; making both nullable for three messages would
+have turned it into a convention. See
+[ADR-0013](docs/adr/0013-account-recovery.md).
 
 **IAM-05** was marked *Design now*, so it is: `actor_identity` holds an
 external identity per provider, and **matching is on the IdP's subject, never
@@ -612,12 +651,14 @@ overruled.
 
 Everything below is a deliberate deferral:
 
-- **Email verification and invitation delivery.** Creating a workspace does
-  not prove you own the address, and an invitation returns its token to the
-  caller rather than emailing it. Both are the same shape as the invitation
-  token that already works.
-- **MFA, password reset, and SSO itself.** The identity model now accommodates
-  SSO (IAM-05) and no provider is wired to it.
+- **MFA and SSO itself.** The identity model accommodates SSO (IAM-05) and no
+  provider is wired to it. Multi-factor is §12.1's remaining authentication
+  row.
+- **Bounce and complaint handling.** Platform mail goes to whatever address a
+  stranger types at sign-up, and an undeliverable domain costs the sending
+  domain's reputation rather than being caught. `platform_email` records the
+  provider's message id, which is the half of the reconciliation that exists;
+  the webhook that would close it does not.
 - **Rate limiting and spam control on public submission** (§12.3).
 - **Malware scanning and upload quarantine** (§12.1). Files are metadata only.
 - **A verified sending domain.** Delivery needs two switches to leave the

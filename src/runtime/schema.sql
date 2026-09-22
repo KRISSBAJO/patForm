@@ -43,6 +43,15 @@ create table actor (
    * its next sync and nobody will know why.
    */
   external_id    text,
+  /*
+   * §12.1's "verified email".
+   *
+   * Null means nobody has proved they control this address. Accepting an
+   * invitation sets it, because using a link that was emailed to you *is* the
+   * proof — there is no second step worth asking for. Signing up does not,
+   * because nothing about typing an address demonstrates anything.
+   */
+  email_verified_at timestamptz,
   provisioned_by text not null default 'seed'
     check (provisioned_by in ('seed', 'signup', 'invite', 'scim')),
   created_at  timestamptz not null default now(),
@@ -796,3 +805,49 @@ create table invitation (
 
 create index invitation_open on invitation (tenant_id, email)
   where accepted_at is null and revoked_at is null;
+
+-- ---------------------------------------------------------- account tokens
+--
+-- Verification and password reset. The same shape as `invitation` and for the
+-- same reason: only the hash is stored, because the link is the credential.
+--
+-- One table rather than two. They differ in purpose, lifetime and what
+-- happens on use, and in nothing else — and a second table would mean a
+-- second place to get "single use" right.
+create table auth_token (
+  id         uuid primary key default gen_random_uuid(),
+  actor_id   uuid not null references actor(id) on delete cascade,
+  purpose    text not null check (purpose in ('verify_email', 'password_reset')),
+  token_hash text not null unique,
+  -- The address it was sent to, which is not always the actor's current one:
+  -- a verification for a *changed* address must not verify the old one.
+  sent_to    text not null,
+  expires_at timestamptz not null,
+  used_at    timestamptz,
+  created_at timestamptz not null default now()
+);
+
+create index auth_token_open on auth_token (actor_id, purpose) where used_at is null;
+
+-- Platform mail: invitations, verification, password resets.
+--
+-- Its own table because `email_log` requires an instance and an action run,
+-- and none of these belong to a record. Forcing them in would have meant
+-- making both nullable, which would quietly weaken the guarantee that every
+-- process email is traceable to the action that sent it.
+create table platform_email (
+  id           bigserial primary key,
+  tenant_id    uuid references tenant(id),
+  actor_id     uuid references actor(id),
+  kind         text not null check (kind in ('invitation', 'verify_email', 'password_reset')),
+  recipient    text not null,
+  subject      text not null,
+  status       text not null default 'queued'
+    check (status in ('queued', 'sent', 'failed', 'skipped')),
+  provider     text,
+  provider_message_id text,
+  failure      text,
+  sent_at      timestamptz not null default now()
+);
+
+create index platform_email_recent on platform_email (recipient, sent_at desc);

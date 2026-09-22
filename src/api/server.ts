@@ -27,6 +27,7 @@ import {
   setMemberActive,
   InvalidInput,
 } from '../runtime/workspace.js';
+import { requestPasswordReset, resetPassword, sendVerification, verifyEmail } from '../runtime/account.js';
 import type { WorkspaceRole } from '../runtime/policy.js';
 import { installPack, listInstalls, listPacks, publishPack, readPack } from '../runtime/packs.js';
 import { authorize, listGrants, registerClient, revokeGrant } from './oauth.js';
@@ -511,9 +512,29 @@ route('POST', /^\/api\/invitations$/, async ({ pool, principal }, body) => {
     processRoles?: { processKey: string; roleKey: string }[]; message?: string;
   };
   if (!email || !workspaceRole) throw new HttpError(400, 'email and workspaceRole are required');
-  // The token comes back once. Delivering it is the caller's job — there is
-  // no invitation email yet, which the README says rather than implies.
-  return invite(pool, { principal, email, workspaceRole, processRoles, message });
+  const sent = await invite(pool, { principal, email, workspaceRole, processRoles, message });
+  /*
+   * The token does not come back.
+   *
+   * It used to, because there was no invitation email and somebody had to
+   * carry the link by hand. Now that the mail goes out, returning it as well
+   * would mean any member who can invite could mint a working link for an
+   * address without the owner of that address ever seeing it. `delivered`
+   * says whether the mail left, which is the part the console needs.
+   */
+  return { id: sent.id, expiresAt: sent.expiresAt, delivered: sent.delivered };
+});
+
+/**
+ * Resend your own verification link.
+ *
+ * Only your own: an endpoint that sends verification mail to an arbitrary
+ * actor id is a way to make this system mail a stranger on demand. The
+ * throttle in `sendVerification` limits how often even this works.
+ */
+route('POST', /^\/api\/account\/resend-verification$/, async ({ pool, actorId }) => {
+  const result = await sendVerification(pool, { actorId });
+  return { sent: result.sent, reason: result.reason ?? null };
 });
 
 route('POST', /^\/api\/invitations\/([0-9a-f-]{36})\/revoke$/, async ({ pool, principal, url }) =>
@@ -707,11 +728,13 @@ async function main(): Promise<void> {
 
       try {
         /*
-         * Three routes precede authentication, and each has a reason.
+         * Six routes precede authentication, and each has a reason.
          *
          * Sign-in obviously. Creating a workspace, because there is nobody to
-         * authenticate yet — IAM-01. And reading an invitation, because the
-         * person following the link is not a member until they accept it.
+         * authenticate yet — IAM-01. Reading and accepting an invitation,
+         * because the person following the link is not a member until they
+         * do. And the two recovery routes below: somebody who cannot sign in
+         * is exactly who needs them.
          */
         if (url.pathname === '/api/workspaces' && req.method === 'POST') {
           const b = (await readBody(req)) as Record<string, string>;
@@ -770,6 +793,36 @@ async function main(): Promise<void> {
             { ...joined, actor: session?.actor },
             session ? [cookie(SESSION_COOKIE, session.token, session.expiresAt)] : [],
           );
+        }
+
+        // ---- account recovery: reachable by definition without a session
+        if (url.pathname === '/api/auth/verify' && req.method === 'POST') {
+          const b = (await readBody(req)) as Record<string, string>;
+          if (!b.token) throw new HttpError(400, 'token is required');
+          const verified = await verifyEmail(pool, b.token);
+          return send(res, 200, { email: verified.email });
+        }
+
+        if (url.pathname === '/api/auth/forgot' && req.method === 'POST') {
+          const b = (await readBody(req)) as Record<string, string>;
+          if (!b.email) throw new HttpError(400, 'email is required');
+          // The token is deliberately dropped. `requestPasswordReset` returns
+          // it for in-process callers; putting it in a response would make the
+          // email pointless and the endpoint an account takeover.
+          await requestPasswordReset(pool, { email: b.email });
+          return send(res, 202, {
+            message: 'If that address has an account, a reset link is on its way.',
+          });
+        }
+
+        if (url.pathname === '/api/auth/reset' && req.method === 'POST') {
+          const b = (await readBody(req)) as Record<string, string>;
+          if (!b.token || !b.password) throw new HttpError(400, 'token and password are required');
+          const done = await resetPassword(pool, { token: b.token, password: b.password });
+          return send(res, 200, {
+            sessionsRevoked: done.sessionsRevoked,
+            message: 'Password changed. Every other session has been signed out.',
+          });
         }
 
         // ---- login and logout are the only routes before authentication
