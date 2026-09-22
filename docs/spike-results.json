@@ -1,12 +1,12 @@
 {
-  "ranAt": "2026-09-22T20:16:20.930Z",
+  "ranAt": "2026-09-22T20:37:09.163Z",
   "postgres": "PostgreSQL 17.11 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit",
   "proofs": [
     {
       "name": "Blueprint scenarios run against the real engine",
       "claim": "Every scenario each blueprint declares, executed by the runtime that would run it in production.",
       "passed": true,
-      "detail": "21/21 scenarios passed across 3 processes."
+      "detail": "22/22 scenarios passed across 3 processes."
     },
     {
       "name": "Authorization is enforced by the runtime, not by the caller",
@@ -48,13 +48,13 @@
       "name": "Every action traces back to the request that caused it, across the worker boundary",
       "claim": "Section 20.2 observability: traceable request, event, job, attempt and result identifiers.",
       "passed": true,
-      "detail": "One submission produced 1 event(s), 1 job(s) and 3 action run(s), every one carrying \"proof-request-0001\" and 0 unattributed. The actions ran in a later drain that knew nothing about the submission — the link survived because the request id is stamped on the outbox row and read back when the job runs. A timer firing got an id of its own (req_4506e63f7d22…) rather than inheriting one, because a deadline is its own cause. The support view joined them into 2 step(s) with every attempt count present, and answered in a sentence: \"Queued: 1 job scheduled and not yet run. If this does not clear, no worker is ru\". Asking by request id found 1 record; an admin of another workspace asking the same id found 0."
+      "detail": "One submission produced 1 event(s), 1 job(s) and 3 action run(s), every one carrying \"proof-request-0001\" and 0 unattributed. The actions ran in a later drain that knew nothing about the submission — the link survived because the request id is stamped on the outbox row and read back when the job runs. A timer firing got an id of its own (req_fae37dae3a2e…) rather than inheriting one, because a deadline is its own cause. The support view joined them into 2 step(s) with every attempt count present, and answered in a sentence: \"Queued: 1 job scheduled and not yet run. If this does not clear, no worker is ru\". Asking by request id found 1 record; an admin of another workspace asking the same id found 0."
     },
     {
       "name": "An administrator exports the record with its history, and only then is it deleted",
       "claim": "Section 20.1 step 11, and 6.4: corrections append history; destructive overwriting of audit evidence is prohibited.",
       "passed": true,
-      "detail": "The bundle carried 5 history entries for a finished record — submission, both decisions with the reasons given, and every task completion — plus 2 approval(s), 2 message(s) and 1 document(s). An approver could not export at all (\"neither the roles held (hiring_manager) nor workspace role \"approver\" grant \"administer\"\"). An administrator holding no process role saw every field; one who is also a hiring manager had 3 withheld (id_document, national_id, bank_account) — named in the bundle rather than quietly absent, and not left in the answers as the literal string \"[redacted]\". The export is itself on the record's history, and a second export of an unchanged record produced the same checksum (ae0ec06eab9d), so a file can be verified later. Retention then deleted 1 instance and 8 event(s) — in that order, because afterwards there is nothing left to export."
+      "detail": "The bundle carried 4 history entries for a finished record — submission, both decisions with the reasons given, and every task completion — plus 2 approval(s), 2 message(s) and 1 document(s). An approver could not export at all (\"neither the roles held (hiring_manager) nor workspace role \"approver\" grant \"administer\"\"). An administrator holding no process role saw every field; one who is also a hiring manager had 3 withheld (id_document, national_id, bank_account) — named in the bundle rather than quietly absent, and not left in the answers as the literal string \"[redacted]\". The export is itself on the record's history, and a second export of an unchanged record produced the same checksum (e2a1591e8214), so a file can be verified later. Retention then deleted 1 instance and 7 event(s) — in that order, because afterwards there is nothing left to export."
     },
     {
       "name": "A workspace can be created and joined, and nobody can grant more than they hold",
@@ -84,7 +84,7 @@
       "name": "A privacy request erases one person without destroying anybody else",
       "claim": "Section 20.2 privacy: data map, deletion workflow. Section 12.1: privacy request workflow.",
       "passed": true,
-      "detail": "The data map is derived from the published version: 20 fields, every restricted one carrying a reason and hidden from somebody, and it traces where a value goes — start_date reaches 11 destinations including a webhook that leaves the platform. A read_only member was refused it (\"workspace role \"read_only\" does not grant \"report\"\"). The manager appears in 2 records and is the subject of none, so erasing them redacted 2 field(s) and deleted 0 records — both records survived and the address now reads \"[erased]\", so the audit still shows a manager was asked. A subject whose record is still running was left alone. An operator was refused (\"workspace role \"operator\" does not grant \"administer\"\"). The preview reported 1 deletion and performed none. Erasing the finished record's subject removed it and all 5 of its events, and the erasure_run row records the same number — the account is written before the deletion and had to be counted first, or it would say zero."
+      "detail": "The data map is derived from the published version: 20 fields, every restricted one carrying a reason and hidden from somebody, and it traces where a value goes — start_date reaches 11 destinations including a webhook that leaves the platform. A read_only member was refused it (\"workspace role \"read_only\" does not grant \"report\"\"). The manager appears in 2 records and is the subject of none, so erasing them redacted 2 field(s) and deleted 0 records — both records survived and the address now reads \"[erased]\", so the audit still shows a manager was asked. A subject whose record is still running was left alone. An operator was refused (\"workspace role \"operator\" does not grant \"administer\"\"). The preview reported 1 deletion and performed none. Erasing the finished record's subject removed it and all 4 of its events, and the erasure_run row records the same number — the account is written before the deletion and had to be counted first, or it would say zero."
     },
     {
       "name": "A webhook actually leaves, is signed, survives a rotation, dies in a dead letter, and replays",
@@ -135,6 +135,12 @@
       "detail": "Advancing my workspace fourteen days sent 1 reminder here and 0 next door. Their record's state clock is still in the past. An unscoped fabricated clock was refused."
     },
     {
+      "name": "Parallel work finishes in either order, and only when all of it is done",
+      "claim": "docs/failure-cases.md G1: a fan-out modelled as a chain is slower than the real process and breaks if the work is done in the other order.",
+      "passed": true,
+      "detail": "Both tasks were open together (book_orientation, create_accounts, issue_equipment). Equipment first left the record in \"provisioning\"; accounts then took it to \"complete\". Accounts first left it in \"provisioning\"; equipment then took it to \"complete\". The join fired 1 time, on the completion that arrived last."
+    },
+    {
       "name": "A double submission makes one case",
       "claim": "Section 4.2: duplicates are handled without losing the original audit trail.",
       "passed": true,
@@ -150,7 +156,7 @@
       "name": "Submission and workflow start are far inside the section 10.4 budget",
       "claim": "Beta targets: acknowledgment p95 under 1.5s, workflow start p95 under 30s.",
       "passed": true,
-      "detail": "Over 100 submissions: acknowledgment p95 30.8ms (budget 1500ms), first action p95 74.7ms (budget 30000ms). Database round trips only, local container."
+      "detail": "Over 100 submissions: acknowledgment p95 18.1ms (budget 1500ms), first action p95 44.7ms (budget 30000ms). Database round trips only, local container."
     }
   ]
 }

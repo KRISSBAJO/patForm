@@ -987,8 +987,10 @@ Everything below is a deliberate deferral:
 - **An effect log outside the database.** The idempotency ledger protects every
   effect the backup knows about and nothing inside the RPO window, so anything
   with an external effect in that window happens twice after a restore.
-- **Parallel task joins, approval quorums, date-relative timers, separation of
-  duties** — the v0.2 list in [docs/failure-cases.md](docs/failure-cases.md).
+- **Approval quorums, date-relative timers, separation of duties** — the v0.2
+  list in [docs/failure-cases.md](docs/failure-cases.md). Parallel task joins
+  were on it and are now built: a `tasks_completed` trigger names the tasks it
+  waits for, and the compiler refuses a join that leaves a blocking task out.
 
 Open a record as Priya and the payroll fields come back `hidden from your
 role` — the same `hiddenFields` the blueprint declares and the compiler
@@ -1024,4 +1026,4 @@ means. See [docs/adr/0006](docs/adr/0006-the-ai-boundary.md).
 
 §21 puts the typed process schema and compiler at **P0**, and AI generation at **P1**. Hand-compiling supports that ordering strongly: a generator without a compiler produces confident, plausible, broken processes. The compiler is what makes generated output safe to publish, and it is useful on its own before any AI exists.
 
-Open questions the schema cannot yet express — parallel task joins, approval quorums, quantifiers over repeating groups, date-relative timers, separation of duties — are listed with recommendations in [docs/failure-cases.md](docs/failure-cases.md). None of them blocks a design-partner demo.
+Open questions the schema cannot yet express — approval quorums, quantifiers over repeating groups, date-relative timers, separation of duties — are listed with recommendations in [docs/failure-cases.md](docs/failure-cases.md). None of them blocks a design-partner demo.

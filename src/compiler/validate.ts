@@ -489,6 +489,18 @@ export function validate(bp: Blueprint): Diagnostics {
     if (t.trigger.on === 'task_completed' && !taskByKey.has(t.trigger.task)) {
       d.error('REF007', at, `Trigger refers to unknown task "${t.trigger.task}".`);
     }
+    if (t.trigger.on === 'tasks_completed') {
+      for (const key of t.trigger.tasks) {
+        if (!taskByKey.has(key)) d.error('REF007', at, `Join refers to unknown task "${key}".`);
+      }
+      // A set with a repeat is a join of fewer tasks than it appears to be,
+      // and it would satisfy itself early if the runtime counted rows rather
+      // than distinct keys. It counts distinct keys; this is still a mistake
+      // worth naming rather than silently tolerating.
+      if (new Set(t.trigger.tasks).size !== t.trigger.tasks.length) {
+        d.error('BLOCK005', at, `Join "${t.key}" names the same task more than once.`);
+      }
+    }
     if (t.trigger.on === 'manual') {
       for (const roleKey of t.trigger.by) {
         if (!roleByKey.has(roleKey)) d.error('REF007', at, `Manual trigger refers to unknown role "${roleKey}".`);
@@ -610,11 +622,11 @@ export function validate(bp: Blueprint): Diagnostics {
   // A blocking task only blocks if something waits for it. A task created and
   // then never awaited is a control that looks present in review and does
   // nothing at runtime, which is worse than not having it.
-  const awaited = new Set(
-    bp.workflow.transitions
-      .filter((t) => t.trigger.on === 'task_completed')
-      .map((t) => (t.trigger as { task: string }).task),
-  );
+  const awaited = new Set<string>();
+  for (const t of bp.workflow.transitions) {
+    if (t.trigger.on === 'task_completed') awaited.add(t.trigger.task);
+    if (t.trigger.on === 'tasks_completed') for (const k of t.trigger.tasks) awaited.add(k);
+  }
   for (const [i, task] of bp.workflow.tasks.entries()) {
     if (!used.tasks.has(task.key)) continue;
     if (task.blocking && !awaited.has(task.key)) {
@@ -626,15 +638,56 @@ export function validate(bp: Blueprint): Diagnostics {
       );
     }
   }
+  const declaredTasks = new Set(bp.workflow.tasks.map((t) => t.key));
+
   for (const [ti, t] of bp.workflow.transitions.entries()) {
-    if (t.trigger.on !== 'task_completed') continue;
-    if (!used.tasks.has(t.trigger.task)) {
-      d.error(
-        'BLOCK002',
-        `workflow.transitions[${ti}]`,
-        `Transition "${t.key}" waits for task "${t.trigger.task}", which no transition ever creates.`,
-        'The record would wait forever for a task that never appears.',
-      );
+    const waitsFor =
+      t.trigger.on === 'task_completed'
+        ? [t.trigger.task]
+        : t.trigger.on === 'tasks_completed'
+          ? t.trigger.tasks
+          : [];
+    if (!waitsFor.length) continue;
+
+    for (const key of waitsFor) {
+      // REF007 above already reports a task the workflow does not define.
+      if (!declaredTasks.has(key)) continue;
+      if (!used.tasks.has(key)) {
+        d.error(
+          'BLOCK002',
+          `workflow.transitions[${ti}]`,
+          `Transition "${t.key}" waits for task "${key}", which no transition ever creates.`,
+          'The record would wait forever for a task that never appears.',
+        );
+      }
+    }
+
+    /*
+     * A join must name every blocking task that can be open in the state it
+     * leaves — otherwise the record completes with work outstanding, which is
+     * the one thing naming the set costs you over inferring it.
+     *
+     * "Can be open here" is read as: created by a transition that arrives at
+     * this state, or by a transition that loops within it. That is a
+     * structural reading and not a reachability proof, which is the right
+     * trade — it is cheap, it has no false negatives for the fan-out shape
+     * this exists for, and a false positive is fixed by naming the task.
+     */
+    if (t.trigger.on !== 'tasks_completed') continue;
+    const named = new Set(t.trigger.tasks);
+    const arrivingHere = bp.workflow.transitions.filter((o) => o.to === t.from);
+    for (const other of arrivingHere) {
+      for (const a of other.actions) {
+        if (a.do !== 'create_task' || named.has(a.task)) continue;
+        const task = bp.workflow.tasks.find((x) => x.key === a.task);
+        if (!task?.blocking) continue;
+        d.error(
+          'BLOCK003',
+          `workflow.transitions[${ti}]`,
+          `Transition "${t.key}" joins ${t.trigger.tasks.length} tasks, but "${a.task}" is also created in "${t.from}" and blocks.`,
+          `Add "${a.task}" to the join, or mark it non-blocking if the record may genuinely leave without it.`,
+        );
+      }
     }
   }
 

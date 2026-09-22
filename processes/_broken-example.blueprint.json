@@ -7,117 +7,287 @@
     "outcome": "This blueprint exists only to be rejected by the compiler.",
     "owner": "ghost_role",
     "respondents": "Nobody.",
-    "expectedVolume": { "count": 1, "per": "year" },
+    "expectedVolume": {
+      "count": 1,
+      "per": "year"
+    },
     "sensitivityCeiling": "internal",
     "completionState": "nowhere"
   },
-
   "roles": [
-    { "key": "boss", "name": "Boss", "kind": "internal", "capabilities": ["view", "operate"] },
-    { "key": "guest", "name": "Guest", "kind": "respondent", "capabilities": ["submit", "operate"] },
+    {
+      "key": "boss",
+      "name": "Boss",
+      "kind": "internal",
+      "capabilities": [
+        "view",
+        "operate"
+      ]
+    },
+    {
+      "key": "guest",
+      "name": "Guest",
+      "kind": "respondent",
+      "capabilities": [
+        "submit",
+        "operate"
+      ]
+    },
     {
       "key": "editor",
       "name": "Editor",
       "kind": "internal",
-      "capabilities": ["view", "edit"],
-      "hiddenFields": ["a_name"],
-      "editableFields": ["a_name"]
+      "capabilities": [
+        "view",
+        "edit"
+      ],
+      "hiddenFields": [
+        "a_name"
+      ],
+      "editableFields": [
+        "a_name"
+      ]
     }
   ],
-
   "data": {
     "fields": [
-      { "key": "a_name", "type": "short_text", "label": "Name", "classification": "internal" },
-      { "key": "a_secret", "type": "short_text", "label": "Passport number", "classification": "restricted" },
-      { "key": "a_required", "type": "short_text", "label": "Never asked", "required": true, "classification": "internal" },
-      { "key": "a_choice", "type": "single_choice", "label": "Pick one", "classification": "internal" },
+      {
+        "key": "a_name",
+        "type": "short_text",
+        "label": "Name",
+        "classification": "internal"
+      },
+      {
+        "key": "a_secret",
+        "type": "short_text",
+        "label": "Passport number",
+        "classification": "restricted"
+      },
+      {
+        "key": "a_required",
+        "type": "short_text",
+        "label": "Never asked",
+        "required": true,
+        "classification": "internal"
+      },
+      {
+        "key": "a_choice",
+        "type": "single_choice",
+        "label": "Pick one",
+        "classification": "internal"
+      },
       {
         "key": "b_choice",
         "type": "dropdown",
         "label": "Pick another",
         "classification": "internal",
         "choices": [
-          { "value": "x", "label": "X" },
-          { "value": "y", "label": "Y" }
+          {
+            "value": "x",
+            "label": "X"
+          },
+          {
+            "value": "y",
+            "label": "Y"
+          }
         ]
       },
-      { "key": "calc_a", "type": "calculated", "label": "A", "classification": "internal", "compute": { "field": "calc_b" } },
-      { "key": "calc_b", "type": "calculated", "label": "B", "classification": "internal", "compute": { "field": "calc_a" } }
+      {
+        "key": "calc_a",
+        "type": "calculated",
+        "label": "A",
+        "classification": "internal",
+        "compute": {
+          "field": "calc_b"
+        }
+      },
+      {
+        "key": "calc_b",
+        "type": "calculated",
+        "label": "B",
+        "classification": "internal",
+        "compute": {
+          "field": "calc_a"
+        }
+      }
     ]
   },
-
   "experience": {
-    "confirmation": { "message": "Done." },
+    "confirmation": {
+      "message": "Done."
+    },
     "pages": [
       {
         "key": "only_page",
         "title": "Only page",
-        "sections": [{ "key": "only_section", "fields": ["a_name", "a_secret", "a_choice", "b_choice"] }]
+        "sections": [
+          {
+            "key": "only_section",
+            "fields": [
+              "a_name",
+              "a_secret",
+              "a_choice",
+              "b_choice"
+            ]
+          }
+        ]
       }
     ]
   },
-
   "workflow": {
     "states": [
-      { "key": "start", "name": "Start", "type": "initial" },
-      { "key": "start2", "name": "Another start", "type": "initial" },
-      { "key": "limbo", "name": "Limbo", "type": "active" },
-      { "key": "island", "name": "Island", "type": "active" },
-      { "key": "spin", "name": "Spin", "type": "active" },
-      { "key": "done", "name": "Done", "type": "terminal" }
+      {
+        "key": "start",
+        "name": "Start",
+        "type": "initial"
+      },
+      {
+        "key": "start2",
+        "name": "Another start",
+        "type": "initial"
+      },
+      {
+        "key": "limbo",
+        "name": "Limbo",
+        "type": "active"
+      },
+      {
+        "key": "island",
+        "name": "Island",
+        "type": "active"
+      },
+      {
+        "key": "spin",
+        "name": "Spin",
+        "type": "active"
+      },
+      {
+        "key": "done",
+        "name": "Done",
+        "type": "terminal"
+      }
     ],
-
     "approvals": [
       {
         "key": "rubber_stamp",
         "name": "Rubber stamp",
-        "approvers": [{ "role": "ghost_role" }],
+        "approvers": [
+          {
+            "role": "ghost_role"
+          }
+        ],
         "mode": "single"
       }
     ],
-
     "tasks": [
-      { "key": "blocker", "name": "Blocks nothing", "assignee": { "role": "boss" }, "blocking": true }
+      {
+        "key": "blocker",
+        "name": "Blocks nothing",
+        "assignee": {
+          "role": "boss"
+        },
+        "blocking": true
+      },
+      {
+        "key": "declared_never_created",
+        "name": "Declared and never created",
+        "assignee": {
+          "role": "operator"
+        },
+        "blocking": false
+      }
     ],
-
     "transitions": [
       {
         "key": "go",
         "from": "start",
         "to": "limbo",
-        "trigger": { "on": "submission" },
+        "trigger": {
+          "on": "submission"
+        },
         "actions": [
-          { "do": "send_email", "key": "e1", "template": "no_such_template" },
-          { "do": "send_email", "key": "e1", "template": "leaky" },
-          { "do": "create_task", "key": "mk", "task": "blocker" },
-          { "do": "call_webhook", "key": "hook", "event": "undeclared.event", "includeFields": ["a_secret"] }
+          {
+            "do": "send_email",
+            "key": "e1",
+            "template": "no_such_template"
+          },
+          {
+            "do": "send_email",
+            "key": "e1",
+            "template": "leaky"
+          },
+          {
+            "do": "create_task",
+            "key": "mk",
+            "task": "blocker"
+          },
+          {
+            "do": "call_webhook",
+            "key": "hook",
+            "event": "undeclared.event",
+            "includeFields": [
+              "a_secret"
+            ]
+          }
         ]
       },
       {
         "key": "bad_target",
         "from": "start",
         "to": "nowhere_state",
-        "trigger": { "on": "manual", "by": ["boss"] },
+        "trigger": {
+          "on": "manual",
+          "by": [
+            "boss"
+          ]
+        },
         "actions": []
       },
       {
         "key": "waiter",
         "from": "start",
         "to": "island",
-        "trigger": { "on": "task_completed", "task": "ghost_task" },
+        "trigger": {
+          "on": "task_completed",
+          "task": "ghost_task"
+        },
         "actions": []
       },
       {
         "key": "cond",
         "from": "start2",
         "to": "island",
-        "trigger": { "on": "timer", "afterHoursInState": 5 },
+        "trigger": {
+          "on": "timer",
+          "afterHoursInState": 5
+        },
         "when": {
           "op": "and",
           "operands": [
-            { "op": "gt", "left": { "field": "a_name" }, "right": { "literal": 5 } },
-            { "op": "eq", "left": { "field": "b_choice" }, "right": { "literal": "zzz" } },
-            { "op": "is_present", "left": { "field": "no_such_field" } }
+            {
+              "op": "gt",
+              "left": {
+                "field": "a_name"
+              },
+              "right": {
+                "literal": 5
+              }
+            },
+            {
+              "op": "eq",
+              "left": {
+                "field": "b_choice"
+              },
+              "right": {
+                "literal": "zzz"
+              }
+            },
+            {
+              "op": "is_present",
+              "left": {
+                "field": "no_such_field"
+              }
+            }
           ]
         },
         "actions": []
@@ -126,26 +296,47 @@
         "key": "spinner",
         "from": "spin",
         "to": "spin",
-        "trigger": { "on": "record_updated" },
+        "trigger": {
+          "on": "record_updated"
+        },
         "actions": []
       },
       {
         "key": "island_exit",
         "from": "island",
         "to": "done",
-        "trigger": { "on": "manual", "by": ["boss"] },
+        "trigger": {
+          "on": "manual",
+          "by": [
+            "boss"
+          ]
+        },
         "actions": []
       },
       {
         "key": "from_done",
         "from": "done",
         "to": "limbo",
-        "trigger": { "on": "manual", "by": ["boss"] },
+        "trigger": {
+          "on": "manual",
+          "by": [
+            "boss"
+          ]
+        },
+        "actions": []
+      },
+      {
+        "key": "waits_for_uncreated",
+        "from": "start",
+        "to": "island",
+        "trigger": {
+          "on": "task_completed",
+          "task": "declared_never_created"
+        },
         "actions": []
       }
     ]
   },
-
   "communications": {
     "fromName": "Nobody",
     "email": [
@@ -153,7 +344,11 @@
         "key": "leaky",
         "name": "Leaks a restricted value",
         "class": "transactional",
-        "to": [{ "role": "boss" }],
+        "to": [
+          {
+            "role": "boss"
+          }
+        ],
         "subject": "Details for {{a_name}}",
         "body": "Their passport number is {{a_secret}} and their missing answer was {{no_such_field}}."
       },
@@ -161,15 +356,21 @@
         "key": "unused_tpl",
         "name": "Never sent",
         "class": "marketing",
-        "to": [{ "role": "boss" }],
+        "to": [
+          {
+            "role": "boss"
+          }
+        ],
         "subject": "Hello",
         "body": "Nobody sends this."
       }
     ]
   },
-
   "outputs": {
-    "exportFields": ["a_secret", "no_such_field"],
+    "exportFields": [
+      "a_secret",
+      "no_such_field"
+    ],
     "documents": [
       {
         "key": "ghost_doc",
@@ -177,12 +378,23 @@
         "source": "html",
         "templateRef": "templates/ghost.html",
         "filename": "ghost.pdf",
-        "deliver": ["attach_to_record"],
-        "mapping": { "NAME": "a_name" }
+        "deliver": [
+          "attach_to_record"
+        ],
+        "mapping": {
+          "NAME": "a_name"
+        }
       }
     ],
     "dashboard": {
-      "metrics": [{ "key": "in", "name": "Intake", "kind": "intake", "state": "no_such_state" }]
+      "metrics": [
+        {
+          "key": "in",
+          "name": "Intake",
+          "kind": "intake",
+          "state": "no_such_state"
+        }
+      ]
     }
   }
 }

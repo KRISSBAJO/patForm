@@ -414,3 +414,52 @@
   text-decoration: underline;
   cursor: pointer;
 }
+
+/* ------------------------------------------------------------ a join */
+/*
+ * The tasks a join waits for. Checkboxes rather than a multi-select: the
+ * question is "which of these am I waiting for", and a list you can see all
+ * of at once answers it without opening anything.
+ */
+
+.rl__set {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 14px;
+  margin: 0;
+  padding: 7px 11px;
+  border: 1px solid var(--card-line, #e4e2dd);
+  border-radius: 7px;
+  background: #fff;
+}
+
+.rl__setLegend {
+  padding: 0 4px 0 0;
+  font-family: var(--ui);
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.rl__setItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--ui);
+  font-size: 13.5px;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.rl__setItem input {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--green);
+  cursor: pointer;
+}
+
+.rl__setNote {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--muted);
+}

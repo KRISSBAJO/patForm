@@ -100,6 +100,25 @@ export const Trigger = z.discriminatedUnion('on', [
   z.object({ on: z.literal('record_updated') }).strict(),
   z.object({ on: z.literal('approval_decided'), approval: Key, decision: z.enum(['approved', 'rejected', 'changes_requested']) }).strict(),
   z.object({ on: z.literal('task_completed'), task: Key }).strict(),
+  /*
+   * A join: fires when the last of several tasks is done.
+   *
+   * Without it, work that genuinely happens in parallel has to be modelled as
+   * a chain — finishing equipment creates the accounts task — which is slower
+   * than the real process, breaks if the two are done in the other order, and
+   * is a lie about what the organisation does.
+   *
+   * The set is named rather than inferred from "all blocking tasks in this
+   * state". An inferred set is whatever `create_task` actions happened to run,
+   * so a task created under a condition that did not hold would either hang
+   * the record forever or be skipped silently, depending on data. Naming them
+   * makes the blueprint say what it means and lets the compiler check it —
+   * including the thing naming them costs you, which is forgetting to add the
+   * fifth task to the set (BLOCK003).
+   *
+   * Two or more. A set of one is a `task_completed` and should say so.
+   */
+  z.object({ on: z.literal('tasks_completed'), tasks: z.array(Key).min(2) }).strict(),
   z
     .object({
       on: z.literal('timer'),

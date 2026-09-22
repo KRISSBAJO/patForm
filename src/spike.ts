@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { Blueprint } from './blueprint/index.js';
 import { createPool, describeTarget, resetSchema, type Pool } from './runtime/db.js';
 import { Engine, newWorkerId } from './runtime/engine.js';
-import { AuthorizationError } from './runtime/policy.js';
+import { AuthorizationError, type Principal } from './runtime/policy.js';
 import {
   proveBuilderRoundTrip,
   proveCopilot,
@@ -304,6 +304,113 @@ async function proveTenantClock(pool: Pool, bp: Blueprint): Promise<void> {
   );
 }
 
+/**
+ * Work that happens in parallel, modelled as parallel.
+ *
+ * Onboarding issues equipment and creates accounts at the same time. The only
+ * trigger used to be `task_completed` for one named task, so the blueprint
+ * chained them — finishing equipment created the accounts task — which meant
+ * the accounts task did not exist until equipment was done. IT could not do
+ * them in the other order, or at the same time, which is how they are
+ * actually done.
+ *
+ * A join fires when the last of the tasks it names is finished. This proves
+ * the three things that makes it worth having: both tasks exist from the
+ * start, neither one alone releases the record, and either order works.
+ */
+async function proveParallelTasks(pool: Pool, bp: Blueprint): Promise<void> {
+  const engine = new Engine(pool);
+  const tenantId = await engine.createTenant('proof:parallel');
+  const version = await engine.publish(tenantId, bp, 'proof');
+
+  const managerId = await engine.createActor(tenantId, 'manager_email@example.test', 'Priya Raman');
+  await engine.grant({ tenantId, actorId: managerId, processKey: bp.key, roleKey: 'hiring_manager' });
+  const hrId = await engine.createActor(tenantId, 'hr@example.test', 'Sam Boateng');
+  await engine.grant({ tenantId, actorId: hrId, processKey: bp.key, roleKey: 'hr_approver' });
+  const itId = await engine.createActor(tenantId, 'it@example.test', 'Ini Etim');
+  await engine.grant({ tenantId, actorId: itId, processKey: bp.key, roleKey: 'it_operator' });
+  const it: Principal = { kind: 'actor', tenantId, actorId: itId };
+
+  /** Submit and get both approvals out of the way, leaving the record in provisioning. */
+  const intoProvisioning = async (email: string): Promise<string> => {
+    const { instanceId } = await engine.submit({
+      version,
+      answers: completeFor(bp, { personal_email: email }),
+      now: T0,
+    });
+    await engine.drain(T0, 'proof', tenantId);
+    for (const [approvalKey, actorId] of [
+      ['manager_approval', managerId],
+      ['hr_approval', hrId],
+    ] as const) {
+      await engine.decide({
+        instanceId,
+        approvalKey,
+        decision: 'approved',
+        principal: { kind: 'actor', tenantId, actorId },
+        now: T0,
+      });
+      await engine.drain(T0, 'proof', tenantId);
+    }
+    return instanceId;
+  };
+
+  const openTasks = async (instanceId: string): Promise<string[]> => {
+    const { rows } = await pool.query<{ task_key: string }>(
+      `select task_key from task where instance_id = $1 and status = 'open' order by task_key`,
+      [instanceId],
+    );
+    return rows.map((r) => r.task_key);
+  };
+  const stateOf = async (instanceId: string): Promise<string> => (await engine.instance(instanceId)).state;
+
+  // ---- 1. Both exist at once, rather than one appearing when the other ends.
+  const a = await intoProvisioning('parallel.a@example.test');
+  const bothOpen = await openTasks(a);
+
+  // ---- 2. Equipment first. One task done is not the job done.
+  await engine.completeTask({ instanceId: a, taskKey: 'issue_equipment', principal: it, now: T0 });
+  await engine.drain(T0, 'proof', tenantId);
+  const afterFirstTask = await stateOf(a);
+
+  await engine.completeTask({ instanceId: a, taskKey: 'create_accounts', principal: it, now: T0 });
+  await engine.drain(T0, 'proof', tenantId);
+  const afterBoth = await stateOf(a);
+
+  // ---- 3. The other order, which the chain made impossible.
+  const b = await intoProvisioning('parallel.b@example.test');
+  await engine.completeTask({ instanceId: b, taskKey: 'create_accounts', principal: it, now: T0 });
+  await engine.drain(T0, 'proof', tenantId);
+  const reverseAfterFirst = await stateOf(b);
+  await engine.completeTask({ instanceId: b, taskKey: 'issue_equipment', principal: it, now: T0 });
+  await engine.drain(T0, 'proof', tenantId);
+  const reverseAfterBoth = await stateOf(b);
+
+  // ---- 4. The join fired once, not once per task.
+  const { rows: completions } = await pool.query<{ count: number }>(
+    `select count(*)::int as count from event
+      where instance_id = $1 and type = 'task_completed' and payload ? 'tasks'`,
+    [b],
+  );
+
+  const fannedOut = bothOpen.includes('issue_equipment') && bothOpen.includes('create_accounts');
+
+  record(
+    'Parallel work finishes in either order, and only when all of it is done',
+    'docs/failure-cases.md G1: a fan-out modelled as a chain is slower than the real process and breaks if the work is done in the other order.',
+    fannedOut &&
+      afterFirstTask === 'provisioning' &&
+      afterBoth === 'complete' &&
+      reverseAfterFirst === 'provisioning' &&
+      reverseAfterBoth === 'complete' &&
+      completions[0]!.count === 1,
+    `Both tasks were open together (${bothOpen.join(', ')}). Equipment first left the record in ` +
+      `"${afterFirstTask}"; accounts then took it to "${afterBoth}". Accounts first left it in ` +
+      `"${reverseAfterFirst}"; equipment then took it to "${reverseAfterBoth}". The join fired ` +
+      `${completions[0]!.count} time, on the completion that arrived last.`,
+  );
+}
+
 async function proveDuplicateSubmission(pool: Pool, bp: Blueprint): Promise<void> {
   const engine = new Engine(pool);
   const tenantId = await engine.createTenant('proof:duplicates');
@@ -581,6 +688,7 @@ async function main(): Promise<void> {
     ['crash recovery', () => proveCrashRecovery(pool, onboarding)],
     ['timers', () => proveTimers(pool, onboarding)],
     ['tenant clock', () => proveTenantClock(pool, onboarding)],
+    ['parallel tasks', () => proveParallelTasks(pool, onboarding)],
     ['duplicates', () => proveDuplicateSubmission(pool, onboarding)],
     ['versioning', () => proveVersionImmutability(pool, onboarding)],
     ['performance', () => measurePerformance(pool, onboarding)],

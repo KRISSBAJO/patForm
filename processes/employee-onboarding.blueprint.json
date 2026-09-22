@@ -737,6 +737,11 @@
             "task": "book_orientation"
           },
           {
+            "do": "create_task",
+            "key": "task_accounts",
+            "task": "create_accounts"
+          },
+          {
             "do": "assign",
             "key": "own_it",
             "to": {
@@ -763,34 +768,15 @@
         ]
       },
       {
-        "key": "equipment_issued",
-        "from": "provisioning",
-        "to": "provisioning",
-        "trigger": {
-          "on": "task_completed",
-          "task": "issue_equipment"
-        },
-        "when": {
-          "op": "is_present",
-          "left": {
-            "field": "equipment_needs"
-          }
-        },
-        "actions": [
-          {
-            "do": "create_task",
-            "key": "task_accounts",
-            "task": "create_accounts"
-          }
-        ]
-      },
-      {
-        "key": "accounts_created",
+        "key": "provisioning_done",
         "from": "provisioning",
         "to": "complete",
         "trigger": {
-          "on": "task_completed",
-          "task": "create_accounts"
+          "on": "tasks_completed",
+          "tasks": [
+            "issue_equipment",
+            "create_accounts"
+          ]
         },
         "actions": [
           {
@@ -1232,6 +1218,73 @@
       ],
       "expect": {
         "state": "manager_review"
+      }
+    },
+    {
+      "key": "provisioning_either_order",
+      "kind": "happy_path",
+      "name": "Accounts are created before the equipment goes out, and the record still completes",
+      "steps": [
+        {
+          "step": "submit",
+          "answers": {
+            "full_name": "Amara Okafor",
+            "preferred_name": "Amara",
+            "personal_email": "amara@example.com",
+            "phone": "+44 7700 900123",
+            "address": "12 Example Street, London",
+            "start_date": "2026-11-02",
+            "department": "engineering",
+            "job_title": "Backend Engineer",
+            "employment_type": "employee",
+            "manager_email": "manager@example.com",
+            "emergency_contact_name": "Ify Okafor",
+            "emergency_contact_phone": "+44 7700 900999",
+            "national_id": "QQ123456C",
+            "bank_account": "12-34-56 / 12345678",
+            "id_document": "passport.pdf",
+            "equipment_needs": [
+              "laptop",
+              "monitor"
+            ],
+            "policy_ack": true
+          }
+        },
+        {
+          "step": "decide",
+          "approval": "manager_approval",
+          "as": "hiring_manager",
+          "decision": "approved",
+          "reason": "Confirmed headcount."
+        },
+        {
+          "step": "decide",
+          "approval": "hr_approval",
+          "as": "hr_approver",
+          "decision": "approved",
+          "reason": "Right to work verified."
+        },
+        {
+          "step": "complete_task",
+          "task": "create_accounts",
+          "as": "it_operator"
+        },
+        {
+          "step": "complete_task",
+          "task": "issue_equipment",
+          "as": "it_operator"
+        }
+      ],
+      "expect": {
+        "state": "complete",
+        "emails": [
+          "submission_receipt",
+          "welcome_packet"
+        ],
+        "documents": [
+          "onboarding_packet"
+        ],
+        "instanceCount": 1
       }
     }
   ]

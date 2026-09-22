@@ -383,13 +383,64 @@ export class Engine {
       );
       if (!rowCount) return { applied: false };
 
-      const transition = bp.workflow.transitions.find(
+      /*
+       * One task, or the last of several.
+       *
+       * A `tasks_completed` transition is a join: it fires when every task it
+       * names is done, and the completion that gets there last is the one that
+       * fires it. The instance row is locked above, so two people finishing
+       * two tasks at the same moment serialise here — the first sees the
+       * other still open and does nothing, the second sees both done and
+       * moves the record. Without that lock both would read "still open" and
+       * the record would sit in a state with no work left in it.
+       */
+      const single = bp.workflow.transitions.find(
         (t) =>
           t.from === instance.state &&
           t.trigger.on === 'task_completed' &&
           t.trigger.task === args.taskKey &&
           passesGuard(t, instance, args.now, actor),
       );
+
+      let transition = single;
+      let payload: Record<string, unknown> = { task: args.taskKey };
+
+      if (!transition) {
+        const joins = bp.workflow.transitions.filter(
+          (t) =>
+            t.from === instance.state &&
+            t.trigger.on === 'tasks_completed' &&
+            t.trigger.tasks.includes(args.taskKey) &&
+            passesGuard(t, instance, args.now, actor),
+        );
+
+        for (const join of joins) {
+          const keys = (join.trigger as { tasks: string[] }).tasks;
+          /*
+           * Every named task must have a *completed* row. A task that was
+           * never created does not satisfy the join, so the record waits.
+           *
+           * That is the safe reading of the two available wrong answers. A
+           * record waiting is visible — it sits in the state, the queue shows
+           * it, the state's own SLA fires. A record completing with work
+           * outstanding is invisible and wrong. BLOCK002 makes the
+           * never-created case a build error, so this should not be reachable
+           * from a published blueprint; it is here for the one that slips
+           * through a hand-edited draft.
+           */
+          const { rows: done } = await client.query<{ task_key: string }>(
+            `select distinct task_key from task
+              where instance_id = $1 and task_key = any($2::text[]) and status = 'done'`,
+            [args.instanceId, keys],
+          );
+          if (done.length !== keys.length) continue;
+
+          transition = join;
+          payload = { tasks: keys, last: args.taskKey };
+          break;
+        }
+      }
+
       if (!transition) return { applied: true };
 
       await applyTransition(client, {
@@ -397,7 +448,7 @@ export class Engine {
         instance,
         transition,
         eventType: 'task_completed',
-        payload: { task: args.taskKey },
+        payload,
         actor,
         now: args.now,
       });

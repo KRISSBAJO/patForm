@@ -47,15 +47,24 @@ Expense approval used one `approver_reminder` template for both the manager chas
 
 These are places where the representation could not say what the process needed to say. They are open decisions, not bugs.
 
-### G1. There is no "all blocking tasks are done" trigger
+### G1. There is no "all blocking tasks are done" trigger — **fixed**
 
-Employee onboarding provisions equipment and accounts in parallel, then completes. The only available trigger is `task_completed` for one named task, so the blueprint chains them: finishing equipment creates the accounts task, and finishing accounts completes the record.
+Employee onboarding provisions equipment and accounts in parallel, then completes. The only available trigger was `task_completed` for one named task, so the blueprint chained them: finishing equipment *created* the accounts task, and finishing accounts completed the record.
 
-This works but is dishonest — it models a parallel fan-out as a sequence, and it means the process is slower than it needs to be and breaks if IT does them in the other order.
+Worse than the original note said. The accounts task did not exist until equipment was done, so IT could not do them in the other order or at the same time — which is how they are actually done.
 
-**Options:** add a `tasks_completed` trigger taking a set; or add a `join` state type that waits for all blocking tasks; or keep chaining and accept it. A join is the right answer, and it needs a runtime design before it goes in the schema.
+**Fixed** with a `tasks_completed` trigger naming its set, and the reference process rewritten to fan out and join.
 
-**Cost of deferring:** every process with parallel work models it as a false sequence. That will show up in customer processes quickly.
+The original recommendation here was a `join` state type waiting for "all blocking tasks". That was rejected on second look: an inferred set is whatever `create_task` actions happened to run, so a task created under a condition that did not hold would either hang the record forever or be skipped silently — and which one you got would depend on the data. That is the shape of fault this document is mostly about.
+
+Naming the set costs one thing: you can add a fifth task and forget to join it, and the record completes with work still open. So the compiler closes it — **BLOCK003** refuses a join that leaves out a blocking task created in the same state. That is the trade: explicit in the blueprint, and the one gap explicitness opens is a build error.
+
+Two runtime decisions worth recording:
+
+- **A task that was never created does not satisfy the join.** Of the two available wrong answers, a record that waits is visible — it sits in the state, the queue shows it, the state's SLA fires — and a record that completes with work outstanding is invisible. BLOCK002 makes the never-created case a build error, so this should be unreachable from a published blueprint.
+- **The instance row is locked before the check.** Two people finishing two tasks at the same instant serialise: the first sees the other still open and does nothing, the second sees both done and moves the record. Without the lock both would read "still open" and the record would sit in a state with no work left in it.
+
+Proof 26 checks both tasks open together, that neither alone releases the record, that either order completes it, and that the join fires once rather than once per task. The blueprint carries a scenario for the reverse order — which is a scenario that could not be written under the chain, because the second task did not exist yet.
 
 ### G2. Approvals cannot express "any two of these four"
 

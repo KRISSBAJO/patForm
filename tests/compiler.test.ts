@@ -189,3 +189,78 @@ test('a respondent role may never be named as an approver', () => {
     'a respondent approving their own submission must be an error',
   );
 });
+
+/*
+ * Parallel work, and the checks that make naming a join safe.
+ *
+ * The join names the tasks it waits for rather than inferring "all blocking
+ * tasks in this state", because an inferred set is whatever `create_task`
+ * actions happened to run. Naming them costs one thing — you can add a fifth
+ * task and forget to join it — so the compiler has to catch exactly that.
+ */
+
+function onboarding() {
+  return JSON.parse(readFileSync(join(DIR, 'employee-onboarding.blueprint.json'), 'utf8'));
+}
+
+function codesFor(mutate: (b: Record<string, never>) => void): string[] {
+  const b = onboarding();
+  mutate(b);
+  const r = validate(b);
+  return [...r.errors, ...r.warnings].map((d) => d.code);
+}
+
+test('the reference process fans out rather than chaining', () => {
+  const bp = load('employee-onboarding.blueprint.json');
+
+  // Equipment and accounts are created together, not one by the other.
+  const created = bp.workflow.transitions
+    .filter((t) => t.to === 'provisioning')
+    .flatMap((t) => t.actions.filter((a) => a.do === 'create_task').map((a) => a.task));
+  assert.ok(created.includes('issue_equipment'), 'equipment is created on arrival');
+  assert.ok(created.includes('create_accounts'), 'accounts are created on arrival, not by finishing equipment');
+
+  // And one transition waits for both.
+  const join = bp.workflow.transitions.find((t) => t.trigger.on === 'tasks_completed');
+  assert.ok(join, 'provisioning leaves on a join');
+  assert.deepEqual([...join.trigger.tasks].sort(), ['create_accounts', 'issue_equipment']);
+});
+
+test('a blocking task left out of the join is an error', () => {
+  // The whole cost of naming the set. Without this check, adding a fourth
+  // piece of provisioning work and forgetting the join completes the record
+  // with that work still open — invisibly.
+  const codes = codesFor((b) => {
+    b.workflow.tasks.find((t) => t.key === 'book_orientation').blocking = true;
+  });
+  assert.ok(codes.includes('BLOCK003'), `expected BLOCK003, got ${codes.join(', ') || 'nothing'}`);
+});
+
+test('a join naming a task nothing creates is an error', () => {
+  const codes = codesFor((b) => {
+    b.workflow.transitions.find((t) => t.trigger.on === 'tasks_completed').trigger.tasks = [
+      'issue_equipment',
+      'ghost_task',
+    ];
+  });
+  assert.ok(codes.includes('REF007'), `expected REF007, got ${codes.join(', ') || 'nothing'}`);
+});
+
+test('a join naming the same task twice is an error', () => {
+  // Two of the same key is a join of one wearing a disguise.
+  const codes = codesFor((b) => {
+    b.workflow.transitions.find((t) => t.trigger.on === 'tasks_completed').trigger.tasks = [
+      'issue_equipment',
+      'issue_equipment',
+    ];
+  });
+  assert.ok(codes.includes('BLOCK005'), `expected BLOCK005, got ${codes.join(', ') || 'nothing'}`);
+});
+
+test('a joined task counts as awaited, so it is not also reported as orphaned', () => {
+  // BLOCK001 asks whether anything waits for a blocking task. A task waited
+  // for as part of a set is waited for; counting only `task_completed` would
+  // have reported the fan-out as a missing control.
+  const diagnostics = validate(load('employee-onboarding.blueprint.json'));
+  assert.equal(diagnostics.items.filter((d) => d.code === 'BLOCK001').length, 0);
+});

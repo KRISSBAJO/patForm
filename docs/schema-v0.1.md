@@ -120,6 +120,8 @@ Errors block publication (BLD-07). Warnings appear in review and do not block, o
 | `OPS007` | warning | No identity fields, so duplicates cannot be detected |
 | `BLOCK001` | error | A blocking task that no transition waits for |
 | `BLOCK002` | error | A transition waits for a task nothing creates |
+| `BLOCK003` | error | A join leaves out a blocking task that can be open in the same state |
+| `BLOCK004` | error | A transition waits for a task the workflow does not define |
 | `ASSIGN001` | error | A message or task addressed to the current assignee where nothing assigns |
 
 ### Tests — `TEST`

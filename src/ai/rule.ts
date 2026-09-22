@@ -70,6 +70,7 @@ A rule is a JSON object with exactly these keys:
              { "on": "record_updated" }
              { "on": "approval_decided", "approval": <key>, "decision": "approved" | "rejected" | "changes_requested" }
              { "on": "task_completed", "task": <key> }
+             { "on": "tasks_completed", "tasks": [<key>, <key>, ...] }   a join: fires when the LAST of them finishes
              { "on": "timer", "afterHoursInState": <positive number> }
              { "on": "manual", "by": [<role key>, ...] }
   when     OPTIONAL condition: { "op": "eq"|"ne"|"gt"|"gte"|"lt"|"lte", "left": { "field": <key> }, "right": { "literal": <value> } }
@@ -135,6 +136,15 @@ function unknownReferences(rule: Record<string, unknown>, bp: Blueprint): string
   if (trigger.on === 'task_completed' && !has(bp.workflow.tasks, trigger.task)) {
     out.push(`there is no task called "${String(trigger.task)}"`);
   }
+  if (trigger.on === 'tasks_completed') {
+    const tasks = Array.isArray(trigger.tasks) ? (trigger.tasks as unknown[]) : [];
+    for (const key of tasks) {
+      if (!has(bp.workflow.tasks, key)) out.push(`there is no task called "${String(key)}"`);
+    }
+    // The schema refuses a set of one, and the model reaches for a join when
+    // a person says "when the work is done" about a single task.
+    if (tasks.length < 2) out.push('a join has to name at least two tasks');
+  }
 
   for (const raw of (rule.actions ?? []) as Record<string, unknown>[]) {
     if (raw.do === 'send_email' && !has(bp.communications.email, raw.template)) {
@@ -186,6 +196,8 @@ export function readingOf(rule: Record<string, unknown>, bp: Blueprint): string 
       ? `${name(bp.workflow.approvals, trigger.approval)} is ${trigger.decision}`
       : trigger.on === 'task_completed'
         ? `${name(bp.workflow.tasks, trigger.task)} is finished`
+        : trigger.on === 'tasks_completed'
+          ? `${(Array.isArray(trigger.tasks) ? (trigger.tasks as unknown[]) : []).map((k) => name(bp.workflow.tasks, k)).join(' and ')} are all finished`
         : trigger.on === 'timer'
           ? `${trigger.afterHoursInState} hours pass in ${name(bp.workflow.states, rule.from)}`
           : trigger.on === 'manual'

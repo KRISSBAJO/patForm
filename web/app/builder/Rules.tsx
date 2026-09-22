@@ -56,6 +56,7 @@ const TRIGGERS = [
   { on: 'record_updated', label: 'somebody edits the record' },
   { on: 'approval_decided', label: 'a decision is made' },
   { on: 'task_completed', label: 'a task is finished' },
+  { on: 'tasks_completed', label: 'several tasks are all finished' },
   { on: 'timer', label: 'time passes in this state' },
   { on: 'inbound_webhook', label: 'another system tells us' },
   { on: 'manual', label: 'somebody presses a button' },
@@ -91,6 +92,16 @@ function label(list: { key: string; name?: string; label?: string }[], key: stri
   return found?.name ?? found?.label ?? key;
 }
 
+/** The tasks a join waits for, in words. */
+function joined(t: Transition, ctx: RuleContext): string {
+  const keys = Array.isArray((t.trigger as { tasks?: unknown }).tasks)
+    ? ((t.trigger as { tasks: string[] }).tasks)
+    : [];
+  const names = keys.map((k) => label(ctx.tasks, k));
+  if (names.length <= 1) return names[0] ?? 'nothing';
+  return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+}
+
 /** A rule in a sentence, which is what somebody scans the list for. */
 export function ruleSentence(t: Transition, ctx: RuleContext): string {
   const trigger = t.trigger as Record<string, string | number>;
@@ -99,6 +110,8 @@ export function ruleSentence(t: Transition, ctx: RuleContext): string {
       ? `${label(ctx.approvals, String(trigger.approval))} is ${trigger.decision}`
       : trigger.on === 'task_completed'
         ? `${label(ctx.tasks, String(trigger.task))} is finished`
+        : trigger.on === 'tasks_completed'
+          ? `${joined(t, ctx)} are all finished`
         : trigger.on === 'timer'
           ? `${trigger.afterHoursInState} hours pass`
           : trigger.on === 'manual'
@@ -409,6 +422,10 @@ function Rule({
                 ? { on: next, approval: ctx.approvals[0]?.key ?? '', decision: 'approved' }
                 : next === 'task_completed'
                   ? { on: next, task: ctx.tasks[0]?.key ?? '' }
+                  : next === 'tasks_completed'
+                    // Two is the minimum the schema takes; a set of one is a
+                    // `task_completed` and should say so.
+                    ? { on: next, tasks: ctx.tasks.slice(0, 2).map((x) => x.key) }
                   : next === 'timer'
                     ? { on: next, afterHoursInState: 72 }
                     : next === 'inbound_webhook'
@@ -466,6 +483,47 @@ function Rule({
               </option>
             ))}
           </select>
+        )}
+
+        {/*
+          * A join, as a set of checkboxes.
+          *
+          * A multi-select would be shorter and worse: the whole question here
+          * is "which of these am I waiting for", and a list you can see all of
+          * at once answers it. The compiler will refuse a join that leaves out
+          * a blocking task created in the same state (BLOCK003), so getting
+          * this wrong is a diagnostic rather than a record that completes with
+          * work still open.
+          */}
+        {on === 'tasks_completed' && (
+          <fieldset className="rl__set">
+            <legend className="rl__setLegend">Wait for all of these</legend>
+            {ctx.tasks.length < 2 ? (
+              <p className="rl__setNote">
+                A join needs at least two tasks. Add another task before using this.
+              </p>
+            ) : (
+              ctx.tasks.map((task) => {
+                const chosen = Array.isArray(trigger.tasks) ? (trigger.tasks as string[]) : [];
+                const on_ = chosen.includes(task.key);
+                return (
+                  <label className="rl__setItem" key={task.key}>
+                    <input
+                      type="checkbox"
+                      checked={on_}
+                      onChange={() =>
+                        setTrigger({
+                          ...trigger,
+                          tasks: on_ ? chosen.filter((k) => k !== task.key) : [...chosen, task.key],
+                        })
+                      }
+                    />
+                    <span>{task.name}</span>
+                  </label>
+                );
+              })
+            )}
+          </fieldset>
         )}
 
         {on === 'timer' && (

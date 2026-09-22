@@ -63,6 +63,16 @@ interface CaseResult {
 
 // ---------------------------------------------------------------- assertions
 
+/** Every task some transition waits for, alone or as part of a join. */
+function awaitedTasks(bp: Blueprint): Set<string> {
+  const out = new Set<string>();
+  for (const t of bp.workflow.transitions) {
+    if (t.trigger.on === 'task_completed') out.add(t.trigger.task);
+    if (t.trigger.on === 'tasks_completed') for (const k of t.trigger.tasks) out.add(k);
+  }
+  return out;
+}
+
 function runChecks(bp: Blueprint | undefined, expect: Expectation, outcome: GenerationOutcome): Check[] {
   const checks: Check[] = [];
   const add = (name: string, passed: boolean, control = false, detail?: string) =>
@@ -137,9 +147,10 @@ function runChecks(bp: Blueprint | undefined, expect: Expectation, outcome: Gene
   }
 
   if (expect.blockingTasksAwaited) {
-    const awaited = new Set(
-      bp.workflow.transitions.filter((t) => t.trigger.on === 'task_completed').map((t) => (t.trigger as { task: string }).task),
-    );
+    // A task joined with others is awaited just as much as one waited for
+    // alone. Counting only `task_completed` would report a clean fan-out as an
+    // orphaned control.
+    const awaited = awaitedTasks(bp);
     const orphaned = bp.workflow.tasks.filter((t) => t.blocking && !awaited.has(t.key)).map((t) => t.key);
     add('every blocking task is actually waited for', orphaned.length === 0, true, orphaned.join(', ') || undefined);
   }
@@ -153,9 +164,10 @@ function runChecks(bp: Blueprint | undefined, expect: Expectation, outcome: Gene
   }
 
   if (expect.hasGateBeforeCompletion) {
-    const awaited = new Set(
-      bp.workflow.transitions.filter((t) => t.trigger.on === 'task_completed').map((t) => (t.trigger as { task: string }).task),
-    );
+    // A task joined with others is awaited just as much as one waited for
+    // alone. Counting only `task_completed` would report a clean fan-out as an
+    // orphaned control.
+    const awaited = awaitedTasks(bp);
     const realGate = bp.workflow.tasks.some((t) => t.blocking && awaited.has(t.key));
     add('the external check is a real gate, not a note', realGate && bp.workflow.approvals.length > 0, true);
   }
