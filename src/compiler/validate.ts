@@ -253,6 +253,23 @@ export function validate(bp: Blueprint): Diagnostics {
     const at = `roles[${ri}]`;
     for (const key of role.hiddenFields ?? []) requireField(key, at, `Role "${role.key}" hiddenFields`);
     for (const key of role.editableFields ?? []) requireField(key, at, `Role "${role.key}" editableFields`);
+    /*
+     * A capability with nothing to use it on.
+     *
+     * `editableFields` absent means "may change nothing", which is the safe
+     * reading of an omission — and combined with the `edit` capability it is
+     * a permission the blueprint appears to grant and the runtime refuses
+     * every time. Found by a proof that edited a record as the one role
+     * holding `edit` and silently changed nothing.
+     */
+    if (role.capabilities.includes('edit') && !(role.editableFields ?? []).length) {
+      d.warn(
+        'SEC012',
+        at,
+        `Role "${role.key}" may edit, and no field is listed as editable, so it can change nothing.`,
+        'List the fields it may change, or drop the edit capability so the blueprint stops implying one.',
+      );
+    }
     const overlap = (role.editableFields ?? []).filter((k) => (role.hiddenFields ?? []).includes(k));
     if (overlap.length) {
       d.error('SEC008', at, `Role "${role.key}" may edit fields it cannot see: ${overlap.join(', ')}.`);
@@ -560,6 +577,68 @@ export function validate(bp: Blueprint): Diagnostics {
       // worth naming rather than silently tolerating.
       if (new Set(t.trigger.tasks).size !== t.trigger.tasks.length) {
         d.error('BLOCK005', at, `Join "${t.key}" names the same task more than once.`);
+      }
+    }
+    /*
+     * A timer is measured one way or the other, never both and never neither.
+     *
+     * The schema cannot say this — a discriminated union member carries no
+     * refinement — so it is said here, which is where this codebase says that
+     * sort of thing anyway.
+     */
+    if (t.trigger.on === 'timer') {
+      const byState = typeof t.trigger.afterHoursInState === 'number';
+      const byDate = Boolean(t.trigger.relativeTo);
+
+      if (byState && byDate) {
+        d.error(
+          'TIME001',
+          at,
+          `Timer "${t.key}" is measured both from the state and from "${t.trigger.relativeTo}".`,
+          'Pick one. Two clocks on one deadline is two different days.',
+        );
+      } else if (!byState && !byDate) {
+        d.error(
+          'TIME001',
+          at,
+          `Timer "${t.key}" says neither how long after arriving nor what date it hangs off.`,
+          'Set afterHoursInState, or relativeTo with offsetHours.',
+        );
+      }
+
+      if (byDate) {
+        const field = fieldByKey.get(t.trigger.relativeTo!);
+        if (!field) {
+          d.error('REF015', at, `Timer "${t.key}" hangs off "${t.trigger.relativeTo}", which is not a field.`);
+        } else if (field.type !== 'date') {
+          d.error(
+            'REF015',
+            at,
+            `Timer "${t.key}" hangs off "${t.trigger.relativeTo}", which is a ${field.type}.`,
+            'A deadline needs a date to measure from.',
+          );
+        } else if (!field.required && (field.setBy ?? 'respondent') === 'respondent') {
+          /*
+           * A warning rather than an error. A timer on an optional date does
+           * not fire until somebody fills the date in, which is correct
+           * behaviour and sometimes exactly what was wanted — but it is also
+           * how a deadline silently never happens, so it is said out loud.
+           */
+          d.warn(
+            'TIME002',
+            at,
+            `Timer "${t.key}" hangs off "${t.trigger.relativeTo}", which the respondent may leave blank.`,
+            'Until somebody fills it in there is no deadline. Make the field required if the deadline is not optional.',
+          );
+        }
+        if (typeof t.trigger.offsetHours !== 'number') {
+          d.error(
+            'TIME001',
+            at,
+            `Timer "${t.key}" hangs off a date and does not say how far from it.`,
+            'Set offsetHours — negative for before the date, positive for after.',
+          );
+        }
       }
     }
     if (t.trigger.on === 'manual') {

@@ -126,6 +126,10 @@ Errors block publication (BLD-07). Warnings appear in review and do not block, o
 | `SEC009` | warning | The submitter field is set by an operator, not by the respondent |
 | `SEC010` | error | An approval bars the submitter, and nothing says which address is theirs |
 | `SEC011` | error | An approval is addressed only to the submitter and also bars them |
+| `SEC012` | warning | A role may edit and lists no editable field, so it can change nothing |
+| `TIME001` | error | A timer measured both ways, neither way, or off a date with no offset |
+| `TIME002` | warning | A timer hangs off a date the respondent may leave blank |
+| `REF015` | error | A timer hangs off something that is not a date field |
 | `ASSIGN001` | error | A message or task addressed to the current assignee where nothing assigns |
 
 ### Tests — `TEST`

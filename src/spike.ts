@@ -521,6 +521,141 @@ async function proveSeparationOfDuties(pool: Pool, bp: Blueprint): Promise<void>
   );
 }
 
+/**
+ * A deadline hung off a date, not off when somebody got round to it.
+ *
+ * The only clock was `afterHoursInState`, so "chase the equipment three days
+ * before the start date" was inexpressible: a hire approved in March and one
+ * approved the day before they start got the same schedule. Onboarding wanted
+ * exactly this and could not say it.
+ *
+ * Three things need proving, and the third is the one that would have shipped
+ * broken: the deadline lands on the date rather than on the arrival, editing
+ * the date moves it, and a date timer on a self-loop does not fire forever.
+ */
+async function proveDateRelativeTimers(pool: Pool, bp: Blueprint): Promise<void> {
+  const engine = new Engine(pool);
+  const tenantId = await engine.createTenant('proof:date-timers');
+  const version = await engine.publish(tenantId, bp, 'proof');
+
+  const managerId = await engine.createActor(tenantId, 'manager_email@example.test', 'A Manager');
+  await engine.grant({ tenantId, actorId: managerId, processKey: bp.key, roleKey: 'hiring_manager' });
+  const hrId = await engine.createActor(tenantId, 'hr@example.test', 'An Approver');
+  await engine.grant({ tenantId, actorId: hrId, processKey: bp.key, roleKey: 'hr_approver' });
+  const itId = await engine.createActor(tenantId, 'it@example.test', 'IT');
+  await engine.grant({ tenantId, actorId: itId, processKey: bp.key, roleKey: 'it_operator' });
+  // Approving and editing are different capabilities on purpose, so moving a
+  // start date needs somebody who may edit rather than the approver.
+  const adminId = await engine.createActor(tenantId, 'admin@example.test', 'HR Admin');
+  await engine.grant({ tenantId, actorId: adminId, processKey: bp.key, roleKey: 'hr_admin' });
+
+  /** Approve both gates so the record reaches provisioning, where the chase lives. */
+  const intoProvisioning = async (email: string, startDate: string): Promise<string> => {
+    const { instanceId } = await engine.submit({
+      version,
+      answers: completeFor(bp, { personal_email: email, start_date: startDate }),
+      now: T0,
+    });
+    await engine.drain(T0, 'proof', tenantId);
+    for (const [approvalKey, actorId] of [
+      ['manager_approval', managerId],
+      ['hr_approval', hrId],
+    ] as const) {
+      await engine.decide({
+        instanceId,
+        approvalKey,
+        decision: 'approved',
+        principal: { kind: 'actor', tenantId, actorId },
+        now: T0,
+      });
+      await engine.drain(T0, 'proof', tenantId);
+    }
+    return instanceId;
+  };
+
+  const chaseDue = async (instanceId: string): Promise<Date | null> => {
+    const { rows } = await pool.query<{ due_at: Date }>(
+      `select due_at from timer
+        where instance_id = $1 and transition_key = 'chase_before_start'
+          and fired_at is null and cancelled_at is null
+        order by id desc limit 1`,
+      [instanceId],
+    );
+    return rows[0]?.due_at ?? null;
+  };
+
+  // ---- 1. The deadline is three days before the start date, whenever the
+  //         record happened to arrive.
+  const farOff = await intoProvisioning('kit.far@example.test', '2027-03-01');
+  const soon = await intoProvisioning('kit.soon@example.test', '2026-10-05');
+
+  const farDue = await chaseDue(farOff);
+  const soonDue = await chaseDue(soon);
+  const expected = (date: string) => new Date(new Date(`${date}T00:00:00.000Z`).getTime() - 72 * 3_600_000);
+
+  const landsOnTheDate =
+    farDue?.getTime() === expected('2027-03-01').getTime() &&
+    soonDue?.getTime() === expected('2026-10-05').getTime();
+
+  // Two records that arrived at the same instant have different deadlines,
+  // which is the whole point and is impossible with afterHoursInState.
+  const differByDate = farDue !== null && soonDue !== null && farDue.getTime() !== soonDue.getTime();
+
+  // ---- 2. Moving the date moves the deadline.
+  /*
+   * Assert the edit landed, not just that it was attempted.
+   *
+   * The first version of this did not, and passed while changing nothing:
+   * `hr_admin` held the `edit` capability and listed no `editableFields`, so
+   * the runtime refused every field and returned `refused` rather than
+   * throwing. A proof about rescheduling that never reschedules anything is
+   * worse than no proof. SEC012 now warns about the blueprint side of it.
+   */
+  const edit = await engine.updateRecord({
+    instanceId: soon,
+    patch: { start_date: '2026-11-16' },
+    principal: { kind: 'actor', tenantId, actorId: adminId },
+    now: T0,
+  });
+  const afterEdit = await chaseDue(soon);
+  const followedTheEdit = edit.saved && afterEdit?.getTime() === expected('2026-11-16').getTime();
+
+  // ---- 3. The self-loop does not become a loop.
+  //
+  // The chase returns the record to provisioning. A duration timer would
+  // restart, which is what a nudge wants; a date timer rescheduled to the
+  // same moment would already be overdue and fire again immediately, forever.
+  const afterTheDate = new Date(expected('2026-11-16').getTime() + 3_600_000);
+  await engine.drain(afterTheDate, 'proof', tenantId);
+  await engine.drain(afterTheDate, 'proof', tenantId);
+
+  const { rows: fired } = await pool.query<{ count: number }>(
+    `select count(*)::int as count from timer
+      where instance_id = $1 and transition_key = 'chase_before_start' and fired_at is not null`,
+    [soon],
+  );
+  const { rows: chases } = await pool.query<{ count: number }>(
+    `select count(*)::int as count from email_log
+      where instance_id = $1 and template_key = 'kit_chase'`,
+    [soon],
+  );
+
+  record(
+    'A deadline can hang off a date in the record, and moves when that date does',
+    'docs/failure-cases.md G4: the only clock was time-in-state, so a hire approved in March and one approved the day before they start got the same schedule.',
+    landsOnTheDate &&
+      differByDate &&
+      followedTheEdit &&
+      fired[0]!.count === 1 &&
+      chases[0]!.count === 1,
+    `Two records entered provisioning at the same instant with start dates five months apart and got ` +
+      `deadlines ${farDue?.toISOString().slice(0, 10)} and ${soonDue?.toISOString().slice(0, 10)} — three days ` +
+      `before each. The start date was ${edit.saved ? 'moved' : 'REFUSED'} to 16 November and the deadline ` +
+      `followed to ${afterEdit?.toISOString().slice(0, 10)}. Draining twice past the date fired it ` +
+      `${fired[0]!.count} time and sent ${chases[0]!.count} chase, rather than looping on its own self-transition.`,
+  );
+}
+
 async function proveDuplicateSubmission(pool: Pool, bp: Blueprint): Promise<void> {
   const engine = new Engine(pool);
   const tenantId = await engine.createTenant('proof:duplicates');
@@ -803,6 +938,7 @@ async function main(): Promise<void> {
     ['tenant clock', () => proveTenantClock(pool, onboarding)],
     ['parallel tasks', () => proveParallelTasks(pool, onboarding)],
     ['separation of duties', () => proveSeparationOfDuties(pool, expense)],
+    ['date-relative timers', () => proveDateRelativeTimers(pool, onboarding)],
     ['duplicates', () => proveDuplicateSubmission(pool, onboarding)],
     ['versioning', () => proveVersionImmutability(pool, onboarding)],
     ['performance', () => measurePerformance(pool, onboarding)],

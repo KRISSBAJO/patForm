@@ -26,6 +26,10 @@
         "operate",
         "report",
         "administer"
+      ],
+      "editableFields": [
+        "cost_centre",
+        "category"
       ]
     },
     {

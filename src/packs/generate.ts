@@ -127,6 +127,19 @@ function roles(spec: PackSpec, rules: CategoryRules) {
       name: spec.ownerName,
       kind: 'internal' as 'internal' | 'respondent',
       capabilities: ['view', 'edit', 'operate', 'report', 'administer'],
+      /*
+       * What the owner may actually correct.
+       *
+       * `edit` with no `editableFields` grants nothing — an omission reads as
+       * "may change nothing", which is the safe default and made the
+       * capability decorative on all eighty-eight packs. The owner gets the
+       * operator-set fields, which are the ones that exist to be filled in
+       * after submission. `decision_note` is the only one the generator makes
+       * — the note an operator writes on the record — and it is deliberately
+       * not the restricted fields: an owner correcting somebody's bank
+       * account is not a correction anybody asked for.
+       */
+      editableFields: ['decision_note'],
     },
     ...approverRoles.map((key) => ({
       key,

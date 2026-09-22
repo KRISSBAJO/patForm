@@ -134,11 +134,34 @@ export const Trigger = z.discriminatedUnion('on', [
    * Two or more. A set of one is a `task_completed` and should say so.
    */
   z.object({ on: z.literal('tasks_completed'), tasks: z.array(Key).min(2) }).strict(),
+  /*
+   * A deadline, measured one of two ways.
+   *
+   * `afterHoursInState` hangs off the moment the record arrived, which is
+   * right for a reminder — chase the approver three days after it reached
+   * them — and wrong for anything the outside world dates. "Chase the
+   * equipment three days before the start date" was inexpressible: the only
+   * clock was when HR happened to approve, so a hire approved in March and
+   * one approved the day before they start got the same reminder schedule.
+   *
+   * `relativeTo` names a date field and `offsetHours` moves off it, negative
+   * for before. The runtime consequence is the interesting part and is
+   * handled in the engine: the date can change after the timer is scheduled,
+   * so editing it reschedules.
+   *
+   * Exactly one of the two forms, checked by the compiler rather than here —
+   * a discriminated union cannot carry a refinement, and the compiler is
+   * where this codebase says that sort of thing anyway.
+   */
   z
     .object({
       on: z.literal('timer'),
       /** Hours after the record entered the `from` state. */
-      afterHoursInState: z.number().positive(),
+      afterHoursInState: z.number().positive().optional(),
+      /** A date field the deadline hangs off instead of the state entry. */
+      relativeTo: Key.optional(),
+      /** Hours from that date. Negative is before it. */
+      offsetHours: z.number().optional(),
     })
     .strict(),
   z.object({ on: z.literal('inbound_webhook'), event: z.string().min(1) }).strict(),

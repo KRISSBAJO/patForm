@@ -519,6 +519,28 @@ export class Engine {
       ]);
       instance.data = merged;
 
+      /*
+       * A deadline hung off a date is only as current as that date.
+       *
+       * This is the cost of date-relative timers, and the reason the original
+       * note called it a runtime question rather than a schema one. Move a
+       * start date forward a week and every deadline that hangs off it has
+       * moved; a scheduled row still holding the old one sends a reminder on
+       * a day nobody chose, or expires a record that is not late.
+       *
+       * Rescheduled against the *current* occupancy, so a timer that has
+       * already fired stays fired. If the transition below moves the record,
+       * leaving the state cancels these and entering the next one schedules
+       * its own — which is the ordinary path and needs nothing here.
+       */
+      await scheduleTimers(client, {
+        bp,
+        instance,
+        stateKey: instance.state,
+        enteredAt: instance.state_entered_at,
+        data: merged,
+      });
+
       const transition = bp.workflow.transitions.find(
         (t) => t.from === instance.state && t.trigger.on === 'record_updated' && passesGuard(t, instance, args.now, actor),
       );
@@ -1137,17 +1159,13 @@ async function applyTransition(
   );
 
   if (target.type !== 'terminal') {
-    for (const candidate of bp.workflow.transitions) {
-      if (candidate.from !== transition.to) continue;
-      if (candidate.trigger.on !== 'timer') continue;
-      const dueAt = new Date(now.getTime() + candidate.trigger.afterHoursInState * 3_600_000);
-      await client.query(
-        `insert into timer (tenant_id, instance_id, transition_key, state_key, entered_at, due_at)
-         values ($1, $2, $3, $4, $5, $6)
-         on conflict (instance_id, transition_key, entered_at) do nothing`,
-        [instance.tenant_id, instance.id, candidate.key, transition.to, now, dueAt],
-      );
-    }
+    await scheduleTimers(client, {
+      bp,
+      instance,
+      stateKey: transition.to,
+      enteredAt: now,
+      data: instance.data,
+    });
   }
 
   await client.query(
@@ -1591,6 +1609,102 @@ function submitterOf(bp: Blueprint, instance: InstanceRow): string | null {
   if (!key) return null;
   const value = instance.data[key];
   return typeof value === 'string' && value ? value : null;
+}
+
+/**
+ * When a timer leaving this state is due.
+ *
+ * `null` means it cannot be scheduled yet — a date-relative timer whose date
+ * has not been filled in. Returning null rather than guessing is the point:
+ * a deadline computed from a missing date is a deadline on the wrong day, and
+ * the record would be chased or expired against it.
+ */
+function dueAtFor(
+  trigger: { afterHoursInState?: number; relativeTo?: string; offsetHours?: number },
+  enteredAt: Date,
+  data: Answers,
+): Date | null {
+  if (typeof trigger.afterHoursInState === 'number') {
+    return new Date(enteredAt.getTime() + trigger.afterHoursInState * 3_600_000);
+  }
+  if (!trigger.relativeTo) return null;
+
+  const value = data[trigger.relativeTo];
+  if (typeof value !== 'string' || !value) return null;
+
+  /*
+   * A `date` field is a calendar day with no time on it, so it is read as
+   * midnight UTC. Saying so matters: "three days before the start date" then
+   * means three days before the start of that day everywhere, rather than
+   * drifting by the reader's timezone.
+   */
+  const base = new Date(`${value.slice(0, 10)}T00:00:00.000Z`);
+  if (Number.isNaN(base.getTime())) return null;
+  return new Date(base.getTime() + (trigger.offsetHours ?? 0) * 3_600_000);
+}
+
+/**
+ * Schedules every timer leaving a state, for one occupancy of it.
+ *
+ * Called on entering a state, and again whenever the record's answers change
+ * — because a timer hung off a date field is only as current as that date.
+ * Somebody moving a start date forward a week has moved every deadline that
+ * hangs off it, and a scheduled row that still holds the old date is a
+ * reminder that goes out on a day nobody chose.
+ *
+ * Idempotent: a timer that already fired is left alone, one already scheduled
+ * is moved, and one that cannot be computed yet is simply not there.
+ */
+async function scheduleTimers(
+  client: Client,
+  args: { bp: Blueprint; instance: InstanceRow; stateKey: string; enteredAt: Date; data: Answers },
+): Promise<void> {
+  const { bp, instance, stateKey, enteredAt, data } = args;
+
+  for (const candidate of bp.workflow.transitions) {
+    if (candidate.from !== stateKey) continue;
+    if (candidate.trigger.on !== 'timer') continue;
+
+    const dueAt = dueAtFor(candidate.trigger, enteredAt, data);
+    if (!dueAt) continue;
+
+    /*
+     * A date-based timer fires once per record; a duration-based one fires
+     * once per occupancy.
+     *
+     * The difference is what each measures. "Forty-eight hours after arriving"
+     * is about how long you have been here, so coming back restarts it — that
+     * is what makes a nudge a nudge. "Three days before the start date" is a
+     * day in the calendar, and the calendar does not move because the record
+     * came back.
+     *
+     * Without this a date-based timer on a self-loop is an infinite loop: it
+     * fires, re-enters the state, reschedules to the same moment which is now
+     * in the past, and fires again. The drain would give up after a hundred
+     * rounds and call it a workflow loop, which is true but not the useful
+     * thing to be told.
+     */
+    if (candidate.trigger.relativeTo) {
+      const { rows: already } = await client.query(
+        `select 1 from timer
+          where instance_id = $1 and transition_key = $2 and fired_at is not null
+          limit 1`,
+        [instance.id, candidate.key],
+      );
+      if (already.length) continue;
+    }
+
+    await client.query(
+      `insert into timer (tenant_id, instance_id, transition_key, state_key, entered_at, due_at)
+       values ($1, $2, $3, $4, $5, $6)
+       on conflict (instance_id, transition_key, entered_at)
+         -- Only a timer that has neither fired nor been cancelled moves. A
+         -- fired one is history, and history does not get a new due date.
+         do update set due_at = excluded.due_at
+         where timer.fired_at is null and timer.cancelled_at is null`,
+      [instance.tenant_id, instance.id, candidate.key, stateKey, enteredAt, dueAt],
+    );
+  }
 }
 
 function resolveParty(party: Party, instance: InstanceRow, bp: Blueprint): string[] {

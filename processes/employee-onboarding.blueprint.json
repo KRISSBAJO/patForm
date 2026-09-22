@@ -26,6 +26,13 @@
         "operate",
         "report",
         "administer"
+      ],
+      "editableFields": [
+        "start_date",
+        "department",
+        "job_title",
+        "employment_type",
+        "manager_email"
       ]
     },
     {
@@ -814,6 +821,23 @@
             "template": "withdrawn_notice"
           }
         ]
+      },
+      {
+        "key": "chase_before_start",
+        "from": "provisioning",
+        "to": "provisioning",
+        "trigger": {
+          "on": "timer",
+          "relativeTo": "start_date",
+          "offsetHours": -72
+        },
+        "actions": [
+          {
+            "do": "send_email",
+            "key": "chase_kit",
+            "template": "kit_chase"
+          }
+        ]
       }
     ]
   },
@@ -920,6 +944,20 @@
         "attachments": [
           "onboarding_packet"
         ]
+      },
+      {
+        "key": "kit_chase",
+        "name": "Equipment chase before the start date",
+        "class": "reminder",
+        "to": [
+          {
+            "role": "it_operator"
+          }
+        ],
+        "cc": [],
+        "subject": "Starting in three days: {{job_title}} on {{start_date}}",
+        "body": "A new starter begins on {{start_date}} and their equipment or accounts are not finished.\n\nOpen the record to see what is still open. This is sent once, three days before the start date, whenever the record reached this point.",
+        "attachments": []
       }
     ]
   },

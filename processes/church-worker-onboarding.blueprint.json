@@ -26,6 +26,13 @@
         "operate",
         "report",
         "administer"
+      ],
+      "editableFields": [
+        "phone",
+        "address",
+        "member_since",
+        "ministry_interest",
+        "availability"
       ]
     },
     {

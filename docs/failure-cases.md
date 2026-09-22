@@ -82,13 +82,23 @@ Expense approval wants the first of these for a real policy. It is currently not
 
 **Recommendation:** add `any` and `all` quantifiers over a repeating group in v0.2. They are a contained addition and the runtime cost is bounded.
 
-### G4. Timers are relative to state entry only
+### G4. Timers are relative to state entry only — **fixed**
 
-`afterHoursInState` is the only timing primitive. Real processes want "three days before the start date" and "on the last working day of the month".
+`afterHoursInState` was the only timing primitive, so a hire approved in March and one approved the day before they start got the same reminder schedule. Onboarding wanted to chase equipment three days before `start_date` and could not say it.
 
-Employee onboarding wants to chase equipment relative to `start_date`, not relative to when HR happened to approve. It currently cannot.
+**Fixed** with `relativeTo` naming a date field and `offsetHours` moving off it, negative for before.
 
-**Recommendation:** add `relativeTo: { field }` with an offset in v0.2. Note that this makes timers depend on data that can change after the timer is scheduled, which the runtime has to handle — that is a real design question, not a schema one.
+The original note called the data-changing problem "a real design question, not a schema one", and it was right. Three answers came out of building it.
+
+**Editing the date reschedules.** A deadline hung off a date is only as current as that date; move a start date forward a week and every deadline hanging off it has moved. `updateRecord` reschedules the current occupancy's timers, leaving a timer that has already fired alone.
+
+**A date timer fires once per record; a duration timer fires once per occupancy.** The difference is what each measures. "Forty-eight hours after arriving" is about how long you have been here, so coming back restarts it — that is what makes a nudge a nudge. "Three days before the start date" is a day in the calendar, and the calendar does not move because the record came back. Without this distinction a date timer on a self-loop is an infinite loop: it fires, re-enters the state, reschedules to the same moment which is now past, and fires again. The chase in employee onboarding is exactly that shape, so this was not hypothetical.
+
+**A date that is not there yet means no deadline, not a guessed one.** A deadline computed from a missing date is a deadline on the wrong day, and the record would be chased or expired against it. TIME002 warns when the date is one the respondent may leave blank, because that is also how a deadline silently never happens.
+
+Proof 28 gives two records the same arrival instant and start dates five months apart, checks they get different deadlines three days before each, moves one date and checks the deadline follows, then drains twice past it and checks it fired once.
+
+**Found by the proof, not by the feature.** The first version passed while changing nothing: `hr_admin` held the `edit` capability and listed no `editableFields`, so the runtime refused every field and returned `refused` rather than throwing. `editableFields` absent means "may change nothing", which is the safe reading of an omission and makes the capability decorative. **SEC012** now warns, and it fired on two of the three reference processes and all eighty-eight packs.
 
 ### G5. Nothing expresses "this person may not approve their own request" — **fixed**
 
