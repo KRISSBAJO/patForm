@@ -395,6 +395,37 @@ The console's "WHAT THIS SCREEN IS" panel described *My work* — on the dashboa
 
 **Fixed** by making it follow the view. **Generalisable:** copy that explains a screen is part of the screen. A fixed string in a shared layout is a claim that every view is the same view.
 
+### 38. The front door was not connected to the building
+
+The landing page's "Sign in" linked to `#lighthouse` — an anchor further down the same page. "Apply to the program" linked to `#lighthouse` from inside the `#lighthouse` section, so clicking it did nothing at all. There was no sign-up page: `POST /api/workspaces` had existed since IAM-01, was proved, documented and reachable by curl, and nothing in the web application called it.
+
+So a visitor could read the whole marketing site and had no way into the product. Meanwhile the burger menu on narrow screens opened nothing, and the links it would have revealed are hidden below 900px — a phone had no navigation whatsoever.
+
+Reported by the user, not by any check here. This is the eighth instance of **a control that is present in review and absent at runtime**, and the most expensive, because every other one is behind this one.
+
+**Generalisable:** an endpoint is not a feature until something a person can reach calls it. The proofs, the tests and the API documentation all passed on a product nobody could sign up for — every one of them started from a session that the harness created directly.
+
+### 39. Four contrast failures that had never been looked at
+
+Auditing the landing page for the first time found nine violations across four rules, all pre-existing:
+
+| Element | Foreground on background | Ratio |
+|---|---|---|
+| `.row__num` | `#b0a99a` on `#ffffff` | 2.33 |
+| `.ai .eyebrow`, `.checked__arrow span` | `#a8d6bc` on `#14663f` | 4.33 |
+| `.proposal__tag` | `#a8d6bc` on `#297450` | 3.50 |
+| `.footer__base p` | `#6e7d74` on `#131a17` | 4.08 |
+
+The first is a *border* token (`--rule`) used as text. The middle two are the same mint on two different greens, which is entry 32 again: a token is not safe, a token *on a surface* is safe — and the token has to clear the **lightest** surface it appears on, not the darkest.
+
+**Generalisable:** the accessibility gate audited "the four flows in the gate", and the landing page was in none of them because no flow started there. A page that is not in a flow is a page nobody checks.
+
+### 40. A shorthand that silently reset a gutter
+
+The narrow-screen menu's links sat flush against the edge of the phone. The element carried both `.shell` (which sets `padding-inline: var(--gutter)`) and a new rule using the `padding` shorthand for vertical spacing — and the shorthand reset the horizontal padding to zero.
+
+**Generalisable:** the `padding` and `margin` shorthands are not additive with the longhands; they overwrite the axis you did not mention. Use `padding-block` when you mean vertical.
+
 ---
 
 ## What the compiler structurally cannot catch

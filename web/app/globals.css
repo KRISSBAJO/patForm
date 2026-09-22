@@ -28,6 +28,14 @@
   --green-tint: #f4f8f5;
   --green-border: #d5e5db;
   --green-text-on-dark: #a8d6bc;
+  /*
+   * Mint that survives the GREEN surfaces, which --green-text-on-dark does
+   * not: it is 4.33:1 on --green (#14663f) and 3.5:1 on the lighter #297450,
+   * both under 4.5. Same lesson as the console's focus ring — a token is not
+   * safe, a token on a surface is safe — and this one has to clear the
+   * lightest green it appears on, not the darkest.
+   */
+  --green-text-on-green: #dceee4;
   --green-body-on-dark: #d3e8dc;
 
   /* ochre — the "waiting / attention" signal */
@@ -1024,7 +1032,8 @@ html {
   display: none;
   font-family: var(--font-mono), monospace;
   font-size: 11.5px;
-  color: var(--rule);
+  /* --rule is a BORDER colour: 2.33:1 as text on white. */
+  color: var(--muted);
   padding-top: 3px;
   width: 26px;
   flex-shrink: 0;
@@ -1050,7 +1059,7 @@ html {
 }
 
 .ai .eyebrow {
-  color: var(--green-text-on-dark);
+  color: var(--green-text-on-green);
 }
 
 .ai h2 {
@@ -1079,7 +1088,8 @@ html {
   font-family: var(--font-mono), monospace;
   font-size: 10px;
   letter-spacing: 0.09em;
-  color: var(--green-text-on-dark);
+  /* On #297450 — the lightest green this appears over — not on the dark. */
+  color: var(--green-text-on-green);
 }
 
 .proposal p {
@@ -1118,7 +1128,7 @@ html {
   padding-left: 22px;
   margin-top: 14px;
   font-size: 13.5px;
-  color: var(--green-text-on-dark);
+  color: var(--green-text-on-green);
 }
 
 /* ------------------------------------------------------------------- packs */
@@ -1296,7 +1306,8 @@ html {
 
 .footer__base p {
   font-size: 13px;
-  color: #6e7d74;
+  /* 4.08:1 on the footer's #131a17. */
+  color: #86968c;
 }
 
 .footer__disclaimer {
@@ -2056,5 +2067,52 @@ html {
 
   .footer__brandCol {
     flex: 0 0 320px;
+  }
+}
+
+/* ------------------------------------------------- the narrow-screen menu */
+/*
+ * The burger button existed and opened nothing, on the one width where the
+ * nav links are hidden — so a phone had no navigation at all. This is what it
+ * opens. Rendered only when open, never merely hidden, so nothing unreachable
+ * sits in the tab order.
+ */
+.nav__drawer {
+  border-top: 1px solid var(--line-soft);
+  background: var(--paper-3);
+}
+
+.nav__drawerInner {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  /*
+   * `padding-block`, not the `padding` shorthand. This element also carries
+   * `.shell`, whose `padding-inline: var(--gutter)` the shorthand silently
+   * reset to zero — so every link sat flush against the edge of the phone.
+   */
+  padding-block: 12px 18px;
+}
+
+.nav__drawerInner a {
+  /* 2.5.8: a 44px row rather than a 24px minimum, because this is the one
+     navigation on a screen being used with a thumb. */
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 4px;
+  font-size: 16px;
+  color: var(--ink);
+}
+
+.nav__drawerInner a.btn {
+  justify-content: center;
+  margin-top: 8px;
+  color: var(--on-dark-1);
+}
+
+@media (min-width: 900px) {
+  .nav__drawer {
+    display: none;
   }
 }

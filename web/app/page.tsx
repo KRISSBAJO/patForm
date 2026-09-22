@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { Footer } from '@/components/Footer';
 import { Nav } from '@/components/Nav';
 import {
@@ -501,10 +502,16 @@ export default function Home() {
                 We map what you do now, build the first version with you, and run it alongside your current way for a
                 few weeks. You keep the numbers either way: time to launch, cycle time, manual touches, what failed.
               </p>
+              {/*
+                * "Apply to the program" linked to #lighthouse — the section it
+                * is inside — so clicking it did nothing at all. There is no
+                * application form and no address to send one to, so it points
+                * at the one destination that is real.
+                */}
               <div className="lighthouse__actions">
-                <a className="btn btn--primary" href="#lighthouse">
-                  Apply to the program
-                </a>
+                <Link className="btn btn--primary" href="/signup">
+                  Create a workspace
+                </Link>
                 <a className="btn btn--secondary" href="#how">
                   Read the approach
                 </a>

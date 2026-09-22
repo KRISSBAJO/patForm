@@ -549,6 +549,25 @@ over HTTP: it is emailed, and the response says `delivered` instead. Returning
 it as well would let any member who can invite mint a working link for an
 address whose owner never sees it.
 
+### Getting in at all
+
+The landing page now reaches the application. It did not: "Sign in" pointed at
+an anchor further down the same page, "Apply to the program" pointed at the
+section it was inside, and there was no sign-up page at all —
+`POST /api/workspaces` had existed since IAM-01 and nothing in the web
+application called it.
+
+- **`/signup`** creates the workspace and signs you in, so it ends at the
+  console rather than at a login form asking for the password you chose ten
+  seconds ago.
+- **`/console`** is the sign-in, and carries the forgotten-password path.
+- The narrow-screen menu opens. It did not, on the one width where the nav
+  links are hidden — so a phone had no navigation whatsoever.
+
+The accessibility gate now starts at the landing page, which is how nine
+pre-existing contrast violations on it were found. A page that is not in a
+flow is a page nobody checks.
+
 ### Confirming an address, and getting back in
 
 Creating a workspace sends a verification link and marks the address

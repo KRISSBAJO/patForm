@@ -82,6 +82,26 @@ async function main() {
 
   console.log(`\n${BOLD}Accessibility${OFF} ${DIM}- ${BASE}, axe-core, WCAG 2.2 AA${OFF}`);
 
+  // ---- the front door. Nothing on it reached the application until now, so
+  //      it had never been audited as part of a flow anybody completes.
+  await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+  all.push(...(await audit(page, 'Landing page')));
+
+  // The narrow-screen menu is the only navigation below 900px, and it is
+  // rendered rather than hidden, so it has to be audited open.
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+  const burger = page.locator('.nav__menu').first();
+  if (await burger.count()) {
+    await burger.click();
+    await page.waitForTimeout(500);
+    all.push(...(await audit(page, 'Landing page, narrow-screen menu open')));
+  }
+  await page.setViewportSize({ width: 1280, height: 900 });
+
+  await page.goto(`${BASE}/signup`, { waitUntil: 'networkidle' });
+  all.push(...(await audit(page, 'Create a workspace')));
+
   // ---- respondent, including the state a form spends most of its life in
   await page.goto(`${BASE}/f/employee_onboarding`, { waitUntil: 'networkidle' });
   all.push(...(await audit(page, 'Respondent form')));
