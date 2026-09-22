@@ -75,6 +75,8 @@ import type { Answers } from '../blueprint/answers.js';
 import { ask, confirm, recentRuns, runPlan } from '../runtime/copilot.js';
 import { askerFor } from '../copilot/ask.js';
 import { availableProviders, providerFor } from '../ai/index.js';
+import { proposeRule } from '../ai/rule.js';
+import { Blueprint } from '../blueprint/index.js';
 import { QueryPlan, ActionPlan } from '../copilot/plan.js';
 import { bundleToCsv, exportRecord } from '../runtime/export.js';
 import {
@@ -197,6 +199,34 @@ route('POST', /^\/api\/builder\/drafts\/([0-9a-f-]{36})\/save$/, async ({ pool, 
   const { blueprint } = body as { blueprint?: unknown };
   if (!blueprint) throw new HttpError(400, 'blueprint is required');
   return saveProcessDraft(pool, { principal, draftId, blueprint });
+});
+
+/**
+ * A sentence becomes one automation rule.
+ *
+ * Returns a proposal and never writes: the reading goes back with the
+ * transition, somebody accepts it in the builder, and the ordinary save path
+ * stores it like any other edit. Same boundary as the copilot — the model
+ * proposes, the compiler decides, a person applies.
+ */
+route('POST', /^\/api\/builder\/drafts\/([0-9a-f-]{36})\/rule$/, async ({ pool, principal, url }, body) => {
+  const { sentence } = body as { sentence?: string };
+  if (!sentence?.trim()) throw new HttpError(400, 'sentence is required');
+
+  const available = availableProviders();
+  if (!available.length) {
+    throw new HttpError(503, 'no AI provider is configured — set ANTHROPIC_API_KEY or OPENAI_API_KEY');
+  }
+
+  // Read through the same permission-checked path the builder uses, so this
+  // cannot reach a draft the caller could not open.
+  const draft = await loadProcessDraft(pool, principal, url.pathname.split('/')[4]!);
+  const parsed = Blueprint.safeParse(draft.blueprint);
+  if (!parsed.success) {
+    throw new HttpError(400, 'this draft does not parse yet — fix the errors before asking for a rule');
+  }
+
+  return proposeRule(providerFor(available[0]!), { sentence, blueprint: parsed.data });
 });
 
 route('POST', /^\/api\/builder\/drafts\/([0-9a-f-]{36})\/test$/, async ({ pool, principal, url }) =>

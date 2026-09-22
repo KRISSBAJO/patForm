@@ -672,6 +672,22 @@ and the compiler's diagnostics point at transition keys — which means every
 error appears against the rule that caused it rather than being translated
 onto a shape.
 
+**Or describe it.** *"Escalate to HR if the hiring manager has not decided
+within two days"* becomes one rule, and nothing is written until somebody
+reads what it would do and presses a button. The same boundary as the
+copilot — the model proposes, the compiler decides, a person applies:
+
+- The model is given the **exact** states, approvals, tasks, templates and
+  fields, and a check rejects anything referring to something that is not in
+  those lists *before* the compiler sees it, so the refusal says "there is no
+  message template called that" rather than `REF004`.
+- The proposal is merged into a **copy** and the real compiler runs on it. One
+  that breaks the process comes back as a refusal with the reason, never as an
+  edit somebody has to notice.
+- Refusals are honest. Asked to text somebody on their start date, it answers
+  that there is no SMS action and that timers measure hours in a state rather
+  than calendar dates — instead of inventing one.
+
 Two things the editor knows that the JSON tab cannot:
 
 - **Only one timer may leave a state.** Entering a state cancels that
@@ -681,6 +697,18 @@ Two things the editor knows that the JSON tab cannot:
 - **Numeric comparisons are only offered against numeric fields**, and a
   number typed into one is stored as a number. The compiler refuses `"1000"`
   against a currency field, and quoting it would be a type error nobody typed.
+
+### Sessions
+
+Eight hours, renewed at most once an hour while somebody is working. Fourteen
+days was the wrong shape twice: a stolen cookie was good for a fortnight, and
+renewal only began past the halfway mark, so an active session went untouched
+for seven days and then jumped. Eight hours is a working day — sign in in the
+morning, and it ends by itself overnight.
+
+`npm run seed` and `npm run spike` reset the schema, which drops the session
+table. Both say so on stdout, because the 401 that follows has no other
+explanation attached to it.
 
 ### What is reachable
 

@@ -595,6 +595,15 @@ The rules editor used `.vw__srOnly` for the labels on its selects. That class is
 **Generalisable:** a utility class is an invisible dependency. `sr-only` is the one where getting it wrong shows the user the thing you meant to hide from them, and it fails silently in the direction that looks like a content bug rather than a styling one.
 
 
+### 58. Renewal that began after seven days
+
+Sessions lasted fourteen days and renewed only past the halfway mark. Both numbers were wrong and in opposite directions: a stolen cookie worked for a fortnight, and an *active* session was not touched for a week and then jumped — which is the shape that produces "it threw me out" without anybody being able to say when.
+
+**Fixed** at eight hours, renewed at most once an hour. A working day, ending by itself overnight, and using it keeps it alive.
+
+**Generalisable:** a lifetime and a renewal interval are one decision, not two. Choosing the lifetime first and the renewal as a fraction of it produces a renewal nobody would have chosen on its own.
+
+
 ---
 
 ## What the compiler structurally cannot catch

@@ -546,7 +546,11 @@ export function Builder() {
         )}
 
         {!draft || !blueprint ? (
-          <Welcome onNew={() => setCreating(true)} />
+          <Welcome
+            onNew={() => setCreating(true)}
+            processes={processes}
+            onOpen={(p) => (p.draft_id ? openById(p.draft_id) : open(p.process_key))}
+          />
         ) : (
           <>
             <header className="bd__head">
@@ -644,6 +648,12 @@ export function Builder() {
                       roles: blueprint.roles.map((r) => ({ key: r.key, name: r.name })),
                     }}
                     diagnostics={diagnostics}
+                    draftId={draft?.id}
+                    onAppend={(rule) =>
+                      mutate((bp) => {
+                        bp.workflow.transitions = [...(bp.workflow.transitions ?? []), rule as never];
+                      })
+                    }
                     onChange={(i, next) =>
                       mutate((bp) => {
                         bp.workflow.transitions[i] = next as never;
@@ -810,23 +820,172 @@ function SaveState({ status }: { status: string }) {
   );
 }
 
-function Welcome({ onNew }: { onNew: () => void }) {
+/**
+ * The start screen.
+ *
+ * It was a centred paragraph in an empty page, which reads as an application
+ * that has not loaded. A builder's first screen should show the work: what
+ * you already have, and the three ways to begin — each with a picture of what
+ * it produces rather than a button with a verb on it.
+ */
+function Welcome({
+  onNew,
+  processes,
+  onOpen,
+}: {
+  onNew: () => void;
+  processes: ProcessRow[];
+  onOpen: (p: ProcessRow) => void;
+}) {
   return (
-    <div className="bd__welcome">
-      <h1>Pick a process, or describe a new one.</h1>
-      <p>
-        Every edit is compiled as you make it. Errors stop a publish; warnings do not. Nothing you type is
-        lost while it is invalid — a draft that does not compile is still a draft.
-      </p>
-      <div className="bd__welcomeActions">
-        <a className="bd__btn bd__btn--primary" href="/builder/new">
-          Browse the catalogue
-        </a>
-        <button className="bd__btn" onClick={onNew}>
-          Describe a new one
-        </button>
+    <div className="bd__start">
+      <div className="bd__startInner">
+        <header className="bd__startHead">
+          <h1>What do you want to build?</h1>
+          <p>
+            Every edit is compiled as you make it. Errors stop a publish; warnings do not. Nothing
+            you type is lost while it is invalid — a draft that does not compile is still a draft.
+          </p>
+        </header>
+
+        {processes.length > 0 && (
+          <section className="bd__startSection">
+            <h2>Carry on with</h2>
+            <ul className="bd__startGrid">
+              {processes.slice(0, 6).map((p) => (
+                <li key={p.process_key}>
+                  <button type="button" className="bd__startCard" onClick={() => onOpen(p)}>
+                    <span className="bd__startCardTop">
+                      <Sketch kind="process" />
+                    </span>
+                    <span className="bd__startCardName">{p.name ?? p.process_key}</span>
+                    <span className="bd__startCardMeta">
+                      {p.draft_id ? 'draft in progress' : p.version ? `published v${p.version}` : 'not published'}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
+        <section className="bd__startSection">
+          <h2>Start something new</h2>
+          <ul className="bd__startGrid">
+            <li>
+              <a className="bd__startCard" href="/builder/new">
+                <span className="bd__startCardTop">
+                  <Sketch kind="catalogue" />
+                </span>
+                <span className="bd__startCardName">From the catalogue</span>
+                <span className="bd__startCardMeta">
+                  88 processes with their approvals, reminders and retention already set
+                </span>
+              </a>
+            </li>
+            <li>
+              <button type="button" className="bd__startCard" onClick={onNew}>
+                <span className="bd__startCardTop">
+                  <Sketch kind="describe" />
+                </span>
+                <span className="bd__startCardName">Describe it</span>
+                <span className="bd__startCardMeta">
+                  Say what happens in a sentence or two and it is drafted for you to review
+                </span>
+              </button>
+            </li>
+            <li>
+              <button type="button" className="bd__startCard" onClick={onNew}>
+                <span className="bd__startCardTop">
+                  <Sketch kind="copy" />
+                </span>
+                <span className="bd__startCardName">Copy one you have</span>
+                <span className="bd__startCardMeta">
+                  Start from a process that already works and change what differs
+                </span>
+              </button>
+            </li>
+          </ul>
+        </section>
       </div>
     </div>
+  );
+}
+
+/**
+ * A small drawing per route in.
+ *
+ * `aria-hidden` throughout: the name and the sentence under each card say
+ * everything these do, and a screen reader announcing three abstract diagrams
+ * would be noise.
+ */
+function Sketch({ kind }: { kind: 'process' | 'catalogue' | 'describe' | 'copy' }) {
+  const common = {
+    viewBox: '0 0 120 64',
+    fill: 'none',
+    'aria-hidden': true,
+    className: 'bd__sketch',
+  };
+
+  if (kind === 'process') {
+    return (
+      <svg {...common}>
+        <rect x="8" y="14" width="30" height="36" rx="3" fill="#fff" stroke="#e0ddd5" />
+        <path d="M13 22h14M13 28h20M13 34h17M13 40h11" stroke="#d8d4cb" strokeWidth="2" strokeLinecap="round" />
+        <path d="M42 32h12" stroke="#cfcbc2" strokeWidth="1.5" strokeLinecap="round" />
+        <rect x="56" y="10" width="26" height="14" rx="3" fill="#fff" stroke="#e0ddd5" />
+        <rect x="56" y="28" width="26" height="14" rx="3" fill="#fff" stroke="#e0ddd5" />
+        <rect x="56" y="46" width="26" height="12" rx="3" fill="#fff" stroke="#e0ddd5" />
+        <circle cx="62" cy="17" r="3" fill="#b8860b" />
+        <circle cx="62" cy="35" r="3" fill="#b8860b" />
+        <circle cx="62" cy="52" r="3" fill="#14663f" />
+        <path d="M86 17h20M86 35h14M86 52h18" stroke="#e0ddd5" strokeWidth="2" strokeLinecap="round" />
+      </svg>
+    );
+  }
+
+  if (kind === 'catalogue') {
+    return (
+      <svg {...common}>
+        {[0, 1, 2].map((col) =>
+          [0, 1].map((row) => (
+            <rect
+              key={`${col}-${row}`}
+              x={10 + col * 34}
+              y={10 + row * 26}
+              width="28"
+              height="20"
+              rx="3"
+              fill="#fff"
+              stroke="#e0ddd5"
+            />
+          )),
+        )}
+        <rect x="10" y="10" width="28" height="20" rx="3" fill="#f4f8f5" stroke="#14663f" />
+        <path d="M15 17h12M15 22h8" stroke="#cfcbc2" strokeWidth="1.6" strokeLinecap="round" />
+      </svg>
+    );
+  }
+
+  if (kind === 'describe') {
+    return (
+      <svg {...common}>
+        <rect x="10" y="12" width="60" height="40" rx="4" fill="#fff" stroke="#e0ddd5" />
+        <path d="M18 22h40M18 30h34M18 38h22" stroke="#d8d4cb" strokeWidth="2" strokeLinecap="round" />
+        <path d="M76 32h10" stroke="#cfcbc2" strokeWidth="1.5" strokeLinecap="round" />
+        <rect x="88" y="18" width="22" height="28" rx="3" fill="#f4f8f5" stroke="#14663f" />
+        <path d="M93 26h12M93 32h9M93 38h12" stroke="#a9c9b6" strokeWidth="2" strokeLinecap="round" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg {...common}>
+      <rect x="12" y="16" width="44" height="34" rx="4" fill="#fff" stroke="#e0ddd5" />
+      <path d="M20 26h28M20 34h20" stroke="#d8d4cb" strokeWidth="2" strokeLinecap="round" />
+      <rect x="40" y="8" width="44" height="34" rx="4" fill="#f4f8f5" stroke="#14663f" />
+      <path d="M48 18h28M48 26h20" stroke="#a9c9b6" strokeWidth="2" strokeLinecap="round" />
+    </svg>
   );
 }
 

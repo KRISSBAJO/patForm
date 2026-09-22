@@ -29,7 +29,20 @@ const scrypt = promisify(scryptCb) as (
  */
 
 const SCRYPT_KEYLEN = 64;
-const SESSION_DAYS = 14;
+/*
+ * Eight hours, renewed hourly while somebody is working.
+ *
+ * Fourteen days was the wrong shape twice over. A stolen cookie was good for
+ * a fortnight, and — because renewal only began past the halfway mark — an
+ * active session was not touched for seven days and then jumped. Eight hours
+ * is a working day: sign in in the morning, and the session ends by itself
+ * overnight.
+ *
+ * Renewal at most once an hour, because the point is that using it keeps it
+ * alive, not that every page load writes a row.
+ */
+const SESSION_HOURS = 8;
+const RENEW_AFTER_MINUTES = 60;
 const RESUME_DAYS = 30;
 
 /** A dummy hash, used so an unknown email costs the same as a wrong password. */
@@ -118,7 +131,7 @@ export async function startSession(
   if (!actor?.active) return null;
 
   const token = newToken();
-  const expiresAt = new Date(Date.now() + SESSION_DAYS * 86_400_000);
+  const expiresAt = new Date(Date.now() + SESSION_HOURS * 3_600_000);
   await pool.query(
     `insert into session (token_hash, actor_id, tenant_id, user_agent, expires_at)
      values ($1, $2, $3, $4, $5)`,
@@ -202,10 +215,10 @@ export interface SessionActor {
    * Set when this request extended the session, so the caller can re-issue
    * the cookie with the new expiry.
    *
-   * Without it, somebody who signs in and then works every day is still
-   * thrown out fourteen days later, mid-task. Renewing only past the halfway
-   * mark means an active session is not rewritten on every request — that
-   * would be a write per page load for no benefit.
+   * Without it, somebody working through the afternoon is thrown out eight
+   * hours after signing in, mid-task. Renewing at most once an hour means an
+   * active session is not rewritten on every request — that would be a write
+   * per page load for no benefit.
    */
   renewedUntil?: Date;
 }
@@ -245,13 +258,19 @@ export async function resolveSession(pool: Pool, token: string): Promise<Session
    * The halfway condition is what stops this writing a new expiry on every
    * page load for no benefit.
    */
-  const halfLife = new Date(Date.now() + (SESSION_DAYS / 2) * 86_400_000);
+  /*
+   * Renew when more than an hour has been used up, which is the same thing as
+   * "at most once an hour" without keeping a separate timestamp to compare.
+   */
+  const renewWhenBelow = new Date(
+    Date.now() + (SESSION_HOURS * 60 - RENEW_AFTER_MINUTES) * 60_000,
+  );
   let renewedUntil: Date | undefined;
-  if (row.expires_at < halfLife) {
+  if (row.expires_at < renewWhenBelow) {
     const { rows: renewed } = await pool.query<{ expires_at: Date }>(
-      `update session set last_seen_at = now(), expires_at = now() + make_interval(days => $2)
+      `update session set last_seen_at = now(), expires_at = now() + make_interval(hours => $2)
         where id = $1 returning expires_at`,
-      [row.id, SESSION_DAYS],
+      [row.id, SESSION_HOURS],
     );
     renewedUntil = renewed[0]?.expires_at;
   } else {

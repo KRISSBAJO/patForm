@@ -25,7 +25,7 @@
  *     idempotency keys, and two the same collapse into one run.
  */
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import type { Diagnostic } from './Builder';
 import './rules.css';
 
@@ -115,15 +115,20 @@ export function RulesEditor({
   transitions,
   ctx,
   diagnostics,
+  draftId,
   onChange,
   onAdd,
+  onAppend,
   onRemove,
 }: {
   transitions: Transition[];
   ctx: RuleContext;
   diagnostics: Diagnostic[];
+  /** Absent until a draft is open; the assistant needs one to read from. */
+  draftId?: string;
   onChange: (index: number, next: Transition) => void;
   onAdd: () => void;
+  onAppend: (rule: Transition) => void;
   onRemove: (index: number) => void;
 }) {
   /*
@@ -164,10 +169,12 @@ export function RulesEditor({
           happens, <strong>if</strong> a condition holds, <strong>then</strong> these things run —
           and the record moves.
         </p>
-        <button type="button" className="bd__btn bd__btn--primary" onClick={onAdd}>
+        <button type="button" className="bd__btn" onClick={onAdd}>
           Add a rule
         </button>
       </div>
+
+      {draftId && <Describe draftId={draftId} onAppend={onAppend} />}
 
       {byState.map(({ state, rules }) => (
         <section key={state.key} className="rl__group">
@@ -199,6 +206,125 @@ export function RulesEditor({
           Nothing happens on its own yet. A process with no rules is a form — add one, and the
           record starts moving by itself.
         </p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * A sentence becomes a rule.
+ *
+ * The model proposes; a deterministic checker and the real compiler decide;
+ * and nothing is added until somebody reads what it would do and presses a
+ * button. The same boundary the copilot uses for actions, which is the only
+ * reason a model is allowed near a published process at all.
+ *
+ * The reading is the point of the review step. "When 48 hours pass in With
+ * hiring manager, move to With HR and send Manager reminder" is checkable by
+ * somebody who has never seen the rule syntax — which is who this is for.
+ */
+function Describe({
+  draftId,
+  onAppend,
+}: {
+  draftId: string;
+  onAppend: (rule: Transition) => void;
+}) {
+  const [sentence, setSentence] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [proposal, setProposal] = useState<{
+    ok: boolean;
+    transition?: Transition;
+    reading?: string;
+    refused?: string;
+    diagnostics?: Diagnostic[];
+  } | null>(null);
+
+  const ask = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!sentence.trim()) return;
+    setBusy(true);
+    setProposal(null);
+    try {
+      const res = await fetch(`/api/builder/drafts/${draftId}/rule`, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ sentence }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setProposal({ ok: false, refused: body.reason ?? body.error ?? `HTTP ${res.status}` });
+      } else {
+        setProposal(body);
+      }
+    } catch (err) {
+      setProposal({ ok: false, refused: err instanceof Error ? err.message : String(err) });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="rl__assist">
+      <form className="rl__assistForm" onSubmit={ask}>
+        <label className="rl__assistLabel" htmlFor="describe-rule">
+          Or describe what should happen
+        </label>
+        <div className="rl__assistRow">
+          <input
+            id="describe-rule"
+            className="rl__assistInput"
+            value={sentence}
+            onChange={(e) => setSentence(e.target.value)}
+            placeholder="Escalate to HR if the manager has not decided in two days"
+          />
+          <button type="submit" className="bd__btn bd__btn--primary" disabled={busy || !sentence.trim()}>
+            {busy ? 'Thinking…' : 'Draft it'}
+          </button>
+        </div>
+      </form>
+
+      {proposal && (
+        <div className={`rl__proposal${proposal.ok ? '' : ' rl__proposal--no'}`} role="status">
+          {proposal.ok ? (
+            <>
+              <p className="rl__reading">{proposal.reading}</p>
+              {/* Warnings travel with an accepted proposal: they are
+                  judgements, and whoever accepts it should see them. */}
+              {proposal.diagnostics?.some((d) => d.severity === 'warning') && (
+                <ul className="rl__proposalWarnings">
+                  {proposal.diagnostics
+                    .filter((d) => d.severity === 'warning')
+                    .slice(0, 3)
+                    .map((d, i) => (
+                      <li key={i}>
+                        <strong>{d.code}</strong> {d.message}
+                      </li>
+                    ))}
+                </ul>
+              )}
+              <div className="rl__proposalActions">
+                <button
+                  type="button"
+                  className="bd__btn bd__btn--primary"
+                  onClick={() => {
+                    onAppend(proposal.transition!);
+                    setProposal(null);
+                    setSentence('');
+                  }}
+                >
+                  Add this rule
+                </button>
+                <button type="button" className="bd__btn" onClick={() => setProposal(null)}>
+                  Discard
+                </button>
+              </div>
+            </>
+          ) : (
+            <p className="rl__refused">{proposal.refused}</p>
+          )}
+        </div>
       )}
     </div>
   );

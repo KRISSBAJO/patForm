@@ -230,3 +230,89 @@
   line-height: 1.6;
   color: var(--ink-soft);
 }
+
+/* ------------------------------------------------- describing a rule */
+/*
+ * The model proposes, the compiler decides, a person applies. The reading is
+ * the point of the review step: somebody who has never seen the rule syntax
+ * can still tell whether "when 48 hours pass, move to With HR" is what they
+ * asked for.
+ */
+
+.rl__assist {
+  margin-bottom: 22px;
+  padding: 14px 16px;
+  background: var(--green-tint, #f4f8f5);
+  border: 1px solid var(--green-border, #d5e5db);
+  border-radius: 9px;
+}
+
+.rl__assistLabel {
+  display: block;
+  margin-bottom: 7px;
+  font-family: var(--ui);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--green-deep);
+}
+
+.rl__assistRow {
+  display: flex;
+  gap: 9px;
+}
+
+.rl__assistInput {
+  flex-grow: 1;
+  min-height: 36px;
+  padding: 0 11px;
+  border: 1px solid var(--card-line, #e4e2dd);
+  border-radius: 6px;
+  background: #fff;
+  font-family: var(--ui);
+  font-size: 13.5px;
+  color: var(--ink);
+}
+
+.rl__proposal {
+  margin-top: 12px;
+  padding: 12px 14px;
+  background: #fff;
+  border: 1px solid var(--green-border, #d5e5db);
+  border-radius: 7px;
+}
+
+.rl__proposal--no {
+  border-color: #edcdc9;
+  background: #fdf4f3;
+}
+
+.rl__reading {
+  margin: 0;
+  font-family: var(--ui);
+  font-size: 14.5px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--ink);
+}
+
+.rl__refused {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: #8a352f;
+}
+
+.rl__proposalWarnings {
+  margin: 10px 0 0;
+  padding-left: 18px;
+  list-style: disc;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--ink-soft);
+}
+
+.rl__proposalActions {
+  display: flex;
+  gap: 9px;
+  margin-top: 12px;
+}

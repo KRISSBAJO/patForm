@@ -1127,3 +1127,119 @@ a.bd__newBtn {
   align-items: center;
   text-decoration: none;
 }
+
+/* ==========================================================================
+   The start screen
+   ==========================================================================
+
+   It was a centred paragraph in an empty page, which reads as an application
+   that has not loaded. A builder's first screen should show the work: what
+   you already have, and the ways to begin — each with a picture of what it
+   produces rather than a button with a verb on it.
+*/
+
+.bd__start {
+  flex: 1;
+  overflow-y: auto;
+  background: var(--canvas, #f4f3f0);
+}
+
+.bd__startInner {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 48px 28px 72px;
+}
+
+.bd__startHead h1 {
+  margin: 0;
+  font-family: var(--ui);
+  font-size: clamp(24px, 3vw, 30px);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+
+.bd__startHead p {
+  margin: 12px 0 0;
+  max-width: 62ch;
+  font-size: 14.5px;
+  line-height: 1.65;
+  color: var(--ink-soft);
+}
+
+.bd__startSection {
+  margin-top: 36px;
+}
+
+.bd__startSection h2 {
+  margin: 0 0 14px;
+  font-family: var(--ui);
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.bd__startGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(238px, 1fr));
+  gap: 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bd__startCard {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  padding: 0 0 16px;
+  background: #fff;
+  border: 1px solid var(--card-line, #e4e2dd);
+  border-radius: 10px;
+  overflow: hidden;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    border-color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.bd__startCard:hover {
+  border-color: #cfccc5;
+  box-shadow: 0 4px 14px rgba(20, 24, 22, 0.09);
+}
+
+.bd__startCardTop {
+  display: block;
+  padding: 14px 16px 10px;
+  background: linear-gradient(160deg, #fbfaf7 0%, #f1efe9 100%);
+  border-bottom: 1px solid var(--card-line, #e4e2dd);
+}
+
+.bd__sketch {
+  display: block;
+  width: 100%;
+  height: 58px;
+}
+
+.bd__startCardName {
+  display: block;
+  padding: 14px 16px 0;
+  font-family: var(--ui);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+
+.bd__startCardMeta {
+  display: block;
+  padding: 5px 16px 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--muted);
+}
