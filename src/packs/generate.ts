@@ -522,7 +522,15 @@ function emails(spec: PackSpec, rules: CategoryRules) {
       to: [{ role: first.byRole }],
       cc: [],
       subject: `Still waiting on you: ${spec.name.toLowerCase()}`,
-      body: `{{submitter_name}} is waiting on a decision.\n\nOpen the record in the console to approve or decline it.`,
+      /*
+       * No name in the body, and SEC002 is the reason.
+       *
+       * This goes to a *role* rather than to the person it is about, so
+       * naming them puts a confidential value in front of whoever currently
+       * holds that role — which is not the same set of people the record's
+       * permissions allow. The record says who, behind a check.
+       */
+      body: `Somebody is waiting on a decision.\n\nOpen the record in the console to approve or decline it — it shows you who and what.`,
     },
     {
       key: 'escalation',

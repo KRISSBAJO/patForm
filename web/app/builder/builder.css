@@ -1420,3 +1420,238 @@ a.bd__newBtn {
   flex-shrink: 0;
   color: var(--muted);
 }
+
+/* ==========================================================================
+   The rail
+   ==========================================================================
+
+   Sixty-four pixels rather than two hundred and thirty. The four things
+   somebody does here, each with its word under it — an icon-only rail is a
+   memory test, and the references that work all keep the label.
+*/
+
+.bd__rail {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  width: 68px;
+  flex-shrink: 0;
+  padding: 10px 6px;
+  background: var(--rail, #fff);
+  border-right: 1px solid var(--rail-line, #e6e4df);
+}
+
+.bd__railItem {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 9px 2px 8px;
+  border: none;
+  border-radius: 7px;
+  background: none;
+  font-family: var(--ui);
+  font-size: 10.5px;
+  line-height: 1.2;
+  text-align: center;
+  text-decoration: none;
+  color: var(--rail-ink-soft, #5c635e);
+  cursor: pointer;
+}
+
+.bd__railItem:hover {
+  background: var(--paper-2);
+  color: var(--rail-ink, #1c1f1d);
+}
+
+/* A bar as well as a tint: colour never alone. */
+.bd__railItem--on {
+  background: var(--green-tint);
+  color: var(--green-deep);
+  font-weight: 600;
+  box-shadow: inset 2px 0 0 var(--green);
+}
+
+.bd__railCount {
+  position: absolute;
+  top: 5px;
+  right: 8px;
+  min-width: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--green-pale);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--green-deep);
+}
+
+.bd__railSpacer {
+  flex-grow: 1;
+}
+
+/* The process list, over the editor rather than beside it. */
+.bd__switcher {
+  position: absolute;
+  top: 58px;
+  left: 76px;
+  z-index: 30;
+  width: 300px;
+  padding: 14px;
+  background: #fff;
+  border: 1px solid var(--card-line, #e4e2dd);
+  border-radius: 11px;
+  box-shadow: 0 14px 40px rgba(20, 24, 22, 0.18);
+}
+
+.bd__switcherHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.bd__switcherHead h2 {
+  margin: 0;
+  font-family: var(--ui);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.bd__switcherClose {
+  border: none;
+  background: none;
+  padding: 0;
+  font-family: var(--ui);
+  font-size: 12.5px;
+  color: var(--green-deep);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.bd__switcherList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bd__switcherItem {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  padding: 9px 8px;
+  border: none;
+  border-radius: 7px;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+
+.bd__switcherItem:hover {
+  background: var(--paper-2);
+}
+
+.bd__switcherItem[aria-current='page'] {
+  background: var(--green-tint);
+}
+
+.bd__switcherMark {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  border-radius: 7px;
+  background: var(--green-tint);
+  border: 1px solid var(--green-border);
+  font-family: var(--ui);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--green-deep);
+}
+
+.bd__switcherText {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.bd__switcherName {
+  font-family: var(--ui);
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.bd__switcherMeta {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.bd__switcherNew {
+  display: grid;
+  place-items: center;
+  height: 34px;
+  margin-top: 10px;
+  border: 1px dashed var(--card-line, #e4e2dd);
+  border-radius: 7px;
+  font-family: var(--ui);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--green-deep);
+  text-decoration: none;
+}
+
+.bd__shell {
+  position: relative;
+}
+
+/* The link the whole thing exists to produce. */
+.bd__formLink {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 7px 0 0;
+  font-family: var(--font-mono), monospace;
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+
+.bd__formLink a {
+  color: var(--green-deep);
+  text-decoration: underline;
+}
+
+.bd__formLink--pending {
+  color: var(--muted);
+}
+
+.bd__formCopy {
+  min-height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--card-line, #e4e2dd);
+  border-radius: 5px;
+  background: #fff;
+  font-family: var(--ui);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+.bd__formCopy:hover {
+  background: var(--paper-2);
+  color: var(--ink);
+}
+
+.bd__formNote {
+  font-family: var(--ui);
+  font-size: 11.5px;
+  color: var(--muted);
+}

@@ -289,6 +289,7 @@ function partyLabel(p: Party | undefined): string {
 
 export function Builder() {
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
+  const [showProcesses, setShowProcesses] = useState(false);
   const [processes, setProcesses] = useState<ProcessRow[]>([]);
   const [draft, setDraft] = useState<DraftDetail | null>(null);
   const [blueprint, setBlueprint] = useState<Blueprint | null>(null);
@@ -514,34 +515,87 @@ export function Builder() {
       </header>
 
       <div className="bd__shell">
-      <aside className="bd__side">
-        <div className="bd__sideLabel">YOUR PROCESSES</div>
+      {/*
+        * An icon rail, not a column.
+        *
+        * Two hundred and thirty pixels of a three-column editor were spent
+        * listing two processes. The rail is sixty-four: the four things
+        * somebody does here, each a destination rather than a row, and the
+        * process list opens over the editor when it is wanted instead of
+        * standing beside it permanently.
+        */}
+      <nav className="bd__rail" aria-label="Builder">
+        <button
+          type="button"
+          className={`bd__railItem${showProcesses ? ' bd__railItem--on' : ''}`}
+          aria-expanded={showProcesses}
+          aria-controls="process-switcher"
+          onClick={() => setShowProcesses((was) => !was)}
+        >
+          <RailIcon name="processes" />
+          <span>Processes</span>
+          {processes.length > 0 && <span className="bd__railCount">{processes.length}</span>}
+        </button>
 
-        <nav className="bd__list">
-          {processes.map((p) => (
-            <button
-              key={p.process_key}
-              className="bd__listItem"
-              aria-current={draft?.processKey === p.process_key ? 'page' : undefined}
-              onClick={() => (p.draft_id ? openById(p.draft_id) : open(p.process_key))}
-              disabled={busy !== null}
-            >
-              <span className="bd__listName">{p.name ?? p.process_key}</span>
-              <span className="bd__listMeta">
-                {p.version === null ? 'unpublished' : `v${p.version}`}
-                {p.draft_id ? <span className="bd__dot" title="a draft is open" /> : null}
-              </span>
-            </button>
-          ))}
-          {!processes.length && <p className="bd__empty">Nothing here yet.</p>}
-        </nav>
-
-        {/* A page, not a dialog: fifty starting points need room, a search
-            and a link somebody can send to a colleague. */}
-        <a className="bd__newBtn" href="/builder/new">
-          + New process
+        <a className="bd__railItem" href="/builder/new">
+          <RailIcon name="new" />
+          <span>New</span>
         </a>
-      </aside>
+
+        <a className="bd__railItem" href="/builder/new">
+          <RailIcon name="catalogue" />
+          <span>Catalogue</span>
+        </a>
+
+        <span className="bd__railSpacer" />
+
+        <a className="bd__railItem" href="/console">
+          <RailIcon name="console" />
+          <span>Console</span>
+        </a>
+      </nav>
+
+      {showProcesses && (
+        <div className="bd__switcher" id="process-switcher">
+          <div className="bd__switcherHead">
+            <h2>Your processes</h2>
+            <button type="button" className="bd__switcherClose" onClick={() => setShowProcesses(false)}>
+              Close
+            </button>
+          </div>
+          <ul className="bd__switcherList">
+            {processes.map((p) => (
+              <li key={p.process_key}>
+                <button
+                  type="button"
+                  className="bd__switcherItem"
+                  aria-current={draft?.processKey === p.process_key ? 'page' : undefined}
+                  disabled={busy !== null}
+                  onClick={() => {
+                    setShowProcesses(false);
+                    return p.draft_id ? openById(p.draft_id) : open(p.process_key);
+                  }}
+                >
+                  <span className="bd__switcherMark" aria-hidden="true">
+                    {(p.name ?? p.process_key).slice(0, 1).toUpperCase()}
+                  </span>
+                  <span className="bd__switcherText">
+                    <span className="bd__switcherName">{p.name ?? p.process_key}</span>
+                    <span className="bd__switcherMeta">
+                      {p.version === null ? 'unpublished' : `published v${p.version}`}
+                      {p.draft_id ? ' · draft open' : ''}
+                    </span>
+                  </span>
+                </button>
+              </li>
+            ))}
+            {!processes.length && <li className="bd__empty">Nothing here yet.</li>}
+          </ul>
+          <a className="bd__switcherNew" href="/builder/new">
+            + New process
+          </a>
+        </div>
+      )}
 
       <main className="bd__main" id="builder-main" tabIndex={-1}>
         {error && (
@@ -574,6 +628,16 @@ export function Builder() {
                   {' · '}
                   <SaveState status={status} />
                 </p>
+                {/*
+                  * The link the whole thing exists to produce.
+                  *
+                  * A published process serves its form here, and the builder
+                  * never mentioned it — so somebody could design a process and
+                  * have no idea how anybody would reach it. Unpublished shows
+                  * the link it *will* have, greyed, because the key is being
+                  * chosen now and it cannot change afterwards.
+                  */}
+                <FormLink processKey={draft.processKey} live={draft.basedOnVersion !== null} />
               </div>
               <div className="bd__actions">
                 <button className="bd__btn" onClick={discard} disabled={busy !== null}>
@@ -840,6 +904,99 @@ function SaveState({ status }: { status: string }) {
  * you already have, and the three ways to begin — each with a picture of what
  * it produces rather than a button with a verb on it.
  */
+/**
+ * The rail's icons. Beside a label, never instead of one — an icon-only rail
+ * is a memory test, and Viva's works because every icon has its word under it.
+ */
+/** Where the form lives, and whether it is live yet. */
+function FormLink({ processKey, live }: { processKey: string; live: boolean }) {
+  const [copied, setCopied] = useState(false);
+  const url = typeof window === 'undefined' ? '' : `${window.location.origin}/f/${processKey}`;
+
+  return (
+    <p className={`bd__formLink${live ? '' : ' bd__formLink--pending'}`}>
+      <svg
+        width="14"
+        height="14"
+        viewBox="0 0 20 20"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={1.7}
+        strokeLinecap="round"
+        aria-hidden="true"
+      >
+        <path d="M8.6 11.4 6.4 13.6a2.8 2.8 0 0 0 4 4l2.2-2.2" />
+        <path d="M11.4 8.6l2.8-2.8a2.9 2.9 0 0 0-4.1-4.1L7.4 4.6" transform="translate(0,1)" />
+        <path d="M7.8 12.2l4.4-4.4" />
+      </svg>
+      {live ? (
+        <a href={url} target="_blank" rel="noreferrer">
+          /f/{processKey}
+        </a>
+      ) : (
+        <span>/f/{processKey}</span>
+      )}
+      <button
+        type="button"
+        className="bd__formCopy"
+        onClick={() => {
+          void navigator.clipboard?.writeText(url);
+          setCopied(true);
+        }}
+      >
+        {copied ? 'Copied' : 'Copy'}
+      </button>
+      {!live && <span className="bd__formNote">once you publish</span>}
+    </p>
+  );
+}
+
+function RailIcon({ name }: { name: 'processes' | 'new' | 'catalogue' | 'console' }) {
+  const p = {
+    width: 20,
+    height: 20,
+    viewBox: '0 0 20 20',
+    fill: 'none',
+    stroke: 'currentColor',
+    strokeWidth: 1.6,
+    strokeLinecap: 'round' as const,
+    strokeLinejoin: 'round' as const,
+    'aria-hidden': true,
+  };
+  switch (name) {
+    case 'processes':
+      return (
+        <svg {...p}>
+          <rect x="2.6" y="3" width="6" height="4.4" rx="1.2" />
+          <rect x="11.4" y="12.6" width="6" height="4.4" rx="1.2" />
+          <path d="M5.6 7.4v4.2a1.4 1.4 0 0 0 1.4 1.4h4.4" />
+        </svg>
+      );
+    case 'new':
+      return (
+        <svg {...p}>
+          <path d="M10 4.2v11.6M4.2 10h11.6" />
+        </svg>
+      );
+    case 'catalogue':
+      return (
+        <svg {...p}>
+          <rect x="2.8" y="3.2" width="6" height="6" rx="1.3" />
+          <rect x="11.2" y="3.2" width="6" height="6" rx="1.3" />
+          <rect x="2.8" y="11.6" width="6" height="6" rx="1.3" />
+          <rect x="11.2" y="11.6" width="6" height="6" rx="1.3" />
+        </svg>
+      );
+    case 'console':
+      return (
+        <svg {...p}>
+          <rect x="2.6" y="4" width="14.8" height="12" rx="2" />
+          <path d="M2.6 8h14.8M6.4 12h7.2" />
+        </svg>
+      );
+  }
+}
+
 function Welcome({
   onNew,
   processes,

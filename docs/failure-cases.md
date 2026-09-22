@@ -625,6 +625,30 @@ Three separate mistakes, and only the third is about taste:
 **Generalisable:** an empty state is the screen most people see most often and the one least likely to be designed, because whoever built it had data.
 
 
+### 61. A fix that never applied, and a warning that said so for a week
+
+The reminder email named the person it was about and sent it to a *role*, which SEC002 flags: a confidential value reaching whoever currently holds a role is not the same set of people the record's permissions allow. I changed it, said so in a commit message, and moved on.
+
+The edit never applied. The search string did not match the file — an escaped newline in the patch script against a real one in the source — and the script reported success because a no-op replace is not an error.
+
+So the warning kept firing on all eighty-eight packs, in the pack detail panel, for a week. It was found when the user asked **"is that warning ok"**, which it was not.
+
+Two things went wrong and only one is the code:
+
+- **A silent no-op edit.** A `replace` that matches nothing returns the string unchanged and exits zero. Every patch that matters should assert it changed something — the ones in this session that used `assert old in s` were fine; this one did not.
+- **A claim was made from the intent rather than the output.** The commit said the reminder no longer names anybody. Nobody read the generated email.
+
+**Generalisable:** the check for "did my fix work" is running the thing, not re-reading the patch. A warning count that does not move after a fix that should have moved it is the cheapest possible signal, and it was on screen the whole time.
+
+### 62. Two hundred and thirty pixels to list two processes
+
+The builder's left column was a full-width list in a three-column editor, permanently visible, usually holding one or two rows. The editor — the reason anybody opens the page — got what was left.
+
+**Fixed** with a sixty-eight pixel icon rail and a switcher that opens over the editor when it is wanted. Icons keep their labels: an icon-only rail is a memory test, and the references that work all keep the word.
+
+**Generalisable:** a navigation column is sized for the largest list it might hold, and lives with the smallest one it usually does.
+
+
 ---
 
 ## What the compiler structurally cannot catch

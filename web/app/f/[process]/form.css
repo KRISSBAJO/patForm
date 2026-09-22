@@ -461,3 +461,96 @@ textarea.fm__input {
     width: 100%;
   }
 }
+
+/* ==========================================================================
+   The form, tightened
+   ==========================================================================
+
+   The inputs were 48px tall with 22px between fields, on a serif heading —
+   which reads as a 2015 form. Modern respondent forms are tighter and quieter:
+   the answers should be what you see, not the boxes around them.
+
+   Three constraints held while shrinking:
+   - 16px font on the control, because anything smaller makes iOS zoom the
+     page on focus and the respondent loses their place.
+   - 44px is still the touch target; 42px plus the label's clickable area
+     clears it, and the choice rows keep 44 outright.
+   - The focus ring stays 2px and unmoved: it is the one thing a keyboard
+     user relies on.
+*/
+
+.fm__shell {
+  max-width: 600px;
+}
+
+.fm__card {
+  padding: 26px 26px 28px;
+  border-radius: 12px;
+  box-shadow: 0 1px 2px rgba(19, 26, 23, 0.05);
+}
+
+.fm__field {
+  margin-top: 16px;
+}
+
+.fm__label {
+  margin-bottom: 5px;
+  font-family: var(--font-body), system-ui, sans-serif;
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: 0.002em;
+  color: var(--ink);
+}
+
+.fm__help {
+  margin: -1px 0 6px;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.fm__input {
+  min-height: 42px;
+  padding: 9px 12px;
+  border-radius: 7px;
+  border: 1px solid var(--line-strong);
+  font-size: 16px;
+  line-height: 1.35;
+  transition: border-color 100ms ease, box-shadow 100ms ease;
+}
+
+.fm__input:hover:not(:focus) {
+  border-color: #c3bfb6;
+}
+
+/* A ring rather than a heavier border, so the field does not move when it
+   takes focus — a 1px border becoming 2px shifts everything below it. */
+.fm__input:focus {
+  outline: 2px solid var(--green);
+  outline-offset: 1px;
+  border-color: var(--green);
+  box-shadow: 0 0 0 3px rgba(20, 102, 63, 0.09);
+}
+
+textarea.fm__input {
+  min-height: 84px;
+  line-height: 1.5;
+}
+
+/* Section headings were the same serif as the page title, which made every
+   group look like a new document. */
+.fm__section h2,
+.fm__sectionTitle {
+  font-family: var(--font-body), system-ui, sans-serif;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.006em;
+}
+
+.fm__choices {
+  gap: 6px;
+}
+
+.fm__choice {
+  min-height: 44px;
+  border-radius: 7px;
+}
