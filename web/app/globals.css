@@ -444,6 +444,43 @@ html {
   padding-top: 28px;
 }
 
+/*
+ * The render sits above the copy on a phone and beside it from 900px, which
+ * is the same breakpoint the rest of this page turns two-column at.
+ *
+ * It bleeds a little past the gutter on the right at desktop widths. That is
+ * deliberate: the stack is drawn at an angle and a hard edge at the column
+ * boundary makes it look cropped rather than placed. `overflow` on the
+ * section keeps it from adding a horizontal scrollbar.
+ */
+.hero__art {
+  margin-top: 36px;
+}
+
+/*
+ * Framed, on purpose.
+ *
+ * The first attempt let the render sit flush against the page, the way the
+ * mockup does. That does not work here: the mockup's background *is* the
+ * render's own ambient colour, and this page is #f7f5f0 against an image
+ * that runs from (234,233,227) at the top left to (177,168,153) at the
+ * bottom right. A hard rectangle of somebody else's lighting reads as a
+ * picture pasted on.
+ *
+ * A radius and a shadow make it an object placed on the page rather than a
+ * failed blend. That is the choice actually available, so it is made
+ * deliberately rather than arrived at.
+ */
+.hero__art img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 18px;
+  box-shadow:
+    0 30px 70px -30px rgba(40, 36, 28, 0.32),
+    0 2px 6px rgba(40, 36, 28, 0.05);
+}
+
 .pill {
   display: inline-flex;
   align-items: center;
@@ -502,124 +539,6 @@ html {
   margin-top: 22px;
   font-size: 14.5px;
   color: var(--muted);
-}
-
-/* ------------------------------------------------------------- record card */
-
-.record {
-  margin-top: 30px;
-  border: 1px solid var(--line);
-  border-radius: 13px;
-  background: var(--white);
-  overflow: hidden;
-  box-shadow:
-    0 1px 2px rgba(19, 26, 23, 0.04),
-    0 14px 32px -20px rgba(19, 26, 23, 0.25);
-}
-
-.record__head {
-  padding: 13px 15px;
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  border-bottom: 1px solid var(--paper-2);
-  background: var(--paper-3);
-}
-
-.record__id {
-  font-family: var(--font-mono), monospace;
-  font-size: 11px;
-  color: var(--muted);
-}
-
-.record__name {
-  flex-grow: 1;
-  font-size: 13px;
-  font-weight: 600;
-  min-width: 0;
-}
-
-/* The phone board shows the name alone; the job title is desktop-only. */
-.record__role {
-  display: none;
-}
-
-.record__body {
-  padding: 15px;
-}
-
-.record__next {
-  padding: 12px 13px;
-  border-radius: 8px;
-  background: var(--green-tint);
-  border: 1px solid var(--green-border);
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.record__nextTitle {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--green-deep);
-}
-
-.record__nextMeta {
-  font-size: 12px;
-  color: var(--muted-3);
-  margin-top: 2px;
-}
-
-.timeline {
-  margin-top: 14px;
-  display: flex;
-  flex-direction: column;
-}
-
-.timeline__row {
-  display: flex;
-  gap: 11px;
-}
-
-.timeline__gutter {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  width: 9px;
-  flex-shrink: 0;
-}
-
-.timeline__dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  margin-top: 5px;
-  flex-shrink: 0;
-}
-
-.timeline__line {
-  width: 1.5px;
-  flex-grow: 1;
-  background: var(--line);
-}
-
-.timeline__label {
-  font-size: 13px;
-  font-weight: 500;
-}
-
-.timeline__meta {
-  font-size: 11.5px;
-  color: var(--muted);
-  margin-top: 2px;
-  font-family: var(--font-mono), monospace;
-}
-
-.record__tags {
-  display: none;
-  gap: 9px;
-  padding-top: 14px;
-  flex-wrap: wrap;
 }
 
 /* ----------------------------------------------------------------- problem */
@@ -1349,12 +1268,19 @@ html {
     display: none;
   }
 
-  /* hero becomes two columns: copy left, the record right */
+  /* hero becomes two columns: copy left, the render right */
   .hero {
     padding-top: 56px;
     display: flex;
     gap: 48px;
-    align-items: flex-start;
+    align-items: center;
+    overflow: hidden;
+  }
+
+  .hero__art {
+    margin-top: 0;
+    flex: 1 1 540px;
+    min-width: 0;
   }
 
   .hero__copy {
@@ -1411,78 +1337,20 @@ html {
     letter-spacing: 0.1em;
   }
 
-  .record {
-    margin-top: 0;
-    flex: 1 1 440px;
-    min-width: 0;
-    border-radius: 14px;
-    box-shadow:
-      0 1px 2px rgba(19, 26, 23, 0.04),
-      0 18px 44px -24px rgba(19, 26, 23, 0.22);
-  }
 
-  .record__head {
-    height: 46px;
-    padding: 0 18px;
-    gap: 10px;
-  }
 
-  .record__id {
-    font-size: 12px;
-  }
 
-  .record__name {
-    font-size: 13.5px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
 
-  .record__role {
-    display: inline;
-  }
 
-  .record__body {
-    padding: 18px;
-  }
 
-  .record__next {
-    padding: 13px 15px;
-    border-radius: 9px;
-  }
 
-  .record__nextTitle {
-    font-size: 13.5px;
-  }
 
-  .record__nextMeta {
-    font-size: 12.5px;
-  }
 
-  .timeline__row {
-    gap: 13px;
-  }
 
-  .timeline__gutter {
-    width: 17px;
-  }
 
-  .timeline__dot {
-    width: 9px;
-    height: 9px;
-  }
 
-  .timeline__label {
-    font-size: 13.5px;
-  }
 
-  .timeline__meta {
-    font-size: 12px;
-  }
 
-  .record__tags {
-    display: flex;
-  }
 
   .badge {
     height: 23px;
@@ -2013,12 +1881,17 @@ html {
     gap: 72px;
   }
 
+  /* Wide enough that the headline sets in three lines rather than four.
+     Below this it breaks after "the", which strands a word. */
   .hero__copy {
-    flex: 0 0 600px;
+    flex: 0 1 600px;
   }
 
-  .record {
-    flex: 0 0 608px;
+
+  /* The art leads at desktop widths. It was 620px beside 600px of copy,
+     which made the thing the page is selling the smaller half. */
+  .hero__art {
+    flex: 1 1 660px;
   }
 
   .band__grid {

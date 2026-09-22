@@ -93,71 +93,33 @@ export default function Home() {
             </p>
           </div>
 
-          {/* the record: what the product actually gives you */}
-          <article className="record" aria-label="Example record">
-            <header className="record__head">
-              <span className="record__id">ONB-2291</span>
-              <span className="record__name">Amara Okafor<span className="record__role"> — Backend Engineer</span></span>
-              <span className="badge badge--waiting">WITH HR</span>
-            </header>
-
-            <div className="record__body">
-              <div className="record__next">
-                <span style={{ color: 'var(--green)', display: 'flex' }}>
-                  <Clock />
-                </span>
-                <div style={{ flexGrow: 1 }}>
-                  <div className="record__nextTitle">Next: compliance review</div>
-                  <div className="record__nextMeta">Waiting on the HR approver for 6 hours. Due in 42.</div>
-                </div>
-              </div>
-
-              <div className="timeline">
-                <div className="timeline__row">
-                  <div className="timeline__gutter">
-                    <span className="timeline__dot" style={{ background: 'var(--green)' }} />
-                    <span className="timeline__line" />
-                  </div>
-                  <div style={{ paddingBottom: 14, flexGrow: 1 }}>
-                    <div className="timeline__label">Manager approved</div>
-                    <div className="timeline__meta">18 Sep, 14:12 · Priya Raman · “Confirmed headcount”</div>
-                  </div>
-                </div>
-
-                <div className="timeline__row">
-                  <div className="timeline__gutter">
-                    <span className="timeline__dot" style={{ background: 'var(--ochre)' }} />
-                    <span className="timeline__line" />
-                  </div>
-                  <div style={{ paddingBottom: 14, flexGrow: 1 }}>
-                    <div className="timeline__label">Reminder sent to compliance</div>
-                    <div className="timeline__meta">18 Sep, 09:00 · automatic · delivered</div>
-                  </div>
-                </div>
-
-                <div className="timeline__row">
-                  <div className="timeline__gutter">
-                    <span className="timeline__dot" style={{ background: 'var(--line-strong)' }} />
-                  </div>
-                  <div style={{ flexGrow: 1 }}>
-                    <div className="timeline__label">Submitted</div>
-                    <div className="timeline__meta">16 Sep, 08:41 · saved twice, resumed once</div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="record__tags">
-                <span className="chip chip--quiet" style={{ gap: 6 }}>
-                  <span style={{ color: 'var(--muted)', display: 'flex' }}>
-                    <Paperclip />
-                  </span>
-                  2 files
-                </span>
-                <span className="chip chip--quiet">3 tasks queued</span>
-                <span className="chip chip--quiet">Version 4 · pinned</span>
-              </div>
-            </div>
-          </article>
+          {/*
+            * The product, as an object.
+            *
+            * This was a live record card — real markup, real data, and a
+            * rectangle. What it could not show is the thing the product
+            * actually claims: that the form, the workflow, the documents and
+            * the dashboard are one stack built together, not four tools in a
+            * row. A picture can say that in a second.
+            *
+            * `eager` and `fetchPriority`, because this is the largest element
+            * above the fold and lazy-loading it is loading it late. The width
+            * and height are the file's own, so nothing below it jumps while
+            * it arrives.
+            */}
+          <div className="hero__art">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/hero-stack.webp"
+              srcSet="/hero-stack@half.webp 512w, /hero-stack.webp 1024w"
+              sizes="(max-width: 900px) 92vw, 46vw"
+              width={1024}
+              height={846}
+              loading="eager"
+              fetchPriority="high"
+              alt="One onboarding record shown as a stack of layers: the case and its timeline on top, the workflow that routes it beneath, and the portfolio view it rolls up into below that."
+            />
+          </div>
         </section>
 
         {/* =================================================== problem */}
