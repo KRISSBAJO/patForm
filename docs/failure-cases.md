@@ -215,6 +215,42 @@ Simulating a crash by setting `done_at = null` left `available_at` thirty second
 
 That is not only a flaw in the simulation. Rows held by a worker that no longer exists come back only after the visibility timeout elapses, so **a restore does not resume instantly even once the database is up.** That delay belongs inside the RTO, not beside it.
 
+### 15. The focus ring was invisible on every dark surface
+
+`:focus-visible` used `--green` (#14663f). Against paper that is 6.42:1; against the sidebar (#131a17) it is **2.53:1**, under WCAG 1.4.11's 3:1 for a focus indicator. A keyboard user could not see where they were in the console or builder navigation.
+
+axe passed the page. **It does not test focus indicator contrast at all** — which is the general point about automated accessibility checking: it found two violations across these four flows, and six of the eight real problems came from reading.
+
+**Fixed** with a `--focus-ring` token that becomes mint on dark surfaces. Mint is 10.1:1 there and 1.6:1 on paper, so it is exactly the wrong colour everywhere else — hence a scoped token rather than a changed one.
+
+### 16. Contrast was checked against the wrong surface
+
+`--on-dark-5` and `--on-dark-6` were verified against `--ink` and passed. The account block uses `--ink-raised` and the current nav item uses `#23302a`, and on those the same colours fall to 4.37:1 and 3.70:1.
+
+The habit worth keeping: **a colour token is safe on the lightest surface it lands on, not on the one it was tested against.** Both now clear 4.5:1 everywhere they are used.
+
+### 17. `aria-modal="true"` made a promise the behaviour did not keep
+
+The builder's three dialogs had `role="dialog" aria-modal="true"` and no focus management whatsoever. Tab walked straight out into the page underneath — still rendered, still clickable, and no longer visible to the person using it. Escape did nothing.
+
+axe passed them, because the attributes were correct. This is the accessibility form of the pattern this file keeps recording: **present in the markup, absent in the behaviour.** It is the sixth instance.
+
+**Fixed** in `web/app/useDialog.ts`. Three things went wrong while fixing it, each worth its own note:
+
+- `useEffect(..., [onClose])` with an inline arrow meant the effect tore down on every parent render, restoring focus mid-life to a control inside the dialog. The handler lives in a ref now and the effect runs once.
+- The opener could not be found by reading `document.activeElement` on mount, because the button that opened the dialog **disables itself while the request runs** and a disabled button drops focus to `<body>` immediately. The last element focused outside a dialog is tracked continuously instead.
+- Focusing the dialog on mount worked in a real browser and failed under the headless check, because the parent re-renders the instant the in-flight flag clears. That is a race, not a test artifact — it can happen to a person. Focus is set again on the next frame.
+
+### 18. Two things only a mouse could do
+
+The Ask results opened a record on row click with no keyboard equivalent (2.1.1), and its input had a placeholder where a label belonged — no accessible name, and no visible one after the first keystroke.
+
+### 19. `npm run spike` is not safe to run beside a worker
+
+One proof failed once and passed on every rerun. `resetSchema` drops tables between proofs, and a live worker polling the same database queries them mid-drop — the worker log shows `relation "outbox" does not exist`.
+
+Not fixed, recorded: the harnesses assume they own the database. The drill solved its own version of this with an exported snapshot, which is the right shape of answer, and the spike would need the same treatment or a database of its own.
+
 ---
 
 ## What the compiler structurally cannot catch

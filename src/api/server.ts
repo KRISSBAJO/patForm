@@ -10,6 +10,8 @@ import {
   signOut,
 } from '../runtime/auth.js';
 import { runRetention } from '../runtime/retention.js';
+import { logIfEnabled, requestIdFrom, withTrace } from '../runtime/trace.js';
+import { traceByRequest, traceForInstance } from '../runtime/support.js';
 import {
   checkAnswers,
   loadDraft,
@@ -211,6 +213,21 @@ route('GET', /^\/api\/records\/([0-9a-f-]{36})\/export$/, async ({ pool, princip
   return bundle;
 });
 
+
+// -------------------------------------------------------------- diagnostics
+//
+// §20.2 supportability: "support can diagnose a failed instance without direct
+// database modification". These are the reads that make a psql prompt
+// unnecessary rather than forbidden.
+
+route('GET', /^\/api\/records\/([0-9a-f-]{36})\/trace$/, async ({ pool, principal, url }) =>
+  traceForInstance(pool, { principal, instanceId: url.pathname.split('/')[3]! }),
+);
+
+route('GET', /^\/api\/trace\/([\w.:-]{8,64})$/, async ({ pool, principal, url }) =>
+  traceByRequest(pool, { principal, requestId: decodeURIComponent(url.pathname.split('/').pop()!) }),
+);
+
 // ------------------------------------------------------------------ session
 
 route('GET', /^\/api\/session$/, async ({ engine, pool, actorId }) => {
@@ -362,7 +379,10 @@ function send(res: ServerResponse, status: number, payload: unknown, cookies: st
     'content-length': Buffer.byteLength(body),
     // The console is served from another origin in development.
     'access-control-allow-origin': process.env.CONSOLE_ORIGIN ?? 'http://localhost:3210',
-    'access-control-allow-headers': 'content-type, x-actor-id',
+    // x-request-id so a caller can supply their own correlation id, and read
+    // it back off the response.
+    'access-control-allow-headers': 'content-type, x-request-id',
+    'access-control-expose-headers': 'x-request-id',
     'access-control-allow-methods': 'GET, POST, OPTIONS',
     'access-control-allow-credentials': 'true',
     ...(cookies.length ? { 'set-cookie': cookies } : {}),
@@ -375,8 +395,20 @@ async function main(): Promise<void> {
   const engine = new Engine(pool);
 
   const server = createServer((req, res) => {
-    void (async () => {
+    /*
+     * One trace per request, opened before anything else.
+     *
+     * Everything the request causes — events, outbox rows, action runs, and
+     * the worker runs that come minutes later — is stamped with this id. The
+     * client gets it back in `x-request-id` whether the call succeeded or not,
+     * because the id is most useful on the call that failed.
+     */
+    const requestId = requestIdFrom(req.headers['x-request-id']);
+    res.setHeader('x-request-id', requestId);
+
+    void withTrace({ requestId, source: 'api' }, async () => {
       const url = new URL(req.url ?? '/', `http://localhost:${PORT}`);
+      const started = Date.now();
 
       if (req.method === 'OPTIONS') return send(res, 204, {});
       if (url.pathname === '/api/health') return send(res, 200, { ok: true });
@@ -441,8 +473,27 @@ async function main(): Promise<void> {
 
         const body = req.method === 'POST' ? await readBody(req) : {};
         const result = await match.handler({ engine, pool, principal, actorId, url }, body);
+        logIfEnabled('info', 'api.request', {
+          method: req.method,
+          path: url.pathname,
+          status: 200,
+          ms: Date.now() - started,
+        });
         send(res, 200, result);
       } catch (err) {
+        const status =
+          err instanceof AuthorizationError ? 403 : err instanceof HttpError ? err.status : 500;
+        logIfEnabled(status >= 500 ? 'error' : 'warn', 'api.request', {
+          method: req.method,
+          path: url.pathname,
+          status,
+          ms: Date.now() - started,
+          // The message, not the record: §10.1's "tenant-safe support
+          // diagnostics" means a log line carries identifiers and text this
+          // codebase wrote, never a respondent's answers.
+          detail: err instanceof Error ? err.message : String(err),
+        });
+
         if (err instanceof AuthorizationError) {
           // The reason is deliberately returned: an operator who cannot act
           // needs to know whether to ask for access or ask someone else.
@@ -450,9 +501,9 @@ async function main(): Promise<void> {
         }
         if (err instanceof HttpError) return send(res, err.status, { error: err.message });
         console.error(err);
-        send(res, 500, { error: 'internal error' });
+        send(res, 500, { error: 'internal error', requestId });
       }
-    })();
+    });
   });
 
   server.listen(PORT, () => {

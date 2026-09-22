@@ -9,6 +9,18 @@ import { suppressDelivery } from './runtime/email.js';
 /** Every seeded account gets this. It only ever exists in a local database. */
 const DEV_PASSWORD = 'patform-dev-password';
 
+/*
+ * A real account, alongside the fictional ones.
+ *
+ * Everything else here is an example.test address that can never receive
+ * anything, which is right for seeded data and useless for actually looking at
+ * the console as yourself. This one is set from the environment so the address
+ * is not committed, and it keeps its own password because the shared dev one
+ * should not open a mailbox that exists.
+ */
+const OWNER_EMAIL = process.env.SEED_OWNER_EMAIL;
+const OWNER_PASSWORD = process.env.SEED_OWNER_PASSWORD;
+
 /**
  * Fills a local database with a workspace that looks like a Tuesday: records
  * at every stage, one approval that is late, one automation that failed, and
@@ -29,6 +41,11 @@ const PEOPLE = [
   { key: 'ini', email: 'ini@example.test', name: 'Ini Etim', role: 'it_operator', workspace: 'operator' },
   { key: 'dana', email: 'dana@example.test', name: 'Dana Whitlock', role: 'hiring_manager', workspace: 'read_only' },
 ] as const;
+
+const OWNER =
+  OWNER_EMAIL && OWNER_PASSWORD
+    ? ({ key: 'owner', email: OWNER_EMAIL, name: 'Workspace Owner', role: 'hr_admin', workspace: 'owner' } as const)
+    : null;
 
 const HIRES = [
   { name: 'Amara Okafor', title: 'Backend Engineer', dept: 'engineering', daysAgo: 5, reach: 'hr' },
@@ -82,6 +99,13 @@ async function main(): Promise<void> {
     await engine.grant({ tenantId, actorId: id, processKey: bp.key, roleKey: person.role });
     await setPassword(pool, id, DEV_PASSWORD);
     actors.set(person.key, { id, principal: { kind: 'actor', tenantId, actorId: id } });
+  }
+
+  if (OWNER) {
+    const id = await engine.createActor(tenantId, OWNER.email, OWNER.name, OWNER.workspace);
+    await engine.grant({ tenantId, actorId: id, processKey: bp.key, roleKey: OWNER.role });
+    await setPassword(pool, id, OWNER_PASSWORD!);
+    actors.set('owner', { id, principal: { kind: 'actor', tenantId, actorId: id } });
   }
 
   const now = Date.now();
@@ -165,6 +189,10 @@ async function main(): Promise<void> {
   console.log(`  Open tasks  ${counts[0]!.tasks}`);
   console.log(`  Failures    ${failed.length}\n`);
   console.log(`  Sign in at /console with any of these. Password: ${DEV_PASSWORD}`);
+  if (OWNER) {
+    console.log(`    ${OWNER.email.padEnd(22)} ${OWNER.name.padEnd(16)} ${OWNER.role} / ${OWNER.workspace}`);
+    console.log(`      (its own password, from SEED_OWNER_PASSWORD)`);
+  }
 
   for (const person of PEOPLE) {
     console.log(`    ${person.email.padEnd(22)} ${person.name.padEnd(16)} ${person.role} / ${person.workspace}`);

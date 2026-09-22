@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import './builder.css';
+import { useDialog } from '../useDialog';
 
 /**
  * The builder.
@@ -408,6 +409,9 @@ export function Builder() {
 
   return (
     <div className="bd">
+      <a className="skip-link" href="#builder-main">
+        Skip to the editor
+      </a>
       <aside className="bd__side">
         <div className="bd__brand">
           <svg width="22" height="22" viewBox="0 0 26 26" fill="none" aria-hidden="true">
@@ -446,15 +450,15 @@ export function Builder() {
         </a>
       </aside>
 
-      <main className="bd__main">
+      <main className="bd__main" id="builder-main" tabIndex={-1}>
         {error && (
-          <div className="bd__banner bd__banner--bad">
+          <div className="bd__banner bd__banner--bad" role="alert">
             {error}
             <button onClick={() => setError(null)}>dismiss</button>
           </div>
         )}
         {published !== null && (
-          <div className="bd__banner bd__banner--good">
+          <div className="bd__banner bd__banner--good" role="status">
             Published as version {published}. Records already running stay on the version they started under.
             <button onClick={() => setPublished(null)}>dismiss</button>
           </div>
@@ -671,11 +675,19 @@ export function Builder() {
 
 // ----------------------------------------------------------------- pieces
 
+/**
+ * 4.1.3 Status Messages. This changes without focus moving, so a screen
+ * reader is told about it politely rather than never.
+ */
 function SaveState({ status }: { status: string }) {
-  if (status === 'saving') return <span className="bd__saving">saving…</span>;
-  if (status === 'saved') return <span className="bd__saved">saved</span>;
-  if (status === 'error') return <span className="bd__savedBad">not saved</span>;
-  return <span className="bd__saved">up to date</span>;
+  const text =
+    status === 'saving' ? 'saving…' : status === 'saved' ? 'saved' : status === 'error' ? 'not saved' : 'up to date';
+  const className = status === 'saving' ? 'bd__saving' : status === 'error' ? 'bd__savedBad' : 'bd__saved';
+  return (
+    <span className={className} role="status" aria-live="polite">
+      {text}
+    </span>
+  );
 }
 
 function Welcome({ onNew }: { onNew: () => void }) {
@@ -1595,7 +1607,10 @@ function DiagnosticsPanel({
 }) {
   return (
     <aside className="bd__diag">
-      <header className="bd__diagHead">
+      {/* The tally is the thing a builder is watching, and it changes on every
+          keystroke without focus moving — 4.1.3 again. `atomic` so it is read
+          as one sentence rather than two numbers. */}
+      <header className="bd__diagHead" role="status" aria-live="polite" aria-atomic="true">
         <span className={errors.length ? 'bd__tallyBad' : 'bd__tallyOk'}>
           {errors.length} {errors.length === 1 ? 'error' : 'errors'}
         </span>
@@ -1640,11 +1655,12 @@ function TestDrawer({
   tests: { results: ScenarioResult[]; passed: number; total: number };
   onClose: () => void;
 }) {
+  const box = useDialog(onClose);
   return (
-    <div className="bd__drawer" role="dialog" aria-modal="true">
-      <div className="bd__drawerBox">
+    <div className="bd__drawer" role="dialog" aria-modal="true" aria-labelledby="test-drawer-title">
+      <div className="bd__drawerBox" ref={box} tabIndex={-1}>
         <header className="bd__drawerHead">
-          <h2>
+          <h2 id="test-drawer-title">
             {tests.passed} of {tests.total} scenarios passed
           </h2>
           <button className="bd__iconBtn" onClick={onClose}>
@@ -1684,6 +1700,7 @@ function PublishDrawer({
   onConfirm: () => void;
   onClose: () => void;
 }) {
+  const box = useDialog(onClose);
   const nothing =
     !impact.fields.added.length &&
     !impact.fields.removed.length &&
@@ -1692,10 +1709,10 @@ function PublishDrawer({
     !impact.states.removed.length;
 
   return (
-    <div className="bd__drawer" role="dialog" aria-modal="true">
-      <div className="bd__drawerBox">
+    <div className="bd__drawer" role="dialog" aria-modal="true" aria-labelledby="publish-drawer-title">
+      <div className="bd__drawerBox" ref={box} tabIndex={-1}>
         <header className="bd__drawerHead">
-          <h2>
+          <h2 id="publish-drawer-title">
             Publish {impact.fromVersion === null ? 'version 1' : `version ${impact.fromVersion + 1}`}
           </h2>
           <button className="bd__iconBtn" onClick={onClose}>
@@ -1790,6 +1807,7 @@ function NewProcessDialog({
   const [copyFrom, setCopyFrom] = useState(processes.find((p) => p.version !== null)?.process_key ?? '');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const box = useDialog(onClose);
 
   const submit = async () => {
     setBusy(true);
@@ -1812,10 +1830,10 @@ function NewProcessDialog({
   };
 
   return (
-    <div className="bd__drawer" role="dialog" aria-modal="true">
-      <div className="bd__drawerBox">
+    <div className="bd__drawer" role="dialog" aria-modal="true" aria-labelledby="new-drawer-title">
+      <div className="bd__drawerBox" ref={box} tabIndex={-1}>
         <header className="bd__drawerHead">
-          <h2>New process</h2>
+          <h2 id="new-drawer-title">New process</h2>
           <button className="bd__iconBtn" onClick={onClose} disabled={busy}>
             ×
           </button>

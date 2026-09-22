@@ -232,6 +232,10 @@ create table event (
   type        text not null,
   payload     jsonb not null default '{}'::jsonb,
   actor       text,
+  -- §20.2 observability: the request that caused this. Stamped from async
+  -- context, so it is present whether the change came from the API, a worker,
+  -- or a CLI, and 'unattributed' when nothing claimed it.
+  request_id  text not null default 'unattributed',
   occurred_at timestamptz not null,
   unique (instance_id, seq)
 );
@@ -287,10 +291,20 @@ create table outbox (
   claimed_at     timestamptz,
   attempts       int not null default 0,
   done_at        timestamptz,
-  last_error     text
+  last_error     text,
+  -- Carried forward rather than re-derived. The worker runs later in another
+  -- process, so this is the only surviving link back to the request that
+  -- caused the work — which is the whole point of having one.
+  request_id     text not null default 'unattributed'
 );
 
 create index outbox_ready on outbox (available_at, id) where done_at is null;
+
+-- Support looks a request up by id, so it needs to be cheap. Each index sits
+-- with its table: putting all three here referenced action_run before it
+-- existed, which is the same ordering trap the foreign keys had.
+create index event_by_request on event (request_id);
+create index outbox_by_request on outbox (request_id);
 
 -- -------------------------------------------------------- idempotency ledger
 
@@ -308,8 +322,15 @@ create table action_run (
   last_error       text,
   created_at       timestamptz not null,
   completed_at     timestamptz,
+  -- The request that originated the work, and the worker run that performed
+  -- it. A retry keeps the first and changes the second, which is what makes
+  -- "why did this happen twice" answerable.
+  request_id       text not null default 'unattributed',
+  performed_by     text,
   unique (instance_id, idempotency_key)
 );
+
+create index action_run_by_request on action_run (request_id);
 
 -- --------------------------------------------------------------- side effects
 --

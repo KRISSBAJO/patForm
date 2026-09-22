@@ -327,7 +327,15 @@
   border-bottom: 1px solid var(--paper-2);
 }
 
+/*
+ * A panel heading. It used to be a <button aria-selected="true"> that did
+ * nothing — invalid ARIA (aria-selected needs role="tab"), a keyboard stop
+ * with no action, and a heading missing from the document outline. It is an
+ * h2 now, so the margin has to be cleared.
+ */
 .cs__tab {
+  margin: 0;
+  font-weight: 600;
   height: 45px;
   display: inline-flex;
   align-items: center;
@@ -339,7 +347,7 @@
   padding: 0;
 }
 
-.cs__tab[aria-selected='true'] {
+.cs__tab, .cs__tab[aria-selected='true'] {
   font-weight: 600;
   color: var(--ink);
   border-bottom: 2px solid var(--ink);
@@ -713,10 +721,16 @@
  */
 
 .ask__form {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas: 'label label' 'input button';
   gap: 8px;
   margin-bottom: 12px;
 }
+
+.ask__label { grid-area: label; margin-bottom: 0; }
+.ask__input { grid-area: input; }
+.ask__form > button { grid-area: button; }
 
 .ask__input {
   flex: 1;
@@ -784,8 +798,43 @@
 }
 
 .ask__table td { padding: 7px 8px; border-bottom: 1px solid var(--line-soft); color: var(--ink-soft); }
-.ask__table tbody tr { cursor: pointer; }
 .ask__table tbody tr:hover { background: var(--paper-2); }
+
+.ask__label {
+  display: block;
+  margin-bottom: 5px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+/* The reference is the control, so it is focusable and looks it. */
+.ask__ref {
+  border: none;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  color: var(--green);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/*
+ * Visible to a screen reader, not on screen. Used where the visible text is
+ * enough for somebody who can see the table and not for somebody hearing a
+ * column of reference numbers read out.
+ */
+.ask__srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
 .ask__table code { font-family: var(--font-mono), monospace; font-size: 12px; color: var(--ink); }
 .ask__table--tight tbody tr { cursor: default; }
 .ask__table--tight tbody tr:hover { background: transparent; }

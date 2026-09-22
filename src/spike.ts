@@ -12,6 +12,7 @@ import {
   proveIntake,
   proveRespondentScope,
   proveRetention,
+  proveTraceability,
   proveWorkerFiresTimers,
 } from './spike-proofs.js';
 import { runScenarios } from './runtime/scenarios.js';
@@ -497,6 +498,7 @@ async function main(): Promise<void> {
     ['respondent scope', () => proveRespondentScope(ctx)],
     ['builder round trip', () => proveBuilderRoundTrip(ctx)],
     ['copilot', () => proveCopilot(ctx)],
+    ['traceability', () => proveTraceability(ctx)],
     ['export then retain', () => proveExportThenRetain(ctx)],
     ['worker', () => proveWorkerFiresTimers(ctx)],
     ['retention', () => proveRetention(ctx)],

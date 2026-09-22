@@ -227,6 +227,9 @@ export function Console() {
 
   return (
     <div className="cs">
+      <a className="skip-link" href="#console-main">
+        Skip to your work
+      </a>
       <aside className="cs__side">
         <div className="cs__brand">
           <svg width="22" height="22" viewBox="0 0 26 26" fill="none" aria-hidden="true">
@@ -320,7 +323,7 @@ export function Console() {
         </div>
       </aside>
 
-      <main className="cs__main">
+      <main className="cs__main" id="console-main" tabIndex={-1}>
         <div className="cs__head">
           <h1>{view === 'ask' ? 'Ask' : 'My work'}</h1>
           {work && <span className="cs__version">{work.processName}</span>}
@@ -363,9 +366,9 @@ export function Console() {
 
                 <div className="cs__panel">
                   <div className="cs__panelHead">
-                    <button type="button" className="cs__tab" aria-selected="true">
+                    <h2 className="cs__tab">
                       Needs you
-                    </button>
+                    </h2>
                     <span className="cs__sort">SORTED BY AGE</span>
                   </div>
 
@@ -435,9 +438,9 @@ export function Console() {
                 {record && (
                   <div className="cs__panel">
                     <div className="cs__panelHead">
-                      <button type="button" className="cs__tab" aria-selected="true">
+                      <h2 className="cs__tab">
                         {record.reference} · {record.stateName}
-                      </button>
+                      </h2>
                       <span className="cs__sort">
                         v{record.version} · seen as {record.viewerRoles.join(', ') || 'no process role'}
                       </span>
@@ -541,7 +544,11 @@ export function Console() {
       </main>
 
       {toast && (
-        <div className={`cs__toast ${toast.refused ? 'cs__toast--refused' : ''}`} role="status">
+        <div
+          className={`cs__toast ${toast.refused ? 'cs__toast--refused' : ''}`}
+          role={toast.refused ? 'alert' : 'status'}
+          aria-live={toast.refused ? 'assertive' : 'polite'}
+        >
           <span className="cs__toastLabel">{toast.refused ? 'REFUSED BY THE POLICY ENGINE' : 'DONE'}</span>
           {toast.message}
         </div>
@@ -640,7 +647,13 @@ function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
           required
         />
 
-        {error && <p className="cs__loginError">{error}</p>}
+        {/* 3.3.1: a screen-reader user submits this form and, without an
+            alert, hears nothing at all — the page simply stays put. */}
+        {error && (
+          <p className="cs__loginError" role="alert">
+            {error}
+          </p>
+        )}
 
         <button type="submit" className="cs__btn cs__btn--primary" style={{ marginTop: 18, width: '100%', height: 44 }} disabled={busy}>
           {busy ? 'Signing in…' : 'Sign in'}

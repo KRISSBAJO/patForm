@@ -6,6 +6,8 @@ import { resolveResumeToken } from './runtime/auth.js';
 import { runRetention } from './runtime/retention.js';
 import { checkAnswers, loadDraft, publicForm, respondentStatus, respondentUpdate, saveDraft, submitForm } from './runtime/intake.js';
 import { confirm, runPlan } from './runtime/copilot.js';
+import { traceByRequest, traceForInstance } from './runtime/support.js';
+import { withTrace } from './runtime/trace.js';
 import { ActionPlan, QueryPlan } from './copilot/plan.js';
 import { bundleToCsv, exportRecord } from './runtime/export.js';
 import {
@@ -949,5 +951,113 @@ export async function proveExportThenRetain({ pool, bp, T0, record, completeFor 
       `one who is also a hiring manager had ${restricted.withheld.length} withheld (${restricted.withheld.join(', ')}) — named in the bundle rather than quietly absent, and not left in the answers as the literal string "[redacted]". ` +
       `The export is itself on the record's history, and a second export of an unchanged record produced the same checksum (${bundle.checksum.slice(0, 12)}), so a file can be verified later. ` +
       `Retention then deleted ${retained.instances} instance and ${retained.events} event(s) — in that order, because afterwards there is nothing left to export.`,
+  );
+}
+
+/**
+ * §20.2 observability: "every workflow action has traceable request, event,
+ * job, attempt, and result identifiers".
+ *
+ * Five identifiers, and the one that matters is the first. The other four were
+ * already there; without a request id they were four separate facts that
+ * happened to be about the same thing, and putting them together meant
+ * matching on timestamps.
+ *
+ * The hard part is not stamping an id. It is that the job runs later, in
+ * another process, after the request has gone — so this proof drains the
+ * outbox as a worker would, from a context that knows nothing about the
+ * submission, and requires the link to survive anyway.
+ */
+export async function proveTraceability({ pool, bp, T0, record, completeFor }: ProofCtx): Promise<void> {
+  const engine = new Engine(pool);
+  const tenantId = await engine.createTenant('proof:trace');
+  const version = await engine.publish(tenantId, bp, 'proof');
+
+  const admin = await engine.createActor(tenantId, 'admin@proof.test', 'An Admin', 'admin');
+  await engine.grant({ tenantId, actorId: admin, processKey: bp.key, roleKey: 'hr_admin' });
+  const as = (actorId: string): Principal => ({ kind: 'actor', tenantId, actorId });
+
+  // One request, as an API call would open it.
+  const requestId = 'proof-request-0001';
+  const { instanceId } = await withTrace({ requestId, source: 'proof' }, () =>
+    engine.submit({
+      version,
+      answers: completeFor(bp, { personal_email: 'traced@example.test' }),
+      now: T0,
+    }),
+  );
+
+  // The work happens outside that context, the way a worker does: a separate
+  // process, minutes later, with no memory of the request.
+  await engine.drain(T0, 'proof-worker');
+
+  const one = async (sql: string, params: unknown[] = []): Promise<number> => {
+    const { rows } = await pool.query<{ count: number }>(sql, params);
+    return rows[0]!.count;
+  };
+
+  const events = await one('select count(*)::int as count from event where instance_id = $1 and request_id = $2', [
+    instanceId,
+    requestId,
+  ]);
+  const jobs = await one('select count(*)::int as count from outbox where instance_id = $1 and request_id = $2', [
+    instanceId,
+    requestId,
+  ]);
+  const runs = await one('select count(*)::int as count from action_run where instance_id = $1 and request_id = $2', [
+    instanceId,
+    requestId,
+  ]);
+  const orphans = await one(
+    `select count(*)::int as count from action_run where instance_id = $1 and request_id = 'unattributed'`,
+    [instanceId],
+  );
+
+  // A timer is its own cause, so it must carry an id of its own rather than
+  // inheriting one or being left unattributed.
+  await engine.fireDueTimers(new Date(T0.getTime() + hours(49)));
+  const { rows: timerEvents } = await pool.query<{ request_id: string }>(
+    "select request_id from event where instance_id = $1 and type = 'timer_fired'",
+    [instanceId],
+  );
+
+  // The support view, which is what makes the ids worth having.
+  const trace = await traceForInstance(pool, { principal: as(admin), instanceId });
+  const withJob = trace.steps.filter((s) => s.job);
+  const withActions = trace.steps.filter((s) => s.actions.length);
+  const everyRunHasAttempts = trace.steps.every((s) => s.actions.every((a) => a.attempts >= 1));
+
+  const byRequest = await traceByRequest(pool, { principal: as(admin), requestId });
+
+  // Another workspace asking about this id sees nothing — confirming that an
+  // id exists elsewhere would itself be a disclosure.
+  const otherTenant = await engine.createTenant('proof:trace:elsewhere');
+  const stranger = await engine.createActor(otherTenant, 'stranger@proof.test', 'Elsewhere', 'admin');
+  const strangerSees = await traceByRequest(pool, {
+    principal: { kind: 'actor', tenantId: otherTenant, actorId: stranger },
+    requestId,
+  });
+
+  record(
+    'Every action traces back to the request that caused it, across the worker boundary',
+    'Section 20.2 observability: traceable request, event, job, attempt and result identifiers.',
+    events >= 1 &&
+      jobs >= 1 &&
+      runs >= 3 &&
+      orphans === 0 &&
+      timerEvents.length >= 1 &&
+      timerEvents.every((e) => e.request_id !== 'unattributed') &&
+      withJob.length >= 1 &&
+      withActions.length >= 1 &&
+      everyRunHasAttempts &&
+      byRequest.records.length === 1 &&
+      strangerSees.records.length === 0 &&
+      trace.diagnosis.length > 0,
+    `One submission produced ${events} event(s), ${jobs} job(s) and ${runs} action run(s), every one carrying "${requestId}" ` +
+      `and ${orphans} unattributed. The actions ran in a later drain that knew nothing about the submission — the link ` +
+      `survived because the request id is stamped on the outbox row and read back when the job runs. ` +
+      `A timer firing got an id of its own (${timerEvents[0]?.request_id.slice(0, 16)}…) rather than inheriting one, because a deadline is its own cause. ` +
+      `The support view joined them into ${trace.steps.length} step(s) with every attempt count present, and answered in a sentence: "${trace.diagnosis.slice(0, 80)}". ` +
+      `Asking by request id found ${byRequest.records.length} record; an admin of another workspace asking the same id found ${strangerSees.records.length}.`,
   );
 }

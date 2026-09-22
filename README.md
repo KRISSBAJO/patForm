@@ -77,7 +77,7 @@ is specific to either.
 
 Section 23 week 3 asks for a spike of workflow state, timers, idempotent email,
 versioning, and migration, producing architecture decision records and
-performance evidence. `npm run spike` is that, and it proves seventeen things:
+performance evidence. `npm run spike` is that, and it proves eighteen things:
 
 | Proof | Result |
 |---|---|
@@ -89,6 +89,7 @@ performance evidence. `npm run spike` is that, and it proves seventeen things:
 | A draft opens, refuses to publish while broken, and says what a publish would change | operator refused, SEC009 blocks publish server-side, impact counts the in-flight record |
 | The operator asks what is overdue and sends a reminder matching what they confirmed | §20.1 step 9: a typed plan, a bound digest, 3 sent and a replay sending 0 |
 | An administrator exports the record with its history, and only then is it deleted | §20.1 step 11: same checksum twice, fields withheld and named, then retention |
+| Every action traces back to the request that caused it | §20.2 observability: the link survives the worker boundary and a restart |
 | A worker fires deadlines with nobody watching | 49 hours passed, 1 reminder, 0 timers left unfired |
 | Retention deletes, only for an administrator, and says what it removed | preview first, then 1 instance and 1 event, against an append-only history |
 | Idempotent email under replay | 3 deliveries, 1 email |
@@ -245,6 +246,67 @@ The last step is the one to read aloud:
 Fifteen minutes of RPO is fifteen minutes of duplicate email, not fifteen
 minutes of missing rows. Evidence is written to `docs/recovery-drill.json`.
 
+## Diagnosing a stuck record
+
+```bash
+npm run support -- <record-id | request-id> --as <actor-id>
+```
+
+§20.2's observability and supportability gates. Four of the five identifiers
+the gate names already existed; the request id did not, so they were four
+separate facts that happened to be about the same thing.
+
+Every inbound call opens a request id, returns it in `x-request-id`, and stamps
+it on every event, outbox job and action run it causes — **including the work a
+worker performs minutes later in another process**, because the id travels on
+the outbox row. A caller may supply their own (§11.1); a timer gets one of its
+own, since a deadline is its own cause.
+
+The trace answers in a sentence first:
+
+```
+Retrying: "submit" has failed 4 time(s) and will be attempted again
+  — HRIS rejected the webhook: 401 Unauthorized.
+```
+
+then lists each step with its event, job, attempts, action runs and results.
+Both directions work: one record end to end, or everything one request caused
+across every record it touched. Also at `/api/records/:id/trace` and
+`/api/trace/:requestId`.
+
+It takes a principal and shows what that person may see, because a support tool
+that bypasses authorization is a psql prompt with better formatting. Structured
+logs are behind `PATFORM_LOG=json`, and carry identifiers rather than answers —
+a log is somewhere with different retention and no redaction.
+
+## Accessibility
+
+```bash
+npm run a11y
+```
+
+§20.2's gate: WCAG 2.2 AA across the builder, respondent, approval and operator
+flows. Audited with axe-core plus manual review; the record is in
+[docs/accessibility.md](docs/accessibility.md).
+
+**axe found two violations. Six of the eight real problems came from reading.**
+That ratio is the useful part:
+
+- The focus ring was **2.53:1 on both dark sidebars**, under WCAG 1.4.11's 3:1.
+  A keyboard user could not see where they were. axe does not test focus
+  indicator contrast at all.
+- Two colour tokens were verified against `--ink` and failed on the lighter
+  dark surfaces they were also used on. A token is safe on the lightest surface
+  it lands on, not the one it was tested against.
+- The builder's dialogs had `role="dialog" aria-modal="true"` and **no focus
+  management whatsoever** — Tab walked out into a page that was still rendered,
+  still clickable, and no longer visible to the person using it. axe passed
+  them, because the attributes were correct.
+
+Not met, and named rather than implied: no screen-reader testing, no zoom or
+reflow testing, no Windows High Contrast, and the landing page is outside the
+gate's four flows.
+
 ## The respondent side
 
 ```bash
@@ -284,7 +346,9 @@ Named here rather than implied by silence:
 - **Object storage for documents.** The bytes live in Postgres, which is fine
   at a packet's size and wrong at scale (§10.1).
 - **Bounce and complaint handling.** `email_log` has the statuses; nothing
-  consumes the provider's webhooks yet, so nothing moves past `sent`.
+  consumes the provider's webhooks yet, so nothing moves past `queued`. The
+  status in our log is the provider's *acceptance*, not delivery — RelyKit will
+  say `delivered` for a message we still show as queued.
 - **Bulk assignment and status changes.** The copilot's action schema names
   `assign` and `change_state`; the compiler refuses both with `ACT001`.
   Reminders are the only bulk action the runtime performs.
@@ -292,6 +356,12 @@ Named here rather than implied by silence:
   states, approvals, tasks and roles; everything else goes through its JSON
   tab. There is also no draft locking, so two people editing one process will
   overwrite each other.
+- **Screen-reader testing, zoom and reflow at 400%, Windows High Contrast.**
+  The accessibility gate is automated checks plus code review; a gate claimed
+  without hearing the thing read aloud is a claim about markup, not about use.
+- **Traces and metrics in the OpenTelemetry sense.** §10.1 asks for both. What
+  exists is the identifier chain §20.2 names, structured logs, and the support
+  view.
 - **Point-in-time recovery.** The drill exercises a full backup and restore.
   Continuous archiving, which is what actually gets the RPO down from a backup
   interval to minutes, is a deployment concern and is not set up.

@@ -129,9 +129,7 @@ export function Ask({ processKey, onOpenRecord }: { processKey: string; onOpenRe
   return (
     <div className="cs__panel">
       <div className="cs__panelHead">
-        <button type="button" className="cs__tab" aria-selected="true">
-          Ask
-        </button>
+        <h2 className="cs__tab">Ask</h2>
         <span className="cs__sort">answered from your records, never from the model&rsquo;s memory</span>
       </div>
 
@@ -143,7 +141,11 @@ export function Ask({ processKey, onOpenRecord }: { processKey: string; onOpenRe
           }}
           className="ask__form"
         >
+          <label className="ask__label" htmlFor="ask-question">
+            Ask about these records
+          </label>
           <input
+            id="ask-question"
             className="ask__input"
             value={question}
             placeholder="Which records are overdue?"
@@ -172,14 +174,22 @@ export function Ask({ processKey, onOpenRecord }: { processKey: string; onOpenRe
           </div>
         )}
 
-        {error && <p className="ask__error">{error}</p>}
+        {error && (
+          <p className="ask__error" role="alert">
+            {error}
+          </p>
+        )}
 
         {result && (
           <>
-            <p className="ask__reading">{result.reading}</p>
+            {/* 4.1.3: the answer arrives without focus moving, and the
+                reading is the part a person must check before confirming. */}
+            <p className="ask__reading" role="status" aria-live="polite">
+              {result.reading}
+            </p>
 
             {errors.length > 0 && (
-              <div className="ask__diagnostics">
+              <div className="ask__diagnostics" role="alert">
                 <strong>That question could not be answered as asked.</strong>
                 {errors.map((d, i) => (
                   <p key={i}>
@@ -207,9 +217,12 @@ export function Ask({ processKey, onOpenRecord }: { processKey: string; onOpenRe
                   </thead>
                   <tbody>
                     {result.rows.map((r) => (
-                      <tr key={r.instanceId} onClick={() => onOpenRecord(r.instanceId)}>
+                      <tr key={r.instanceId}>
                         <td>
-                          <code>{r.reference}</code>
+                          <button className="ask__ref" onClick={() => onOpenRecord(r.instanceId)}>
+                            <code>{r.reference}</code>
+                            <span className="ask__srOnly"> — open this record</span>
+                          </button>
                         </td>
                         <td>
                           {r.stateName}
@@ -312,7 +325,7 @@ function Preview({ preview, busy, onConfirm }: { preview: ActionPreview; busy: b
 
 function Result({ report }: { report: Report }) {
   return (
-    <div className="ask__result">
+    <div className="ask__result" role="status" aria-live="polite">
       <strong>
         {report.sent.length} sent of {report.attempted} attempted.
       </strong>

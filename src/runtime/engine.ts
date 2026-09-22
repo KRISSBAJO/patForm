@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { issueResumeToken } from './auth.js';
+import { currentRequestId, currentTrace, logIfEnabled, newRequestId, withTrace } from './trace.js';
 import { htmlToBlocks, renderPdf, type Block } from './pdf.js';
 import {
   ConsoleProvider,
@@ -664,7 +665,17 @@ export class Engine {
 
     let fired = 0;
     for (const timer of due) {
-      const applied = await inTransaction(this.pool, async (client) => {
+      /*
+       * A timer is its own cause, so it gets its own request id.
+       *
+       * Nothing outside asked for this: a deadline passed. Giving each firing
+       * a fresh id rather than leaving it 'unattributed' means the reminder it
+       * sends can be traced back to the deadline that sent it, which is the
+       * question somebody asks when a customer says "why did I get this".
+       */
+      const applied = await withTrace(
+        { requestId: newRequestId(), source: 'timer' },
+        () => inTransaction(this.pool, async (client) => {
         const instance = await loadInstance(client, timer.instance_id, { lock: true });
         // A timer scheduled for a state the record has since left is stale.
         // Cancelling on exit handles the common case; this is the guard for a
@@ -686,7 +697,8 @@ export class Engine {
           now,
         });
         return true;
-      });
+        }),
+      );
       if (applied) fired++;
     }
     return fired;
@@ -707,6 +719,7 @@ export class Engine {
       instance_id: string;
       event_id: number;
       transition_key: string;
+      request_id: string;
     }>(
       `update outbox
           set claimed_by = $1, claimed_at = $2, attempts = attempts + 1,
@@ -718,12 +731,25 @@ export class Engine {
              for update skip locked
            limit $3
         )
-        returning id, tenant_id, instance_id, event_id, transition_key`,
+        returning id, tenant_id, instance_id, event_id, transition_key, request_id`,
       [workerId, now, batch, VISIBILITY_TIMEOUT_SECONDS],
     );
 
     let processed = 0;
     for (const row of claimed) {
+      /*
+       * The worker picks the request back up.
+       *
+       * This is the one place the chain would otherwise break: the job runs
+       * minutes later in a different process, with no memory of what caused
+       * it. Re-entering the originating request's context here means every
+       * event, action_run and log line the job produces carries the same
+       * request id as the submission that started it — which is what makes
+       * "show me everything that request caused" answerable at all.
+       */
+      await withTrace(
+        { requestId: row.request_id, source: `worker:${workerId}`, tenantId: row.tenant_id },
+        async () => {
       try {
         const instance = await this.loadInstanceOutsideTx(row.instance_id);
         const bp = await this.loadBlueprintOutsideTx(instance.process_version_id);
@@ -762,7 +788,16 @@ export class Engine {
             where id = $3`,
           [message, now, row.id],
         );
+        logIfEnabled('error', 'outbox.failed', {
+          jobId: row.id,
+          eventId: row.event_id,
+          instanceId: row.instance_id,
+          transition: row.transition_key,
+          error: message,
+        });
       }
+        },
+      );
     }
     return processed;
   }
@@ -937,10 +972,18 @@ async function appendEvent(
   args: { tenantId: string; instanceId: string; type: string; payload: unknown; actor: string; now: Date },
 ): Promise<number> {
   const { rows } = await client.query<{ id: number }>(
-    `insert into event (tenant_id, instance_id, seq, type, payload, actor, occurred_at)
-     values ($1, $2, (select coalesce(max(seq), 0) + 1 from event where instance_id = $2), $3, $4, $5, $6)
+    `insert into event (tenant_id, instance_id, seq, type, payload, actor, request_id, occurred_at)
+     values ($1, $2, (select coalesce(max(seq), 0) + 1 from event where instance_id = $2), $3, $4, $5, $6, $7)
      returning id`,
-    [args.tenantId, args.instanceId, args.type, JSON.stringify(args.payload), args.actor, args.now],
+    [
+      args.tenantId,
+      args.instanceId,
+      args.type,
+      JSON.stringify(args.payload),
+      args.actor,
+      currentRequestId(),
+      args.now,
+    ],
   );
   return rows[0]!.id;
 }
@@ -1008,9 +1051,9 @@ async function applyTransition(
   }
 
   await client.query(
-    `insert into outbox (tenant_id, instance_id, event_id, transition_key, created_at, available_at)
-     values ($1, $2, $3, $4, $5, $5)`,
-    [instance.tenant_id, instance.id, eventId, transition.key, now],
+    `insert into outbox (tenant_id, instance_id, event_id, transition_key, created_at, available_at, request_id)
+     values ($1, $2, $3, $4, $5, $5, $6)`,
+    [instance.tenant_id, instance.id, eventId, transition.key, now, currentRequestId()],
   );
 
   instance.state = transition.to;
@@ -1037,11 +1080,21 @@ async function executeAction(
   const { bp, instance, action, now } = args;
 
   const { rows: claim } = await client.query<{ id: number }>(
-    `insert into action_run (tenant_id, instance_id, idempotency_key, action_do, created_at)
-     values ($1, $2, $3, $4, $5)
+    `insert into action_run (tenant_id, instance_id, idempotency_key, action_do, created_at, request_id, performed_by)
+     values ($1, $2, $3, $4, $5, $6, $7)
      on conflict (instance_id, idempotency_key) do nothing
      returning id`,
-    [instance.tenant_id, instance.id, args.idempotencyKey, action.do, now],
+    [
+      instance.tenant_id,
+      instance.id,
+      args.idempotencyKey,
+      action.do,
+      now,
+      // The request that caused the work, and the worker that performed it. A
+      // retry keeps the first and replaces the second.
+      currentRequestId(),
+      currentTrace()?.source ?? 'unknown',
+    ],
   );
 
   let runId: number;

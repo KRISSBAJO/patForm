@@ -44,7 +44,7 @@
 
   /* neutrals */
   --muted: #5a6159;
-  --muted-2: #8c8c84;
+  --muted-2: #706f68;
   --muted-3: #4a5a50;
   --line: #ddd8ce;
   --line-strong: #c9c3b6;
@@ -52,18 +52,38 @@
   --rule: #b0a99a;
 
   /* on dark */
+  /*
+   * Contrast depends on the surface, not on "the dark one".
+   *
+   * These were checked against --ink (#131a17) and passed. The seat block uses
+   * --ink-raised and the current nav item uses #23302a, and on those the same
+   * colours fall to 4.37:1 and 3.70:1 — under 4.5:1 for text. The values here
+   * now clear 4.5:1 on the lightest dark surface any of them land on, so the
+   * token is safe wherever it is used rather than wherever it was tested.
+   */
   --on-dark-1: #ffffff;
   --on-dark-2: #d6ded8;
   --on-dark-3: #b9c4bc;
   --on-dark-4: #8d9a91;
-  --on-dark-5: #7e8c83;
-  --on-dark-6: #5e6e64;
+  --on-dark-5: #909d94;
+  --on-dark-6: #909d94;
 
   --gutter: 20px;
   --shell: 1440px;
 
   /* Fraunces for display, Instrument Sans for body, IBM Plex Mono for the
      record ids and state chips that should read as machine output. */
+  /*
+   * The focus ring, as a token rather than a fixed colour.
+   *
+   * It used to be --green everywhere, which is 6.4:1 against paper and
+   * 2.53:1 against the dark sidebar — under WCAG 1.4.11's 3:1 for a focus
+   * indicator. A keyboard user could not see where they were in either
+   * sidebar, and no automated checker reports it: axe does not test focus
+   * indicator contrast.
+   */
+  --focus-ring: var(--green);
+
   --font-display: 'Fraunces', Georgia, 'Times New Roman', serif;
   --font-body: 'Instrument Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-mono: 'IBM Plex Mono', ui-monospace, 'Cascadia Mono', Menlo, monospace;
@@ -117,9 +137,54 @@ button {
 }
 
 :focus-visible {
-  outline: 2px solid var(--green);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 3px;
   border-radius: 4px;
+}
+
+/*
+ * Dark surfaces get a light ring. Mint is 10.1:1 on the sidebar and 1.6:1 on
+ * paper, so it is exactly the wrong colour everywhere else — which is why the
+ * ring is scoped rather than simply changed.
+ */
+.cs__side,
+.bd__side,
+.bd__impactBig,
+.ask__plan {
+  --focus-ring: var(--green-mint);
+}
+
+/*
+ * WCAG 2.2 adds 2.5.8 Target Size (Minimum): 24x24 CSS pixels unless the
+ * control is inline in a sentence. Anything that looks smaller keeps its
+ * visual size and grows its hit area.
+ */
+.bd__add,
+.bd__iconBtn {
+  min-width: 24px;
+  min-height: 24px;
+}
+
+/*
+ * 2.4.1 Bypass Blocks. Both the console and the builder put a long sidebar
+ * before the thing you came for, and tabbing past it every time is the
+ * definition of the problem this criterion describes.
+ */
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 100;
+  padding: 10px 16px;
+  background: var(--green);
+  color: var(--white);
+  font-size: 14px;
+  border-radius: 0 0 8px 0;
+  text-decoration: none;
+}
+
+.skip-link:focus {
+  left: 0;
 }
 
 /* Respect a reduced-motion preference: nothing here animates, but the sticky
