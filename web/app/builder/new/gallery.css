@@ -139,72 +139,12 @@
   color: var(--muted);
 }
 
-.gl__grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(288px, 1fr));
-  gap: 16px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
 
-.gl__card {
-  display: flex;
-  flex-direction: column;
-  padding: 18px;
-  background: #fff;
-  border: 1px solid var(--card-line);
-  border-radius: 9px;
-  box-shadow: 0 1px 2px rgba(20, 24, 22, 0.05);
-}
 
-.gl__cardCat {
-  font-family: var(--font-mono), monospace;
-  font-size: 10.5px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
 
-.gl__cardName {
-  margin: 8px 0 0;
-  font-family: var(--ui);
-  font-size: 17px;
-  font-weight: 600;
-  letter-spacing: -0.012em;
-  color: var(--ink);
-}
 
-.gl__cardSummary {
-  margin: 8px 0 0;
-  font-size: 14px;
-  line-height: 1.55;
-  color: var(--ink-soft);
-}
 
-.gl__cardFoot {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-top: auto;
-  padding-top: 16px;
-}
 
-.gl__view {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  min-height: 34px;
-  padding: 0 12px;
-  border: 1px solid var(--card-line);
-  border-radius: 6px;
-  background: #fff;
-  font-family: var(--ui);
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--ink);
-  cursor: pointer;
-}
 
 .gl__view:hover { background: var(--paper-2); }
 
@@ -232,7 +172,6 @@
 .gl .cs__btn--primary:hover { background: var(--green-deep); border-color: var(--green-deep); }
 .gl .cs__btn:disabled { opacity: 0.55; cursor: default; }
 
-.gl__use { margin-left: auto; }
 
 .gl__empty, .gl__other {
   margin-top: 28px;

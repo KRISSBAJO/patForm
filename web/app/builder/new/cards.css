@@ -1,0 +1,592 @@
+/* ==========================================================================
+   The cards, and what is inside one
+   ==========================================================================
+
+   A gallery works because every card is a picture of what you would get. A
+   process is two things — the path a record takes and what the form asks —
+   so the miniature draws both, from the blueprint.
+*/
+
+.gl__group {
+  margin-bottom: 34px;
+}
+
+.gl__groupName {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  margin: 0 0 14px;
+  font-family: var(--ui);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.008em;
+  color: var(--ink);
+}
+
+.gl__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(258px, 1fr));
+  gap: 18px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pk {
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  border: 1px solid var(--card-line);
+  border-radius: 10px;
+  overflow: hidden;
+  transition:
+    box-shadow 120ms ease,
+    border-color 120ms ease;
+}
+
+.pk:hover {
+  border-color: #cfccc5;
+  box-shadow: 0 4px 14px rgba(20, 24, 22, 0.09);
+}
+
+/* ------------------------------------------------------------ the preview */
+
+.pk__preview {
+  position: relative;
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: none;
+  border-bottom: 1px solid var(--card-line);
+  background: linear-gradient(160deg, #fbfaf7 0%, #f1efe9 100%);
+  cursor: pointer;
+}
+
+.pk__thumb {
+  display: grid;
+  grid-template-columns: 1.15fr 1fr;
+  gap: 10px;
+  height: 152px;
+  padding: 14px;
+  text-align: left;
+  overflow: hidden;
+}
+
+/* The form half: a title bar, labelled lines, a submit button. */
+.pk__thumbForm {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 9px;
+  background: #fff;
+  border: 1px solid #e7e4dd;
+  border-radius: 5px;
+  box-shadow: 0 1px 3px rgba(20, 24, 22, 0.06);
+}
+
+.pk__thumbBar--title {
+  width: 52%;
+  height: 5px;
+  border-radius: 2px;
+  background: var(--green);
+  opacity: 0.85;
+}
+
+.pk__thumbField {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pk__thumbLabel {
+  font-family: var(--ui);
+  font-size: 6.5px;
+  line-height: 1.25;
+  color: #6d736c;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pk__thumbInput {
+  height: 7px;
+  border-radius: 2px;
+  background: #f2f0ea;
+  border: 1px solid #e7e4dd;
+}
+
+.pk__thumbSubmit {
+  margin-top: auto;
+  width: 34%;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--green);
+  opacity: 0.85;
+}
+
+/* The path half: the states a record moves through, in order. */
+.pk__thumbFlow {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  justify-content: center;
+}
+
+.pk__node {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3.5px 7px;
+  background: #fff;
+  border: 1px solid #e7e4dd;
+  border-radius: 4px;
+}
+
+/* The connector between one state and the next. */
+.pk__node + .pk__node::before {
+  content: '';
+  position: absolute;
+  left: 11px;
+  top: -5px;
+  width: 1px;
+  height: 5px;
+  background: #d7d3ca;
+}
+
+.pk__nodeDot {
+  flex-shrink: 0;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #b9b4a9;
+}
+
+.pk__node--initial .pk__nodeDot {
+  background: #8f9a90;
+}
+.pk__node--active .pk__nodeDot {
+  background: #b8860b;
+}
+.pk__node--success .pk__nodeDot {
+  background: var(--green);
+}
+.pk__node--rejected .pk__nodeDot {
+  background: #a8544c;
+}
+.pk__node--cancelled .pk__nodeDot,
+.pk__node--expired .pk__nodeDot {
+  background: #a9a49a;
+}
+.pk__node--more {
+  border-style: dashed;
+}
+
+.pk__nodeName {
+  font-family: var(--ui);
+  font-size: 7.5px;
+  line-height: 1.2;
+  color: #4a504a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/*
+ * The word on the preview. It appears on hover, and is always there for the
+ * keyboard and for touch — a control that exists only on hover does not
+ * exist for anybody who cannot hover.
+ */
+.pk__peek {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 26px;
+  padding: 0 10px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid var(--card-line);
+  font-family: var(--ui);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.pk:hover .pk__peek,
+.pk__preview:focus-visible .pk__peek {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .pk__peek {
+    opacity: 1;
+  }
+}
+
+/* ---------------------------------------------------------------- the body */
+
+.pk__body {
+  padding: 14px 16px 0;
+  flex-grow: 1;
+}
+
+.pk__name {
+  margin: 0;
+  font-family: var(--ui);
+  font-size: 15.5px;
+  font-weight: 600;
+  letter-spacing: -0.012em;
+  color: var(--ink);
+}
+
+.pk__summary {
+  margin: 6px 0 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--ink-soft);
+}
+
+.pk__facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+  font-family: var(--font-mono), monospace;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.pk__flag {
+  margin: 8px 0 0;
+  font-size: 11.5px;
+  color: #8a352f;
+}
+
+.pk__foot {
+  padding: 14px 16px 16px;
+}
+
+.pk__use {
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid var(--green);
+  border-radius: 6px;
+  background: var(--green);
+  font-family: var(--ui);
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+  cursor: pointer;
+}
+
+.pk__use:hover {
+  background: var(--green-deep);
+  border-color: var(--green-deep);
+}
+
+/* ==========================================================================
+   What is inside
+   ==========================================================================
+
+   The version before this was a definition list of counts. Counts answer
+   "how much"; the only question anybody has here is "what happens". So the
+   path leads, drawn, and the numbers sit underneath.
+*/
+
+.pd {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(20, 24, 22, 0.45);
+  z-index: 60;
+}
+
+.pd__panel {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 660px;
+  max-height: 88vh;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(20, 24, 22, 0.28);
+  overflow: hidden;
+}
+
+.pd__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px 22px 16px;
+  border-bottom: 1px solid var(--card-line);
+}
+
+.pd__cat {
+  font-family: var(--font-mono), monospace;
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.pd__head h2 {
+  margin: 5px 0 0;
+  font-family: var(--ui);
+  font-size: 21px;
+  font-weight: 600;
+  letter-spacing: -0.016em;
+  color: var(--ink);
+}
+
+.pd__close {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--card-line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+.pd__close:hover {
+  background: var(--paper-2);
+}
+
+.pd__scroll {
+  padding: 20px 22px;
+  overflow-y: auto;
+}
+
+.pd__summary {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--ink);
+}
+
+.pd__audience {
+  margin: 8px 0 0;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--green-deep);
+}
+
+.pd__section {
+  margin-top: 24px;
+}
+
+.pd__section h3 {
+  margin: 0 0 10px;
+  font-family: var(--ui);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+.pd__subhead {
+  margin-top: 18px !important;
+}
+
+/* The path, as a vertical run with connectors. */
+.pd__flow {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pd__step {
+  position: relative;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 7px 0 7px 4px;
+}
+
+.pd__step + .pd__step::before {
+  content: '';
+  position: absolute;
+  left: 8px;
+  top: -6px;
+  width: 1px;
+  height: 14px;
+  background: #ddd9d0;
+}
+
+.pd__stepDot {
+  flex-shrink: 0;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #b9b4a9;
+}
+
+.pd__step--initial .pd__stepDot {
+  background: #8f9a90;
+}
+.pd__step--active .pd__stepDot {
+  background: #b8860b;
+}
+.pd__step--success .pd__stepDot {
+  background: var(--green);
+}
+.pd__step--rejected .pd__stepDot {
+  background: #a8544c;
+}
+
+.pd__stepName {
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.pd__stepKind {
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.pd__cols {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0;
+}
+
+.pd__list {
+  margin: 0;
+  padding-left: 18px;
+  list-style: disc;
+}
+
+.pd__list li {
+  margin-top: 5px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ink-soft);
+}
+
+.pd__more {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.pd__tag {
+  margin-left: 7px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--paper-2);
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.pd__counts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+  gap: 10px;
+}
+
+.pd__counts span {
+  padding: 10px 12px;
+  background: var(--paper-3);
+  border: 1px solid var(--card-line);
+  border-radius: 7px;
+  font-size: 12.5px;
+  color: var(--ink-soft);
+}
+
+.pd__counts strong {
+  display: block;
+  font-family: var(--ui);
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+
+.pd__policy p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--ink-soft);
+}
+
+.pd__note {
+  margin-top: 12px !important;
+  padding: 12px 14px;
+  background: var(--green-tint);
+  border: 1px solid var(--green-border);
+  border-radius: 7px;
+  font-size: 13.5px !important;
+  color: var(--ink) !important;
+}
+
+.pd__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 22px;
+  border-top: 1px solid var(--card-line);
+  background: var(--paper-3);
+}
+
+.pd__use,
+.pd__cancel {
+  min-height: 38px;
+  padding: 0 18px;
+  border-radius: 6px;
+  font-family: var(--ui);
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.pd__use {
+  border: 1px solid var(--green);
+  background: var(--green);
+  color: #fff;
+}
+
+.pd__use:hover {
+  background: var(--green-deep);
+  border-color: var(--green-deep);
+}
+
+.pd__cancel {
+  border: 1px solid var(--card-line);
+  background: #fff;
+  color: var(--ink);
+}
+
+.pd__cancel:hover {
+  background: var(--paper-2);
+}
+
+.pd__footNote {
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+@media (min-width: 560px) {
+  .pd__cols {
+    grid-template-columns: 1fr 1fr;
+    gap: 28px;
+  }
+
+  .pd__cols .pd__section {
+    margin-top: 24px;
+  }
+}

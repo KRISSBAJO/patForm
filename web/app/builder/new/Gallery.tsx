@@ -16,35 +16,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import '../builder.css';
 import './gallery.css';
-
-interface PackContents {
-  fields: number;
-  states: number;
-  approvals: number;
-  tasks: number;
-  emails: number;
-  documents: number;
-  metrics: number;
-  roles: { key: string; name: string; kind: string }[];
-  policy: {
-    sensitivityCeiling: string;
-    retentionDays: number | null;
-    restrictedFields: number;
-    fieldsHiddenFromSomeone: number;
-  };
-}
-
-interface Pack {
-  id: string;
-  packKey: string;
-  version: number;
-  name: string;
-  summary: string;
-  category: string;
-  audience: string;
-  contents: PackContents;
-  builtIn: boolean;
-}
+import './cards.css';
+import { PackCard, type Pack } from './PackCard';
+import { PackDetail } from './PackDetail';
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
@@ -112,6 +86,13 @@ export function Gallery() {
           p.audience.toLowerCase().includes(q)),
     );
   }, [packs, query, category]);
+
+  /** The shown packs, under their area. One group when a filter is on. */
+  const grouped = useMemo(() => {
+    const by = new Map<string, Pack[]>();
+    for (const p of shown) by.set(p.category, [...(by.get(p.category) ?? []), p]);
+    return [...by.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  }, [shown]);
 
   const install = async () => {
     if (!installing) return;
@@ -244,54 +225,32 @@ export function Gallery() {
             <a href="/builder">describe the process instead</a> — that route does not need a pack.
           </p>
         ) : (
-          <ul className="gl__grid">
-            {shown.map((p) => (
-              <li key={p.id} className="gl__card">
-                <span className="gl__cardCat">{p.category}</span>
-                <h2 className="gl__cardName">{p.name}</h2>
-                <p className="gl__cardSummary">{p.summary}</p>
-
-                <div className="gl__cardFoot">
-                  <button
-                    type="button"
-                    className="gl__view"
-                    onClick={() => setViewing(p)}
-                    /* The name is in the accessible label, because "View" on
-                       its own is fifty identical buttons to a screen reader. */
-                    aria-label={`What is inside ${p.name}`}
-                  >
-                    <svg
-                      width="15"
-                      height="15"
-                      viewBox="0 0 20 20"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth={1.7}
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      aria-hidden="true"
-                    >
-                      <path d="M1.8 10S4.9 4.4 10 4.4 18.2 10 18.2 10 15.1 15.6 10 15.6 1.8 10 1.8 10Z" />
-                      <circle cx="10" cy="10" r="2.4" />
-                    </svg>
-                    View
-                  </button>
-                  <button
-                    type="button"
-                    className="cs__btn cs__btn--primary gl__use"
-                    onClick={() => {
+          /*
+           * Grouped under their area, the way a template gallery is — rather
+           * than one flat grid where eighty-eight cards of three categories
+           * interleave and nothing can be found twice.
+           */
+          grouped.map(([area, items]) => (
+            <section key={area} className="gl__group">
+              <h2 className="gl__groupName">
+                {area} <span className="gl__count">{items.length}</span>
+              </h2>
+              <ul className="gl__grid">
+                {items.map((p) => (
+                  <PackCard
+                    key={p.id}
+                    pack={p}
+                    onView={() => setViewing(p)}
+                    onUse={() => {
                       setInstalling(p);
                       setProcessKey(keyFrom(p.name));
                       setProcessName(p.name);
                     }}
-                    aria-label={`Use ${p.name}`}
-                  >
-                    Use this
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
+                  />
+                ))}
+              </ul>
+            </section>
+          ))
         )}
 
         <p className="gl__other">
@@ -303,7 +262,7 @@ export function Gallery() {
 
       {/* What is inside, counted from the blueprint rather than written. */}
       {viewing && (
-        <PackSheet
+        <PackDetail
           pack={viewing}
           onClose={() => setViewing(null)}
           onUse={() => {
@@ -373,83 +332,6 @@ export function Gallery() {
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-function PackSheet({
-  pack,
-  onClose,
-  onUse,
-}: {
-  pack: Pack;
-  onClose: () => void;
-  onUse: () => void;
-}) {
-  const c = pack.contents;
-  return (
-    <div className="gl__sheet" role="dialog" aria-modal="true" aria-labelledby="pack-title">
-      <div className="gl__sheetBox">
-        <span className="gl__cardCat">{pack.category}</span>
-        <h2 id="pack-title">{pack.name}</h2>
-        <p className="gl__sheetSummary">{pack.summary}</p>
-        <p className="gl__sheetAudience">{pack.audience}</p>
-
-        <dl className="gl__specs">
-          <div>
-            <dt>The form</dt>
-            <dd>{c.fields} fields</dd>
-          </div>
-          <div>
-            <dt>The workflow</dt>
-            <dd>
-              {c.states} states, {c.approvals} approval(s), {c.tasks} task(s)
-            </dd>
-          </div>
-          <div>
-            <dt>The messages</dt>
-            <dd>{c.emails} email templates</dd>
-          </div>
-          <div>
-            <dt>The dashboard</dt>
-            <dd>{c.metrics} measures</dd>
-          </div>
-          <div>
-            <dt>Who is involved</dt>
-            <dd>{c.roles.map((r) => r.name).join(', ')}</dd>
-          </div>
-          <div>
-            <dt>Data policy</dt>
-            <dd>
-              Holds up to <strong>{c.policy.sensitivityCeiling}</strong> data
-              {c.policy.restrictedFields > 0
-                ? `, ${c.policy.restrictedFields} restricted field(s) hidden from ${c.policy.fieldsHiddenFromSomeone > 0 ? 'some roles' : 'nobody'}`
-                : ''}
-              .{' '}
-              {c.policy.retentionDays
-                ? `Records kept ${Math.round(c.policy.retentionDays / 365)} year(s) after completion.`
-                : 'Records kept indefinitely.'}
-            </dd>
-          </div>
-        </dl>
-
-        <p className="gl__sheetNote">
-          {/* §1.2's distinction, said plainly: this is the part a form
-              template has no way to carry. */}
-          A form template gives you fields. This gives you the approvals, the reminders, the
-          permissions and the retention as well — and the compiler checks all of it before it can
-          go live.
-        </p>
-
-        <div className="gl__sheetActions">
-          <button type="button" className="cs__btn cs__btn--primary" onClick={onUse}>
-            Use this
-          </button>
-          <button type="button" className="cs__btn" onClick={onClose}>
-            Close
-          </button>
-        </div>
-      </div>
     </div>
   );
 }

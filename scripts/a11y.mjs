@@ -244,7 +244,9 @@ async function main() {
   await page.waitForTimeout(2500);
   all.push(...(await audit(page, 'The pack catalogue')));
 
-  const view = page.locator('button', { hasText: /^View$/ }).first();
+  // The whole preview is the control now, so it is selected by class rather
+  // than by text — its text includes the miniature's field labels.
+  const view = page.locator('.pk__preview').first();
   if (await view.count()) {
     await view.click();
     await page.waitForTimeout(800);

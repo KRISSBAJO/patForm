@@ -534,6 +534,23 @@ A baptism register is kept forever, so its pack declared `retentionDays: null`. 
 **Generalisable:** when a schema offers "omitted" as a meaning, `null` is a second way to say the same thing and therefore a second thing to handle. One of the two will be forgotten.
 
 
+### 51. Contents are computed at publish, so an upgrade does not reach them
+
+Cards gained a drawn preview — the path a record takes, and what the form asks — added to `describeContents`. The gallery then crashed on every pack, because contents are computed **once, at publish time**, and every row in the database had been written before the field existed.
+
+That is the same property that makes a card trustworthy: it cannot drift from what installing gives you. It also means a pack a tenant published last month carries last month's shape, and no deployment republishes it.
+
+**Fixed** in two places, and both were needed. Re-seeding fixed the built-ins; a `?? { flow: [], askedFor: [], deciders: [] }` fixed everything else, because a tenant's own packs are never re-seeded.
+
+**Generalisable:** denormalising for correctness — computing once so two things cannot disagree — buys that guarantee by giving up the ability to change the shape later. Every field added to a computed record is a field the existing rows do not have.
+
+### 52. A scrollable panel a keyboard could not scroll
+
+The pack detail took focus on its outer container and put the scrolling on an inner one. axe called it `scrollable-region-focusable`, and it is a real fault rather than a technicality: somebody using a keyboard could open the panel, read the first screen, and have no way to reach the rest.
+
+**Generalisable:** focus belongs on the element that scrolls, not on the element that looks like the dialog. The two are usually different, and only one of them is what somebody needs to operate.
+
+
 ---
 
 ## What the compiler structurally cannot catch

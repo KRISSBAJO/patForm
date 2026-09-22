@@ -1,0 +1,205 @@
+'use client';
+
+/**
+ * What is inside a pack, as a panel worth reading.
+ *
+ * The first version was a definition list of counts — eight rows of "14
+ * fields", "7 states". Counts answer *how much*, and the only question
+ * somebody has here is *what happens*. So this leads with the path a record
+ * takes, drawn, and puts the numbers underneath where they belong.
+ *
+ * Everything shown is read from the blueprint at publish time, so the panel
+ * cannot promise something installing does not give you.
+ */
+
+import { useEffect, useRef } from 'react';
+import type { Pack } from './PackCard';
+
+const CEILING: Record<string, string> = {
+  public: 'nothing sensitive',
+  internal: 'internal information',
+  confidential: 'personal details',
+  restricted: 'sensitive personal data',
+};
+
+export function PackDetail({
+  pack,
+  onClose,
+  onUse,
+}: {
+  pack: Pack;
+  onClose: () => void;
+  onUse: () => void;
+}) {
+  const c = pack.contents;
+  // Same reason as the card: a pack published before previews existed still
+  // has to open rather than throw.
+  const preview = c.preview ?? { flow: [], askedFor: [], deciders: [] };
+  const panel = useRef<HTMLDivElement>(null);
+
+  /*
+   * Focus moves in, Escape closes, and focus goes back where it came from.
+   * A panel that claims `aria-modal` and does none of this is the failure
+   * this project has already made once, recorded as entry 16.
+   */
+  useEffect(() => {
+    const returnTo = document.activeElement as HTMLElement | null;
+    panel.current?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      returnTo?.focus?.();
+    };
+  }, [onClose]);
+
+  const years = c.policy.retentionDays ? Math.round(c.policy.retentionDays / 365) : null;
+
+  return (
+    <div className="pd" role="dialog" aria-modal="true" aria-labelledby="pd-title">
+      <div className="pd__panel">
+        <header className="pd__head">
+          <div>
+            <span className="pd__cat">{pack.category}</span>
+            <h2 id="pd-title">{pack.name}</h2>
+          </div>
+          <button type="button" className="pd__close" onClick={onClose} aria-label="Close">
+            <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" aria-hidden="true">
+              <path d="m5 5 10 10M15 5 5 15" />
+            </svg>
+          </button>
+        </header>
+
+        {/*
+          * The scrolling region takes the focus, and is focusable.
+          *
+          * axe's `scrollable-region-focusable`, and it is a real fault rather
+          * than a technicality: somebody using a keyboard could open this
+          * panel and not be able to scroll it, which on a long pack means
+          * they can read the first screen and nothing else.
+          */}
+        <div className="pd__scroll" ref={panel} tabIndex={0} role="region" aria-label="What is inside this pack">
+          <p className="pd__summary">{pack.summary}</p>
+          <p className="pd__audience">{pack.audience}</p>
+
+          <section className="pd__section">
+            <h3>What happens to a record</h3>
+            {/* The path, drawn. Labelled as a list for a screen reader,
+                because the arrows are decoration and the order is the point. */}
+            <ol className="pd__flow">
+              {preview.flow.map((s, i) => (
+                <li key={i} className={`pd__step pd__step--${s.kind}`}>
+                  <span className="pd__stepDot" aria-hidden="true" />
+                  <span className="pd__stepName">{s.name}</span>
+                  <span className="pd__stepKind">
+                    {s.kind === 'initial'
+                      ? 'the form'
+                      : s.kind === 'active'
+                        ? 'waiting on somebody'
+                        : s.kind === 'success'
+                          ? 'finished'
+                          : s.kind}
+                  </span>
+                </li>
+              ))}
+            </ol>
+          </section>
+
+          <div className="pd__cols">
+            <section className="pd__section">
+              <h3>What it asks for</h3>
+              <ul className="pd__list">
+                {preview.askedFor.map((label) => (
+                  <li key={label}>{label}</li>
+                ))}
+                {c.fields > preview.askedFor.length && (
+                  <li className="pd__more">and {c.fields - preview.askedFor.length} more</li>
+                )}
+              </ul>
+            </section>
+
+            <section className="pd__section">
+              <h3>Who decides</h3>
+              <ul className="pd__list">
+                {preview.deciders.length ? (
+                  preview.deciders.map((d) => <li key={d}>{d}</li>)
+                ) : (
+                  <li>Nobody — it completes on submission.</li>
+                )}
+              </ul>
+              <h3 className="pd__subhead">Who is involved</h3>
+              <ul className="pd__list">
+                {c.roles.map((r) => (
+                  <li key={r.key}>
+                    {r.name}
+                    {r.kind === 'respondent' && <span className="pd__tag">fills the form in</span>}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          </div>
+
+          <section className="pd__section">
+            <h3>What comes with it</h3>
+            <div className="pd__counts">
+              <span>
+                <strong>{c.fields}</strong> questions
+              </span>
+              <span>
+                <strong>{c.states}</strong> states
+              </span>
+              <span>
+                <strong>{c.emails}</strong> message templates
+              </span>
+              <span>
+                <strong>{c.tasks}</strong> tasks
+              </span>
+              <span>
+                <strong>{c.metrics}</strong> dashboard measures
+              </span>
+              <span>
+                <strong>{c.scenarios}</strong> test scenarios
+              </span>
+            </div>
+          </section>
+
+          <section className="pd__section pd__policy">
+            <h3>Data and retention</h3>
+            <p>
+              Holds up to <strong>{CEILING[c.policy.sensitivityCeiling] ?? c.policy.sensitivityCeiling}</strong>.
+              {c.policy.restrictedFields > 0 && (
+                <>
+                  {' '}
+                  {c.policy.restrictedFields} field{c.policy.restrictedFields === 1 ? ' is' : 's are'}{' '}
+                  restricted — the compiler refuses to put any of them in an email, a webhook or a
+                  document that leaves the platform.
+                </>
+              )}{' '}
+              {years
+                ? `Records are deleted ${years} year${years === 1 ? '' : 's'} after they finish.`
+                : 'Records are kept indefinitely — nothing deletes them.'}
+            </p>
+            <p className="pd__note">
+              {/* §1.2's sentence, which is the whole argument for a pack. */}
+              A form template gives you fields. This gives you the approvals, the reminders, the
+              permissions and the retention as well — and the compiler checks all of it before it
+              can go live.
+            </p>
+          </section>
+        </div>
+
+        <footer className="pd__foot">
+          <button type="button" className="pd__use" onClick={onUse}>
+            Use this
+          </button>
+          <button type="button" className="pd__cancel" onClick={onClose}>
+            Close
+          </button>
+          <span className="pd__footNote">Installing opens a draft. Nothing goes live until you publish it.</span>
+        </footer>
+      </div>
+    </div>
+  );
+}

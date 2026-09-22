@@ -41,6 +41,12 @@ export interface PackContents {
   metrics: number;
   roles: { key: string; name: string; kind: string }[];
   /** The policy defaults §1.2 names, which are the part a template never carries. */
+  /** What a card can draw, rather than describe. */
+  preview: {
+    flow: { name: string; kind: string }[];
+    askedFor: string[];
+    deciders: string[];
+  };
   policy: {
     sensitivityCeiling: string;
     retentionDays: number | null;
@@ -93,7 +99,65 @@ export function describeContents(bp: Blueprint): PackContents {
       fieldsHiddenFromSomeone: hidden.size,
     },
     scenarios: bp.tests.length,
+    /*
+     * Enough to draw the pack rather than describe it.
+     *
+     * A card that is only words makes somebody read nine of them to compare
+     * two packs. These three give it something to *show*: the path a record
+     * takes, what the form actually asks, and who is waiting on it — all read
+     * from the blueprint, so a preview cannot depict a process the pack does
+     * not contain.
+     */
+    preview: {
+      flow: orderedStates(bp),
+      askedFor: bp.data.fields
+        .filter((f) => (f.setBy ?? 'respondent') === 'respondent' && f.type !== 'content')
+        .slice(0, 5)
+        .map((f) => f.label),
+      deciders: bp.workflow.approvals.map((a) => a.name),
+    },
   };
+}
+
+/**
+ * The states in the order a record meets them.
+ *
+ * Walked from the initial state rather than taken as declared, because a
+ * blueprint may list them in any order and a preview that shows "rejected"
+ * before "in review" is worse than no preview.
+ */
+function orderedStates(bp: Blueprint): { name: string; kind: string }[] {
+  const byKey = new Map(bp.workflow.states.map((s) => [s.key, s]));
+  const next = new Map<string, string[]>();
+  for (const t of bp.workflow.transitions) {
+    if (t.from === t.to) continue; // a timer loop is not progress
+    next.set(t.from, [...(next.get(t.from) ?? []), t.to]);
+  }
+
+  const start = bp.workflow.states.find((s) => s.type === 'initial');
+  const out: { name: string; kind: string }[] = [];
+  const seen = new Set<string>();
+  const queue = start ? [start.key] : [];
+
+  while (queue.length && out.length < 8) {
+    const key = queue.shift()!;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const state = byKey.get(key);
+    if (!state) continue;
+    out.push({
+      name: state.publicLabel ?? state.name,
+      kind: state.type === 'terminal' ? (state.outcome ?? 'terminal') : state.type,
+    });
+    // Breadth first, and success before refusal, so the happy path leads.
+    const onward = (next.get(key) ?? []).sort((a, b) => {
+      const rank = (k: string) => (byKey.get(k)?.type === 'terminal' ? 1 : 0);
+      return rank(a) - rank(b);
+    });
+    queue.push(...onward);
+  }
+
+  return out;
 }
 
 // ----------------------------------------------------------------- publish
