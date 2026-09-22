@@ -198,6 +198,16 @@ export interface SessionActor {
   displayName: string;
   email: string;
   workspaceRole: string;
+  /**
+   * Set when this request extended the session, so the caller can re-issue
+   * the cookie with the new expiry.
+   *
+   * Without it, somebody who signs in and then works every day is still
+   * thrown out fourteen days later, mid-task. Renewing only past the halfway
+   * mark means an active session is not rewritten on every request — that
+   * would be a write per page load for no benefit.
+   */
+  renewedUntil?: Date;
 }
 
 /** Resolves a cookie value to an actor, or null. Expiry and revocation are checked in SQL. */
@@ -210,8 +220,9 @@ export async function resolveSession(pool: Pool, token: string): Promise<Session
     display_name: string;
     email: string;
     workspace_role: string;
+    expires_at: Date;
   }>(
-    `select s.id, s.actor_id, s.tenant_id, a.display_name, a.email, a.workspace_role
+    `select s.id, s.actor_id, s.tenant_id, a.display_name, a.email, a.workspace_role, s.expires_at
        from session s join actor a on a.id = s.actor_id
       where s.token_hash = $1
         and s.revoked_at is null
@@ -222,9 +233,30 @@ export async function resolveSession(pool: Pool, token: string): Promise<Session
   const row = rows[0];
   if (!row) return null;
 
-  // Cheap enough per request, and it is what makes "last seen" in device
-  // management mean anything.
-  await pool.query('update session set last_seen_at = now() where id = $1', [row.id]);
+  /*
+   * Touch, and extend if this one is more than half-way through.
+   *
+   * One statement rather than two: `last_seen_at` is what makes device
+   * management mean anything, and the renewal is the difference between a
+   * session that lasts fourteen days and one that lasts fourteen days *of not
+   * being used*. Somebody who works every day should not be signed out
+   * mid-task because a fortnight has passed since they first signed in.
+   *
+   * The halfway condition is what stops this writing a new expiry on every
+   * page load for no benefit.
+   */
+  const halfLife = new Date(Date.now() + (SESSION_DAYS / 2) * 86_400_000);
+  let renewedUntil: Date | undefined;
+  if (row.expires_at < halfLife) {
+    const { rows: renewed } = await pool.query<{ expires_at: Date }>(
+      `update session set last_seen_at = now(), expires_at = now() + make_interval(days => $2)
+        where id = $1 returning expires_at`,
+      [row.id, SESSION_DAYS],
+    );
+    renewedUntil = renewed[0]?.expires_at;
+  } else {
+    await pool.query('update session set last_seen_at = now() where id = $1', [row.id]);
+  }
 
   return {
     sessionId: row.id,
@@ -233,6 +265,7 @@ export async function resolveSession(pool: Pool, token: string): Promise<Session
     displayName: row.display_name,
     email: row.email,
     workspaceRole: row.workspace_role,
+    renewedUntil,
   };
 }
 

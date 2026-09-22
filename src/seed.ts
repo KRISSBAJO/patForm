@@ -85,6 +85,12 @@ async function main(): Promise<void> {
   const engine = new Engine(pool);
 
   console.log(`\n  Seeding ${describeTarget()}`);
+  /*
+   * This drops every table, including `session`. Anybody signed in to a
+   * console pointed at this database is signed out by it, and their browser
+   * will show a 401 on the next request with no explanation unless somebody
+   * says so here. Reported as an auth bug once, which is one time too many.
+   */
   await resetSchema(pool);
 
   const tenantId = await engine.createTenant('Northwind Operations');
@@ -207,11 +213,16 @@ async function main(): Promise<void> {
     console.log(`    ${OWNER.email.padEnd(22)} ${OWNER.name.padEnd(16)} ${OWNER.role} / ${OWNER.workspace}`);
     console.log(`      (its own password, from SEED_OWNER_PASSWORD)`);
   }
-
   for (const person of PEOPLE) {
     console.log(`    ${person.email.padEnd(22)} ${person.name.padEnd(16)} ${person.role} / ${person.workspace}`);
   }
-  console.log('');
+  // Said out loud, because it was reported as an authentication bug once
+  // and the 401 that follows has no other explanation attached to it.
+  console.log(
+    `
+  [33mThis reset the schema, so any console that was signed in is signed out.[0m
+`,
+  );
 
   await pool.end();
 }

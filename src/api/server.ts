@@ -1069,7 +1069,17 @@ async function main(): Promise<void> {
           status: 200,
           ms: Date.now() - started,
         });
-        send(res, 200, result);
+        /*
+         * A renewed session needs its cookie reissued, or the row outlives
+         * the cookie and the browser forgets a session the database still
+         * considers live.
+         */
+        send(
+          res,
+          200,
+          result,
+          session.renewedUntil ? [cookie(SESSION_COOKIE, readCookie(req, SESSION_COOKIE)!, session.renewedUntil)] : [],
+        );
       } catch (err) {
         const status =
           err instanceof AuthorizationError

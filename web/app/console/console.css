@@ -1152,3 +1152,354 @@
   gap: 10px;
   margin-top: 14px;
 }
+
+/* ==========================================================================
+   The console's surface
+   ==========================================================================
+
+   Asked for directly, against Viva Connections and SharePoint as the
+   reference: a light rail, cards that sit quietly on a grey canvas, and a
+   face that reads as a tool rather than as a brand.
+
+   Three deliberate changes, each replacing something earlier in this file:
+
+   1. **The rail is light.** It was near-black, which is a strong visual
+      claim for navigation that is not what anybody came to look at. A light
+      rail puts the weight on the work.
+
+   2. **The console uses the system face**, not the marketing site's display
+      serif. A serif headline is right on a page arguing for the product and
+      wrong on a screen somebody reads forty times a day; the operating
+      system's own UI font is the one their other tools use, and it renders
+      at small sizes on their machine better than a webfont can.
+
+   3. **Cards state themselves once.** One border, one radius, one shadow
+      that is barely there. The previous cards used radius 11, 12 and 18 in
+      three places and two different borders.
+
+   Tokens rather than values, so the next change is one line rather than
+   forty. Scoped to `.cs` so the marketing pages keep their own voice.
+*/
+
+.cs {
+  --ui:
+    system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+    'Noto Sans', sans-serif;
+
+  /* The rail */
+  --rail: #ffffff;
+  --rail-line: #e6e4df;
+  --rail-ink: #1c1f1d;
+  --rail-ink-soft: #5c635e;
+  --rail-active-bg: var(--green-tint);
+  --rail-active-ink: var(--green-deep);
+
+  /* The canvas and what sits on it */
+  --canvas: #f4f3f0;
+  --card-line: #e4e2dd;
+  --card-radius: 8px;
+  --card-shadow: 0 1px 2px rgba(20, 24, 22, 0.05);
+
+  background: var(--canvas);
+  font-family: var(--ui);
+}
+
+/* The rail is no longer dark, so the mint focus ring written for it is now
+   the wrong colour. The green one is 6.4:1 here. */
+.cs .cs__side {
+  --focus-ring: var(--green);
+}
+
+.cs h1,
+.cs h2,
+.cs h3,
+.cs .cs__loginTitle,
+.cs .cs__tab {
+  font-family: var(--ui);
+  letter-spacing: -0.011em;
+}
+
+/* --------------------------------------------------------------- the rail */
+
+.cs__side {
+  width: 244px;
+  background: var(--rail);
+  border-right: 1px solid var(--rail-line);
+  padding: 16px 12px;
+  gap: 22px;
+}
+
+.cs__brand {
+  color: var(--rail-ink);
+  font-family: var(--ui);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  padding: 4px 8px 0;
+}
+
+.cs__navItem,
+.cs__process {
+  color: var(--rail-ink-soft);
+  font-family: var(--ui);
+  font-size: 14px;
+  font-weight: 400;
+  height: 36px;
+  border-radius: 6px;
+}
+
+.cs__navItem:hover,
+.cs__process:hover {
+  background: var(--paper-2);
+  color: var(--rail-ink);
+}
+
+/*
+ * The current item carries a bar as well as a tint.
+ *
+ * 1.4.1: a background tint alone is colour doing the work on its own, and at
+ * this weight it is nearly invisible to anybody who cannot see the hue.
+ */
+.cs__navItem[aria-current='page'],
+.cs__process[aria-current='true'] {
+  background: var(--rail-active-bg);
+  color: var(--rail-active-ink);
+  font-weight: 600;
+  box-shadow: inset 2px 0 0 var(--green);
+}
+
+.cs__sectionLabel {
+  color: var(--muted);
+  font-family: var(--ui);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  padding: 0 8px;
+}
+
+.cs__dot {
+  background: var(--green);
+}
+
+.cs__navCount {
+  background: var(--green-pale);
+  color: var(--green-deep);
+  font-family: var(--ui);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.cs__navCount--bad {
+  background: #f7e4e2;
+  color: #8a352f;
+}
+
+/* The seat block at the foot of the rail */
+
+.cs__seat {
+  background: var(--paper-2);
+  border: 1px solid var(--rail-line);
+  border-radius: var(--card-radius);
+}
+
+.cs__avatar {
+  background: var(--green);
+  color: #ffffff;
+}
+
+.cs__seatName {
+  color: var(--rail-ink);
+  font-family: var(--ui);
+  font-weight: 600;
+}
+
+.cs__seatRole,
+.cs__seatNote {
+  color: var(--muted);
+  font-family: var(--ui);
+}
+
+.cs__seatPicker {
+  background: var(--white);
+  border: 1px solid var(--rail-line);
+  color: var(--rail-ink);
+  font-family: var(--ui);
+  font-size: 13px;
+  border-radius: 6px;
+}
+
+.cs__seatPicker:hover {
+  background: var(--paper-2);
+}
+
+.cs__seatPicker[aria-current='page'] {
+  border-color: var(--green);
+  color: var(--green-deep);
+  font-weight: 600;
+}
+
+.cs__seatNote a,
+.cs__seatNote .cs__linkBtn {
+  color: var(--green-deep);
+}
+
+/* -------------------------------------------------------------- the canvas */
+
+.cs__head {
+  background: var(--rail);
+  border-bottom: 1px solid var(--rail-line);
+  padding: 0 24px;
+}
+
+.cs__head h1 {
+  font-family: var(--ui);
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: -0.012em;
+  color: var(--ink);
+}
+
+.cs__version {
+  font-family: var(--font-mono), monospace;
+  font-size: 11.5px;
+  color: var(--muted);
+  background: var(--paper-2);
+  border-radius: 5px;
+}
+
+/* One card, stated once. */
+
+.cs__panel,
+.cs__tile,
+.cs__card {
+  border: 1px solid var(--card-line);
+  border-radius: var(--card-radius);
+  background: var(--white);
+  box-shadow: var(--card-shadow);
+}
+
+.cs__card--dark {
+  background: var(--ink-raised);
+  border-color: var(--ink-raised);
+}
+
+.cs__tileLabel,
+.cs__cardLabel,
+.cs__sort {
+  font-family: var(--font-mono), monospace;
+  font-size: 10.5px;
+  letter-spacing: 0.07em;
+}
+
+.cs__tileNumber {
+  font-family: var(--ui);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.cs__tab {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.cs__panelHead {
+  border-bottom: 1px solid var(--card-line);
+}
+
+.cs__row:not(:last-child) {
+  border-bottom: 1px solid var(--card-line);
+}
+
+/* Buttons: one height, one radius, one weight. */
+
+.cs .cs__btn {
+  font-family: var(--ui);
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 6px;
+  border: 1px solid var(--card-line);
+  background: var(--white);
+  color: var(--ink);
+}
+
+.cs .cs__btn:hover {
+  background: var(--paper-2);
+}
+
+.cs .cs__btn--primary {
+  background: var(--green);
+  border-color: var(--green);
+  color: #ffffff;
+}
+
+.cs .cs__btn--primary:hover {
+  background: var(--green-deep);
+  border-color: var(--green-deep);
+}
+
+.cs .cs__input {
+  font-family: var(--ui);
+  border-radius: 6px;
+  border: 1px solid var(--card-line);
+}
+
+.cs .cs__label {
+  font-family: var(--ui);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+/* The sign-in and account cards sit on the canvas rather than in the shell,
+   so they need the same surface rules said once. */
+
+.cs__login {
+  background: var(--canvas);
+  font-family: var(--ui);
+}
+
+.cs__loginBox {
+  border: 1px solid var(--card-line);
+  border-radius: 10px;
+  box-shadow: 0 1px 3px rgba(20, 24, 22, 0.07);
+}
+
+.cs__loginTitle {
+  font-size: 22px;
+  font-weight: 600;
+}
+
+.cs__loginNote {
+  font-family: var(--ui);
+}
+
+/*
+ * The explainer card was the only dark thing left on the page, which made it
+ * read as an alert rather than as a note. Quiet panel instead: it is context,
+ * not a warning.
+ */
+.cs__card--dark {
+  background: var(--green-tint);
+  border-color: var(--green-border);
+  box-shadow: none;
+}
+
+.cs__card--dark .cs__cardLabel {
+  color: var(--green-deep);
+}
+
+.cs__card--dark p {
+  color: var(--ink-soft) !important;
+}
+
+/* Icons in the rail. 18px, stroked, aligned on the text baseline box. */
+.cs__navIcon {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  opacity: 0.85;
+}
+
+.cs__navItem[aria-current='page'] .cs__navIcon {
+  opacity: 1;
+}

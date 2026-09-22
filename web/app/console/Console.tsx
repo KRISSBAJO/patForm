@@ -88,6 +88,20 @@ export function Console() {
   const [health, setHealth] = useState<Health | null>(null);
   const [record, setRecord] = useState<RecordDetail | null>(null);
   const [view, setView] = useState<'work' | 'ask' | 'records' | 'dashboard' | 'health' | 'security'>('work');
+  /*
+   * Whether this sign-in screen is a first visit or an ejection.
+   *
+   * The console used to swap silently from a working page to a login form,
+   * which reads as the application having crashed. It is usually a session
+   * that expired, was revoked from another device, or — in development —
+   * disappeared with the schema.
+   */
+  const [wasSignedOut, setWasSignedOut] = useState(false);
+
+  const endSession = useCallback(() => {
+    setWasSignedOut(true);
+    setSession(null);
+  }, []);
   const [toast, setToast] = useState<Toast>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -115,7 +129,7 @@ export function Console() {
       setWork(await call<Work>(`/api/work?process=${processKey}`));
     } catch (err) {
       setWork(null);
-      if (err instanceof Unauthenticated) return setSession(null);
+      if (err instanceof Unauthenticated) return endSession();
       setError(err instanceof Error ? err.message : String(err));
     }
     try {
@@ -145,7 +159,7 @@ export function Console() {
       setRecord(null);
       await load();
     } catch (err) {
-      if (err instanceof Unauthenticated) return setSession(null);
+      if (err instanceof Unauthenticated) return endSession();
       // A refusal is information, not a crash: it says whether to ask for
       // access or to ask a different person.
       setToast({ message: err instanceof Error ? err.message : String(err), refused: true });
@@ -200,7 +214,7 @@ export function Console() {
           : `Exported ${name}.`,
       });
     } catch (err) {
-      if (err instanceof Unauthenticated) return setSession(null);
+      if (err instanceof Unauthenticated) return endSession();
       setToast({ message: err instanceof Error ? err.message : String(err), refused: true });
     }
   };
@@ -209,7 +223,7 @@ export function Console() {
     try {
       setRecord(await call<RecordDetail>(`/api/records/${instanceId}`));
     } catch (err) {
-      if (err instanceof Unauthenticated) return setSession(null);
+      if (err instanceof Unauthenticated) return endSession();
       setToast({ message: err instanceof Error ? err.message : String(err), refused: true });
     }
   };
@@ -222,7 +236,7 @@ export function Console() {
   };
 
   if (checking) return <div className="cs__boot">Checking your session…</div>;
-  if (!session) return <SignIn onSignedIn={() => void refreshSession()} />;
+  if (!session) return <SignIn onSignedIn={() => void refreshSession()} signedOut={wasSignedOut} />;
 
   const me = session.actor;
   const counts = work?.counts ?? { arrived: 0, needsYou: 0, late: 0, failed: 0 };
@@ -248,6 +262,7 @@ export function Console() {
             aria-current={view === 'work' ? 'page' : undefined}
             onClick={() => setView('work')}
           >
+            <NavIcon name="work" />
             My work
             {counts.needsYou > 0 && <span className="cs__navCount">{counts.needsYou}</span>}
           </button>
@@ -257,6 +272,7 @@ export function Console() {
             aria-current={view === 'ask' ? 'page' : undefined}
             onClick={() => setView('ask')}
           >
+            <NavIcon name="ask" />
             Ask
           </button>
           <button
@@ -265,6 +281,7 @@ export function Console() {
             aria-current={view === 'records' ? 'page' : undefined}
             onClick={() => setView('records')}
           >
+            <NavIcon name="records" />
             Records
           </button>
           <button
@@ -273,6 +290,7 @@ export function Console() {
             aria-current={view === 'dashboard' ? 'page' : undefined}
             onClick={() => setView('dashboard')}
           >
+            <NavIcon name="dashboard" />
             Dashboard
           </button>
           <button
@@ -281,6 +299,7 @@ export function Console() {
             aria-current={view === 'health' ? 'page' : undefined}
             onClick={() => setView('health')}
           >
+            <NavIcon name="health" />
             Automation health
             {counts.failed > 0 && <span className="cs__navCount cs__navCount--bad">{counts.failed}</span>}
           </button>
@@ -704,7 +723,64 @@ function VerifyBanner({ email }: { email: string }) {
  * person was trying to do, and made the instruction a workaround for the
  * layout rather than a thing anybody would write.
  */
-function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
+/**
+ * The rail's icons.
+ *
+ * Inline rather than from an icon package: six shapes do not justify a
+ * dependency, and `aria-hidden` is the important part — the label beside each
+ * one already says what it is, so announcing the icon as well would read the
+ * item twice.
+ */
+function NavIcon({ name }: { name: 'work' | 'ask' | 'records' | 'dashboard' | 'health' }) {
+  const common = {
+    className: 'cs__navIcon',
+    viewBox: '0 0 20 20',
+    fill: 'none',
+    stroke: 'currentColor',
+    strokeWidth: 1.6,
+    strokeLinecap: 'round' as const,
+    strokeLinejoin: 'round' as const,
+    'aria-hidden': true,
+  };
+  switch (name) {
+    case 'work':
+      return (
+        <svg {...common}>
+          <rect x="2.8" y="5.2" width="14.4" height="11" rx="1.8" />
+          <path d="M7 5.2V4a1.2 1.2 0 0 1 1.2-1.2h3.6A1.2 1.2 0 0 1 13 4v1.2" />
+          <path d="M2.8 9.6h14.4" />
+        </svg>
+      );
+    case 'ask':
+      return (
+        <svg {...common}>
+          <path d="M3 9.4c0-3 3.1-5.4 7-5.4s7 2.4 7 5.4-3.1 5.4-7 5.4a8.7 8.7 0 0 1-2.2-.3L4.2 16l.9-2.5A5.2 5.2 0 0 1 3 9.4Z" />
+        </svg>
+      );
+    case 'records':
+      return (
+        <svg {...common}>
+          <rect x="3.4" y="2.8" width="13.2" height="14.4" rx="1.8" />
+          <path d="M6.6 7h6.8M6.6 10h6.8M6.6 13h4.2" />
+        </svg>
+      );
+    case 'dashboard':
+      return (
+        <svg {...common}>
+          <path d="M3.2 15.4h13.6" />
+          <path d="M5.8 15.4V9.2M10 15.4V4.6M14.2 15.4v-4" />
+        </svg>
+      );
+    case 'health':
+      return (
+        <svg {...common}>
+          <path d="M2.8 10.4h3.3l1.7-4.6 2.6 8.6 1.9-5.3 1.1 1.3h3.8" />
+        </svg>
+      );
+  }
+}
+
+function SignIn({ onSignedIn, signedOut }: { onSignedIn: () => void; signedOut?: boolean }) {
   const [mode, setMode] = useState<'signin' | 'forgot' | 'sent' | 'code'>('signin');
   const [challengeToken, setChallengeToken] = useState('');
   const [code, setCode] = useState('');
@@ -942,6 +1018,13 @@ function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
       <form className="cs__loginBox" onSubmit={submit}>
         {brand}
         <h1 className="cs__loginTitle">Sign in to the console</h1>
+
+        {signedOut && (
+          <p className="cs__loginNote" style={{ marginTop: 0, marginBottom: 16 }} role="status">
+            Your session ended — it expired, or it was signed out from somewhere else. Nothing you
+            saved is affected.
+          </p>
+        )}
 
         <label className="cs__label" htmlFor="email">
           Email
