@@ -5,6 +5,8 @@ import './console.css';
 import { Ask } from './Ask';
 import { DashboardView, HealthView, RecordsView, SecurityView } from './Views';
 import { PeopleView, ProcessesView } from './Manage';
+import { DataView, IntegrationsView } from './Settings';
+import { RecordTrail } from './Trail';
 
 /**
  * Calls go to the same origin so the HttpOnly, SameSite=Lax session cookie is
@@ -89,7 +91,7 @@ export function Console() {
   const [work, setWork] = useState<Work | null>(null);
   const [health, setHealth] = useState<Health | null>(null);
   const [record, setRecord] = useState<RecordDetail | null>(null);
-  const [view, setView] = useState<'work' | 'ask' | 'records' | 'dashboard' | 'health' | 'security' | 'people' | 'processes'>('work');
+  const [view, setView] = useState<'work' | 'ask' | 'records' | 'dashboard' | 'health' | 'security' | 'people' | 'processes' | 'integrations' | 'data'>('work');
   /*
    * Whether this sign-in screen is a first visit or an ejection.
    *
@@ -99,6 +101,7 @@ export function Console() {
    * disappeared with the schema.
    */
   const [wasSignedOut, setWasSignedOut] = useState(false);
+  const [showTrail, setShowTrail] = useState(false);
 
   const endSession = useCallback(() => {
     setWasSignedOut(true);
@@ -342,6 +345,28 @@ export function Console() {
             <NavIcon name="builder" />
             Builder
           </a>
+
+          <span className="cs__sectionLabel" style={{ marginTop: 10 }}>
+            SETTINGS
+          </span>
+          <button
+            type="button"
+            className="cs__navItem"
+            aria-current={view === 'integrations' ? 'page' : undefined}
+            onClick={() => setView('integrations')}
+          >
+            <NavIcon name="integrations" />
+            Integrations
+          </button>
+          <button
+            type="button"
+            className="cs__navItem"
+            aria-current={view === 'data' ? 'page' : undefined}
+            onClick={() => setView('data')}
+          >
+            <NavIcon name="data" />
+            Import &amp; data
+          </button>
         </nav>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -426,7 +451,11 @@ export function Console() {
                         ? 'People'
                         : view === 'processes'
                           ? 'Processes & forms'
-                          : 'My work'}
+                          : view === 'integrations'
+                            ? 'Integrations'
+                            : view === 'data'
+                              ? 'Import & data'
+                              : 'My work'}
           </h1>
           {/* The process pill is context for the record views. On People,
               Processes and Your account it named a process the page has
@@ -442,10 +471,20 @@ export function Console() {
 
         <div className="cs__body">
           <div className="cs__left">
-            {view === 'people' ? (
+            {view === 'integrations' ? (
+              <IntegrationsView />
+            ) : view === 'data' ? (
+              <DataView processes={session.processes} />
+            ) : view === 'people' ? (
               <PeopleView canAdminister={['owner', 'admin', 'builder'].includes(me.workspace_role)} />
             ) : view === 'processes' ? (
-              <ProcessesView processes={session.processes} />
+              <ProcessesView
+                processes={session.processes}
+                onOpenRecord={(id) => {
+                  void open(id);
+                  setView('work');
+                }}
+              />
             ) : view === 'security' ? (
               <SecurityView />
             ) : view === 'health' ? (
@@ -586,11 +625,23 @@ export function Console() {
                       >
                         CSV
                       </button>
+                      {/* The observability work made every action traceable
+                          by request, event, job, attempt and result — and the
+                          only reader was a command-line tool. */}
+                      <button
+                        type="button"
+                        className="cs__btn"
+                        aria-expanded={showTrail}
+                        onClick={() => setShowTrail((was) => !was)}
+                      >
+                        {showTrail ? 'Hide the trail' : 'Show the trail'}
+                      </button>
                       <button type="button" className="cs__btn" onClick={() => setRecord(null)}>
                         Close
                       </button>
                     </div>
                     <div style={{ padding: '14px 18px' }}>
+                      {showTrail && <RecordTrail instanceId={record.instanceId} />}
                       <div className="cs__rowMeta" style={{ marginBottom: 12 }}>
                         <strong>Next:</strong> {record.nextAction}
                       </div>
@@ -668,6 +719,10 @@ export function Console() {
                     ? 'Who is in this workspace and what they may do. An invitation is emailed, works once, and expires in seven days — the link is never shown here, because anybody who can invite could otherwise mint one for an address whose owner never sees it.'
                   : view === 'processes'
                     ? 'Where records come from. Each published process serves a form at its own link; every submission becomes a record, routed by that process’s own rules. Nobody needs an account to submit one.'
+                  : view === 'integrations'
+                    ? 'Everything outside this workspace that can reach it, or that it reaches. Keys and signing secrets are shown once and stored as hashes, so a copy of our database is not a set of working credentials.'
+                  : view === 'data'
+                    ? 'Getting records in from a spreadsheet, what this workspace holds and where each value travels, and deleting what is past its retention. The dry run executes the whole thing and rolls it back — the only honest way to answer what would this delete.'
                   : view === 'security'
                     ? 'Your own account, and nobody else’s. Adding a second factor is the one change here that makes a stolen password insufficient on its own — and turning it off asks for your password rather than a code.'
                   : view === 'dashboard'
@@ -791,7 +846,17 @@ function VerifyBanner({ email }: { email: string }) {
 function NavIcon({
   name,
 }: {
-  name: 'work' | 'ask' | 'records' | 'dashboard' | 'health' | 'processes' | 'people' | 'builder';
+  name:
+    | 'work'
+    | 'ask'
+    | 'records'
+    | 'dashboard'
+    | 'health'
+    | 'processes'
+    | 'people'
+    | 'builder'
+    | 'integrations'
+    | 'data';
 }) {
   const common = {
     className: 'cs__navIcon',
@@ -859,6 +924,22 @@ function NavIcon({
         <svg {...common}>
           <path d="M11.6 3.4a3.4 3.4 0 0 0 4.4 4.4l-8 8a1.9 1.9 0 0 1-2.7-2.7l8-8Z" />
           <path d="M4.2 14.2 3 17l2.8-1.2" />
+        </svg>
+      );
+    case 'integrations':
+      return (
+        <svg {...common}>
+          <path d="M8.4 11.6 5.6 14.4a2.9 2.9 0 0 0 4.1 4.1l2.1-2.1" transform="translate(0,-2.4)" />
+          <path d="M11.6 8.4l2.8-2.8a2.9 2.9 0 0 0-4.1-4.1L8.2 3.6" transform="translate(0,2.4)" />
+          <path d="M7.8 12.2l4.4-4.4" />
+        </svg>
+      );
+    case 'data':
+      return (
+        <svg {...common}>
+          <ellipse cx="10" cy="5.2" rx="6.2" ry="2.4" />
+          <path d="M3.8 5.2v9.6c0 1.3 2.8 2.4 6.2 2.4s6.2-1.1 6.2-2.4V5.2" />
+          <path d="M3.8 10c0 1.3 2.8 2.4 6.2 2.4s6.2-1.1 6.2-2.4" />
         </svg>
       );
   }

@@ -593,7 +593,14 @@ Among the thirty: every `members` route, every `invitations` route, every
 `forms` route.
 
 Counting endpoints is not counting features. An endpoint is not a feature
-until something a person can reach calls it.
+until something a person can reach calls it. It now reports **all 72
+reachable**, and it is in the same class of check as the accessibility gate:
+cheap, run every time, and about something nobody notices until a customer
+does.
+
+The tool itself had three bugs on the way, every one of them hiding the
+routes it exists to check — see entry 44 in
+[docs/failure-cases.md](docs/failure-cases.md).
 
 ### Where records come from, and who can see them
 

@@ -193,6 +193,28 @@ async function main() {
     }
   }
 
+  for (const [name, label] of [
+    ['Integrations', 'Integrations'],
+    ['Import and data', 'Import & data'],
+  ]) {
+    const item = page.locator('button', { hasText: new RegExp(`^${label}`) }).first();
+    if (await item.count()) {
+      await item.click();
+      await page.waitForTimeout(2500);
+      all.push(...(await audit(page, name)));
+    }
+  }
+
+  // The OAuth consent screen, which an application sends somebody to. It had
+  // no page at all until the authorize route was wired.
+  await page.goto(
+    `${BASE}/authorize?client_id=demo&redirect_uri=https%3A%2F%2Fexample.test%2Fcb&scope=view%20report&code_challenge=abc&state=s1`,
+    { waitUntil: 'networkidle' },
+  );
+  all.push(...(await audit(page, 'Allow an application')));
+  await page.goto(`${BASE}/console`, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(3000);
+
   const account = page.locator('button', { hasText: /^Your account$/ }).first();
   if (await account.count()) {
     await account.click();

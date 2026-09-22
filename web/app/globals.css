@@ -2270,3 +2270,25 @@ html {
   line-height: 1.6;
   color: var(--ink-soft);
 }
+
+/* What is inside a pack, shown before it is installed. */
+.bd__packDetail {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--green-border);
+  background: var(--green-tint);
+  border-radius: 7px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--ink-soft);
+}
+
+.bd__packDetail strong { color: var(--ink); }
+
+.bd__packDetail ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  list-style: disc;
+}
+
+.bd__packWarn { margin-top: 8px; color: var(--red-text); }

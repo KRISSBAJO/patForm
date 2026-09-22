@@ -391,9 +391,57 @@ interface ProcessRow {
  * the console never said so or linked to it. Somebody could approve records
  * all day without ever seeing where they arrive from.
  */
-export function ProcessesView({ processes }: { processes: ProcessRow[] }) {
+interface Install {
+  process_key: string;
+  pack_name: string;
+  pack_key: string;
+  version: number;
+  latest_version: number | null;
+  installed_at: string;
+}
+
+interface RecordRow {
+  id: string;
+  state: string;
+  outcome: string | null;
+  created_at: string;
+  state_entered_at: string;
+}
+
+export function ProcessesView({
+  processes,
+  onOpenRecord,
+}: {
+  processes: ProcessRow[];
+  onOpenRecord: (id: string) => void;
+}) {
   const [copied, setCopied] = useState<string | null>(null);
+  const [installs, setInstalls] = useState<Install[]>([]);
+  const [open, setOpen] = useState<string | null>(null);
+  const [records, setRecords] = useState<RecordRow[]>([]);
   const origin = typeof window === 'undefined' ? '' : window.location.origin;
+
+  useEffect(() => {
+    // Which processes came from a pack, and whether the pack has moved on
+    // since. An install that is three versions behind is invisible otherwise.
+    get<Install[]>('/api/packs/installed')
+      .then(setInstalls)
+      .catch(() => setInstalls([]));
+  }, []);
+
+  const showRecords = async (processKey: string) => {
+    if (open === processKey) {
+      setOpen(null);
+      return;
+    }
+    setOpen(processKey);
+    setRecords([]);
+    try {
+      setRecords(await get<RecordRow[]>(`/api/records?process=${encodeURIComponent(processKey)}&limit=15`));
+    } catch {
+      setRecords([]);
+    }
+  };
 
   if (!processes.length) {
     return (
@@ -430,6 +478,7 @@ export function ProcessesView({ processes }: { processes: ProcessRow[] }) {
 
       {processes.map((p) => {
         const url = `${origin}/f/${p.process_key}`;
+        const from = installs.find((i) => i.process_key === p.process_key);
         return (
           <div className="cs__panel mg__process" key={p.process_key}>
             <div className="cs__panelHead">
@@ -474,14 +523,66 @@ export function ProcessesView({ processes }: { processes: ProcessRow[] }) {
                 {copied === p.process_key ? 'Copied. Anyone with this link can submit.' : ' '}
               </p>
 
+              {from && (
+                <p className="mg__hint">
+                  Started from the <strong>{from.pack_name}</strong> pack, version {from.version}.
+                  {from.latest_version && from.latest_version > from.version
+                    ? ` Version ${from.latest_version} is available — installing it opens a draft rather than changing anything live.`
+                    : ' That is the current version.'}
+                </p>
+              )}
+
               <div className="mg__rowActions">
                 <a className="cs__btn cs__btn--primary" href={url} target="_blank" rel="noreferrer">
                   Open the form
                 </a>
+                <button
+                  type="button"
+                  className="cs__btn"
+                  aria-expanded={open === p.process_key}
+                  onClick={() => void showRecords(p.process_key)}
+                >
+                  {open === p.process_key ? 'Hide records' : `Show the ${p.open_records} open`}
+                </button>
                 <a className="cs__btn" href="/builder">
                   Edit in the builder
                 </a>
               </div>
+
+              {open === p.process_key && (
+                <table className="vw__table" style={{ marginTop: 14 }}>
+                  <thead>
+                    <tr>
+                      <th scope="col">Reference</th>
+                      <th scope="col">Where it is</th>
+                      <th scope="col">Since</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {records.length ? (
+                      records.map((r) => (
+                        <tr key={r.id}>
+                          <th scope="row">
+                            <button
+                              type="button"
+                              className="cs__linkBtn cs__linkBtn--onLight"
+                              onClick={() => onOpenRecord(r.id)}
+                            >
+                              {r.id.slice(0, 8).toUpperCase()}
+                            </button>
+                          </th>
+                          <td>{r.outcome ?? r.state}</td>
+                          <td>{new Date(r.state_entered_at).toLocaleDateString()}</td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan={3}>Nothing open.</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              )}
             </div>
           </div>
         );

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { AskHistory } from './Trail';
 
 /**
  * §20.1 step 9, on screen.
@@ -88,6 +89,31 @@ export function Ask({ processKey, onOpenRecord }: { processKey: string; onOpenRe
   const [error, setError] = useState<string | null>(null);
   const [showPlan, setShowPlan] = useState(false);
 
+  /**
+   * Runs a plan from the history directly, without asking a model again.
+   *
+   * The plan is the thing that was approved, so re-running it re-runs exactly
+   * what somebody looked at. Asking the model the same question again could
+   * produce a different plan — which is the whole reason the plan, and not the
+   * question, is what gets confirmed.
+   */
+  const rerun = async (plan: unknown) => {
+    setBusy('ask');
+    setError(null);
+    setReport(null);
+    try {
+      const ran = await call<AskResult>('/api/copilot/run', {
+        method: 'POST',
+        body: JSON.stringify({ plan }),
+      });
+      setResult(ran);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const submit = async (text: string) => {
     if (!text.trim()) return;
     setBusy('ask');
@@ -156,6 +182,24 @@ export function Ask({ processKey, onOpenRecord }: { processKey: string; onOpenRe
             {busy === 'ask' ? 'Thinking…' : 'Ask'}
           </button>
         </form>
+
+        {/*
+          * §7.3 asks for a record of model, prompt version, plan, human
+          * approval and result for every question. It was written from the
+          * first day and had no reader until now — an AI audit log nobody can
+          * open is a compliance claim rather than a control.
+          */}
+        {!result && !error && (
+          <div className="ask__history">
+            <h3 className="ask__historyTitle">What has been asked here</h3>
+            <AskHistory
+              onRerun={(run) => {
+                setQuestion(run.question);
+                void rerun(run.plan);
+              }}
+            />
+          </div>
+        )}
 
         {!result && !error && (
           <div className="ask__suggestions">

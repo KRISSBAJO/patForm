@@ -183,6 +183,11 @@ interface Pack {
   builtIn: boolean;
 }
 
+/** The same summary plus the blueprint, read only when one is chosen. */
+interface PackDetail extends Pack {
+  warnings: { code: string; message: string }[];
+}
+
 const FIELD_TYPES = [
   'short_text', 'long_text', 'email', 'phone', 'number', 'currency', 'url', 'address',
   'date', 'time', 'single_choice', 'multi_choice', 'dropdown', 'yes_no', 'rating',
@@ -1833,6 +1838,20 @@ function NewProcessDialog({
   const [mode, setMode] = useState<'pack' | 'describe' | 'copy'>('pack');
   const [packs, setPacks] = useState<Pack[]>([]);
   const [chosen, setChosen] = useState<Pack | null>(null);
+  const [detail, setDetail] = useState<PackDetail | null>(null);
+
+  // Read when one is chosen rather than for the whole catalogue: a list of
+  // twenty packs does not need twenty blueprints parsed to draw a card.
+  useEffect(() => {
+    if (!chosen) return setDetail(null);
+    let live = true;
+    call<PackDetail>(`/api/packs/${chosen.id}`)
+      .then((d) => live && setDetail(d))
+      .catch(() => live && setDetail(null));
+    return () => {
+      live = false;
+    };
+  }, [chosen]);
 
   useEffect(() => {
     void (async () => {
@@ -1956,6 +1975,46 @@ function NewProcessDialog({
                 <strong>{chosen.audience}</strong> Installing opens it here as a draft — nothing goes live until you
                 publish it.
               </p>
+            )}
+
+            {/*
+              * What is actually inside, before you take it.
+              *
+              * Every count is derived from the blueprint, so a pack cannot
+              * claim something installing it does not give you — and the
+              * policy row is the part §1.2 says a form template can never
+              * carry.
+              */}
+            {detail && (
+              <div className="bd__packDetail">
+                <strong>Inside this pack</strong>
+                <ul>
+                  <li>
+                    {detail.contents.fields} fields, {detail.contents.states} states,{' '}
+                    {detail.contents.approvals} approvals, {detail.contents.tasks} tasks
+                  </li>
+                  <li>
+                    {detail.contents.emails} email templates, {detail.contents.documents} documents,{' '}
+                    {detail.contents.metrics} dashboard metrics
+                  </li>
+                  <li>
+                    Roles: {detail.contents.roles.map((r) => r.name).join(', ') || 'none declared'}
+                  </li>
+                  <li>
+                    Policy: holds up to <strong>{detail.contents.policy.sensitivityCeiling}</strong> data,{' '}
+                    {detail.contents.policy.restrictedFields} restricted field(s),{' '}
+                    {detail.contents.policy.retentionDays
+                      ? `kept ${detail.contents.policy.retentionDays} days`
+                      : 'kept indefinitely'}
+                  </li>
+                </ul>
+                {detail.warnings.length > 0 && (
+                  <p className="bd__packWarn">
+                    {detail.warnings.length} warning(s) the compiler raised on this pack — you will
+                    see them again before you publish.
+                  </p>
+                )}
+              </div>
             )}
           </>
         ) : mode === 'describe' ? (

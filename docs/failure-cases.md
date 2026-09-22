@@ -469,6 +469,20 @@ This is the ninth instance of **a control present in review and absent at runtim
 **Generalisable:** counting endpoints is not counting features. The cheap check that would have caught this at any point is the one run here — list the routes, list the paths the client calls, and subtract. It takes a minute and it does not need a person to notice something feels thin.
 
 
+### 44. Twenty-six more, and a measuring tool that lied twice
+
+The reachability check reported thirty unreachable endpoints. Wiring the obvious ones dropped it to twenty-six, and then the number stopped moving in a way that did not match the code — the People page was plainly calling `/api/members/:id/deactivate` while the tool insisted nothing was.
+
+Two bugs in the tool, both of which hid **exactly the routes it exists to check**:
+
+1. **A template hole holding a verb.** The check replaced `${...}` with a uuid and a key and tested those against the route. `/api/members/${id}/${active ? 'deactivate' : 'reactivate'}` has the *verb* in a hole, so nothing matched. Fixed by matching from the route's side: each route produces one concrete sample, each call site becomes a pattern with its holes widened.
+2. **A query-string stripper eating a ternary.** `path.replace(/\?.*$/, '')` ran before the holes were replaced, so `${active ? 'a' : 'b'}` was truncated at its `?` and left half a path.
+
+A third was subtler: a hole was widened to `[^/]+`, requiring at least one character. `/export${csv ? '?format=csv' : ''}` evaluates to nothing at all, so the export route — which the record panel had been calling all along — was reported unreachable. `[^/]*`.
+
+**Generalisable:** a tool that measures whether work was done is itself work that can be wrong, and its failure mode is the quietest one available — it reports a number, and a number always looks like a measurement. The three bugs here all produced *over*-reporting, which is the safe direction; the same code one character different would have reported everything fine.
+
+
 ---
 
 ## What the compiler structurally cannot catch

@@ -1740,3 +1740,182 @@ a.cs__navItem {
   text-transform: none;
   letter-spacing: normal;
 }
+
+/* ---------------------------------------------------------- settings area */
+
+.st__panel { margin-bottom: 18px; }
+
+.st__form { padding: 16px 18px 18px; }
+
+.st__textarea {
+  font-family: var(--font-mono), monospace;
+  font-size: 12.5px;
+  line-height: 1.5;
+  height: auto;
+  padding: 10px 12px;
+  resize: vertical;
+}
+
+.st__pre {
+  margin: 14px 0 0;
+  padding: 12px 14px;
+  max-height: 320px;
+  overflow: auto;
+  background: var(--paper-2);
+  border: 1px solid var(--card-line);
+  border-radius: 6px;
+  font-family: var(--font-mono), monospace;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--ink-soft);
+}
+
+.st__secret {
+  margin: 4px 18px 0;
+  padding: 12px 14px;
+  background: var(--green-tint);
+  border: 1px solid var(--green-border);
+  border-radius: 6px;
+  font-family: var(--font-mono), monospace;
+  font-size: 13.5px;
+  word-break: break-all;
+  color: var(--ink);
+}
+
+.st__minted { border-color: var(--green); }
+
+.st__note {
+  margin: 0 0 16px;
+  padding: 11px 14px;
+  background: var(--green-tint);
+  border: 1px solid var(--green-border);
+  border-radius: 6px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--ink);
+}
+
+.st__fieldset { border: none; padding: 0; margin: 0; }
+
+.st__check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+
+.st__mapBlock { border-top: 1px solid var(--card-line); }
+.st__mapBlock:first-of-type { border-top: none; }
+
+.st__mapTitle {
+  margin: 0;
+  padding: 16px 18px 6px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.st__notes {
+  margin: 0;
+  padding: 12px 18px 16px 36px;
+  list-style: disc;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--red-text);
+}
+
+/* --------------------------------------------------------------- the trail */
+
+.tr { padding: 4px 0 8px; }
+
+.tr__note, .tr__diagnosis {
+  margin: 0 0 12px;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--ink-soft);
+}
+
+.tr__diagnosis {
+  padding: 11px 13px;
+  background: var(--paper-2);
+  border-radius: 6px;
+  color: var(--ink);
+}
+
+.tr__stuck {
+  margin-bottom: 12px;
+  padding: 11px 13px;
+  border: 1px solid #edcdc9;
+  background: #fdf4f3;
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.tr__stuck ul { margin: 6px 0 0; padding-left: 20px; list-style: disc; }
+
+.tr__steps, .tr__runs { margin: 0; padding: 0; list-style: none; }
+
+.tr__step, .tr__run {
+  padding: 11px 0;
+  border-top: 1px solid var(--card-line);
+}
+
+.tr__stepHead, .tr__runHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.tr__type, .tr__runQ { font-size: 13.5px; font-weight: 600; color: var(--ink); }
+.tr__when { font-size: 12px; color: var(--muted); white-space: nowrap; }
+
+.tr__meta { margin-top: 3px; font-size: 12.5px; color: var(--muted); }
+.tr__job { margin-top: 6px; font-size: 12.5px; color: var(--ink-soft); }
+.tr__error { color: var(--red-text); font-size: 12.5px; }
+
+.tr__actions, .tr__msg {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  list-style: disc;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--ink-soft);
+}
+
+.tr__related { margin-top: 14px; }
+
+.ask__history { margin-top: 20px; }
+
+.ask__historyTitle {
+  margin: 0 0 4px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+/* ------------------------------------------------------- the consent screen */
+
+.cn__scopes {
+  margin: 0 0 16px;
+  padding-left: 20px;
+  list-style: disc;
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--ink);
+}
+
+.cn__actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.cn__actions .cs__btn {
+  flex: 1;
+  height: 44px;
+  justify-content: center;
+}
