@@ -688,6 +688,16 @@ copilot — the model proposes, the compiler decides, a person applies:
   that there is no SMS action and that timers measure hours in a state rather
   than calendar dates — instead of inventing one.
 
+**And a picture of it.** The rules are drawn as a map above the list —
+states placed by how far they are from the start, timers dashed, and clicking
+one narrows the list to its rules.
+
+Read-only, deliberately. A draggable canvas would be a second source of truth
+for the same graph, and the two would disagree the first time somebody edited
+a rule the canvas could not draw — a condition, a webhook trigger, an action
+list. The rules are the truth; this is a rendering, so it cannot drift. Layout
+is computed rather than stored for the same reason.
+
 Two things the editor knows that the JSON tab cannot:
 
 - **Only one timer may leave a state.** Entering a state cancels that

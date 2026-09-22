@@ -604,6 +604,27 @@ Sessions lasted fourteen days and renewed only past the halfway mark. Both numbe
 **Generalisable:** a lifetime and a renewal interval are one decision, not two. Choosing the lifetime first and the renewal as a fraction of it produces a renewal nobody would have chosen on its own.
 
 
+### 59. A picture that could not contain its own buttons
+
+The flow map is an SVG whose state nodes are clickable — click one, see only its rules. It carried `role="img"` with an `aria-label` describing the path, which seemed like the considerate thing to do.
+
+`role="img"` declares everything inside it decoration. axe called it `nested-interactive`, and it is right: a screen reader would announce a picture and then find controls inside a picture. The nodes are buttons, so the container is a `group`, not an image.
+
+**Generalisable:** adding a role to be helpful changes what the children mean. `img`, `presentation` and `application` all redefine their subtree, and the accessible thing to do is usually to add less rather than more.
+
+### 60. A start screen with a third of the page empty
+
+Nine hundred pixels of content in a twelve-hundred pixel page, one card in a row built for four, and illustrations drawn in greys that read as unloaded placeholders. Reported as "very very horrible", which was fair.
+
+Three separate mistakes, and only the third is about taste:
+
+- **The container was narrower than the page.** A max-width chosen for reading prose applied to a grid of cards.
+- **A gallery was used for a list.** Work somebody already has is identified by its name, so it is a list; a picture of a generic process adds nothing and leaves an empty row whenever they have one or two. Recent work is a list now and the new-start routes are cards.
+- **The drawings had no colour.** Grey outlines on a grey plate read as a wireframe. They use the brand green at three weights, and the plate under them is tinted to match.
+
+**Generalisable:** an empty state is the screen most people see most often and the one least likely to be designed, because whoever built it had data.
+
+
 ---
 
 ## What the compiler structurally cannot catch

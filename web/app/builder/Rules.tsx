@@ -28,6 +28,7 @@
 import { useMemo, useState } from 'react';
 import type { Diagnostic } from './Builder';
 import './rules.css';
+import { FlowMap } from './FlowMap';
 
 type Expr = Record<string, unknown>;
 
@@ -149,6 +150,9 @@ export function RulesEditor({
     return new Set([...byState.entries()].filter(([, n]) => n > 1).map(([s]) => s));
   }, [transitions]);
 
+  /** Clicking a state on the map narrows the list to its rules. */
+  const [focus, setFocus] = useState<string | null>(null);
+
   const byState = useMemo(() => {
     const groups = new Map<string, { index: number; transition: Transition }[]>();
     transitions.forEach((transition, index) => {
@@ -157,9 +161,9 @@ export function RulesEditor({
     // In the order a record meets the states, not the order the rules happen
     // to be stored in.
     return ctx.states
-      .filter((s) => groups.has(s.key))
+      .filter((s) => groups.has(s.key) && (!focus || s.key === focus))
       .map((s) => ({ state: s, rules: groups.get(s.key)! }));
-  }, [transitions, ctx.states]);
+  }, [transitions, ctx.states, focus]);
 
   return (
     <div className="rl">
@@ -173,6 +177,33 @@ export function RulesEditor({
           Add a rule
         </button>
       </div>
+
+      {focus && (
+        <p className="rl__focus" role="status">
+          Showing only what happens in{' '}
+          <strong>{ctx.states.find((s) => s.key === focus)?.name ?? focus}</strong>.{' '}
+          <button type="button" className="rl__focusClear" onClick={() => setFocus(null)}>
+            Show every rule
+          </button>
+        </p>
+      )}
+
+      {/*
+        * The picture, and a read-only one. A draggable canvas would be a
+        * second source of truth for the same graph; here the rules are the
+        * truth and this is a rendering, so it cannot disagree with them.
+        */}
+      <FlowMap
+        states={ctx.states}
+        edges={transitions.map((t) => ({
+          key: t.key,
+          from: t.from,
+          to: t.to,
+          kind: String((t.trigger as { on?: string }).on ?? ''),
+        }))}
+        selected={focus ?? undefined}
+        onSelect={(key) => setFocus(key === focus ? null : key)}
+      />
 
       {draftId && <Describe draftId={draftId} onAppend={onAppend} />}
 

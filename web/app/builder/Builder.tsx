@@ -461,18 +461,30 @@ export function Builder() {
   if (signedIn === null) return <div className="bd__boot">Loading…</div>;
   if (signedIn === false) {
     return (
-      <div className="bd__boot">
-        <svg width="34" height="34" viewBox="0 0 26 26" fill="none" aria-hidden="true">
-          <rect x="1.5" y="1.5" width="23" height="23" rx="6" stroke="var(--green)" strokeWidth="1.8" />
-          <path d="M7 13.2L11 17L19 9" stroke="var(--green)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-        <p style={{ maxWidth: 340, textAlign: 'center' }}>
-          The builder needs a signed-in workspace member. If you were working, your session ended —
-          nothing you saved is lost, because drafts are stored on the server as you type.
-        </p>
-        <a className="bd__btn bd__btn--primary" href="/console">
-          Sign in
-        </a>
+      <div className="bd__gate">
+        <div className="bd__gateCard">
+          <div className="bd__gateBrand">
+            <svg width="26" height="26" viewBox="0 0 26 26" fill="none" aria-hidden="true">
+              <rect x="1.5" y="1.5" width="23" height="23" rx="6" stroke="var(--green)" strokeWidth="1.8" />
+              <path
+                d="M7 13.2L11 17L19 9"
+                stroke="var(--green)"
+                strokeWidth="2.2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+            Patform
+          </div>
+          <h1>Sign in to keep building</h1>
+          <p>
+            Your session ended. Nothing you were working on is lost — drafts are stored on the
+            server as you type, so the one you had open is where you left it.
+          </p>
+          <a className="bd__gateBtn" href="/console">
+            Sign in
+          </a>
+        </div>
       </div>
     );
   }
@@ -851,17 +863,43 @@ function Welcome({
         {processes.length > 0 && (
           <section className="bd__startSection">
             <h2>Carry on with</h2>
-            <ul className="bd__startGrid">
-              {processes.slice(0, 6).map((p) => (
+            {/*
+              * A list, not a gallery. Work you already have is identified by
+              * its name; a picture of a generic process adds nothing and
+              * leaves an empty row whenever somebody has one or two.
+              */}
+            <ul className="bd__recent">
+              {processes.slice(0, 8).map((p) => (
                 <li key={p.process_key}>
-                  <button type="button" className="bd__startCard" onClick={() => onOpen(p)}>
-                    <span className="bd__startCardTop">
-                      <Sketch kind="process" />
+                  <button type="button" className="bd__recentRow" onClick={() => onOpen(p)}>
+                    <span className="bd__recentMark" aria-hidden="true">
+                      {(p.name ?? p.process_key).slice(0, 1).toUpperCase()}
                     </span>
-                    <span className="bd__startCardName">{p.name ?? p.process_key}</span>
-                    <span className="bd__startCardMeta">
-                      {p.draft_id ? 'draft in progress' : p.version ? `published v${p.version}` : 'not published'}
+                    <span className="bd__recentText">
+                      <span className="bd__recentName">{p.name ?? p.process_key}</span>
+                      <span className="bd__recentMeta">
+                        {p.draft_id
+                          ? 'draft in progress'
+                          : p.version
+                            ? `published v${p.version}`
+                            : 'not published yet'}
+                      </span>
                     </span>
+                    {p.draft_id && <span className="bd__recentTag">draft</span>}
+                    <svg
+                      width="16"
+                      height="16"
+                      viewBox="0 0 20 20"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth={1.8}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                      className="bd__recentArrow"
+                    >
+                      <path d="m8 5 5 5-5 5" />
+                    </svg>
                   </button>
                 </li>
               ))}
@@ -921,25 +959,45 @@ function Welcome({
  */
 function Sketch({ kind }: { kind: 'process' | 'catalogue' | 'describe' | 'copy' }) {
   const common = {
-    viewBox: '0 0 120 64',
+    viewBox: '0 0 160 92',
     fill: 'none',
     'aria-hidden': true,
     className: 'bd__sketch',
   };
 
+  // Brand green at three weights, so the drawings read as one family rather
+  // than as four separate diagrams.
+  const ink = '#14663f';
+  const mid = '#9dc2ac';
+  const pale = '#d9e8df';
+
   if (kind === 'process') {
     return (
       <svg {...common}>
-        <rect x="8" y="14" width="30" height="36" rx="3" fill="#fff" stroke="#e0ddd5" />
-        <path d="M13 22h14M13 28h20M13 34h17M13 40h11" stroke="#d8d4cb" strokeWidth="2" strokeLinecap="round" />
-        <path d="M42 32h12" stroke="#cfcbc2" strokeWidth="1.5" strokeLinecap="round" />
-        <rect x="56" y="10" width="26" height="14" rx="3" fill="#fff" stroke="#e0ddd5" />
-        <rect x="56" y="28" width="26" height="14" rx="3" fill="#fff" stroke="#e0ddd5" />
-        <rect x="56" y="46" width="26" height="12" rx="3" fill="#fff" stroke="#e0ddd5" />
-        <circle cx="62" cy="17" r="3" fill="#b8860b" />
-        <circle cx="62" cy="35" r="3" fill="#b8860b" />
-        <circle cx="62" cy="52" r="3" fill="#14663f" />
-        <path d="M86 17h20M86 35h14M86 52h18" stroke="#e0ddd5" strokeWidth="2" strokeLinecap="round" />
+        <rect x="10" y="16" width="46" height="60" rx="5" fill="#fff" stroke={pale} strokeWidth="1.5" />
+        <rect x="18" y="26" width="22" height="4" rx="2" fill={ink} />
+        <rect x="18" y="38" width="30" height="3" rx="1.5" fill={pale} />
+        <rect x="18" y="46" width="24" height="3" rx="1.5" fill={pale} />
+        <rect x="18" y="54" width="28" height="3" rx="1.5" fill={pale} />
+        <rect x="18" y="64" width="16" height="6" rx="3" fill={ink} />
+
+        <path d="M60 46h14" stroke={mid} strokeWidth="1.5" strokeDasharray="3 3" />
+
+        <rect x="78" y="10" width="68" height="20" rx="5" fill="#fff" stroke={pale} strokeWidth="1.5" />
+        <circle cx="90" cy="20" r="4" fill="#c99a2e" />
+        <rect x="100" y="18" width="34" height="4" rx="2" fill={pale} />
+
+        <path d="M96 30v6" stroke={mid} strokeWidth="1.5" />
+
+        <rect x="78" y="36" width="68" height="20" rx="5" fill="#fff" stroke={pale} strokeWidth="1.5" />
+        <circle cx="90" cy="46" r="4" fill="#c99a2e" />
+        <rect x="100" y="44" width="26" height="4" rx="2" fill={pale} />
+
+        <path d="M96 56v6" stroke={mid} strokeWidth="1.5" />
+
+        <rect x="78" y="62" width="68" height="20" rx="5" fill="#f2f8f4" stroke={ink} strokeWidth="1.5" />
+        <circle cx="90" cy="72" r="4" fill={ink} />
+        <rect x="100" y="70" width="30" height="4" rx="2" fill={mid} />
       </svg>
     );
   }
@@ -947,22 +1005,49 @@ function Sketch({ kind }: { kind: 'process' | 'catalogue' | 'describe' | 'copy' 
   if (kind === 'catalogue') {
     return (
       <svg {...common}>
-        {[0, 1, 2].map((col) =>
-          [0, 1].map((row) => (
-            <rect
-              key={`${col}-${row}`}
-              x={10 + col * 34}
-              y={10 + row * 26}
-              width="28"
-              height="20"
-              rx="3"
-              fill="#fff"
-              stroke="#e0ddd5"
-            />
-          )),
+        {[0, 1, 2, 3].map((col) =>
+          [0, 1].map((row) => {
+            const lit = col === 1 && row === 0;
+            return (
+              <g key={`${col}-${row}`}>
+                <rect
+                  x={10 + col * 37}
+                  y={14 + row * 38}
+                  width="31"
+                  height="30"
+                  rx="4"
+                  fill={lit ? '#f2f8f4' : '#fff'}
+                  stroke={lit ? ink : pale}
+                  strokeWidth="1.5"
+                />
+                <rect
+                  x={16 + col * 37}
+                  y={21 + row * 38}
+                  width={lit ? 16 : 13}
+                  height="3.5"
+                  rx="1.75"
+                  fill={lit ? ink : pale}
+                />
+                <rect
+                  x={16 + col * 37}
+                  y={29 + row * 38}
+                  width="19"
+                  height="2.5"
+                  rx="1.25"
+                  fill={pale}
+                />
+                <rect
+                  x={16 + col * 37}
+                  y={35 + row * 38}
+                  width="11"
+                  height="2.5"
+                  rx="1.25"
+                  fill={pale}
+                />
+              </g>
+            );
+          }),
         )}
-        <rect x="10" y="10" width="28" height="20" rx="3" fill="#f4f8f5" stroke="#14663f" />
-        <path d="M15 17h12M15 22h8" stroke="#cfcbc2" strokeWidth="1.6" strokeLinecap="round" />
       </svg>
     );
   }
@@ -970,21 +1055,42 @@ function Sketch({ kind }: { kind: 'process' | 'catalogue' | 'describe' | 'copy' 
   if (kind === 'describe') {
     return (
       <svg {...common}>
-        <rect x="10" y="12" width="60" height="40" rx="4" fill="#fff" stroke="#e0ddd5" />
-        <path d="M18 22h40M18 30h34M18 38h22" stroke="#d8d4cb" strokeWidth="2" strokeLinecap="round" />
-        <path d="M76 32h10" stroke="#cfcbc2" strokeWidth="1.5" strokeLinecap="round" />
-        <rect x="88" y="18" width="22" height="28" rx="3" fill="#f4f8f5" stroke="#14663f" />
-        <path d="M93 26h12M93 32h9M93 38h12" stroke="#a9c9b6" strokeWidth="2" strokeLinecap="round" />
+        <rect x="8" y="20" width="62" height="52" rx="5" fill="#fff" stroke={pale} strokeWidth="1.5" />
+        <rect x="16" y="30" width="44" height="3.5" rx="1.75" fill={mid} />
+        <rect x="16" y="39" width="38" height="3.5" rx="1.75" fill={mid} />
+        <rect x="16" y="48" width="46" height="3.5" rx="1.75" fill={mid} />
+        <rect x="16" y="57" width="22" height="3.5" rx="1.75" fill={mid} />
+
+        {/* The arrow is the argument: a sentence becomes a structure. */}
+        <path d="M76 46h12m0 0-4-4m4 4-4 4" stroke={ink} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+
+        <rect x="96" y="12" width="52" height="68" rx="5" fill="#f2f8f4" stroke={ink} strokeWidth="1.5" />
+        <rect x="104" y="22" width="24" height="4" rx="2" fill={ink} />
+        <rect x="104" y="33" width="36" height="3" rx="1.5" fill={mid} />
+        <rect x="104" y="41" width="30" height="3" rx="1.5" fill={mid} />
+        <circle cx="107" cy="54" r="3" fill={ink} />
+        <rect x="114" y="52" width="26" height="3" rx="1.5" fill={mid} />
+        <circle cx="107" cy="65" r="3" fill={ink} />
+        <rect x="114" y="63" width="20" height="3" rx="1.5" fill={mid} />
       </svg>
     );
   }
 
   return (
     <svg {...common}>
-      <rect x="12" y="16" width="44" height="34" rx="4" fill="#fff" stroke="#e0ddd5" />
-      <path d="M20 26h28M20 34h20" stroke="#d8d4cb" strokeWidth="2" strokeLinecap="round" />
-      <rect x="40" y="8" width="44" height="34" rx="4" fill="#f4f8f5" stroke="#14663f" />
-      <path d="M48 18h28M48 26h20" stroke="#a9c9b6" strokeWidth="2" strokeLinecap="round" />
+      <rect x="10" y="26" width="62" height="54" rx="5" fill="#fff" stroke={pale} strokeWidth="1.5" />
+      <rect x="20" y="38" width="30" height="3.5" rx="1.75" fill={pale} />
+      <rect x="20" y="47" width="40" height="3" rx="1.5" fill={pale} />
+      <rect x="20" y="55" width="24" height="3" rx="1.5" fill={pale} />
+      <rect x="20" y="63" width="34" height="3" rx="1.5" fill={pale} />
+
+      <rect x="60" y="12" width="62" height="54" rx="5" fill="#f2f8f4" stroke={ink} strokeWidth="1.5" />
+      <rect x="70" y="24" width="30" height="4" rx="2" fill={ink} />
+      <rect x="70" y="34" width="40" height="3" rx="1.5" fill={mid} />
+      <rect x="70" y="42" width="24" height="3" rx="1.5" fill={mid} />
+      <rect x="70" y="50" width="34" height="3" rx="1.5" fill={mid} />
+
+      <path d="M130 30v22m0 0-4-4m4 4 4-4" stroke={mid} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }

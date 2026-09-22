@@ -25,6 +25,77 @@
   font-size: 15px;
 }
 
+/*
+ * The signed-out screen.
+ *
+ * It was a line of centred text floating on an empty page, which reads as an
+ * error rather than as a door. A card, the same one the console signs in
+ * with, so the two halves of the product fail the same way.
+ */
+.bd__gate {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  padding: 24px;
+  background: var(--canvas, #f4f3f0);
+}
+
+.bd__gateCard {
+  width: 100%;
+  max-width: 420px;
+  padding: 30px 32px 32px;
+  background: #fff;
+  border: 1px solid var(--card-line, #e4e2dd);
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(20, 24, 22, 0.07);
+  text-align: left;
+}
+
+.bd__gateBrand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--ui);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+
+.bd__gateCard h1 {
+  margin: 20px 0 0;
+  font-family: var(--ui);
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.016em;
+  color: var(--ink);
+}
+
+.bd__gateCard p {
+  margin: 10px 0 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--ink-soft);
+}
+
+.bd__gateBtn {
+  display: grid;
+  place-items: center;
+  height: 44px;
+  margin-top: 22px;
+  border-radius: 7px;
+  background: var(--green);
+  font-family: var(--ui);
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+  text-decoration: none;
+}
+
+.bd__gateBtn:hover {
+  background: var(--green-deep);
+}
+
 /* ------------------------------------------------------------- sidebar */
 
 .bd__side {
@@ -1145,9 +1216,14 @@ a.bd__newBtn {
 }
 
 .bd__startInner {
-  max-width: 900px;
+  /*
+   * Wider, and the grid fills it. The first version was 900px of content in
+   * a 1280px page with the right third empty, which reads as a layout that
+   * failed rather than as a composition.
+   */
+  max-width: 1120px;
   margin: 0 auto;
-  padding: 48px 28px 72px;
+  padding: 44px 32px 80px;
 }
 
 .bd__startHead h1 {
@@ -1167,6 +1243,11 @@ a.bd__newBtn {
   color: var(--ink-soft);
 }
 
+.bd__startHead {
+  padding-bottom: 28px;
+  border-bottom: 1px solid var(--card-line, #e4e2dd);
+}
+
 .bd__startSection {
   margin-top: 36px;
 }
@@ -1183,8 +1264,8 @@ a.bd__newBtn {
 
 .bd__startGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(238px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(256px, 1fr));
+  gap: 18px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -1209,21 +1290,32 @@ a.bd__newBtn {
 }
 
 .bd__startCard:hover {
-  border-color: #cfccc5;
-  box-shadow: 0 4px 14px rgba(20, 24, 22, 0.09);
+  border-color: var(--green-border, #d5e5db);
+  box-shadow: 0 6px 18px rgba(20, 24, 22, 0.1);
+  transform: translateY(-1px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bd__startCard,
+  .bd__startCard:hover {
+    transform: none;
+    transition: none;
+  }
 }
 
 .bd__startCardTop {
   display: block;
-  padding: 14px 16px 10px;
-  background: linear-gradient(160deg, #fbfaf7 0%, #f1efe9 100%);
+  padding: 18px 18px 14px;
+  /* A tint rather than a grey wash: the drawings are green, so the plate
+     under them is too, or they look like they were pasted on. */
+  background: linear-gradient(165deg, #fbfcfb 0%, #eef4f0 100%);
   border-bottom: 1px solid var(--card-line, #e4e2dd);
 }
 
 .bd__sketch {
   display: block;
   width: 100%;
-  height: 58px;
+  height: 86px;
 }
 
 .bd__startCardName {
@@ -1241,5 +1333,90 @@ a.bd__newBtn {
   padding: 5px 16px 0;
   font-size: 12.5px;
   line-height: 1.5;
+  color: var(--muted);
+}
+
+/* Work you already have: a list, because it is identified by its name. */
+.bd__recent {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--card-line, #e4e2dd);
+  border-radius: 10px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.bd__recent li + li .bd__recentRow {
+  border-top: 1px solid var(--card-line, #e4e2dd);
+}
+
+.bd__recentRow {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 14px 16px;
+  background: #fff;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+}
+
+.bd__recentRow:hover {
+  background: var(--paper-3, #fbfaf7);
+}
+
+.bd__recentMark {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  background: var(--green-tint, #f4f8f5);
+  border: 1px solid var(--green-border, #d5e5db);
+  font-family: var(--ui);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--green-deep);
+}
+
+.bd__recentText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex-grow: 1;
+  min-width: 0;
+}
+
+.bd__recentName {
+  font-family: var(--ui);
+  font-size: 14.5px;
+  font-weight: 600;
+  letter-spacing: -0.008em;
+  color: var(--ink);
+}
+
+.bd__recentMeta {
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+/* Said in a word as well as shown by position: a draft is the thing somebody
+   is looking for when they come back. */
+.bd__recentTag {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #fdf6e8;
+  border: 1px solid #ecdcb8;
+  font-size: 11px;
+  font-weight: 600;
+  color: #7a5b16;
+}
+
+.bd__recentArrow {
+  flex-shrink: 0;
   color: var(--muted);
 }

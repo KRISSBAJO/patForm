@@ -1,5 +1,5 @@
 {
-  "ranAt": "2026-09-22T16:39:44.686Z",
+  "ranAt": "2026-09-22T16:52:51.361Z",
   "postgres": "PostgreSQL 17.11 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit",
   "proofs": [
     {
@@ -48,13 +48,13 @@
       "name": "Every action traces back to the request that caused it, across the worker boundary",
       "claim": "Section 20.2 observability: traceable request, event, job, attempt and result identifiers.",
       "passed": true,
-      "detail": "One submission produced 1 event(s), 1 job(s) and 3 action run(s), every one carrying \"proof-request-0001\" and 0 unattributed. The actions ran in a later drain that knew nothing about the submission — the link survived because the request id is stamped on the outbox row and read back when the job runs. A timer firing got an id of its own (req_91e7d3c97376…) rather than inheriting one, because a deadline is its own cause. The support view joined them into 2 step(s) with every attempt count present, and answered in a sentence: \"Queued: 1 job(s) scheduled and not yet run. If this does not clear, no worker is\". Asking by request id found 1 record; an admin of another workspace asking the same id found 0."
+      "detail": "One submission produced 1 event(s), 1 job(s) and 3 action run(s), every one carrying \"proof-request-0001\" and 0 unattributed. The actions ran in a later drain that knew nothing about the submission — the link survived because the request id is stamped on the outbox row and read back when the job runs. A timer firing got an id of its own (req_4e4f8187828a…) rather than inheriting one, because a deadline is its own cause. The support view joined them into 2 step(s) with every attempt count present, and answered in a sentence: \"Queued: 1 job(s) scheduled and not yet run. If this does not clear, no worker is\". Asking by request id found 1 record; an admin of another workspace asking the same id found 0."
     },
     {
       "name": "An administrator exports the record with its history, and only then is it deleted",
       "claim": "Section 20.1 step 11, and 6.4: corrections append history; destructive overwriting of audit evidence is prohibited.",
       "passed": true,
-      "detail": "The bundle carried 5 history entries for a finished record — submission, both decisions with the reasons given, and every task completion — plus 2 approval(s), 2 message(s) and 1 document(s). An approver could not export at all (\"neither the roles held (hiring_manager) nor workspace role \"approver\" grant \"administer\"\"). An administrator holding no process role saw every field; one who is also a hiring manager had 3 withheld (id_document, national_id, bank_account) — named in the bundle rather than quietly absent, and not left in the answers as the literal string \"[redacted]\". The export is itself on the record's history, and a second export of an unchanged record produced the same checksum (4a3f6341a311), so a file can be verified later. Retention then deleted 1 instance and 8 event(s) — in that order, because afterwards there is nothing left to export."
+      "detail": "The bundle carried 5 history entries for a finished record — submission, both decisions with the reasons given, and every task completion — plus 2 approval(s), 2 message(s) and 1 document(s). An approver could not export at all (\"neither the roles held (hiring_manager) nor workspace role \"approver\" grant \"administer\"\"). An administrator holding no process role saw every field; one who is also a hiring manager had 3 withheld (id_document, national_id, bank_account) — named in the bundle rather than quietly absent, and not left in the answers as the literal string \"[redacted]\". The export is itself on the record's history, and a second export of an unchanged record produced the same checksum (27eef1de09d8), so a file can be verified later. Retention then deleted 1 instance and 8 event(s) — in that order, because afterwards there is nothing left to export."
     },
     {
       "name": "A workspace can be created and joined, and nobody can grant more than they hold",
@@ -144,7 +144,7 @@
       "name": "Submission and workflow start are far inside the section 10.4 budget",
       "claim": "Beta targets: acknowledgment p95 under 1.5s, workflow start p95 under 30s.",
       "passed": true,
-      "detail": "Over 100 submissions: acknowledgment p95 16.4ms (budget 1500ms), first action p95 41.6ms (budget 30000ms). Database round trips only, local container."
+      "detail": "Over 100 submissions: acknowledgment p95 20.5ms (budget 1500ms), first action p95 54.5ms (budget 30000ms). Database round trips only, local container."
     }
   ]
 }
