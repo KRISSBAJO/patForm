@@ -102,6 +102,18 @@ async function main() {
   await page.goto(`${BASE}/signup`, { waitUntil: 'networkidle' });
   all.push(...(await audit(page, 'Create a workspace')));
 
+  // ---- the pages the footer links to. They existed only as markdown in the
+  //      repository until the footer stopped pointing at a marketing anchor.
+  for (const [name, path] of [
+    ['Security', '/security'],
+    ['Privacy', '/privacy'],
+    ['Subprocessors', '/subprocessors'],
+    ['Developers', '/developers'],
+  ]) {
+    await page.goto(`${BASE}${path}`, { waitUntil: 'networkidle' });
+    all.push(...(await audit(page, name)));
+  }
+
   // ---- respondent, including the state a form spends most of its life in
   await page.goto(`${BASE}/f/employee_onboarding`, { waitUntil: 'networkidle' });
   all.push(...(await audit(page, 'Respondent form')));
@@ -123,7 +135,14 @@ async function main() {
   if (await forgot.count()) {
     await forgot.click();
     await page.waitForTimeout(500);
-    all.push(...(await audit(page, 'Sign-in, asking for a reset link')));
+    all.push(...(await audit(page, 'Reset your password')));
+
+    // The confirmation is its own screen, and the one most likely to be
+    // rendered without being announced.
+    await page.fill('#forgot-email', 'nobody@example.test');
+    await page.click('button[type=submit]');
+    await page.waitForTimeout(2500);
+    all.push(...(await audit(page, 'Reset link sent')));
   }
 
   for (const [name, path] of [

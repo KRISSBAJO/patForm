@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import './console.css';
 import { Ask } from './Ask';
 import { DashboardView, HealthView, RecordsView } from './Views';
@@ -679,21 +679,40 @@ function VerifyBanner({ email }: { email: string }) {
   );
 }
 
+/**
+ * Signing in, and the screen somebody reaches when they cannot.
+ *
+ * Two screens rather than one form doing both jobs. The first version put the
+ * reset control under the sign-in form and said "type your address above" —
+ * which left a password field on screen that had nothing to do with what the
+ * person was trying to do, and made the instruction a workaround for the
+ * layout rather than a thing anybody would write.
+ */
 function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
+  const [mode, setMode] = useState<'signin' | 'forgot' | 'sent'>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [forgot, setForgot] = useState<'no' | 'asking' | 'asked'>('no');
+  const emailField = useRef<HTMLInputElement>(null);
 
-  const askForReset = async () => {
+  // 2.4.3: switching screens replaces what is on screen, and focus has to
+  // follow. Otherwise the next Tab continues from a control that is gone.
+  useEffect(() => {
+    if (mode === 'forgot') emailField.current?.focus();
+  }, [mode]);
+
+  const askForReset = async (e: React.FormEvent) => {
+    e.preventDefault();
     setBusy(true);
     try {
       await call('/api/auth/forgot', { method: 'POST', body: JSON.stringify({ email }) });
+    } catch {
+      // Swallowed on purpose. The screen that follows is the same one whatever
+      // happened, including a network failure — anything that varies here
+      // tells a stranger whether the address has an account.
     } finally {
-      // The same outcome whatever happened, including a failure. Anything
-      // that varies here tells a stranger whether the address has an account.
-      setForgot('asked');
+      setMode('sent');
       setBusy(false);
     }
   };
@@ -714,16 +733,101 @@ function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
     }
   };
 
+  const brand = (
+    <div className="cs__brand" style={{ color: 'var(--ink)', padding: 0 }}>
+      <svg width="24" height="24" viewBox="0 0 26 26" fill="none" aria-hidden="true">
+        <rect x="1.5" y="1.5" width="23" height="23" rx="6" stroke="var(--green)" strokeWidth="1.8" />
+        <path d="M7 13.2L11 17L19 9" stroke="var(--green)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+      Patform
+    </div>
+  );
+
+  // ---- the link has been sent, or would have been
+  if (mode === 'sent') {
+    return (
+      <div className="cs__login">
+        <div className="cs__loginBox">
+          {brand}
+          <h1 className="cs__loginTitle">Check your email</h1>
+          <p className="cs__loginNote" style={{ marginTop: 0 }} role="status">
+            If <strong style={{ overflowWrap: 'anywhere' }}>{email}</strong> has an account, a reset
+            link is on its way. It works once and expires in half an hour.
+          </p>
+          <p className="cs__loginNote">
+            Nothing arriving? Check spam, and make sure that is the address you signed up with — we
+            cannot tell you whether it has an account, because that would let anybody find out who
+            works here.
+          </p>
+          <button
+            type="button"
+            className="cs__btn cs__btn--primary"
+            style={{ marginTop: 18, width: '100%', height: 44 }}
+            onClick={() => {
+              setMode('signin');
+              setError(null);
+            }}
+          >
+            Back to sign in
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ---- one field, because one field is what this asks for
+  if (mode === 'forgot') {
+    return (
+      <div className="cs__login">
+        <form className="cs__loginBox" onSubmit={askForReset}>
+          {brand}
+          <h1 className="cs__loginTitle">Reset your password</h1>
+          <p className="cs__loginNote" style={{ marginTop: 0, marginBottom: 18 }}>
+            Tell us the address you sign in with and we will email you a link.
+          </p>
+
+          <label className="cs__label" htmlFor="forgot-email">
+            Email
+          </label>
+          <input
+            ref={emailField}
+            id="forgot-email"
+            className="cs__input"
+            type="email"
+            autoComplete="username"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+          />
+
+          <button
+            type="submit"
+            className="cs__btn cs__btn--primary"
+            style={{ marginTop: 18, width: '100%', height: 44 }}
+            disabled={busy}
+          >
+            {busy ? 'Sending…' : 'Send me a reset link'}
+          </button>
+
+          <p className="cs__loginNote">
+            <button
+              type="button"
+              className="cs__linkBtn cs__linkBtn--onLight"
+              onClick={() => setMode('signin')}
+            >
+              Back to sign in
+            </button>
+          </p>
+        </form>
+      </div>
+    );
+  }
+
+  // ---- signing in
   return (
     <div className="cs__login">
       <form className="cs__loginBox" onSubmit={submit}>
-        <div className="cs__brand" style={{ color: 'var(--ink)', padding: 0 }}>
-          <svg width="24" height="24" viewBox="0 0 26 26" fill="none" aria-hidden="true">
-            <rect x="1.5" y="1.5" width="23" height="23" rx="6" stroke="var(--green)" strokeWidth="1.8" />
-            <path d="M7 13.2L11 17L19 9" stroke="var(--green)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-          Patform
-        </div>
+        {brand}
         <h1 className="cs__loginTitle">Sign in to the console</h1>
 
         <label className="cs__label" htmlFor="email">
@@ -764,33 +868,18 @@ function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
           {busy ? 'Signing in…' : 'Sign in'}
         </button>
 
-        {forgot === 'asked' ? (
-          <p className="cs__loginNote" role="status">
-            If that address has an account, a reset link is on its way. It expires in half an hour.
-          </p>
-        ) : forgot === 'asking' ? (
-          <p className="cs__loginNote">
-            Type your address above, then{' '}
-            <button
-              type="button"
-              className="cs__linkBtn cs__linkBtn--onLight"
-              onClick={() => void askForReset()}
-              disabled={busy || !email}
-            >
-              send me a reset link
-            </button>
-            .
-          </p>
-        ) : (
-          <p className="cs__loginNote">
-            <button type="button" className="cs__linkBtn cs__linkBtn--onLight" onClick={() => setForgot('asking')}>
-              Forgotten your password?
-            </button>
-          </p>
-        )}
+        <p className="cs__loginNote">
+          <button
+            type="button"
+            className="cs__linkBtn cs__linkBtn--onLight"
+            onClick={() => setMode('forgot')}
+          >
+            Forgotten your password?
+          </button>
+        </p>
 
         <p className="cs__loginNote">
-          A seeded workspace prints its accounts when you run <code>npm run seed</code>.
+          New here? <a href="/signup" style={{ textDecoration: 'underline' }}>Create a workspace</a>.
         </p>
       </form>
     </div>
