@@ -371,6 +371,30 @@ Several edits to `.mjs` and `.ts` files were made through a shell heredoc, and t
 
 **Fixed** by building the backslash from `chr(92)`. **Generalisable:** when the same edit fails the same way three times, the tool doing the editing is a suspect, not just the edit.
 
+### 35. A comment that named the gap, for months
+
+`email_log.status` carried this, and it was accurate every day it was there:
+
+> *§6.6: the log distinguishes queued, sent, delivered where supported, bounced, complained and failed. Anything past `sent` arrives by webhook from the provider and is not wired yet.*
+
+An honest comment is better than a silent gap, and it is not a substitute for the thing. The console showed "sent" for messages that had bounced an hour earlier, and the system kept writing to mailboxes that do not exist.
+
+**Generalisable:** a comment that says a control is missing ages into a comment that everybody has read past. Anything written down as *not wired yet* wants a date or a test that fails.
+
+### 36. A proof that proved nothing, because the answers were identical
+
+The delivery proof submitted a second record to the same address to show that a suppressed recipient stops receiving mail. It passed the "nothing was sent" assertion immediately — because identity is `(personal_email, start_date)`, the second submission was recognised as a *duplicate*, no instance was created, and no action ever tried to send anything.
+
+Nothing was sent, and the suppression had nothing to do with it.
+
+**Found** because the proof also asserted on the `skipped` log row, which did not exist. **Generalisable:** an assertion that something did *not* happen is worth nothing unless something else proves the attempt was made. This is the fourth vacuous check in this file, and every one of them was a negative assertion.
+
+### 37. An explainer that described a different screen
+
+The console's "WHAT THIS SCREEN IS" panel described *My work* — on the dashboard, on the records browser, on the copilot, and now on a deliverability page it had never heard of. It had been wrong on four views since the second of them shipped, and it reads as confidently on the wrong page as on the right one.
+
+**Fixed** by making it follow the view. **Generalisable:** copy that explains a screen is part of the screen. A fixed string in a shared layout is a claim that every view is the same view.
+
 ---
 
 ## What the compiler structurally cannot catch

@@ -578,6 +578,39 @@ Set **`APP_URL`** in any deployment. The links point there, the default is the
 dev console, and a link to a plausible-but-wrong host fails silently: the mail
 arrives, looks right, and the token cannot be spent.
 
+### What happened after we handed it over
+
+`email_log.status` used to stop at `sent`. Everything past that is something
+the provider learns later and tells us about:
+
+```bash
+curl -X POST http://localhost:3310/api/webhooks/relykit   -H 'webhook-id: evt_1' -H 'webhook-timestamp: 1790000000'   -H 'webhook-signature: v1,<base64 hmac>' --data-binary @event.json
+```
+
+Set **`RELYKIT_WEBHOOK_SECRET`** or the endpoint answers 503. One that accepts
+unsigned requests is a way to mark anybody's address as bounced.
+
+Four things this gets right, each because the obvious version does not:
+
+- **Redelivery is ordinary traffic.** The provider retries until it gets a
+  2xx, so the same event arrives more than once as a matter of course.
+  `delivery_event.event_id` is unique and the insert is the guard.
+- **Status never moves backwards.** A message's state is the worst thing that
+  happened to any recipient; a delivery notification arriving after a bounce
+  leaves it bounced. Same ranking RelyKit uses, so the two agree.
+- **A hard bounce stops the next send.** Both send paths check
+  `suppressed_recipient` before handing anything over. Recording a bounce and
+  then mailing the same dead address on the next transition is keeping a diary
+  about it, not handling it. A soft bounce suppresses nobody — a full mailbox
+  is not a dead one.
+- **A blocked send is logged `skipped` with the reason.** The operator looking
+  at a message that never arrived needs to see why, and the console's
+  **Automation health** page is where.
+
+The list is deployment-wide, because a dead mailbox is not a fact about who
+wrote to it — but a tenant only sees the addresses it has actually mailed.
+See [ADR-0014](docs/adr/0014-delivery-outcomes.md).
+
 Platform mail — these three messages, and only these three — is logged in
 `platform_email` rather than `email_log`. That table requires an instance and
 an action run, which is what makes "every process email is traceable to the
@@ -654,11 +687,11 @@ Everything below is a deliberate deferral:
 - **MFA and SSO itself.** The identity model accommodates SSO (IAM-05) and no
   provider is wired to it. Multi-factor is §12.1's remaining authentication
   row.
-- **Bounce and complaint handling.** Platform mail goes to whatever address a
-  stranger types at sign-up, and an undeliverable domain costs the sending
-  domain's reputation rather than being caught. `platform_email` records the
-  provider's message id, which is the half of the reconciliation that exists;
-  the webhook that would close it does not.
+- **Bounce-rate alerting.** Individual bounces are handled (below); nothing
+  watches the *rate*, which is what a provider suspends an account over.
+- **Re-sending after an address is reinstated.** Lifting a suppression lets
+  future mail through; the messages skipped while it was in force are not
+  retried, and the operator has to trigger the work again.
 - **Rate limiting and spam control on public submission** (§12.3).
 - **Malware scanning and upload quarantine** (§12.1). Files are metadata only.
 - **A verified sending domain.** Delivery needs two switches to leave the

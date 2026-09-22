@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { issueResumeToken } from './auth.js';
 import { currentRequestId, currentTrace, logIfEnabled, newRequestId, withTrace } from './trace.js';
 import { queueWebhook } from './webhooks.js';
+import { blockedRecipients } from './delivery.js';
 import { htmlToBlocks, renderPdf, type Block } from './pdf.js';
 import {
   ConsoleProvider,
@@ -1164,10 +1165,26 @@ async function performEffect(
         instance,
         bp,
       );
-      if (!recipients.length) {
+      /*
+       * Addresses the provider has already told us not to write to.
+       *
+       * This is the part of bounce handling that changes what the system
+       * does. Recording a hard bounce and then mailing the same dead address
+       * on the next transition is not handling it — it is keeping a diary
+       * about it, while the sending domain's reputation pays for every
+       * repeat.
+       */
+      const blocked = await blockedRecipients(client, recipients);
+      const deliverable = blocked.size
+        ? recipients.filter((address) => !blocked.has(address.trim().toLowerCase()))
+        : recipients;
+      const dropped = [...blocked.entries()].map(([email, reason]) => `${email} (${reason})`);
+
+      if (!deliverable.length) {
         // Nothing to send, but something to say. A template addressed to a
-        // role nobody holds used to leave no trace at all.
-        if (unreachable.length) {
+        // role nobody holds, or to nobody we are still allowed to write to,
+        // used to leave no trace at all.
+        if (unreachable.length || dropped.length) {
           await client.query(
             `insert into email_log
                (tenant_id, instance_id, action_run_id, template_key, recipients, subject, body, provider, status, failure, sent_at)
@@ -1179,7 +1196,12 @@ async function performEffect(
               template.key,
               [],
               render(template.subject, answers),
-              `nobody holds ${unreachable.join(', ')} in this process`,
+              [
+                unreachable.length ? `nobody holds ${unreachable.join(', ')} in this process` : null,
+                dropped.length ? `suppressed: ${dropped.join(', ')}` : null,
+              ]
+                .filter(Boolean)
+                .join('; '),
               now,
             ],
           );
@@ -1221,12 +1243,12 @@ async function performEffect(
            (tenant_id, instance_id, action_run_id, template_key, recipients, subject, body, status, provider, sent_at)
          values ($1, $2, $3, $4, $5, $6, $7, 'queued', $8, $9)
          returning id`,
-        [instance.tenant_id, instance.id, runId, template.key, recipients, subject, body, args.email.name, now],
+        [instance.tenant_id, instance.id, runId, template.key, deliverable, subject, body, args.email.name, now],
       );
 
       const delivery = await args.email.send({
         from: mailFrom(bp.communications.fromName),
-        to: recipients,
+        to: deliverable,
         subject,
         text: body,
         attachments,
@@ -1245,7 +1267,11 @@ async function performEffect(
           // about a send that partly did not happen — a recipient the
           // provider dropped is not a failure of the message, but it is
           // something the record must show.
-          delivery.status === 'failed' ? (delivery.detail ?? 'send failed') : (delivery.warning ?? null),
+          delivery.status === 'failed'
+            ? (delivery.detail ?? 'send failed')
+            : [dropped.length ? `suppressed: ${dropped.join(', ')}` : null, delivery.warning ?? null]
+                .filter(Boolean)
+                .join('; ') || null,
           logged[0]!.id,
         ],
       );

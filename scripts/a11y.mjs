@@ -133,6 +133,13 @@ async function main() {
     all.push(...(await audit(page, 'Record panel')));
   }
 
+  const health = page.locator('button', { hasText: /^Automation health/ }).first();
+  if (await health.count()) {
+    await health.click();
+    await page.waitForTimeout(2000);
+    all.push(...(await audit(page, 'Automation health and the suppression list')));
+  }
+
   const ask = page.locator('button', { hasText: /^Ask$/ }).first();
   if (await ask.count()) {
     await ask.click();

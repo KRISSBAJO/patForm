@@ -20,6 +20,7 @@
 import type { Pool, Client } from './db.js';
 import { emailProviderFromEnv, mailFrom, type DeliveryResult } from './email.js';
 import { logIfEnabled } from './trace.js';
+import { blockedRecipients } from './delivery.js';
 
 export type PlatformMailKind = 'invitation' | 'verify_email' | 'password_reset';
 
@@ -56,6 +57,28 @@ export interface PlatformMail {
  * invitation is a workspace that half exists because the invitation failed.
  */
 export async function sendPlatformMail(pool: Pool, mail: PlatformMail): Promise<DeliveryResult | null> {
+  /*
+   * An address the provider has told us not to write to.
+   *
+   * Recorded as `skipped` rather than silently dropped, because the operator
+   * looking at an invitation that never arrived needs to see why. This also
+   * means a reset link is never sent to a hard-bounced address — which is
+   * correct, and is the reason the reset endpoint answers identically whether
+   * or not anything was sent: the caller must not learn that either.
+   */
+  const blocked = await blockedRecipients(pool, [mail.to]);
+  if (blocked.size) {
+    const reason = blocked.get(mail.to.trim().toLowerCase())!;
+    await pool.query(
+      `insert into platform_email
+         (tenant_id, actor_id, kind, recipient, subject, status, provider, failure)
+       values ($1, $2, $3, $4, $5, 'skipped', 'none', $6)`,
+      [mail.tenantId ?? null, mail.actorId ?? null, mail.kind, mail.to, mail.subject, `suppressed: ${reason}`],
+    );
+    logIfEnabled('warn', 'platform_mail', { kind: mail.kind, status: 'skipped', reason });
+    return { providerMessageId: null, status: 'failed', detail: `suppressed: ${reason}` };
+  }
+
   const provider = emailProviderFromEnv();
   let result: DeliveryResult | null = null;
   let failure: string | null = null;

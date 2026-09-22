@@ -2,7 +2,7 @@
  * One screenshot of the console, for showing a change rather than describing
  * it. Uses the same seeded dev account as the accessibility scan.
  *
- *   node scripts/shot.mjs <out.png>
+ *   node scripts/shot.mjs <out.png> [nav item]
  */
 import { chromium } from 'playwright';
 
@@ -18,6 +18,13 @@ await page.fill('input[type=email]', EMAIL);
 await page.fill('input[type=password]', PASSWORD);
 await page.click('button[type=submit]');
 await page.waitForTimeout(4500);
+
+const nav = process.argv[3];
+if (nav) {
+  await page.locator('button', { hasText: new RegExp(`^${nav}`, 'i') }).first().click();
+  await page.waitForTimeout(2500);
+}
+
 await page.screenshot({ path: out });
 await browser.close();
 console.log(out);

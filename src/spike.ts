@@ -7,6 +7,7 @@ import { AuthorizationError } from './runtime/policy.js';
 import {
   proveBuilderRoundTrip,
   proveCopilot,
+  proveDeliveryOutcomes,
   proveDocumentsAndDelivery,
   proveExportThenRetain,
   proveAccountRecovery,
@@ -506,6 +507,7 @@ async function main(): Promise<void> {
     ['export then retain', () => proveExportThenRetain(ctx)],
     ['identity', () => proveIdentity(ctx)],
     ['account recovery', () => proveAccountRecovery(ctx)],
+    ['delivery outcomes', () => proveDeliveryOutcomes(ctx)],
     ['privacy', () => provePrivacy(ctx)],
     ['webhooks', () => proveWebhooks(ctx)],
     ['worker', () => proveWorkerFiresTimers(ctx)],

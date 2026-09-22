@@ -28,6 +28,15 @@ import {
   InvalidInput,
 } from '../runtime/workspace.js';
 import { requestPasswordReset, resetPassword, sendVerification, verifyEmail } from '../runtime/account.js';
+import {
+  eventsFor,
+  ingest,
+  lift,
+  suppressByHand,
+  suppressionsFor,
+  verifyRelyKit,
+  type ProviderEvent,
+} from '../runtime/delivery.js';
 import type { WorkspaceRole } from '../runtime/policy.js';
 import { installPack, listInstalls, listPacks, publishPack, readPack } from '../runtime/packs.js';
 import { authorize, listGrants, registerClient, revokeGrant } from './oauth.js';
@@ -537,6 +546,42 @@ route('POST', /^\/api\/account\/resend-verification$/, async ({ pool, actorId })
   return { sent: result.sent, reason: result.reason ?? null };
 });
 
+// --------------------------------------------------------------- delivery
+//
+// §6.6's delivery log, from the other end. Reading is `report`; changing who
+// this deployment is willing to write to is `administer`.
+
+route('GET', /^\/api\/delivery\/suppressed$/, async ({ pool, principal }) => {
+  await requireWorkspaceCapability(pool, principal, 'report', 'delivery');
+  if (principal.kind !== 'actor') throw new HttpError(403, 'signed-in members only');
+  // Scoped to addresses this tenant has mailed. The list itself is
+  // deployment-wide, because a dead mailbox is not a fact about who wrote to
+  // it — but handing one tenant another's contacts would be.
+  return { suppressed: await suppressionsFor(pool, principal.tenantId) };
+});
+
+route('POST', /^\/api\/delivery\/suppressed\/lift$/, async ({ pool, principal, actorId }, body) => {
+  await requireWorkspaceCapability(pool, principal, 'administer', 'delivery');
+  const { email } = body as { email?: string };
+  if (!email) throw new HttpError(400, 'email is required');
+  return lift(pool, { email, actorId });
+});
+
+route('POST', /^\/api\/delivery\/suppressed$/, async ({ pool, principal }, body) => {
+  await requireWorkspaceCapability(pool, principal, 'administer', 'delivery');
+  const { email, detail } = body as { email?: string; detail?: string };
+  if (!email) throw new HttpError(400, 'email is required');
+  await suppressByHand(pool, { email, detail: detail ?? 'blocked by an operator' });
+  return { email, reason: 'manual' };
+});
+
+/** The timeline for one message: everything the provider has said about it. */
+route('GET', /^\/api\/delivery\/messages\/([^/]+)$/, async ({ pool, principal, url }) => {
+  await requireWorkspaceCapability(pool, principal, 'report', 'delivery');
+  const messageId = decodeURIComponent(url.pathname.split('/')[4]!);
+  return { events: await eventsFor(pool, messageId) };
+});
+
 route('POST', /^\/api\/invitations\/([0-9a-f-]{36})\/revoke$/, async ({ pool, principal, url }) =>
   revokeInvitation(pool, { principal, invitationId: url.pathname.split('/')[3]! }),
 );
@@ -646,6 +691,12 @@ class HttpError extends Error {
   ) {
     super(message);
   }
+}
+
+async function readRaw(req: IncomingMessage): Promise<string> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of req) chunks.push(chunk as Buffer);
+  return Buffer.concat(chunks).toString('utf8');
 }
 
 async function readBody(req: IncomingMessage): Promise<unknown> {
@@ -793,6 +844,57 @@ async function main(): Promise<void> {
             { ...joined, actor: session?.actor },
             session ? [cookie(SESSION_COOKIE, session.token, session.expiresAt)] : [],
           );
+        }
+
+        /*
+         * ---- delivery notifications from the email provider
+         *
+         * Before the session gate because the caller is RelyKit, not a
+         * person. Its signature is the credential, so the raw body is read
+         * rather than parsed: re-serialising JSON changes key order and
+         * whitespace, and the signature is over the exact bytes.
+         *
+         * Always 200 once the signature verifies, including for an event
+         * about a message this deployment did not send. A 4xx would make the
+         * provider retry something that will never succeed, and eventually
+         * disable the endpoint.
+         */
+        if (url.pathname === '/api/webhooks/relykit' && req.method === 'POST') {
+          const secret = process.env.RELYKIT_WEBHOOK_SECRET;
+          if (!secret) throw new HttpError(503, 'RELYKIT_WEBHOOK_SECRET is not set');
+
+          const raw = await readRaw(req);
+          const id = String(req.headers['webhook-id'] ?? '');
+          const check = verifyRelyKit({
+            secret,
+            id,
+            timestamp: String(req.headers['webhook-timestamp'] ?? ''),
+            body: raw,
+            signature: String(req.headers['webhook-signature'] ?? ''),
+          });
+          if (!check.ok) {
+            // One message for every reason. Telling an unauthenticated caller
+            // which part of their forgery was wrong is free help.
+            logIfEnabled('warn', 'delivery.refused', { reason: check.reason });
+            return send(res, 401, { error: 'signature refused' });
+          }
+
+          let event: ProviderEvent;
+          try {
+            event = JSON.parse(raw) as ProviderEvent;
+          } catch {
+            return send(res, 400, { error: 'body is not valid JSON' });
+          }
+
+          const result = await ingest(pool, {
+            provider: 'relykit',
+            event,
+            // The header is authoritative: it is what was signed. The body's
+            // own id is data, and a mismatch would let one signed request be
+            // replayed as many different events.
+            eventId: id,
+          });
+          return send(res, 200, result);
         }
 
         // ---- account recovery: reachable by definition without a session

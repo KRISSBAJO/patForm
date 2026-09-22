@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import './console.css';
 import { Ask } from './Ask';
-import { DashboardView, RecordsView } from './Views';
+import { DashboardView, HealthView, RecordsView } from './Views';
 
 /**
  * Calls go to the same origin so the HttpOnly, SameSite=Lax session cookie is
@@ -87,7 +87,7 @@ export function Console() {
   const [work, setWork] = useState<Work | null>(null);
   const [health, setHealth] = useState<Health | null>(null);
   const [record, setRecord] = useState<RecordDetail | null>(null);
-  const [view, setView] = useState<'work' | 'ask' | 'records' | 'dashboard'>('work');
+  const [view, setView] = useState<'work' | 'ask' | 'records' | 'dashboard' | 'health'>('work');
   const [toast, setToast] = useState<Toast>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -275,7 +275,12 @@ export function Console() {
           >
             Dashboard
           </button>
-          <button type="button" className="cs__navItem" disabled title="Not built yet">
+          <button
+            type="button"
+            className="cs__navItem"
+            aria-current={view === 'health' ? 'page' : undefined}
+            onClick={() => setView('health')}
+          >
             Automation health
             {counts.failed > 0 && <span className="cs__navCount cs__navCount--bad">{counts.failed}</span>}
           </button>
@@ -345,7 +350,9 @@ export function Console() {
                 ? 'Records'
                 : view === 'dashboard'
                   ? 'Dashboard'
-                  : 'My work'}
+                  : view === 'health'
+                    ? 'Automation health'
+                    : 'My work'}
           </h1>
           {work && <span className="cs__version">{work.processName}</span>}
           <span style={{ flexGrow: 1 }} />
@@ -356,7 +363,11 @@ export function Console() {
 
         <div className="cs__body">
           <div className="cs__left">
-            {view === 'dashboard' ? (
+            {view === 'health' ? (
+              // `administer` is what the lift endpoint requires, so the button
+              // is only offered to somebody the server will accept it from.
+              <HealthView canAdminister={['owner', 'admin', 'builder'].includes(me.workspace_role)} />
+            ) : view === 'dashboard' ? (
               <DashboardView processKey={processKey} />
             ) : view === 'records' ? (
               <RecordsView
@@ -561,12 +572,20 @@ export function Console() {
               </div>
             )}
 
+            {/* The explainer described "My work" on every view, including the
+                ones it was not describing. It follows the view now. */}
             <div className="cs__card cs__card--dark">
               <span className="cs__cardLabel">WHAT THIS SCREEN IS</span>
               <p style={{ marginTop: 10, fontSize: 13.5, lineHeight: 1.5, color: 'var(--on-dark-2)' }}>
-                Four questions, in order: what arrived, what needs you, what is late, what failed. Sign in as
-                someone else and the same records offer different actions — every one of them checked by the
-                runtime, not by this page.
+                {view === 'health'
+                  ? 'What the automation did, and who it can no longer reach. A hard bounce or a spam complaint stops this deployment writing to that address — the record will say "skipped" and this is the page that says why.'
+                  : view === 'dashboard'
+                    ? 'Nine measures from section 13.1, over the period you choose. A rate over fewer than five records is withheld rather than shown, because a percentage of three people identifies them.'
+                    : view === 'records'
+                      ? 'Every record you are allowed to see, newest first. The same cursor pagination the public API uses, so one behaviour is tested twice.'
+                      : view === 'ask'
+                        ? 'A question becomes a typed plan, the plan is shown to you before anything runs, and what executes is bound to what you confirmed.'
+                        : 'Four questions, in order: what arrived, what needs you, what is late, what failed. Sign in as someone else and the same records offer different actions — every one of them checked by the runtime, not by this page.'}
               </p>
             </div>
           </div>

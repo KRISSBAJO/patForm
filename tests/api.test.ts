@@ -9,6 +9,15 @@ import { parseCsv } from '../src/runtime/import.js';
 import { DEFINITIONS, MIN_COHORT } from '../src/runtime/metrics.js';
 import { WORKSPACE_GRANTS } from '../src/runtime/policy.js';
 import { appUrl, invitationMail, resetMail, verificationMail } from '../src/runtime/platform-mail.js';
+import { verifyRelyKit } from '../src/runtime/delivery.js';
+import { createHmac } from 'node:crypto';
+
+/** Builds the headers exactly as RelyKit's `signPayload` does. */
+function signStandard(secret: string, id: string, nowMs: number, body: string) {
+  const timestamp = String(Math.floor(nowMs / 1000));
+  const mac = createHmac('sha256', secret).update(`${id}.${timestamp}.${body}`).digest('base64');
+  return { timestamp, signature: `v1,${mac}` };
+}
 
 const bp = Blueprint.parse(
   JSON.parse(readFileSync(join('processes', 'employee-onboarding.blueprint.json'), 'utf8')),
@@ -167,4 +176,44 @@ test('the app url falls back to the dev console rather than to something plausib
   // host that is not serving this deployment.
   assert.equal(appUrl(), 'http://localhost:3210');
   if (previous !== undefined) process.env.APP_URL = previous;
+});
+
+test('a delivery notification verifies only if it is the exact bytes, signed, and recent', () => {
+  const secret = 'whsec_test';
+  const body = JSON.stringify({ id: 'evt_1', type: 'email.bounced', data: { recipient: 'a@b.test' } });
+  const now = 1_800_000_000_000;
+  const { timestamp, signature } = signStandard(secret, 'evt_1', now, body);
+  const base = { secret, id: 'evt_1', timestamp, body, signature, now };
+
+  assert.equal(verifyRelyKit(base).ok, true);
+  assert.equal(verifyRelyKit({ ...base, secret: 'whsec_other' }).ok, false);
+  assert.equal(verifyRelyKit({ ...base, body: body + ' ' }).ok, false);
+
+  // The id is part of the signed string, so one signed request cannot be
+  // replayed as a different event by changing the header.
+  assert.equal(verifyRelyKit({ ...base, id: 'evt_2' }).ok, false);
+
+  // And the timestamp is checked separately from being signed. Without that,
+  // a captured request stays valid forever.
+  assert.equal(verifyRelyKit({ ...base, now: now + 3_600_000 }).ok, false);
+  assert.match(verifyRelyKit({ ...base, now: now + 3_600_000 }).reason ?? '', /tolerance/);
+
+  // Missing headers are refused rather than treated as an empty signature.
+  assert.equal(verifyRelyKit({ ...base, signature: '' }).ok, false);
+  assert.equal(verifyRelyKit({ ...base, timestamp: '' }).ok, false);
+  assert.equal(verifyRelyKit({ ...base, timestamp: 'soon' }).ok, false);
+});
+
+test('a rotation sends both versions, and either one verifies', () => {
+  const body = '{"id":"evt_1"}';
+  const now = 1_800_000_000_000;
+  const oldMac = signStandard('whsec_old', 'evt_1', now, body).signature;
+  const newMac = signStandard('whsec_new', 'evt_1', now, body).signature;
+  const header = `${oldMac} ${newMac}`;
+  const base = { id: 'evt_1', timestamp: String(Math.floor(now / 1000)), body, signature: header, now };
+
+  // A consumer holding either secret during the overlap accepts the request.
+  assert.equal(verifyRelyKit({ ...base, secret: 'whsec_old' }).ok, true);
+  assert.equal(verifyRelyKit({ ...base, secret: 'whsec_new' }).ok, true);
+  assert.equal(verifyRelyKit({ ...base, secret: 'whsec_unrelated' }).ok, false);
 });

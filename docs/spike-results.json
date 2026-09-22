@@ -1,5 +1,5 @@
 {
-  "ranAt": "2026-09-22T11:54:01.179Z",
+  "ranAt": "2026-09-22T12:41:48.554Z",
   "postgres": "PostgreSQL 17.11 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit",
   "proofs": [
     {
@@ -48,13 +48,13 @@
       "name": "Every action traces back to the request that caused it, across the worker boundary",
       "claim": "Section 20.2 observability: traceable request, event, job, attempt and result identifiers.",
       "passed": true,
-      "detail": "One submission produced 1 event(s), 1 job(s) and 3 action run(s), every one carrying \"proof-request-0001\" and 0 unattributed. The actions ran in a later drain that knew nothing about the submission — the link survived because the request id is stamped on the outbox row and read back when the job runs. A timer firing got an id of its own (req_f900171a4d36…) rather than inheriting one, because a deadline is its own cause. The support view joined them into 2 step(s) with every attempt count present, and answered in a sentence: \"Queued: 1 job(s) scheduled and not yet run. If this does not clear, no worker is\". Asking by request id found 1 record; an admin of another workspace asking the same id found 0."
+      "detail": "One submission produced 1 event(s), 1 job(s) and 3 action run(s), every one carrying \"proof-request-0001\" and 0 unattributed. The actions ran in a later drain that knew nothing about the submission — the link survived because the request id is stamped on the outbox row and read back when the job runs. A timer firing got an id of its own (req_f670c3b3eeb9…) rather than inheriting one, because a deadline is its own cause. The support view joined them into 2 step(s) with every attempt count present, and answered in a sentence: \"Queued: 1 job(s) scheduled and not yet run. If this does not clear, no worker is\". Asking by request id found 1 record; an admin of another workspace asking the same id found 0."
     },
     {
       "name": "An administrator exports the record with its history, and only then is it deleted",
       "claim": "Section 20.1 step 11, and 6.4: corrections append history; destructive overwriting of audit evidence is prohibited.",
       "passed": true,
-      "detail": "The bundle carried 5 history entries for a finished record — submission, both decisions with the reasons given, and every task completion — plus 2 approval(s), 2 message(s) and 1 document(s). An approver could not export at all (\"neither the roles held (hiring_manager) nor workspace role \"approver\" grant \"administer\"\"). An administrator holding no process role saw every field; one who is also a hiring manager had 3 withheld (id_document, national_id, bank_account) — named in the bundle rather than quietly absent, and not left in the answers as the literal string \"[redacted]\". The export is itself on the record's history, and a second export of an unchanged record produced the same checksum (7e7d8ab756d5), so a file can be verified later. Retention then deleted 1 instance and 8 event(s) — in that order, because afterwards there is nothing left to export."
+      "detail": "The bundle carried 5 history entries for a finished record — submission, both decisions with the reasons given, and every task completion — plus 2 approval(s), 2 message(s) and 1 document(s). An approver could not export at all (\"neither the roles held (hiring_manager) nor workspace role \"approver\" grant \"administer\"\"). An administrator holding no process role saw every field; one who is also a hiring manager had 3 withheld (id_document, national_id, bank_account) — named in the bundle rather than quietly absent, and not left in the answers as the literal string \"[redacted]\". The export is itself on the record's history, and a second export of an unchanged record produced the same checksum (d31fea38b698), so a file can be verified later. Retention then deleted 1 instance and 8 event(s) — in that order, because afterwards there is nothing left to export."
     },
     {
       "name": "A workspace can be created and joined, and nobody can grant more than they hold",
@@ -67,6 +67,12 @@
       "claim": "Section 12.1: verified email and password reset — the last two authentication rows.",
       "passed": true,
       "detail": "A verification link confirmed the address and was refused the second time (\"that link is not valid any more — ask for a new one\"). A link issued for one address did not verify a different one after the address changed (\"that link was for a different address — ask …\") — without that check, requesting a link and then editing your address verifies an address you never proved. A reset request for an address with an account and one without returned the same shape, and 0 messages went to the stranger. Spending the link revoked 1 live session, the old password stopped working, the new one worked, and the link was refused a second time. A deactivated member got no link at all — a reset would be the way back in for somebody an owner deliberately removed. Searching auth_token for either plaintext token found 0 rows: only the SHA-256 is stored, so a dump of that table is not a set of keys."
+    },
+    {
+      "name": "A bounce changes what the system does next, and a forged one changes nothing",
+      "claim": "Section 6.6: the delivery log past `sent` — delivered, bounced, complained, and the suppression that follows.",
+      "passed": true,
+      "detail": "A signed notification verified; the same bytes with a different secret, one extra space, and an hour of age were each refused. A hard bounce moved the message to \"bounced\" and suppressed the address. The provider retries until it gets a 2xx, so the identical event was delivered again and was a no-op — 1 row, not two. A delivery notification arriving afterwards left the message \"bounced\": a message's state is the worst thing that happened to any recipient, and a later event never lowers it. A soft bounce suppressed nobody, because a full mailbox is not a dead one. An event for a message we never sent was recorded and matched nothing, rather than returning an error the provider would retry forever. Then the test that matters: the same address was mailed again by a second record and 0 messages left — the send was logged \"skipped\" reading \"suppressed: bouncer@proof-delivery.test (hard_bounce)\". An operator lifted it and a fresh hard bounce put it straight back, because the mail server gets the last word. A tenant that had never written to that address saw 0 suppressions while the tenant that had saw 1."
     },
     {
       "name": "A privacy request erases one person without destroying anybody else",
@@ -132,7 +138,7 @@
       "name": "Submission and workflow start are far inside the section 10.4 budget",
       "claim": "Beta targets: acknowledgment p95 under 1.5s, workflow start p95 under 30s.",
       "passed": true,
-      "detail": "Over 100 submissions: acknowledgment p95 17.0ms (budget 1500ms), first action p95 42.1ms (budget 30000ms). Database round trips only, local container."
+      "detail": "Over 100 submissions: acknowledgment p95 16.4ms (budget 1500ms), first action p95 38.4ms (budget 30000ms). Database round trips only, local container."
     }
   ]
 }

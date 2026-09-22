@@ -398,7 +398,7 @@ create table email_log (
   body          text not null,
   -- §6.6: the log distinguishes queued, sent, delivered where supported,
   -- bounced, complained and failed. Anything past `sent` arrives by webhook
-  -- from the provider and is not wired yet.
+  -- from the provider — see delivery_event below.
   status        text not null default 'queued'
     check (status in ('queued','sent','delivered','bounced','complained','failed','skipped')),
   provider      text,
@@ -851,3 +851,59 @@ create table platform_email (
 );
 
 create index platform_email_recent on platform_email (recipient, sent_at desc);
+
+-- -------------------------------------------------------- delivery outcomes
+--
+-- §6.6's delivery log only reached `sent` on its own: everything after that is
+-- something the provider learns minutes or hours later and tells us about.
+--
+-- This table is the idempotency ledger for those notifications. The provider
+-- retries until it gets a 2xx, so the same event arrives more than once as a
+-- matter of course, and `unique(event_id)` is what makes a redelivery a no-op
+-- rather than a second bounce.
+--
+-- It also keeps the events we cannot act on. An `email.opened` changes no
+-- status and suppresses nobody, and recording it anyway means the timeline
+-- for a message is the whole story rather than the parts that happened to
+-- change a column.
+create table delivery_event (
+  id           bigserial primary key,
+  -- The provider's event id, from the `webhook-id` header. Not ours.
+  event_id     text not null unique,
+  provider     text not null,
+  type         text not null,
+  provider_message_id text,
+  recipient    text,
+  payload      jsonb not null,
+  -- Which log row it matched, if any. Null means the message was not ours:
+  -- a shared provider account also carries mail this deployment did not send.
+  email_log_id bigint references email_log(id),
+  platform_email_id bigint references platform_email(id),
+  occurred_at  timestamptz not null,
+  received_at  timestamptz not null default now()
+);
+
+create index delivery_event_message on delivery_event (provider_message_id);
+
+-- Addresses this deployment must stop mailing.
+--
+-- Deployment-wide rather than per tenant, and deliberately: a hard bounce
+-- means the mailbox does not exist, which is not a fact about who was writing
+-- to it. The console only shows a tenant the addresses it has actually
+-- mailed, so the list is not a way to read another tenant's contacts.
+create table suppressed_recipient (
+  email      text primary key,
+  reason     text not null check (reason in ('hard_bounce', 'complaint', 'manual')),
+  detail     text,
+  -- The event that caused it, so an operator lifting a suppression can see
+  -- what they are overruling.
+  event_id   text,
+  created_at timestamptz not null default now(),
+  -- Set when somebody decides the address works after all. Kept rather than
+  -- deleted: "this bounced in March and was reinstated in April" is the
+  -- history an operator needs the second time it bounces.
+  lifted_at  timestamptz,
+  lifted_by  uuid references actor(id)
+);
+
+create index suppressed_recipient_live on suppressed_recipient (email) where lifted_at is null;

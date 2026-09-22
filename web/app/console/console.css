@@ -1090,3 +1090,21 @@
 .cs__banner .cs__linkBtn {
   min-height: 24px;
 }
+
+/* Deliverability. The diagnostic line under a reason is the mail server's own
+   words, which are the only thing that settles an argument about whether an
+   address is real. */
+.vw__detail {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--ink-soft);
+  opacity: 0.85;
+  overflow-wrap: anywhere;
+}
+
+.vw__note {
+  margin: 14px 18px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ink-soft);
+}

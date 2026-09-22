@@ -26,6 +26,21 @@ import {
   sendVerification,
   verifyEmail,
 } from './runtime/account.js';
+import { createHmac } from 'node:crypto';
+import {
+  blockedRecipients,
+  ingest,
+  lift,
+  suppressionsFor,
+  verifyRelyKit,
+} from './runtime/delivery.js';
+
+/** The Standard Webhooks headers RelyKit sends, built the way RelyKit builds them. */
+function signStandardWebhook(secret: string, id: string, nowMs: number, body: string) {
+  const timestamp = String(Math.floor(nowMs / 1000));
+  const mac = createHmac('sha256', secret).update(`${id}.${timestamp}.${body}`).digest('base64');
+  return { id, timestamp, signature: `v1,${mac}` };
+}
 import { resolveSession, signIn } from './runtime/auth.js';
 import { createServer } from 'node:http';
 import {
@@ -1760,5 +1775,206 @@ export async function proveAccountRecovery({ pool, record }: ProofCtx): Promise<
       `Spending the link revoked ${reset.sessionsRevoked} live session, the old password stopped working, the new one worked, and the link was refused a second time. ` +
       `A deactivated member got no link at all — a reset would be the way back in for somebody an owner deliberately removed. ` +
       `Searching auth_token for either plaintext token found ${stored[0]!.count} rows: only the SHA-256 is stored, so a dump of that table is not a set of keys.`,
+  );
+}
+
+/**
+ * §6.6's delivery log, past `sent`.
+ *
+ * Everything after `sent` is something the provider learns later and tells us
+ * about over a webhook, and the schema said so in a comment for months: *"not
+ * wired yet"*. The interesting assertions are the three ways this goes wrong
+ * quietly — a forged notification accepted, a redelivery counted twice, and a
+ * bounce recorded but not acted on, which is keeping a diary rather than
+ * handling it.
+ */
+export async function proveDeliveryOutcomes({ pool, bp, T0, record, completeFor }: ProofCtx): Promise<void> {
+  const SECRET = 'whsec_proof_delivery';
+  const sent: { to: string[]; subject: string }[] = [];
+  const provider = {
+    name: 'test',
+    async send(email: { to: string[]; subject: string }) {
+      sent.push({ to: email.to, subject: email.subject });
+      return { providerMessageId: `msg-${sent.length}`, status: 'sent' as const };
+    },
+  };
+
+  const engine = new Engine(pool, provider);
+  const tenantId = await engine.createTenant('proof:delivery');
+  const version = await engine.publish(tenantId, bp, 'proof');
+
+  const { instanceId } = await engine.submit({
+    version,
+    answers: completeFor(bp, { personal_email: 'bouncer@proof-delivery.test', full_name: 'Bo Unser' }),
+    now: T0,
+  });
+  await engine.drain(T0);
+
+  const { rows: firstLog } = await pool.query<{ id: string; provider_message_id: string; status: string }>(
+    `select id, provider_message_id, status from email_log
+      where instance_id = $1 and status = 'sent' order by id limit 1`,
+    [instanceId],
+  );
+  const message = firstLog[0]!;
+
+  // ---- the signature is the credential, so forging one must not work
+  const event = (type: string, data: Record<string, unknown>, id: string) =>
+    JSON.stringify({ id, type, created_at: T0.toISOString(), data });
+
+  const bounceBody = event(
+    'email.bounced',
+    {
+      email_id: message.provider_message_id,
+      recipient: 'bouncer@proof-delivery.test',
+      bounce_type: 'hard',
+      diagnostic_code: '550 5.1.1 user unknown',
+    },
+    'evt-bounce-1',
+  );
+  const nowMs = Date.now();
+  const signed = signStandardWebhook(SECRET, 'evt-bounce-1', nowMs, bounceBody);
+
+  const good = verifyRelyKit({ ...signed, secret: SECRET, body: bounceBody, now: nowMs });
+  const wrongSecret = verifyRelyKit({ ...signed, secret: 'whsec_other', body: bounceBody, now: nowMs });
+  const changedBody = verifyRelyKit({ ...signed, secret: SECRET, body: bounceBody + ' ', now: nowMs });
+  // The timestamp is inside the signed string AND checked separately, so a
+  // captured request cannot be replayed tomorrow.
+  const replayedLater = verifyRelyKit({ ...signed, secret: SECRET, body: bounceBody, now: nowMs + 3_600_000 });
+
+  // ---- the hard bounce: status, and the part with teeth
+  const bounce = await ingest(pool, {
+    provider: 'relykit',
+    event: JSON.parse(bounceBody),
+    eventId: 'evt-bounce-1',
+  });
+
+  // ---- redelivery. The provider retries until it gets a 2xx, so this is
+  //      ordinary traffic rather than an attack.
+  const redelivered = await ingest(pool, {
+    provider: 'relykit',
+    event: JSON.parse(bounceBody),
+    eventId: 'evt-bounce-1',
+  });
+  const { rows: afterReplay } = await pool.query<{ count: number }>(
+    `select count(*)::int as count from delivery_event where event_id = 'evt-bounce-1'`,
+  );
+
+  // ---- a delivery notification arriving after the bounce must not tidy it up
+  const late = await ingest(pool, {
+    provider: 'relykit',
+    event: JSON.parse(
+      event(
+        'email.delivered',
+        { email_id: message.provider_message_id, recipient: 'someone-else@proof-delivery.test' },
+        'evt-late-1',
+      ),
+    ),
+    eventId: 'evt-late-1',
+  });
+
+  // ---- a soft bounce is a full mailbox, not a dead one
+  await ingest(pool, {
+    provider: 'relykit',
+    event: JSON.parse(
+      event(
+        'email.bounced',
+        { email_id: message.provider_message_id, recipient: 'soft@proof-delivery.test', bounce_type: 'soft' },
+        'evt-soft-1',
+      ),
+    ),
+    eventId: 'evt-soft-1',
+  });
+  const softSuppressed = await blockedRecipients(pool, ['soft@proof-delivery.test']);
+
+  // ---- an event about a message this deployment never sent
+  const foreign = await ingest(pool, {
+    provider: 'relykit',
+    event: JSON.parse(event('email.delivered', { email_id: 'not-ours', recipient: 'x@example.test' }, 'evt-foreign-1')),
+    eventId: 'evt-foreign-1',
+  });
+
+  // ---- and now the only assertion that is about behaviour rather than
+  //      bookkeeping: does the next send actually stop?
+  const before = sent.length;
+  const second = await engine.submit({
+    version,
+    // A different start_date, because identity is (personal_email,
+    // start_date) and the same pair would be recognised as a duplicate — no
+    // instance, no actions, and a vacuous proof that nothing was sent.
+    answers: completeFor(bp, {
+      personal_email: 'bouncer@proof-delivery.test',
+      full_name: 'Bo Unser',
+      start_date: '2027-02-01',
+    }),
+    now: new Date(T0.getTime() + hours(1)),
+  });
+  await engine.drain(new Date(T0.getTime() + hours(1)));
+  const afterBlocked = sent.length;
+
+  const { rows: skipped } = await pool.query<{ status: string; failure: string; recipients: string[] }>(
+    `select status, failure, recipients from email_log
+      where instance_id = $1 and status = 'skipped' order by id limit 1`,
+    [second.instanceId],
+  );
+
+  // ---- lifting it, and a fresh bounce overruling the lift
+  const operator = await engine.createActor(tenantId, 'ops@proof-delivery.test', 'Ops', 'admin');
+  const lifted = await lift(pool, { email: 'bouncer@proof-delivery.test', actorId: operator });
+  const afterLift = await blockedRecipients(pool, ['bouncer@proof-delivery.test']);
+  await ingest(pool, {
+    provider: 'relykit',
+    event: JSON.parse(
+      event(
+        'email.bounced',
+        { email_id: message.provider_message_id, recipient: 'bouncer@proof-delivery.test', bounce_type: 'hard' },
+        'evt-bounce-2',
+      ),
+    ),
+    eventId: 'evt-bounce-2',
+  });
+  const afterSecondBounce = await blockedRecipients(pool, ['bouncer@proof-delivery.test']);
+
+  // ---- one tenant must not be able to read another's contacts from the list
+  const otherTenant = await engine.createTenant('proof:delivery:other');
+  const theirs = await suppressionsFor(pool, otherTenant);
+  const ours = await suppressionsFor(pool, tenantId);
+
+  const { rows: finalStatus } = await pool.query<{ status: string; failure: string }>(
+    'select status, failure from email_log where id = $1',
+    [message.id],
+  );
+
+  record(
+    'A bounce changes what the system does next, and a forged one changes nothing',
+    'Section 6.6: the delivery log past `sent` — delivered, bounced, complained, and the suppression that follows.',
+    good.ok &&
+      !wrongSecret.ok &&
+      !changedBody.ok &&
+      !replayedLater.ok &&
+      bounce.statusAfter === 'bounced' &&
+      bounce.suppressed === 'bouncer@proof-delivery.test' &&
+      redelivered.duplicate &&
+      afterReplay[0]!.count === 1 &&
+      late.statusAfter === 'bounced' &&
+      softSuppressed.size === 0 &&
+      foreign.matched === null &&
+      !foreign.duplicate &&
+      afterBlocked === before &&
+      skipped[0]?.failure?.includes('suppressed') === true &&
+      lifted.lifted &&
+      afterLift.size === 0 &&
+      afterSecondBounce.size === 1 &&
+      theirs.length === 0 &&
+      ours.length > 0 &&
+      finalStatus[0]!.status === 'bounced',
+    `A signed notification verified; the same bytes with a different secret, one extra space, and an hour of age were each refused. ` +
+      `A hard bounce moved the message to "${bounce.statusAfter}" and suppressed the address. ` +
+      `The provider retries until it gets a 2xx, so the identical event was delivered again and was a no-op — ${afterReplay[0]!.count} row, not two. ` +
+      `A delivery notification arriving afterwards left the message "${late.statusAfter}": a message's state is the worst thing that happened to any recipient, and a later event never lowers it. ` +
+      `A soft bounce suppressed nobody, because a full mailbox is not a dead one. ` +
+      `An event for a message we never sent was recorded and matched nothing, rather than returning an error the provider would retry forever. ` +
+      `Then the test that matters: the same address was mailed again by a second record and ${afterBlocked - before} messages left — the send was logged "${skipped[0]?.status}" reading "${skipped[0]?.failure}". ` +
+      `An operator lifted it and a fresh hard bounce put it straight back, because the mail server gets the last word. ` +
+      `A tenant that had never written to that address saw ${theirs.length} suppressions while the tenant that had saw ${ours.length}.`,
   );
 }
