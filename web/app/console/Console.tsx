@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import './console.css';
 import { Ask } from './Ask';
+import { DashboardView, RecordsView } from './Views';
 
 /**
  * Calls go to the same origin so the HttpOnly, SameSite=Lax session cookie is
@@ -85,7 +86,7 @@ export function Console() {
   const [work, setWork] = useState<Work | null>(null);
   const [health, setHealth] = useState<Health | null>(null);
   const [record, setRecord] = useState<RecordDetail | null>(null);
-  const [view, setView] = useState<'work' | 'ask'>('work');
+  const [view, setView] = useState<'work' | 'ask' | 'records' | 'dashboard'>('work');
   const [toast, setToast] = useState<Toast>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -257,10 +258,20 @@ export function Console() {
           >
             Ask
           </button>
-          <button type="button" className="cs__navItem" disabled title="Not built yet">
+          <button
+            type="button"
+            className="cs__navItem"
+            aria-current={view === 'records' ? 'page' : undefined}
+            onClick={() => setView('records')}
+          >
             Records
           </button>
-          <button type="button" className="cs__navItem" disabled title="Not built yet">
+          <button
+            type="button"
+            className="cs__navItem"
+            aria-current={view === 'dashboard' ? 'page' : undefined}
+            onClick={() => setView('dashboard')}
+          >
             Dashboard
           </button>
           <button type="button" className="cs__navItem" disabled title="Not built yet">
@@ -325,7 +336,15 @@ export function Console() {
 
       <main className="cs__main" id="console-main" tabIndex={-1}>
         <div className="cs__head">
-          <h1>{view === 'ask' ? 'Ask' : 'My work'}</h1>
+          <h1>
+            {view === 'ask'
+              ? 'Ask'
+              : view === 'records'
+                ? 'Records'
+                : view === 'dashboard'
+                  ? 'Dashboard'
+                  : 'My work'}
+          </h1>
           {work && <span className="cs__version">{work.processName}</span>}
           <span style={{ flexGrow: 1 }} />
           <button type="button" className="cs__btn" onClick={() => void load()}>
@@ -335,7 +354,16 @@ export function Console() {
 
         <div className="cs__body">
           <div className="cs__left">
-            {view === 'ask' ? (
+            {view === 'dashboard' ? (
+              <DashboardView processKey={processKey} />
+            ) : view === 'records' ? (
+              <RecordsView
+                processKey={processKey}
+                onOpenRecord={(id) => {
+                  void open(id);
+                }}
+              />
+            ) : view === 'ask' ? (
               <Ask
                 processKey={processKey}
                 onOpenRecord={(id) => {

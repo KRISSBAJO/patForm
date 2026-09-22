@@ -518,3 +518,46 @@ create table erasure_run (
 );
 
 create index erasure_run_recent on erasure_run (tenant_id, ran_at desc);
+
+-- --------------------------------------------------------------- api keys
+--
+-- §11.1's scoped server-to-server credentials. Only the hash is stored, on
+-- the same reasoning as session tokens: a key that can be read back out of
+-- the database is a key every administrator holds.
+--
+-- It references an actor rather than standing alone, so a key belonging to
+-- somebody who has left stops working the moment they are deactivated — and
+-- so that its scopes can be intersected with theirs on every request rather
+-- than copied once at creation.
+create table api_key (
+  id           uuid primary key default gen_random_uuid(),
+  tenant_id    uuid not null references tenant(id),
+  actor_id     uuid not null references actor(id),
+  name         text not null,
+  key_hash     text not null unique,
+  -- Enough to recognise a key in a log and revoke the right one; not enough
+  -- to use.
+  key_prefix   text not null,
+  scopes       text[] not null,
+  created_at   timestamptz not null default now(),
+  last_used_at timestamptz,
+  revoked_at   timestamptz
+);
+
+create index api_key_by_tenant on api_key (tenant_id, created_at desc);
+
+-- §11.1: "idempotency keys for mutations". A public API caller that retries a
+-- submission after a timeout must not create a second record, and the
+-- guarantee has to survive the process restarting — so the answer is stored
+-- rather than held in memory.
+create table api_idempotency (
+  tenant_id    uuid not null references tenant(id),
+  key          text not null,
+  -- The request this answer belongs to. A key reused with a different body is
+  -- a caller bug, and returning the first answer would hide it.
+  request_hash text not null,
+  status       int not null,
+  response     jsonb not null,
+  created_at   timestamptz not null default now(),
+  primary key (tenant_id, key)
+);

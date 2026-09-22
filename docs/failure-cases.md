@@ -267,6 +267,32 @@ Six confidential fields also recorded no reason for being collected. The map fla
 
 **An account with the wrong number in it is worse than none, because it looks authoritative.** Fixed by counting before writing.
 
+### 22. A second implementation of identity
+
+The CSV importer computed its own duplicate key: the identity fields joined with a null byte. Postgres text cannot hold a null byte, so it crashed — which was lucky, because had it not, the value would simply have been a different string from the one `identityFor` produces, no import would ever have detected a duplicate, and nobody would have known why.
+
+The same trap as writing a second validator, and avoided everywhere else in this codebase by deliberate effort. `validateAnswers` has one implementation for exactly this reason; identity did not, because it was a private function nobody had needed twice yet.
+
+**Fixed:** `identityFor` is exported and the importer calls it. One way of deciding whether two records are the same person.
+
+### 23. A parameter beside an `interval`, again
+
+```
+operator does not exist: timestamp with time zone < interval
+```
+
+`$4 - interval '7 days'`: Postgres resolves the parameter against the interval on the right and decides it is one. This is the fault ADR-0008 recorded in the outbox backoff, met again in the abandonment metric, because nothing stops it recurring — it is a property of how Postgres infers parameter types, not a mistake either place made.
+
+**The habit:** any parameter adjacent to an `interval` states its type. `$4::timestamptz`.
+
+### 24. An endpoint asking for a scope nobody can hold
+
+`POST /records` required the `submit` scope. No workspace role grants `submit` — it is the *respondent's* capability, held by people the form is about rather than by members. So a key could never have been issued with it and the endpoint was unreachable.
+
+Found by the scope-intersection check refusing to issue the key, which is the check working. Creating records on a workspace's behalf is `edit`, which is what the CSV importer had already reasoned for itself.
+
+**Fixed,** and a test now asserts every route's scope is one some workspace role actually grants.
+
 ---
 
 ## What the compiler structurally cannot catch

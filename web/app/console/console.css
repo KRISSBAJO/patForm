@@ -928,3 +928,130 @@
 .ask__result > strong { display: block; font-size: 13.5px; color: var(--green-deep); margin-bottom: 7px; }
 .ask__result p { margin: 3px 0 0; font-size: 12.5px; color: var(--ink-soft); }
 .ask__result code { font-family: var(--font-mono), monospace; font-size: 11.5px; }
+
+/* --------------------------------------------------------- records, metrics */
+
+.vw__srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.vw__period {
+  height: 26px;
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--white);
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.vw__metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 1px;
+  background: var(--line);
+  border-top: 1px solid var(--line);
+}
+
+.vw__metric {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 14px 16px;
+  border: none;
+  background: var(--white);
+  text-align: left;
+  cursor: pointer;
+  min-height: 92px;
+}
+
+.vw__metric:hover { background: var(--paper-3); }
+
+.vw__metricLabel {
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted-2);
+}
+
+.vw__metricValue {
+  font-family: var(--font-display), Georgia, serif;
+  font-size: 27px;
+  line-height: 1.1;
+  color: var(--ink);
+}
+
+.vw__metric--withheld .vw__metricValue { color: var(--muted-2); }
+
+.vw__metricMeta { font-size: 11.5px; color: var(--muted-2); font-family: var(--font-mono), monospace; }
+
+/*
+ * The reason, where the number would be. A dash reads as zero, and a
+ * suppressed rate means something quite different from zero.
+ */
+.vw__metricWithheld {
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--ochre-text);
+}
+
+.vw__definition {
+  margin: 0;
+  padding: 12px 18px;
+  border-top: 1px solid var(--line);
+  background: var(--green-tint);
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--ink-soft);
+}
+
+.vw__footnote {
+  margin: 0;
+  padding: 11px 18px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.vw__footnote code { font-family: var(--font-mono), monospace; font-size: 11px; }
+
+.vw__table { width: 100%; border-collapse: collapse; font-size: 13px; }
+
+.vw__table th {
+  text-align: left;
+  padding: 8px 18px;
+  font-size: 10.5px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted-2);
+  border-bottom: 1px solid var(--line);
+  font-weight: 500;
+}
+
+.vw__table td { padding: 9px 18px; border-bottom: 1px solid var(--line-soft); color: var(--ink-soft); }
+.vw__table tbody tr:hover { background: var(--paper-2); }
+
+.vw__outcome {
+  margin-left: 8px;
+  padding: 1px 7px;
+  border-radius: 4px;
+  background: var(--paper-2);
+  font-size: 10.5px;
+  color: var(--muted);
+}
+
+.vw__more {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 18px;
+}

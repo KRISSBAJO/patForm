@@ -1,7 +1,8 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { createPool, describeTarget, type Pool } from '../runtime/db.js';
 import { Engine } from '../runtime/engine.js';
-import { AuthorizationError, type Principal } from '../runtime/policy.js';
+import { AuthorizationError, requireWorkspaceCapability, WORKSPACE_GRANTS, type Principal } from '../runtime/policy.js';
+import type { Capability } from '../blueprint/roles.js';
 import {
   devicesFor,
   resolveSession,
@@ -12,6 +13,11 @@ import {
 import { runRetention } from '../runtime/retention.js';
 import { logIfEnabled, requestIdFrom, withTrace } from '../runtime/trace.js';
 import { traceByRequest, traceForInstance } from '../runtime/support.js';
+import { dashboard } from '../runtime/metrics.js';
+import { applyImport, planImport } from '../runtime/import.js';
+import { dataMap } from '../runtime/privacy.js';
+import { issueApiKey, listApiKeys, revokeApiKey } from './keys.js';
+import { listRecordsPage } from './public.js';
 import {
   checkAnswers,
   loadDraft,
@@ -227,6 +233,84 @@ route('GET', /^\/api\/records\/([0-9a-f-]{36})\/trace$/, async ({ pool, principa
 route('GET', /^\/api\/trace\/([\w.:-]{8,64})$/, async ({ pool, principal, url }) =>
   traceByRequest(pool, { principal, requestId: decodeURIComponent(url.pathname.split('/').pop()!) }),
 );
+
+
+// ----------------------------------------------------------- dashboard etc
+//
+// The console's own reads. The public, versioned equivalents are in public.ts
+// and mounted under /v1 — kept apart so a console convenience does not become
+// a published contract by accident.
+
+route('GET', /^\/api\/dashboard\/([a-z0-9_]+)$/, async ({ pool, principal, url }) =>
+  dashboard(pool, {
+    principal,
+    processKey: url.pathname.split('/').pop()!,
+    days: Number(url.searchParams.get('days') ?? 30),
+  }),
+);
+
+route('GET', /^\/api\/browse\/([a-z0-9_]+)$/, async ({ pool, principal, url }) =>
+  listRecordsPage(pool, {
+    principal,
+    processKey: url.pathname.split('/').pop()!,
+    state: url.searchParams.get('state') ?? undefined,
+    completed: url.searchParams.has('completed') ? url.searchParams.get('completed') === 'true' : undefined,
+    limit: Number(url.searchParams.get('limit') ?? 25),
+    cursor: url.searchParams.get('cursor') ?? undefined,
+  }),
+);
+
+route('GET', /^\/api\/data-map$/, async ({ pool, principal }) => dataMap(pool, principal));
+
+// ------------------------------------------------------------------ import
+
+route('POST', /^\/api\/import\/([a-z0-9_]+)\/plan$/, async ({ pool, principal, url }, body) => {
+  const { csv } = body as { csv?: string };
+  if (!csv) throw new HttpError(400, 'csv is required');
+  return planImport(pool, { principal, processKey: url.pathname.split('/')[3]!, csv });
+});
+
+route('POST', /^\/api\/import\/([a-z0-9_]+)\/apply$/, async ({ pool, engine, principal, url }, body) => {
+  const { csv, partial } = body as { csv?: string; partial?: boolean };
+  if (!csv) throw new HttpError(400, 'csv is required');
+  const result = await applyImport(pool, { principal, processKey: url.pathname.split('/')[3]!, csv, partial });
+  if (result.created.length) await engine.drain(new Date(), 'import');
+  return result;
+});
+
+// ---------------------------------------------------------------- api keys
+
+route('GET', /^\/api\/keys$/, async ({ pool, principal }) => {
+  await requireWorkspaceCapability(pool, principal, 'administer', 'api-keys');
+  return listApiKeys(pool, principal.kind === 'actor' ? principal.tenantId : '');
+});
+
+route('POST', /^\/api\/keys$/, async ({ pool, principal, actorId }, body) => {
+  await requireWorkspaceCapability(pool, principal, 'administer', 'api-keys');
+  const { name, scopes } = body as { name?: string; scopes?: string[] };
+  if (!name || !scopes?.length) throw new HttpError(400, 'name and scopes are required');
+  // The key cannot be broader than the person creating it. Intersected here
+  // and again on every request, so a scope cannot outlive the authority it
+  // came from.
+  const granted = WORKSPACE_GRANTS[
+    (await pool.query<{ workspace_role: keyof typeof WORKSPACE_GRANTS }>(
+      'select workspace_role from actor where id = $1',
+      [actorId],
+    )).rows[0]!.workspace_role
+  ] as readonly Capability[];
+  const tooBroad = scopes.filter((s) => !granted.includes(s as Capability));
+  if (tooBroad.length) {
+    throw new HttpError(403, `you cannot grant a key ${tooBroad.join(', ')} — you do not hold it yourself`);
+  }
+  if (principal.kind !== 'actor') throw new HttpError(401, 'sign in first');
+  return issueApiKey(pool, { tenantId: principal.tenantId, actorId, name, scopes: scopes as Capability[] });
+});
+
+route('POST', /^\/api\/keys\/([0-9a-f-]{36})\/revoke$/, async ({ pool, principal, url }) => {
+  await requireWorkspaceCapability(pool, principal, 'administer', 'api-keys');
+  if (principal.kind !== 'actor') throw new HttpError(401, 'sign in first');
+  return { revoked: await revokeApiKey(pool, { tenantId: principal.tenantId, id: url.pathname.split('/')[3]! }) };
+});
 
 // ------------------------------------------------------------------ session
 

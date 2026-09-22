@@ -351,6 +351,53 @@ faithfully, so an erased person is in every backup taken before the request.
 That is a retention schedule, not a delete, and the CLI says so after every run
 rather than leaving somebody to remember.
 
+## The public API
+
+```bash
+npm run public-api                                   # /v1 on 3320
+npm run keys -- issue "CI" --as <actor-id> --scopes view,edit
+```
+
+§11.1, versioned under `/v1` in its own process. The console's API is called by
+a page that ships with it and can change with it; this is called by somebody
+else's build, which cannot — so a console route cannot become a public promise
+by being reachable. OpenAPI at `/openapi.json`, served by the API so it cannot
+describe a deployment other than the one answering.
+
+| | |
+|---|---|
+| Auth | Scoped API key, `Authorization: Bearer pat_live_…`. Never a cookie — that would make every endpoint reachable from a browser carrying a console session. |
+| Scopes | A key carries a subset of its creator's capabilities, intersected again on every request, so it cannot outlive the authority it came from. |
+| Permissions | **Hidden fields are omitted, not masked.** `data.bank_account` is absent and named in `omitted_fields`. A consumer that got `"[redacted]"` would store it. |
+| Pagination | Cursor, not offset. An offset skips and repeats rows while records are being created underneath you. |
+| Idempotency | `Idempotency-Key` on any POST, stored so it survives a restart. Reusing a key with a different body is a 409, not a silent replay. |
+| Filtering | Explicit. An unrecognised filter is a 422 — silently returning everything when a caller asked for a subset is how an integration leaks. |
+| Rate limits | Per key *and* per workspace, with `X-RateLimit-*` on every response. |
+| Errors | One shape, with `X-Request-Id` on all of them. |
+
+## Dashboards, records and CSV import
+
+**Dashboard** and **Records** in the console; §13.1's nine metrics and a
+cursor-paged browse.
+
+Everything is computed from the event log at read time. There is no aggregate
+table, which is slower and satisfies §13.2's "derived aggregates can be
+rebuilt" by construction rather than by a rebuild job somebody must remember.
+
+Two of §13.2's rules shape it more than the arithmetic:
+
+- **Definitions travel with the numbers.** A completion rate means nothing
+  without knowing what counted as eligible. Click any tile to read it.
+- **Small cohorts are suppressed.** A rate over fewer than five records is
+  withheld, and the tile shows *why* where the number would be — a dash reads
+  as zero, and this means something quite different.
+
+**CSV import** goes through `validateAnswers`, the same function the public
+form uses. An importer with its own idea of what is valid is a second front
+door with a weaker lock. One bad row refuses the whole file by default: a
+hundred-row spreadsheet with four bad rows should not become ninety-six records
+and a puzzle.
+
 ## The respondent side
 
 ```bash
@@ -400,6 +447,12 @@ Named here rather than implied by silence:
   states, approvals, tasks and roles; everything else goes through its JSON
   tab. There is also no draft locking, so two people editing one process will
   overwrite each other.
+- **OAuth 2.0 for installed integrations** (§11.1). Scoped API keys are the
+  server-to-server half; OAuth is not built.
+- **Webhook signing and a dead-letter state** (§11.2). Webhooks are delivered
+  and retried; payloads are not signed and there is no terminal dead letter.
+- **Rate limiting in one process's memory.** §10.1 names Redis for this;
+  behind more than one API process the count under-reports.
 - **Privacy terms, a DPIA, consent capture, and a subject access export.**
   The privacy gate's code half is built and its documentation half is in
   [docs/privacy.md](docs/privacy.md); the terms are a document for a lawyer and

@@ -1534,7 +1534,19 @@ function missingRequiredFields(bp: Blueprint, answers: Answers): string[] {
   return missing;
 }
 
-function identityFor(bp: Blueprint, answers: Answers): string | null {
+/**
+ * The duplicate key for a record.
+ *
+ * Exported because the CSV importer needs the same value, and the first
+ * version of that computed its own — joining the raw answers with a null byte,
+ * which Postgres text cannot store, so it crashed. Had it not crashed it would
+ * have been worse: a different string from this one, so no import would ever
+ * have detected a duplicate and nobody would have known why.
+ *
+ * One implementation, like `validateAnswers`. A second way of deciding whether
+ * two records are the same person is a second answer.
+ */
+export function identityFor(bp: Blueprint, answers: Answers): string | null {
   if (!bp.data.identity?.length) return null;
   const parts = bp.data.identity.map((key) => JSON.stringify(answers[key] ?? null));
   return createHash('sha256').update(parts.join(' ')).digest('hex');
