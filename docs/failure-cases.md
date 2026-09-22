@@ -315,6 +315,16 @@ The webhook proof asserted that an event with no subscriber leaves a `no_subscri
 
 Same family as the vacuous replay check in the recovery drill. **Fixed** by switching the endpoint off and asserting on that record specifically.
 
+### 28. Five stale worker processes, because a kill command matched nothing
+
+Throughout this session I restarted the worker with a `wmic ... | grep -i "worker.ts"` filter. `wmic`'s CSV output wraps and truncates long command lines, so the filter matched nothing and killed nothing — while every restart added another process. Five were running at once, several on code from hours earlier.
+
+It explains three symptoms that each looked like something else at the time: a delivery row recorded with `provider: resend` after the environment had moved to RelyKit, a proof that failed once and passed on rerun, and a Slack endpoint that kept receiving the raw envelope after the renderer was written.
+
+**The general shape, and it is the oldest one in this file:** a command that silently matches nothing looks exactly like a command that had nothing to do. `taskkill` on an empty list exits cleanly. Nothing in the output distinguishes "stopped 5" from "stopped 0".
+
+Replaced with a PowerShell `Get-CimInstance` filter that prints each process it stops.
+
 ---
 
 ## What the compiler structurally cannot catch

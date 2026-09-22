@@ -867,3 +867,54 @@
   .bd__diag { border-left: none; border-top: 1px solid var(--line); }
   .bd__side { width: 180px; }
 }
+
+/* ----------------------------------------------------------------- packs */
+
+.bd__packs {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+  max-height: 46vh;
+  overflow-y: auto;
+}
+
+.bd__pack {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--white);
+  text-align: left;
+  cursor: pointer;
+}
+
+.bd__pack:hover { border-color: var(--green-border); }
+
+.bd__pack--on {
+  border-color: var(--green);
+  background: var(--green-tint);
+  box-shadow: 0 0 0 1px var(--green);
+}
+
+.bd__packCategory {
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted-2);
+}
+
+.bd__pack strong { font-size: 14.5px; color: var(--ink); }
+.bd__packSummary { font-size: 12.5px; line-height: 1.5; color: var(--muted); }
+
+.bd__packContents,
+.bd__packPolicy {
+  font-family: var(--font-mono), monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted-2);
+}
+
+.bd__packPolicy { color: var(--ochre-text); }

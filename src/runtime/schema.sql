@@ -423,6 +423,11 @@ create table document (
 create table webhook_endpoint (
   id             uuid primary key default gen_random_uuid(),
   tenant_id      uuid not null references tenant(id),
+  -- A Slack or Teams notification is a delivery with a different renderer,
+  -- not a different mechanism. Folding them in here means one queue, one
+  -- backoff, one dead letter and one replay — rather than a second set of
+  -- all four that would need proving separately.
+  kind           text not null default 'http' check (kind in ('http', 'slack', 'teams')),
   url            text not null,
   description    text not null default '',
   -- The event names this endpoint wants. Empty means every event.
@@ -672,3 +677,53 @@ create table oauth_token (
 );
 
 create index oauth_grant_by_tenant on oauth_grant (tenant_id, created_at desc);
+
+-- ------------------------------------------------------------------ packs
+--
+-- §1.2's differentiator, stated as a contrast: "Templates copy a form.
+-- Process packs include schema, workflow, messages, documents, dashboard,
+-- and policy defaults." A pack is a working system, not a starting point.
+--
+-- `tenant_id` null means built-in: available to every workspace. Set means a
+-- workspace published it for itself. The same table because the difference is
+-- who may see it, not what it is — and because a pack a customer wrote and
+-- later wants to share should not have to move.
+create table pack (
+  id            uuid primary key default gen_random_uuid(),
+  tenant_id     uuid references tenant(id),
+  pack_key      text not null,
+  version       int not null,
+  name          text not null,
+  summary       text not null,
+  category      text not null,
+  -- Who it is for, in their words. Shown on the card; this is the sentence
+  -- somebody decides on.
+  audience      text not null default '',
+  blueprint     jsonb not null,
+  -- Computed at publish from the blueprint, so a card cannot claim something
+  -- the pack does not contain.
+  contents      jsonb not null,
+  published_by  text not null,
+  published_at  timestamptz not null default now(),
+  -- Withdrawn rather than deleted: a workspace that installed it deserves to
+  -- keep seeing where their process came from.
+  withdrawn_at  timestamptz,
+  unique (tenant_id, pack_key, version)
+);
+
+create index pack_listing on pack (category, pack_key) where withdrawn_at is null;
+
+-- What a workspace installed, and from where. §9.2's provenance, one level up:
+-- a process that came from a pack should be able to say so, and to say which
+-- version, when the pack is later fixed.
+create table pack_install (
+  id           uuid primary key default gen_random_uuid(),
+  tenant_id    uuid not null references tenant(id),
+  pack_id      uuid not null references pack(id),
+  process_key  text not null,
+  draft_id     uuid,
+  installed_by text not null,
+  installed_at timestamptz not null default now()
+);
+
+create index pack_install_by_tenant on pack_install (tenant_id, installed_at desc);

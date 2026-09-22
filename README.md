@@ -460,6 +460,61 @@ per process, which behind more than one is a limit in name only.
 unreachable has turned a cache outage into a total outage, and the thing it
 guards against is less harmful than that.
 
+## Process packs
+
+```bash
+npm run packs              # publish the built-in catalogue
+npm run packs -- --list    # what is in it
+```
+
+§1.2 states the idea as a contrast: **"Templates copy a form. Process packs
+include schema, workflow, messages, documents, dashboard, and policy
+defaults."** That sentence is the product, so three things follow.
+
+**A pack that does not compile cannot be listed.** Publishing runs the same
+compiler a workspace's own blueprint goes through. Shipping a template that
+errors on install teaches people the errors are noise, and the compiler being
+believed is what this platform sells.
+
+**The contents are computed, never written.** The card saying "20 fields ·
+8 states · 2 approvals · 3 tasks · 7 messages · 1 document · 6 scenarios ·
+3 restricted, 5 hidden from at least one role, kept 7 years" is derived from
+the blueprint at publish time. A hand-written feature list is marketing; this
+is a description that cannot drift.
+
+**Installing produces a draft, not a live process.** §1.3's "review before
+publish" does not stop applying because we wrote the blueprint — arguably it
+applies more. It opens in the builder with the diagnostics panel already
+pointed at it, and you decide when it goes live.
+
+The three built-in packs are the reference processes, which is deliberate:
+they have been run, hand-compiled, and carry their own scenarios, rather than
+being examples written to look good.
+
+## Slack and Teams
+
+Register a destination with `kind: "slack"` or `"teams"` and an incoming
+webhook URL. Notifications go through the **same queue as webhooks** — one
+backoff, one dead letter, one replay — with a different renderer. A second
+delivery mechanism would need proving separately.
+
+**The payload is deliberately thin: a reference, a stage, a link, and only
+the fields the endpoint opted into.** Never the answers. Three reasons in
+order:
+
+1. A team channel has a different audience from a record. Everyone in
+   `#people-ops` can read it, and the field-level permissions that govern the
+   record do not reach into Slack.
+2. Chat history is retained by a third party on their schedule. Retention and
+   the erasure workflow cannot reach a message already posted.
+3. It survives being wrong. "Priya's expense of £4,200 needs approval" in the
+   wrong channel is a disclosure; "EB9FD715 needs approval" is a nuisance.
+
+Slack gets Block Kit with fallback text (a Block Kit message without it is
+announced as "this content can't be displayed"); Teams gets a MessageCard.
+Neither is signed, because neither verifies our signature — the webhook URL is
+itself the credential, and signing would be theatre.
+
 ## The respondent side
 
 ```bash
@@ -509,6 +564,18 @@ Named here rather than implied by silence:
   states, approvals, tasks and roles; everything else goes through its JSON
   tab. There is also no draft locking, so two people editing one process will
   overwrite each other.
+- **SMS.** §6.6 is explicit: *"SMS is not required for MVP; messaging consent
+  and jurisdictional rules must be designed before launch."* Building the
+  channel without consent capture would be building the thing that sentence
+  warns about, and RelyKit's SMS is sandboxed until a provider route exists —
+  so it would deliver nothing while looking as though it did.
+- **Arbitrary customer code in workflows.** §5.2 lists this as an explicit
+  non-goal for MVP, and the reason holds: it turns a typed, inspectable,
+  compilable process into an execution sandbox with an entirely different
+  security model. The expression languages exist so that behaviour is
+  declarable without it.
+- **Native mobile.** Out of scope for this repository. The public API is what
+  would make it possible.
 - **A consent screen for OAuth.** The authorize endpoint is correct and takes
   the granting member's session; a real deployment puts a page in front of it
   showing the client's name and the scopes.

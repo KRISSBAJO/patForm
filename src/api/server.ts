@@ -14,6 +14,7 @@ import { runRetention } from '../runtime/retention.js';
 import { logIfEnabled, requestIdFrom, withTrace } from '../runtime/trace.js';
 import { traceByRequest, traceForInstance } from '../runtime/support.js';
 import { dashboard } from '../runtime/metrics.js';
+import { installPack, listInstalls, listPacks, publishPack, readPack } from '../runtime/packs.js';
 import { authorize, listGrants, registerClient, revokeGrant } from './oauth.js';
 import {
   completeRotation,
@@ -330,12 +331,13 @@ route('POST', /^\/api\/keys\/([0-9a-f-]{36})\/revoke$/, async ({ pool, principal
 route('GET', /^\/api\/webhooks$/, async ({ pool, principal }) => listEndpoints(pool, principal));
 
 route('POST', /^\/api\/webhooks$/, async ({ pool, principal }, body) => {
-  const { url, description, events, includeFields } = body as {
+  const { url, description, events, includeFields, kind } = body as {
     url?: string; description?: string; events?: string[]; includeFields?: string[];
+    kind?: 'http' | 'slack' | 'teams';
   };
   if (!url) throw new HttpError(400, 'url is required');
   // The secret is returned once, here. It is not readable afterwards.
-  return registerEndpoint(pool, { principal, url, description, events, includeFields });
+  return registerEndpoint(pool, { principal, url, description, events, includeFields, kind });
 });
 
 route('POST', /^\/api\/webhooks\/([0-9a-f-]{36})\/rotate$/, async ({ pool, principal, url }) =>
@@ -412,6 +414,42 @@ route('POST', /^\/api\/oauth\/authorize$/, async ({ pool, principal, actorId }, 
       codeChallengeMethod: b.codeChallengeMethod ?? 'S256',
     },
   });
+});
+
+
+// -------------------------------------------------------------------- packs
+//
+// §1.2's differentiator: a pack carries schema, workflow, messages, documents,
+// dashboard and policy defaults, not a form. Installing produces a draft, so
+// §1.3's "review before publish" still applies to something we wrote.
+
+route('GET', /^\/api\/packs$/, async ({ pool, principal, url }) =>
+  listPacks(pool, {
+    principal,
+    category: url.searchParams.get('category') ?? undefined,
+    search: url.searchParams.get('q') ?? undefined,
+  }),
+);
+
+route('GET', /^\/api\/packs\/([0-9a-f-]{36})$/, async ({ pool, principal, url }) =>
+  readPack(pool, { principal, packId: url.pathname.split('/').pop()! }),
+);
+
+route('POST', /^\/api\/packs\/([0-9a-f-]{36})\/install$/, async ({ pool, principal, url }, body) => {
+  const { processKey, name } = body as { processKey?: string; name?: string };
+  if (!processKey) throw new HttpError(400, 'processKey is required');
+  return installPack(pool, { principal, packId: url.pathname.split('/')[3]!, processKey, name });
+});
+
+route('GET', /^\/api\/packs\/installed$/, async ({ pool, principal }) => listInstalls(pool, principal));
+
+// Publishing a workspace's own process as a pack, for its own reuse.
+route('POST', /^\/api\/packs$/, async ({ pool, principal }, body) => {
+  const { packKey, name, summary, category, audience, blueprint } = body as Record<string, never>;
+  if (!packKey || !name || !summary || !category || !blueprint) {
+    throw new HttpError(400, 'packKey, name, summary, category and blueprint are required');
+  }
+  return publishPack(pool, { principal, packKey, name, summary, category, audience, blueprint });
 });
 
 // ------------------------------------------------------------------ session

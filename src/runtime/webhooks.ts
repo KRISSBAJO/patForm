@@ -2,6 +2,7 @@ import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { Pool, Client } from './db.js';
 import { requireWorkspaceCapability, type Principal } from './policy.js';
 import { logIfEnabled } from './trace.js';
+import { messageFor, render } from './chat.js';
 
 /**
  * Webhook delivery, §11.2.
@@ -118,7 +119,15 @@ export function verify(
 
 export async function registerEndpoint(
   pool: Pool,
-  args: { principal: Principal; url: string; description?: string; events?: string[]; includeFields?: string[] },
+  args: {
+    principal: Principal;
+    url: string;
+    description?: string;
+    events?: string[];
+    includeFields?: string[];
+    /** 'slack' and 'teams' render a chat card instead of the raw envelope. */
+    kind?: 'http' | 'slack' | 'teams';
+  },
 ): Promise<{ id: string; secret: string }> {
   await requireWorkspaceCapability(pool, args.principal, 'administer', 'webhooks');
   if (args.principal.kind !== 'actor') throw new Error('unreachable');
@@ -131,8 +140,8 @@ export async function registerEndpoint(
 
   const secret = `whsec_${randomBytes(24).toString('base64url')}`;
   const { rows } = await pool.query<{ id: string }>(
-    `insert into webhook_endpoint (tenant_id, url, description, events, secret, include_fields)
-     values ($1, $2, $3, $4, $5, $6) returning id`,
+    `insert into webhook_endpoint (tenant_id, url, description, events, secret, include_fields, kind)
+     values ($1, $2, $3, $4, $5, $6, $7) returning id`,
     [
       args.principal.tenantId,
       args.url,
@@ -140,6 +149,7 @@ export async function registerEndpoint(
       args.events ?? [],
       secret,
       args.includeFields ?? [],
+      args.kind ?? 'http',
     ],
   );
   return { id: rows[0]!.id, secret };
@@ -330,6 +340,7 @@ export async function deliverBatch(
     url: string;
     secret: string;
     previous_secret: string | null;
+    kind: 'http' | 'slack' | 'teams';
   }>(
     `update webhook_delivery d
         set claimed_by = $1, claimed_at = $2, attempts = d.attempts + 1,
@@ -341,24 +352,34 @@ export async function deliverBatch(
            where status = 'pending' and available_at <= $2
            order by id for update skip locked limit $3
         )
-      returning d.id, d.payload, d.attempts, e.url, e.secret, e.previous_secret`,
+      returning d.id, d.payload, d.attempts, e.url, e.secret, e.previous_secret, e.kind`,
     [args.workerId, now, args.batch ?? 20],
   );
 
   outcome.claimed = claimed.length;
 
   for (const row of claimed) {
-    const body = JSON.stringify(row.payload);
-    // Both secrets during a rotation, so a consumer running either version of
-    // its configuration accepts the request.
-    const signature = sign(body, [row.secret, row.previous_secret ?? '']);
+    /*
+     * A chat destination gets a card, not the envelope.
+     *
+     * Slack and Teams ignore an unknown JSON body and answer 400, so the
+     * difference is not cosmetic. They also do not verify our signature —
+     * the webhook URL is itself the credential — so signing a chat post
+     * would be theatre, and the header is left off rather than sent
+     * meaninglessly.
+     */
+    const chatKind = row.kind === 'slack' || row.kind === 'teams' ? row.kind : null;
+    const body = chatKind
+      ? JSON.stringify(render(chatKind, messageFor(row.payload)))
+      : JSON.stringify(row.payload);
+    const signature = chatKind ? null : sign(body, [row.secret, row.previous_secret ?? '']);
 
     try {
       const response = await doFetch(row.url, {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
-          'patform-signature': signature,
+          ...(signature ? { 'patform-signature': signature } : {}),
           'patform-event': row.payload.event,
           'patform-delivery': String(row.id),
         },

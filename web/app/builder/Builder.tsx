@@ -153,6 +153,36 @@ interface ScenarioResult {
 
 type Tab = 'fields' | 'states' | 'approvals' | 'tasks' | 'roles' | 'json';
 
+interface PackContents {
+  fields: number;
+  states: number;
+  approvals: number;
+  tasks: number;
+  emails: number;
+  documents: number;
+  metrics: number;
+  scenarios: number;
+  roles: { key: string; name: string; kind: string }[];
+  policy: {
+    sensitivityCeiling: string;
+    retentionDays: number | null;
+    restrictedFields: number;
+    fieldsHiddenFromSomeone: number;
+  };
+}
+
+interface Pack {
+  id: string;
+  packKey: string;
+  version: number;
+  name: string;
+  summary: string;
+  category: string;
+  audience: string;
+  contents: PackContents;
+  builtIn: boolean;
+}
+
 const FIELD_TYPES = [
   'short_text', 'long_text', 'email', 'phone', 'number', 'currency', 'url', 'address',
   'date', 'time', 'single_choice', 'multi_choice', 'dropdown', 'yes_no', 'rating',
@@ -1800,7 +1830,20 @@ function NewProcessDialog({
   onClose: () => void;
   onCreated: (detail: DraftDetail) => void;
 }) {
-  const [mode, setMode] = useState<'describe' | 'copy'>('describe');
+  const [mode, setMode] = useState<'pack' | 'describe' | 'copy'>('pack');
+  const [packs, setPacks] = useState<Pack[]>([]);
+  const [chosen, setChosen] = useState<Pack | null>(null);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        setPacks(await call<Pack[]>('/api/packs'));
+      } catch {
+        // A catalogue that will not load is not a reason to block the other
+        // two routes into a new process.
+      }
+    })();
+  }, []);
   const [key, setKey] = useState('');
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -1813,6 +1856,17 @@ function NewProcessDialog({
     setBusy(true);
     setErr(null);
     try {
+      if (mode === 'pack') {
+        if (!chosen) throw new Error('choose a pack');
+        // Installing gives a draft, not a live process. §1.3's review before
+        // publish applies to something we wrote as much as to a generated one.
+        const installed = await call<{ draftId: string }>(`/api/packs/${chosen.id}/install`, {
+          method: 'POST',
+          body: JSON.stringify({ processKey: key, name: name || undefined }),
+        });
+        onCreated(await call<DraftDetail>(`/api/builder/drafts/${installed.draftId}`));
+        return;
+      }
       const detail = await call<DraftDetail>('/api/builder/create', {
         method: 'POST',
         body: JSON.stringify(
@@ -1840,6 +1894,9 @@ function NewProcessDialog({
         </header>
 
         <div className="bd__modes">
+          <button className={`bd__mode${mode === 'pack' ? ' bd__mode--on' : ''}`} onClick={() => setMode('pack')}>
+            From a pack
+          </button>
           <button className={`bd__mode${mode === 'describe' ? ' bd__mode--on' : ''}`} onClick={() => setMode('describe')}>
             Describe it
           </button>
@@ -1860,7 +1917,48 @@ function NewProcessDialog({
           <input className="bd__input" value={name} onChange={(e) => setName(e.target.value)} />
         </Row>
 
-        {mode === 'describe' ? (
+        {mode === 'pack' ? (
+          <>
+            <div className="bd__packs">
+              {packs.map((p) => (
+                <button
+                  key={p.id}
+                  className={`bd__pack${chosen?.id === p.id ? ' bd__pack--on' : ''}`}
+                  onClick={() => {
+                    setChosen(p);
+                    if (!key) setKey(p.packKey);
+                  }}
+                  aria-pressed={chosen?.id === p.id}
+                >
+                  <span className="bd__packCategory">{p.category}</span>
+                  <strong>{p.name}</strong>
+                  <span className="bd__packSummary">{p.summary}</span>
+                  {/* Counted from the blueprint at publish, so a card cannot
+                      claim something installing does not give you. */}
+                  <span className="bd__packContents">
+                    {p.contents.fields} fields · {p.contents.states} states · {p.contents.approvals} approvals ·{' '}
+                    {p.contents.tasks} tasks · {p.contents.emails} messages · {p.contents.documents} documents ·{' '}
+                    {p.contents.scenarios} scenarios
+                  </span>
+                  <span className="bd__packPolicy">
+                    {p.contents.policy.restrictedFields} restricted, {p.contents.policy.fieldsHiddenFromSomeone} hidden
+                    from at least one role
+                    {p.contents.policy.retentionDays
+                      ? `, kept ${Math.round(p.contents.policy.retentionDays / 365)} years`
+                      : ', kept indefinitely'}
+                  </span>
+                </button>
+              ))}
+              {!packs.length && <p className="bd__note">No packs available.</p>}
+            </div>
+            {chosen && (
+              <p className="bd__note">
+                <strong>{chosen.audience}</strong> Installing opens it here as a draft — nothing goes live until you
+                publish it.
+              </p>
+            )}
+          </>
+        ) : mode === 'describe' ? (
           <>
             <Row label="What is this process" hint="who starts it, who decides, what happens at the end">
               <textarea
@@ -1900,9 +1998,13 @@ function NewProcessDialog({
           <button
             className="bd__btn bd__btn--primary"
             onClick={submit}
-            disabled={busy || key.length < 3 || (mode === 'describe' ? description.trim().length < 20 : !copyFrom)}
+            disabled={
+              busy ||
+              key.length < 3 ||
+              (mode === 'pack' ? !chosen : mode === 'describe' ? description.trim().length < 20 : !copyFrom)
+            }
           >
-            {busy ? 'Working…' : 'Create draft'}
+            {busy ? 'Working…' : mode === 'pack' ? 'Install as a draft' : 'Create draft'}
           </button>
         </div>
       </div>
