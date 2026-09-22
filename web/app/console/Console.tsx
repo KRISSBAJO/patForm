@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import './console.css';
+import { Ask } from './Ask';
 
 /**
  * Calls go to the same origin so the HttpOnly, SameSite=Lax session cookie is
@@ -46,6 +47,7 @@ interface Health {
 }
 
 interface RecordDetail {
+  instanceId: string;
   reference: string;
   version: number;
   stateName: string;
@@ -83,6 +85,7 @@ export function Console() {
   const [work, setWork] = useState<Work | null>(null);
   const [health, setHealth] = useState<Health | null>(null);
   const [record, setRecord] = useState<RecordDetail | null>(null);
+  const [view, setView] = useState<'work' | 'ask'>('work');
   const [toast, setToast] = useState<Toast>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -170,6 +173,36 @@ export function Console() {
   const replay = (outboxId: number) =>
     act(`replay:${outboxId}`, () => call(`/api/automation/${outboxId}/replay`, { method: 'POST' }), 'Queued for replay.');
 
+  /**
+   * §20.1 step 11. The file is built server-side and downloaded here, so
+   * nothing about who may see which field is decided in the browser — the
+   * bundle arrives already redacted for whoever asked for it.
+   */
+  const exportRecord = async (instanceId: string, ref: string, format: 'json' | 'csv') => {
+    try {
+      const body = await call<Record<string, unknown> & { body?: string; filename?: string }>(
+        `/api/records/${instanceId}/export${format === 'csv' ? '?format=csv' : ''}`,
+      );
+      const text = format === 'csv' ? String(body.body ?? '') : JSON.stringify(body, null, 2);
+      const name = format === 'csv' ? String(body.filename ?? `${ref}.csv`) : `${ref}-export.json`;
+      const url = URL.createObjectURL(new Blob([text], { type: format === 'csv' ? 'text/csv' : 'application/json' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = name;
+      a.click();
+      URL.revokeObjectURL(url);
+      const withheld = Array.isArray(body.withheld) ? (body.withheld as string[]) : [];
+      setToast({
+        message: withheld.length
+          ? `Exported ${name}. ${withheld.length} field(s) withheld from your role: ${withheld.join(', ')}.`
+          : `Exported ${name}.`,
+      });
+    } catch (err) {
+      if (err instanceof Unauthenticated) return setSession(null);
+      setToast({ message: err instanceof Error ? err.message : String(err), refused: true });
+    }
+  };
+
   const open = async (instanceId: string) => {
     try {
       setRecord(await call<RecordDetail>(`/api/records/${instanceId}`));
@@ -204,9 +237,22 @@ export function Console() {
         </div>
 
         <nav className="cs__nav" aria-label="Console">
-          <button type="button" className="cs__navItem" aria-current="page">
+          <button
+            type="button"
+            className="cs__navItem"
+            aria-current={view === 'work' ? 'page' : undefined}
+            onClick={() => setView('work')}
+          >
             My work
             {counts.needsYou > 0 && <span className="cs__navCount">{counts.needsYou}</span>}
+          </button>
+          <button
+            type="button"
+            className="cs__navItem"
+            aria-current={view === 'ask' ? 'page' : undefined}
+            onClick={() => setView('ask')}
+          >
+            Ask
           </button>
           <button type="button" className="cs__navItem" disabled title="Not built yet">
             Records
@@ -276,7 +322,7 @@ export function Console() {
 
       <main className="cs__main">
         <div className="cs__head">
-          <h1>My work</h1>
+          <h1>{view === 'ask' ? 'Ask' : 'My work'}</h1>
           {work && <span className="cs__version">{work.processName}</span>}
           <span style={{ flexGrow: 1 }} />
           <button type="button" className="cs__btn" onClick={() => void load()}>
@@ -286,7 +332,15 @@ export function Console() {
 
         <div className="cs__body">
           <div className="cs__left">
-            {error ? (
+            {view === 'ask' ? (
+              <Ask
+                processKey={processKey}
+                onOpenRecord={(id) => {
+                  void open(id);
+                  setView('work');
+                }}
+              />
+            ) : error ? (
               <div className="cs__panel">
                 <div className="cs__empty">
                   <strong>Refused.</strong>
@@ -387,7 +441,23 @@ export function Console() {
                       <span className="cs__sort">
                         v{record.version} · seen as {record.viewerRoles.join(', ') || 'no process role'}
                       </span>
-                      <button type="button" className="cs__btn" style={{ marginLeft: 12 }} onClick={() => setRecord(null)}>
+                      <button
+                        type="button"
+                        className="cs__btn"
+                        style={{ marginLeft: 12 }}
+                        onClick={() => void exportRecord(record.instanceId, record.reference, 'json')}
+                        title="The record, its full audit history, every decision, message and document"
+                      >
+                        Export
+                      </button>
+                      <button
+                        type="button"
+                        className="cs__btn"
+                        onClick={() => void exportRecord(record.instanceId, record.reference, 'csv')}
+                      >
+                        CSV
+                      </button>
+                      <button type="button" className="cs__btn" onClick={() => setRecord(null)}>
                         Close
                       </button>
                     </div>

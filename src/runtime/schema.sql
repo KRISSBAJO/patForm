@@ -422,3 +422,49 @@ create table timer (
 );
 
 create index timer_due on timer (due_at, id) where fired_at is null and cancelled_at is null;
+
+-- --------------------------------------------------------------- copilot
+--
+-- §7.3 wants the AI audit to record "model, prompt template version, tool
+-- plan, human approval, execution result, and errors". One row per question
+-- carries all six, which is also what makes §7.4's action-precision gate
+-- measurable: the confirmed plan and what ran are on the same row.
+--
+-- `plan_digest` is what binds them. The preview hashes the plan together with
+-- the exact instance ids it resolved; execution refuses unless the caller
+-- hands that digest back. So "100 percent of executed actions match the
+-- confirmed plan" is enforced rather than asserted, and a record that becomes
+-- eligible between preview and confirmation is not swept up.
+create table copilot_run (
+  id              uuid primary key default gen_random_uuid(),
+  tenant_id       uuid not null references tenant(id),
+  actor_id        uuid references actor(id),
+  process_key     text not null,
+  question        text not null,
+  -- the model's own account of what it understood, shown back before anything runs
+  reading         text,
+  plan            jsonb not null,
+  action_plan     jsonb,
+  diagnostics     jsonb not null default '[]'::jsonb,
+  -- resolved at preview: every instance the plan matched, with its per-record
+  -- authorization decision. Execution reads this, never the query again.
+  targets         jsonb not null default '[]'::jsonb,
+  plan_digest     text,
+  status          text not null default 'previewed'
+    check (status in ('answered','previewed','confirmed','executed','refused','failed')),
+  -- §7.3: model, prompt version, tokens, latency, and any error
+  provider        text,
+  model           text,
+  prompt_version  text,
+  input_tokens    int,
+  output_tokens   int,
+  latency_ms      int,
+  error           text,
+  -- §6.4: "bulk actions require ... a result report"
+  result          jsonb,
+  confirmed_by    text,
+  confirmed_at    timestamptz,
+  created_at      timestamptz not null default now()
+);
+
+create index copilot_run_recent on copilot_run (tenant_id, created_at desc);

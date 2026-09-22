@@ -482,6 +482,102 @@ export class Engine {
   }
 
   /** Manual transitions, e.g. an administrator withdrawing a record. */
+  /**
+   * Performs one action against one record, once, on somebody's explicit say-so.
+   *
+   * The workflow's own actions come off the outbox; this is the door for an
+   * action a person asked for — today the copilot's confirmed reminders. It
+   * goes through the same `executeAction` the worker uses rather than a
+   * parallel send path, so the idempotency key, the effect tables' unique
+   * constraints and the delivery log all behave identically. A second copilot
+   * plan carrying the same key sends nothing and says so.
+   *
+   * It appends an event before acting. A reminder that arrives with no trace
+   * on the record is indistinguishable from one the process sent itself, and
+   * §6.4 requires a bulk action to leave a result report — which starts with
+   * the record knowing it happened.
+   */
+  async runActionOnce(args: {
+    principal: Principal;
+    instanceId: string;
+    action: Action;
+    idempotencyKey: string;
+    reason: string;
+    now: Date;
+  }): Promise<{ performed: boolean; recipients: string[]; reason?: string }> {
+    return inTransaction(this.pool, async (client) => {
+      const instance = await loadInstance(client, args.instanceId, { lock: true });
+      const bp = await loadBlueprint(client, instance.process_version_id);
+
+      await require_(
+        client,
+        {
+          principal: args.principal,
+          action: 'operate',
+          tenantId: instance.tenant_id,
+          processKey: instance.process_key,
+          blueprint: bp,
+          instanceId: instance.id,
+        },
+        this.pool,
+      );
+
+      // Bound to a local: narrowing on a property of a parameter object does
+      // not survive the awaits below.
+      const action = args.action;
+      if (action.do !== 'send_email') {
+        throw new Error(`runActionOnce performs send_email; "${action.do}" is not wired`);
+      }
+      const template = bp.communications.email.find((t) => t.key === action.template);
+      if (!template) return { performed: false, recipients: [], reason: 'no such template' };
+
+      const { addresses: recipients, unreachable } = await resolveRecipients(
+        client,
+        [...template.to, ...template.cc],
+        instance,
+        bp,
+      );
+      if (!recipients.length) {
+        return {
+          performed: false,
+          recipients: [],
+          reason: unreachable.length ? `nobody holds ${unreachable.join(', ')}` : 'nobody to send to',
+        };
+      }
+
+      // Did this key already run? executeAction would short-circuit anyway,
+      // but the caller needs to hear "already sent" rather than "sent".
+      const { rows: prior } = await client.query<{ status: string }>(
+        'select status from action_run where instance_id = $1 and idempotency_key = $2',
+        [instance.id, args.idempotencyKey],
+      );
+      if (prior[0]?.status === 'done') {
+        return { performed: false, recipients, reason: 'already sent under this plan' };
+      }
+
+      await appendEvent(client, {
+        tenantId: instance.tenant_id,
+        instanceId: instance.id,
+        type: 'manual_action',
+        payload: { action: action.do, template: action.template, reason: args.reason },
+        actor: describePrincipal(args.principal),
+        now: args.now,
+      });
+
+      await executeAction(client, {
+        bp,
+        instance,
+        action,
+        idempotencyKey: args.idempotencyKey,
+        now: args.now,
+        email: this.email,
+        audit: this.pool,
+      });
+
+      return { performed: true, recipients };
+    });
+  }
+
   async fireManual(args: {
     instanceId: string;
     transitionKey: string;
@@ -993,8 +1089,34 @@ async function performEffect(
     case 'send_email': {
       const template = bp.communications.email.find((t) => t.key === action.template)!;
       if (template.skipWhen && evaluate(template.skipWhen, { answers, now })) return;
-      const recipients = [...template.to, ...template.cc].flatMap((p) => resolveParty(p, instance, bp));
-      if (!recipients.length) return;
+      const { addresses: recipients, unreachable } = await resolveRecipients(
+        client,
+        [...template.to, ...template.cc],
+        instance,
+        bp,
+      );
+      if (!recipients.length) {
+        // Nothing to send, but something to say. A template addressed to a
+        // role nobody holds used to leave no trace at all.
+        if (unreachable.length) {
+          await client.query(
+            `insert into email_log
+               (tenant_id, instance_id, action_run_id, template_key, recipients, subject, body, provider, status, failure, sent_at)
+             values ($1, $2, $3, $4, $5, $6, '', 'none', 'skipped', $7, $8)`,
+            [
+              instance.tenant_id,
+              instance.id,
+              runId,
+              template.key,
+              [],
+              render(template.subject, answers),
+              `nobody holds ${unreachable.join(', ')} in this process`,
+              now,
+            ],
+          );
+        }
+        return;
+      }
 
       const subject = render(template.subject, answers);
       const body = render(template.body, answers);
@@ -1035,7 +1157,7 @@ async function performEffect(
 
       const delivery = await args.email.send({
         from: mailFrom(bp.communications.fromName),
-        to: recipients.filter((r) => !r.startsWith('role:')),
+        to: recipients,
         subject,
         text: body,
         attachments,
@@ -1228,6 +1350,17 @@ function renderDocument(
 }
 
 /** Turns a declared party into concrete addresses. Never a free-form string. */
+/**
+ * Who a party is.
+ *
+ * A role resolves to the marker `role:hr_approver` rather than to a list of
+ * people, and that is right for a task or an approval: the policy engine reads
+ * the marker as "anyone currently holding this role", which is what
+ * `completableBy: 'assignee'` promises and what stops a task becoming
+ * uncompletable the moment one person leaves.
+ *
+ * It is wrong for an email, which needs an address. See resolveRecipients.
+ */
 function resolveParty(party: Party, instance: InstanceRow, bp: Blueprint): string[] {
   if ('user' in party) return [party.user];
   if ('field' in party) {
@@ -1240,9 +1373,56 @@ function resolveParty(party: Party, instance: InstanceRow, bp: Blueprint): strin
     return typeof value === 'string' && value ? [value] : [];
   }
   if ('assignee' in party) return instance.assignee ? [instance.assignee] : [];
-  // A role resolves to its members. The spike has no directory, so it addresses
-  // the role itself and leaves fan-out to the notification service.
   return [`role:${party.role}`];
+}
+
+/**
+ * Who an email actually reaches.
+ *
+ * This exists because for a long time it did not, and the gap was invisible:
+ * `resolveParty` handed back `role:hr_approver`, that string was written into
+ * `email_log.recipients` where it reads as a delivered reminder, and one line
+ * later it was filtered out of the provider's `to` list. Every role-addressed
+ * message was therefore logged as sent and given to the provider with nobody
+ * on it. The seeded workspace had been showing a delivered HR reminder that
+ * reached no one.
+ *
+ * The comment that justified it said the spike had no directory and left
+ * fan-out to a notification service. `membership` and `actor` are a directory,
+ * and the notification service was never built.
+ *
+ * A role nobody holds resolves to nothing, and the caller records that rather
+ * than logging a send. That is a real state — somebody deactivated the only
+ * HR approver — and it should be visible on the record, not smoothed over.
+ */
+async function resolveRecipients(
+  client: Client,
+  parties: Party[],
+  instance: InstanceRow,
+  bp: Blueprint,
+): Promise<{ addresses: string[]; unreachable: string[] }> {
+  const addresses: string[] = [];
+  const unreachable: string[] = [];
+
+  for (const party of parties) {
+    if (!('role' in party)) {
+      for (const who of resolveParty(party, instance, bp)) {
+        if (!addresses.includes(who)) addresses.push(who);
+      }
+      continue;
+    }
+    const { rows } = await client.query<{ email: string }>(
+      `select a.email from membership m
+         join actor a on a.id = m.actor_id
+        where m.tenant_id = $1 and m.process_key = $2 and m.role_key = $3 and a.active
+        order by a.email`,
+      [instance.tenant_id, instance.process_key, party.role],
+    );
+    if (!rows.length) unreachable.push(`role:${party.role}`);
+    for (const row of rows) if (!addresses.includes(row.email)) addresses.push(row.email);
+  }
+
+  return { addresses, unreachable };
 }
 
 function passesGuard(transition: Transition, instance: InstanceRow, now: Date, actor?: string): boolean {

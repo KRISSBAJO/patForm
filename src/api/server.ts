@@ -20,6 +20,11 @@ import {
   submitForm,
 } from '../runtime/intake.js';
 import type { Answers } from '../blueprint/answers.js';
+import { ask, confirm, recentRuns, runPlan } from '../runtime/copilot.js';
+import { askerFor } from '../copilot/ask.js';
+import { availableProviders, providerFor } from '../ai/index.js';
+import { QueryPlan, ActionPlan } from '../copilot/plan.js';
+import { bundleToCsv, exportRecord } from '../runtime/export.js';
 import {
   createDraft,
   discardDraft,
@@ -153,6 +158,58 @@ route('GET', /^\/api\/builder\/drafts\/([0-9a-f-]{36})\/impact$/, async ({ pool,
 route('POST', /^\/api\/builder\/drafts\/([0-9a-f-]{36})\/publish$/, async ({ pool, principal, url }) =>
   publishDraft(pool, { principal, draftId: url.pathname.split('/')[4]! }),
 );
+
+
+// ------------------------------------------------------------------ copilot
+//
+// §20.1 step 9. Asking costs a model call and is rate limited; running a plan
+// directly does not, which is how the console's own filters reach the same
+// permission-filtered path without a provider configured at all.
+
+route('POST', /^\/api\/copilot\/ask$/, async ({ pool, principal }, body) => {
+  const { processKey, question } = body as { processKey?: string; question?: string };
+  if (!processKey || !question?.trim()) throw new HttpError(400, 'processKey and question are required');
+
+  const available = availableProviders();
+  if (!available.length) {
+    throw new HttpError(503, 'no AI provider is configured — set ANTHROPIC_API_KEY or OPENAI_API_KEY');
+  }
+  return ask(pool, askerFor(providerFor(available[0]!)), { principal, processKey, question });
+});
+
+route('POST', /^\/api\/copilot\/run$/, async ({ pool, principal }, body) => {
+  const { plan, action } = body as { plan?: unknown; action?: unknown };
+  const parsed = QueryPlan.safeParse(plan);
+  if (!parsed.success) throw new HttpError(400, `that is not a query plan: ${parsed.error.issues[0]?.message}`);
+  const parsedAction = action ? ActionPlan.safeParse(action) : null;
+  if (parsedAction && !parsedAction.success) {
+    throw new HttpError(400, `that is not an action plan: ${parsedAction.error.issues[0]?.message}`);
+  }
+  const outcome = await runPlan(pool, { principal, plan: parsed.data, action: parsedAction?.data ?? null });
+  return { rows: outcome.rows, diagnostics: outcome.diagnostics, ok: outcome.ok, preview: outcome.preview };
+});
+
+route('POST', /^\/api\/copilot\/confirm$/, async ({ pool, principal }, body) => {
+  const { runId, digest } = body as { runId?: string; digest?: string };
+  if (!runId || !digest) throw new HttpError(400, 'runId and digest are required');
+  return confirm(pool, { principal, runId, digest });
+});
+
+route('GET', /^\/api\/copilot\/runs$/, async ({ pool, principal }) => recentRuns(pool, principal));
+
+// ------------------------------------------------------------------- export
+//
+// §20.1 step 11. `?format=csv` returns a spreadsheet; the default is the JSON
+// bundle, which is the one that round-trips.
+
+route('GET', /^\/api\/records\/([0-9a-f-]{36})\/export$/, async ({ pool, principal, url }) => {
+  const instanceId = url.pathname.split('/')[3]!;
+  const bundle = await exportRecord(pool, { principal, instanceId });
+  if (url.searchParams.get('format') === 'csv') {
+    return { filename: `${bundle.record.reference}-export.csv`, contentType: 'text/csv', body: bundleToCsv(bundle) };
+  }
+  return bundle;
+});
 
 // ------------------------------------------------------------------ session
 

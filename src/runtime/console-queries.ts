@@ -344,6 +344,9 @@ export async function recordDetail(pool: Pool, principal: Principal, instanceId:
 
     return {
       id: instance.id,
+      // The console needs the id as well as the reference: the reference is
+      // for people, the id is what the export endpoint takes.
+      instanceId: instance.id,
       reference: reference(instance.id),
       processKey: instance.process_key,
       processName: bp.name,

@@ -705,3 +705,177 @@
   font-size: inherit;
   text-decoration: underline;
 }
+
+/* ------------------------------------------------------------------- ask */
+/*
+ * §20.1 step 9. The order on screen is the argument: what was understood,
+ * what matched, who each message reaches, and only then a button.
+ */
+
+.ask__form {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.ask__input {
+  flex: 1;
+  height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--white);
+  font-size: 14px;
+  font-family: inherit;
+  color: var(--ink);
+}
+
+.ask__input:focus {
+  outline: none;
+  border-color: var(--green);
+  box-shadow: 0 0 0 3px var(--green-pale);
+}
+
+.ask__suggestions { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.ask__suggestion {
+  padding: 5px 11px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: var(--paper-3);
+  color: var(--muted);
+  font-size: 12.5px;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.ask__suggestion:hover { border-color: var(--green-border); color: var(--green); }
+
+.ask__reading {
+  margin: 4px 0 14px;
+  padding: 10px 12px;
+  border-left: 3px solid var(--green);
+  background: var(--green-tint);
+  border-radius: 0 7px 7px 0;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--ink-soft);
+}
+
+.ask__count {
+  font-size: 11.5px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted-2);
+  margin-bottom: 6px;
+}
+
+.ask__table { width: 100%; border-collapse: collapse; font-size: 13px; }
+
+.ask__table th {
+  text-align: left;
+  padding: 6px 8px;
+  font-size: 10.5px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted-2);
+  border-bottom: 1px solid var(--line);
+  font-weight: 500;
+}
+
+.ask__table td { padding: 7px 8px; border-bottom: 1px solid var(--line-soft); color: var(--ink-soft); }
+.ask__table tbody tr { cursor: pointer; }
+.ask__table tbody tr:hover { background: var(--paper-2); }
+.ask__table code { font-family: var(--font-mono), monospace; font-size: 12px; color: var(--ink); }
+.ask__table--tight tbody tr { cursor: default; }
+.ask__table--tight tbody tr:hover { background: transparent; }
+
+.ask__late {
+  margin-left: 7px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--red-pale);
+  color: var(--red-text);
+  font-size: 10.5px;
+  font-weight: 600;
+}
+
+.ask__answers { color: var(--muted); font-size: 12px; }
+.ask__empty { text-align: center; color: var(--muted-2); font-style: italic; padding: 18px !important; }
+
+.ask__planToggle {
+  margin-top: 10px;
+  border: none;
+  background: transparent;
+  padding: 0;
+  font-size: 12.5px;
+  color: var(--muted);
+  text-decoration: underline;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.ask__plan {
+  margin: 8px 0 4px;
+  padding: 10px 12px;
+  border-radius: 7px;
+  background: var(--ink);
+  color: var(--on-dark-2);
+  font-family: var(--font-mono), monospace;
+  font-size: 11.5px;
+  line-height: 1.55;
+  overflow-x: auto;
+  max-height: 260px;
+}
+
+.ask__audit { font-size: 11.5px; color: var(--muted-2); margin: 0 0 8px; }
+
+.ask__diagnostics,
+.ask__error {
+  padding: 10px 12px;
+  border-radius: 7px;
+  background: var(--red-wash);
+  border-left: 3px solid var(--red-text);
+  color: var(--red-text);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.ask__diagnostics p { margin: 5px 0 0; color: var(--ink-soft); }
+.ask__diagnostics code { font-family: var(--font-mono), monospace; font-size: 11px; font-weight: 600; }
+.ask__diagnostics em { color: var(--muted); font-style: italic; }
+
+.ask__preview {
+  margin-top: 16px;
+  padding: 13px 15px;
+  border: 1px solid var(--ochre-border);
+  border-radius: 9px;
+  background: var(--ochre-pale);
+}
+
+.ask__preview > strong { display: block; font-size: 13.5px; color: var(--ochre-text); margin-bottom: 9px; }
+.ask__refused, .ask__skipped { margin: 7px 0 0; font-size: 12.5px; line-height: 1.5; color: var(--muted-3); }
+.ask__refused strong { color: var(--red-text); }
+
+.ask__confirmRow {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 13px;
+  padding-top: 11px;
+  border-top: 1px solid var(--ochre-border);
+}
+
+.ask__digest { flex: 1; font-size: 12px; line-height: 1.45; color: var(--muted-3); }
+
+.ask__result {
+  margin-top: 16px;
+  padding: 13px 15px;
+  border: 1px solid var(--green-border);
+  border-radius: 9px;
+  background: var(--green-tint);
+}
+
+.ask__result > strong { display: block; font-size: 13.5px; color: var(--green-deep); margin-bottom: 7px; }
+.ask__result p { margin: 3px 0 0; font-size: 12.5px; color: var(--ink-soft); }
+.ask__result code { font-family: var(--font-mono), monospace; font-size: 11.5px; }

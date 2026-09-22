@@ -1,0 +1,603 @@
+import { createHash } from 'node:crypto';
+import type { Blueprint } from '../blueprint/index.js';
+import type { Diagnostic } from '../compiler/diagnostics.js';
+import { compileAction, compileQuery } from '../copilot/compile.js';
+import { ActionPlan, Proposal, QueryPlan } from '../copilot/plan.js';
+import { inTransaction, type Client, type Pool } from './db.js';
+import { Engine } from './engine.js';
+import { AuthorizationError, redact, require_, type Principal } from './policy.js';
+
+/**
+ * The operational copilot.
+ *
+ * §20.1 step 9: "The operator asks which records are overdue and sends a
+ * confirmed reminder to authorized targets." Three separate promises in one
+ * sentence, and the third is the one that decides whether this is a feature or
+ * a liability.
+ *
+ * **Asks.** The model never sees the database and never writes SQL. It emits a
+ * typed plan (../copilot/plan.ts) which a deterministic compiler turns into a
+ * parameterised statement, refusing anything that names something the
+ * blueprint does not have. This is the same boundary as blueprint generation,
+ * for the same reason, and it matters more here: the records being queried
+ * contain text that respondents typed, so the model is reading attacker-
+ * controlled input every time it answers a question about a record.
+ *
+ * **Confirmed.** §7.4 gates action precision at "100 percent of executed
+ * actions match the confirmed plan". That is only enforceable if the thing
+ * confirmed and the thing executed are the same object, so the preview
+ * resolves the target ids and hashes them with the plan, and execution works
+ * from the stored list rather than re-running the query. A record that becomes
+ * overdue thirty seconds after the preview is not included — which is the
+ * correct behaviour, not a limitation: the operator confirmed eleven records,
+ * not "whatever matches when I press the button".
+ *
+ * **Authorized targets.** §6.4 requires "permission checks per record". The
+ * preview runs one, and so does the execution, because a permission can be
+ * revoked in between and the preview is not a capability.
+ */
+
+const MAX_TARGETS = 200;
+const RATE_LIMIT_PER_HOUR = 20;
+
+export interface AskResult {
+  runId: string;
+  reading: string;
+  plan: QueryPlan;
+  action: ActionPlan | null;
+  diagnostics: Diagnostic[];
+  ok: boolean;
+  rows: MatchedRecord[];
+  /** Present when the question asked for something to be done. */
+  preview: ActionPreview | null;
+  audit: { provider: string; model: string; promptVersion: string; latencyMs: number };
+}
+
+export interface MatchedRecord {
+  instanceId: string;
+  reference: string;
+  state: string;
+  stateName: string;
+  hoursInState: number;
+  overdue: boolean;
+  answers: Record<string, unknown>;
+}
+
+export interface ActionPreview {
+  kind: string;
+  summary: string;
+  digest: string;
+  eligible: { instanceId: string; reference: string; to: string[] }[];
+  refused: { instanceId: string; reference: string; reason: string }[];
+  skipped: { instanceId: string; reference: string; reason: string }[];
+}
+
+export interface ExecutionReport {
+  runId: string;
+  attempted: number;
+  sent: { instanceId: string; reference: string; to: string[] }[];
+  skipped: { instanceId: string; reference: string; reason: string }[];
+  failed: { instanceId: string; reference: string; reason: string }[];
+}
+
+function reference(id: string): string {
+  return id.slice(0, 8).toUpperCase();
+}
+
+/** The digest that binds a preview to its execution. Order-independent. */
+function digestOf(plan: QueryPlan, action: ActionPlan, ids: string[]): string {
+  return createHash('sha256')
+    .update(JSON.stringify({ plan, action, ids: [...ids].sort() }))
+    .digest('hex')
+    .slice(0, 32);
+}
+
+async function blueprintFor(client: Client, tenantId: string, processKey: string): Promise<Blueprint> {
+  const { rows } = await client.query<{ blueprint: Blueprint }>(
+    `select blueprint from process_version
+      where tenant_id = $1 and process_key = $2 order by version desc limit 1`,
+    [tenantId, processKey],
+  );
+  if (!rows[0]) throw new Error(`no published version of "${processKey}"`);
+  return rows[0].blueprint;
+}
+
+/**
+ * Runs a plan that has already been produced, and answers it.
+ *
+ * Split out from `ask` so the plan can come from a model or from a person
+ * clicking filters — and so the proof suite can exercise the whole path
+ * without spending a token or depending on what a model felt like emitting.
+ */
+export async function runPlan(
+  pool: Pool,
+  args: {
+    principal: Principal;
+    plan: QueryPlan;
+    action?: ActionPlan | null;
+    now?: Date;
+  },
+): Promise<{ rows: MatchedRecord[]; diagnostics: Diagnostic[]; ok: boolean; preview: ActionPreview | null; bp: Blueprint }> {
+  const now = args.now ?? new Date();
+  if (args.principal.kind !== 'actor') throw new Error('the copilot answers to signed-in members');
+  const tenantId = args.principal.tenantId;
+
+  return inTransaction(pool, async (client) => {
+    const bp = await blueprintFor(client, tenantId, args.plan.processKey);
+
+    // The query is permission-filtered before it is compiled: an actor who
+    // may not view this process gets a refusal, not an empty list, because
+    // "no results" and "not allowed" are different answers and conflating
+    // them is how people conclude a process is empty.
+    const decision = await require_(
+      client,
+      { principal: args.principal, action: 'view', tenantId, processKey: args.plan.processKey, blueprint: bp },
+      pool,
+    );
+
+    const compiled = compileQuery(bp, args.plan, tenantId, now);
+    const diagnostics = [...compiled.diagnostics];
+    if (args.action) diagnostics.push(...compileAction(bp, args.action));
+    const ok = !diagnostics.some((d) => d.severity === 'error');
+    if (!ok) return { rows: [], diagnostics, ok, preview: null, bp };
+
+    const { rows } = await client.query<{
+      id: string;
+      state: string;
+      data: Record<string, unknown>;
+      state_entered_at: Date;
+    }>(compiled.sql, compiled.params);
+
+    const stateByKey = new Map(bp.workflow.states.map((s) => [s.key, s]));
+    const matched: MatchedRecord[] = rows.map((row) => {
+      const state = stateByKey.get(row.state);
+      const sla = state?.slaHours;
+      // Redaction applies to the answer exactly as it does on the record view.
+      const visible = redact(bp, decision.roles, row.data);
+      const answers: Record<string, unknown> = {};
+      for (const key of compiled.select) if (key in visible) answers[key] = visible[key];
+      return {
+        instanceId: row.id,
+        reference: reference(row.id),
+        state: row.state,
+        stateName: state?.name ?? row.state,
+        hoursInState: Math.round((now.getTime() - row.state_entered_at.getTime()) / 3_600_000),
+        overdue: Boolean(sla && row.state_entered_at.getTime() + sla * 3_600_000 < now.getTime()),
+        answers,
+      };
+    });
+
+    const preview = args.action
+      ? await previewAction(client, pool, { bp, principal: args.principal, action: args.action, plan: args.plan, matched })
+      : null;
+
+    return { rows: matched, diagnostics, ok, preview, bp };
+  });
+}
+
+/**
+ * Works out, per record, whether the action may run and would do anything.
+ *
+ * Three outcomes rather than two. *Refused* is a permission answer and belongs
+ * on the audit; *skipped* means the action would be a no-op — the record has
+ * already finished, or the template's own `skipWhen` excludes it — and is not
+ * a failure. Collapsing them would make the report say eleven when the truth
+ * is four sent, five already done, two not yours.
+ */
+async function previewAction(
+  client: Client,
+  audit: Pool,
+  args: {
+    bp: Blueprint;
+    principal: Principal;
+    action: ActionPlan;
+    plan: QueryPlan;
+    matched: MatchedRecord[];
+  },
+): Promise<ActionPreview> {
+  const { bp, action, matched } = args;
+  const eligible: ActionPreview['eligible'] = [];
+  const refused: ActionPreview['refused'] = [];
+  const skipped: ActionPreview['skipped'] = [];
+
+  if (matched.length > MAX_TARGETS) {
+    throw new Error(`a bulk action may touch at most ${MAX_TARGETS} records; this plan matched ${matched.length}`);
+  }
+
+  const template =
+    action.kind === 'send_reminder' ? bp.communications.email.find((t) => t.key === action.template) : undefined;
+
+  for (const record of matched) {
+    // §6.4: per record, not once for the process. `operate` rather than
+    // `view`, because sending mail on the workspace's behalf is an action.
+    try {
+      await require_(
+        client,
+        {
+          principal: args.principal,
+          action: 'operate',
+          tenantId: args.principal.kind === 'actor' ? args.principal.tenantId : '',
+          processKey: args.plan.processKey,
+          blueprint: bp,
+          instanceId: record.instanceId,
+        },
+        audit,
+      );
+    } catch (err) {
+      refused.push({
+        instanceId: record.instanceId,
+        reference: record.reference,
+        reason: err instanceof AuthorizationError ? err.reason : String(err),
+      });
+      continue;
+    }
+
+    const state = bp.workflow.states.find((s) => s.key === record.state);
+    if (state?.type === 'terminal') {
+      skipped.push({ instanceId: record.instanceId, reference: record.reference, reason: 'the record has finished' });
+      continue;
+    }
+
+    const to = (template?.to ?? []).flatMap((party) => resolveRecipient(party, record, bp));
+    if (!to.length) {
+      skipped.push({
+        instanceId: record.instanceId,
+        reference: record.reference,
+        reason: 'nobody to send to on this record',
+      });
+      continue;
+    }
+
+    eligible.push({ instanceId: record.instanceId, reference: record.reference, to });
+  }
+
+  const digest = digestOf(args.plan, action, eligible.map((e) => e.instanceId));
+  const summary =
+    action.kind === 'send_reminder'
+      ? `Send "${template?.name ?? action.template}" to ${eligible.length} of ${matched.length} record(s).`
+      : `${action.kind} on ${eligible.length} record(s).`;
+
+  return { kind: action.kind, summary, digest, eligible, refused, skipped };
+}
+
+/**
+ * Resolves who a template addresses, for the preview only.
+ *
+ * The engine resolves parties again at send time; this exists so the operator
+ * can see who is about to be emailed before confirming, which is most of what
+ * "authorized targets" means in practice. Role parties are shown as roles
+ * rather than expanded into names — expanding them here would put a list of
+ * colleagues' addresses on screen for a reminder the operator may not send.
+ */
+function resolveRecipient(party: unknown, record: MatchedRecord, bp: Blueprint): string[] {
+  if (typeof party !== 'object' || party === null) return [];
+  const p = party as Record<string, unknown>;
+  if (typeof p.role === 'string') {
+    const role = bp.roles.find((r) => r.key === p.role);
+    return [`role: ${role?.name ?? p.role}`];
+  }
+  if (typeof p.field === 'string') {
+    const value = record.answers[p.field];
+    // The field may be redacted out of `answers`, in which case the operator
+    // is told there is a recipient without being shown the address.
+    if (typeof value === 'string' && value.includes('@')) return [value];
+    return [`the ${p.field} on the record`];
+  }
+  if (typeof p.user === 'string') return [p.user];
+  if (p.submitter === true) return ['the person who submitted it'];
+  return [];
+}
+
+// ------------------------------------------------------------------- asking
+
+export interface Asker {
+  name: string;
+  model: string;
+  promptVersion: string;
+  propose(question: string, context: PlanContext): Promise<{ proposal: Proposal; inputTokens?: number; outputTokens?: number }>;
+}
+
+export interface PlanContext {
+  processKey: string;
+  processName: string;
+  states: { key: string; name: string; type: string; slaHours?: number }[];
+  fields: { key: string; label: string; type: string; classification: string }[];
+  tasks: { key: string; name: string }[];
+  approvals: { key: string; name: string }[];
+  templates: { key: string; name: string; to: string }[];
+}
+
+/** Everything the model is told. Answers are not in it; the schema is. */
+export function planContext(bp: Blueprint): PlanContext {
+  return {
+    processKey: bp.key,
+    processName: bp.name,
+    states: bp.workflow.states.map((s) => ({ key: s.key, name: s.name, type: s.type, slaHours: s.slaHours })),
+    // Restricted fields are named so the model can explain that it will not
+    // filter on them, rather than inventing a field key that does not exist.
+    fields: bp.data.fields.map((f) => ({
+      key: f.key,
+      label: f.label,
+      type: f.type,
+      classification: f.classification,
+    })),
+    tasks: bp.workflow.tasks.map((t) => ({ key: t.key, name: t.name })),
+    approvals: bp.workflow.approvals.map((a) => ({ key: a.key, name: a.name })),
+    templates: bp.communications.email.map((t) => ({
+      key: t.key,
+      name: t.name,
+      to: t.to.map((p) => JSON.stringify(p)).join(', '),
+    })),
+  };
+}
+
+export async function ask(
+  pool: Pool,
+  asker: Asker,
+  args: { principal: Principal; processKey: string; question: string; now?: Date },
+): Promise<AskResult> {
+  if (args.principal.kind !== 'actor') throw new Error('the copilot answers to signed-in members');
+  const tenantId = args.principal.tenantId;
+  const now = args.now ?? new Date();
+
+  await enforceRateLimit(pool, args.principal.actorId, tenantId);
+
+  const bp = await inTransaction(pool, (client) => blueprintFor(client, tenantId, args.processKey));
+
+  const started = Date.now();
+  let proposal: Proposal;
+  try {
+    const out = await asker.propose(args.question, planContext(bp));
+    proposal = out.proposal;
+    var tokens = { input: out.inputTokens, output: out.outputTokens };
+  } catch (err) {
+    const runId = await recordRun(pool, {
+      tenantId,
+      actorId: args.principal.actorId,
+      processKey: args.processKey,
+      question: args.question,
+      reading: null,
+      plan: {},
+      action: null,
+      diagnostics: [],
+      targets: [],
+      digest: null,
+      status: 'failed',
+      asker,
+      latencyMs: Date.now() - started,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    throw Object.assign(new Error(`the copilot could not turn that into a plan: ${String(err)}`), { runId });
+  }
+
+  // The model may name a different process than the one asked about. It does
+  // not get to choose: the caller's process is the scope.
+  const plan = QueryPlan.parse({ ...proposal.query, processKey: args.processKey });
+  const action = proposal.action ?? null;
+
+  const outcome = await runPlan(pool, { principal: args.principal, plan, action, now });
+
+  const runId = await recordRun(pool, {
+    tenantId,
+    actorId: args.principal.actorId,
+    processKey: args.processKey,
+    question: args.question,
+    reading: proposal.reading,
+    plan,
+    action,
+    diagnostics: outcome.diagnostics,
+    targets: outcome.preview
+      ? [
+          ...outcome.preview.eligible.map((e) => ({ ...e, decision: 'eligible' as const })),
+          ...outcome.preview.refused.map((r) => ({ ...r, decision: 'refused' as const })),
+          ...outcome.preview.skipped.map((s) => ({ ...s, decision: 'skipped' as const })),
+        ]
+      : [],
+    digest: outcome.preview?.digest ?? null,
+    status: !outcome.ok ? 'refused' : outcome.preview ? 'previewed' : 'answered',
+    asker,
+    latencyMs: Date.now() - started,
+    inputTokens: tokens?.input,
+    outputTokens: tokens?.output,
+    error: null,
+  });
+
+  return {
+    runId,
+    reading: proposal.reading,
+    plan,
+    action,
+    diagnostics: outcome.diagnostics,
+    ok: outcome.ok,
+    rows: outcome.rows,
+    preview: outcome.preview,
+    audit: {
+      provider: asker.name,
+      model: asker.model,
+      promptVersion: asker.promptVersion,
+      latencyMs: Date.now() - started,
+    },
+  };
+}
+
+/**
+ * §6.4's rate limit, on the asking rather than the sending.
+ *
+ * A limit on records per action is the obvious one and is enforced in the
+ * preview. This is the other half: a loop that asks twenty questions a minute
+ * is either a mistake or someone probing the plan language, and both are worth
+ * stopping cheaply.
+ */
+async function enforceRateLimit(pool: Pool, actorId: string, tenantId: string): Promise<void> {
+  const { rows } = await pool.query<{ count: number }>(
+    `select count(*)::int as count from copilot_run
+      where tenant_id = $1 and actor_id = $2 and created_at > now() - interval '1 hour'`,
+    [tenantId, actorId],
+  );
+  if ((rows[0]?.count ?? 0) >= RATE_LIMIT_PER_HOUR) {
+    throw new Error(`the copilot is limited to ${RATE_LIMIT_PER_HOUR} questions an hour; try again shortly`);
+  }
+}
+
+async function recordRun(
+  pool: Pool,
+  args: {
+    tenantId: string;
+    actorId: string;
+    processKey: string;
+    question: string;
+    reading: string | null;
+    plan: unknown;
+    action: unknown;
+    diagnostics: Diagnostic[];
+    targets: unknown[];
+    digest: string | null;
+    status: string;
+    asker: Asker;
+    latencyMs: number;
+    inputTokens?: number;
+    outputTokens?: number;
+    error: string | null;
+  },
+): Promise<string> {
+  const { rows } = await pool.query<{ id: string }>(
+    `insert into copilot_run
+       (tenant_id, actor_id, process_key, question, reading, plan, action_plan, diagnostics,
+        targets, plan_digest, status, provider, model, prompt_version, input_tokens,
+        output_tokens, latency_ms, error)
+     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+     returning id`,
+    [
+      args.tenantId,
+      args.actorId,
+      args.processKey,
+      args.question,
+      args.reading,
+      JSON.stringify(args.plan),
+      args.action ? JSON.stringify(args.action) : null,
+      JSON.stringify(args.diagnostics),
+      JSON.stringify(args.targets),
+      args.digest,
+      args.status,
+      args.asker.name,
+      args.asker.model,
+      args.asker.promptVersion,
+      args.inputTokens ?? null,
+      args.outputTokens ?? null,
+      args.latencyMs,
+      args.error,
+    ],
+  );
+  return rows[0]!.id;
+}
+
+// ---------------------------------------------------------------- executing
+
+/**
+ * Performs the action the operator confirmed, and nothing else.
+ *
+ * The digest is not a formality. Without it, "confirm run X" would act on
+ * whatever the query matches at the moment of confirmation, and the operator
+ * would have approved a number rather than a set. With it, a stale
+ * confirmation is refused and re-previewed instead of silently widening.
+ */
+export async function confirm(
+  pool: Pool,
+  args: { principal: Principal; runId: string; digest: string; now?: Date },
+): Promise<ExecutionReport> {
+  if (args.principal.kind !== 'actor') throw new Error('the copilot answers to signed-in members');
+  const now = args.now ?? new Date();
+  const tenantId = args.principal.tenantId;
+
+  const { rows } = await pool.query<{
+    id: string;
+    actor_id: string;
+    process_key: string;
+    plan: QueryPlan;
+    action_plan: ActionPlan | null;
+    targets: { instanceId: string; reference: string; decision: string }[];
+    plan_digest: string | null;
+    status: string;
+  }>(
+    `select id, actor_id, process_key, plan, action_plan, targets, plan_digest, status
+       from copilot_run where id = $1 and tenant_id = $2`,
+    [args.runId, tenantId],
+  );
+  const run = rows[0];
+  if (!run) throw new Error('no such copilot run');
+  if (!run.action_plan) throw new Error('that question did not propose an action');
+  if (run.status === 'executed') throw new Error('that plan has already been carried out');
+
+  // The person who confirms must be the person who previewed. Otherwise a
+  // preview becomes a stored capability that somebody else can spend.
+  if (run.actor_id !== args.principal.actorId) {
+    throw new AuthorizationError('operate', 'a plan is confirmed by the person who previewed it');
+  }
+  if (!run.plan_digest || run.plan_digest !== args.digest) {
+    throw new Error('the plan changed since it was previewed — look at it again before confirming');
+  }
+
+  const eligible = run.targets.filter((t) => t.decision === 'eligible');
+  const engine = new Engine(pool);
+  const report: ExecutionReport = { runId: run.id, attempted: eligible.length, sent: [], skipped: [], failed: [] };
+
+  for (const target of eligible) {
+    try {
+      // Re-authorized at execution, not trusted from the preview: a role can
+      // be removed between the two, and the preview is evidence of what was
+      // true then, not permission for now.
+      const outcome = await engine.runActionOnce({
+        principal: args.principal,
+        instanceId: target.instanceId,
+        action: {
+          key: `copilot_${run.id.slice(0, 8)}`,
+          do: 'send_email',
+          template: (run.action_plan as { template: string }).template,
+        },
+        // Keyed on the run, so confirming twice sends once — the same
+        // mechanism the workflow's own actions use, not a second one.
+        idempotencyKey: `copilot:${run.id}`,
+        reason: `copilot run ${run.id.slice(0, 8)}`,
+        now,
+      });
+      if (outcome.performed) report.sent.push({ instanceId: target.instanceId, reference: target.reference, to: outcome.recipients });
+      else report.skipped.push({ instanceId: target.instanceId, reference: target.reference, reason: outcome.reason ?? 'no effect' });
+    } catch (err) {
+      report.failed.push({
+        instanceId: target.instanceId,
+        reference: target.reference,
+        reason: err instanceof AuthorizationError ? err.reason : err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  await pool.query(
+    `update copilot_run
+        set status = $1, result = $2, confirmed_by = $3, confirmed_at = $4
+      where id = $5`,
+    [
+      report.failed.length ? 'executed' : 'executed',
+      JSON.stringify(report),
+      `actor:${args.principal.actorId}`,
+      now,
+      run.id,
+    ],
+  );
+
+  return report;
+}
+
+/** The §7.3 record of what was asked and what happened, newest first. */
+export async function recentRuns(pool: Pool, principal: Principal, limit = 25) {
+  if (principal.kind !== 'actor') throw new Error('the copilot answers to signed-in members');
+  const { rows } = await pool.query(
+    `select r.id, r.question, r.reading, r.process_key, r.status, r.plan, r.action_plan,
+            r.result, r.provider, r.model, r.prompt_version, r.latency_ms, r.error,
+            r.created_at, r.confirmed_at, a.display_name as asked_by
+       from copilot_run r left join actor a on a.id = r.actor_id
+      where r.tenant_id = $1
+      order by r.created_at desc limit $2`,
+    [principal.tenantId, Math.min(limit, 100)],
+  );
+  return rows;
+}

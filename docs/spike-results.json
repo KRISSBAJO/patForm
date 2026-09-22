@@ -1,5 +1,5 @@
 {
-  "ranAt": "2026-09-22T01:08:20.901Z",
+  "ranAt": "2026-09-22T01:50:46.612Z",
   "postgres": "PostgreSQL 17.11 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit",
   "proofs": [
     {
@@ -37,6 +37,18 @@
       "claim": "BLD-03, BLD-04, BLD-07 and §9.2: the compiler is the gate, and versioning is opt-in per record.",
       "passed": true,
       "detail": "Opening twice returned one draft, not two. An operator was refused (\"actor holds no role in this process, and workspace role \"operator\" does not grant \"administer\"\"). Naming a role without the approve capability produced 2 SEC009 error(s), and publishing anyway was refused server-side (\"the draft has 2 error(s) and cannot be published — SEC009: Approval \"manager_app\"). A draft saved as {\"half\":\"typed\"} was kept and reopened as 11 shape diagnostic(s) rather than throwing. After the fix the impact summary counted 1 record still running and named \"proof_note\" as added; version 2 published and the running record stayed on v1."
+    },
+    {
+      "name": "The operator asks what is overdue and sends a reminder that matches what they confirmed",
+      "claim": "Section 20.1 step 9, and 7.1: a permission-filtered query service with no raw model database access.",
+      "passed": true,
+      "detail": "\"Which records are overdue\" matched 3 of 3, every one past the SLA its state declares. A plan naming a state that does not exist was refused by the compiler (QRY002), and so was filtering on a restricted answer (QRY004) — which would have read restricted data one yes/no at a time without ever displaying it. An admin of another workspace asked the identical question and saw 1 of their own records and 0 of these — the plan cannot name a tenant, so the scope comes from who is asking. The preview authorized 3 target(s) one at a time; a stale digest was refused (\"the plan changed since it was previewed — look at it ag\"), and so was spending somebody else's preview (\"refused: operate — a plan is confirmed by the person wh\"). The confirmed run sent 3, a replay sent 0, and every reminder is on its record's own history."
+    },
+    {
+      "name": "An administrator exports the record with its history, and only then is it deleted",
+      "claim": "Section 20.1 step 11, and 6.4: corrections append history; destructive overwriting of audit evidence is prohibited.",
+      "passed": true,
+      "detail": "The bundle carried 5 history entries for a finished record — submission, both decisions with the reasons given, and every task completion — plus 2 approval(s), 2 message(s) and 1 document(s). An approver could not export at all (\"neither the roles held (hiring_manager) nor workspace role \"approver\" grant \"administer\"\"). An administrator holding no process role saw every field; one who is also a hiring manager had 3 withheld (id_document, national_id, bank_account) — named in the bundle rather than quietly absent, and not left in the answers as the literal string \"[redacted]\". The export is itself on the record's history, and a second export of an unchanged record produced the same checksum (077d60966c08), so a file can be verified later. Retention then deleted 1 instance and 8 event(s) — in that order, because afterwards there is nothing left to export."
     },
     {
       "name": "A worker fires deadlines with nobody watching",
@@ -90,7 +102,7 @@
       "name": "Submission and workflow start are far inside the section 10.4 budget",
       "claim": "Beta targets: acknowledgment p95 under 1.5s, workflow start p95 under 30s.",
       "passed": true,
-      "detail": "Over 100 submissions: acknowledgment p95 15.3ms (budget 1500ms), first action p95 35.6ms (budget 30000ms). Database round trips only, local container."
+      "detail": "Over 100 submissions: acknowledgment p95 16.6ms (budget 1500ms), first action p95 37.4ms (budget 30000ms). Database round trips only, local container."
     }
   ]
 }

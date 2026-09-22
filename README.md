@@ -77,7 +77,7 @@ is specific to either.
 
 Section 23 week 3 asks for a spike of workflow state, timers, idempotent email,
 versioning, and migration, producing architecture decision records and
-performance evidence. `npm run spike` is that, and it proves fifteen things:
+performance evidence. `npm run spike` is that, and it proves seventeen things:
 
 | Proof | Result |
 |---|---|
@@ -87,6 +87,8 @@ performance evidence. `npm run spike` is that, and it proves fifteen things:
 | Authorization is enforced by the runtime, not the caller | cross-tenant, wrong capability, and un-named approver all refused |
 | A resume link opens one record and no others | somebody else's record refused, revoking the link kills it |
 | A draft opens, refuses to publish while broken, and says what a publish would change | operator refused, SEC009 blocks publish server-side, impact counts the in-flight record |
+| The operator asks what is overdue and sends a reminder matching what they confirmed | §20.1 step 9: a typed plan, a bound digest, 3 sent and a replay sending 0 |
+| An administrator exports the record with its history, and only then is it deleted | §20.1 step 11: same checksum twice, fields withheld and named, then retention |
 | A worker fires deadlines with nobody watching | 49 hours passed, 1 reminder, 0 timers left unfired |
 | Retention deletes, only for an administrator, and says what it removed | preview first, then 1 instance and 1 event, against an append-only history |
 | Idempotent email under replay | 3 deliveries, 1 email |
@@ -149,6 +151,65 @@ experience, transitions, messages, documents and tests are edited through the
 JSON tab — a stated gap, not a hidden one. There is no draft locking yet, so
 two people editing the same process will overwrite each other.
 
+## Asking the process
+
+```bash
+npm run db:up && npm run seed && npm run api && npm run worker
+npm --prefix web run dev                        # console at localhost:3210/console
+```
+
+§20.1 step 9, under **Ask**. Type a question; you get back what the system
+understood, the records it matched, and — when the question asked for
+something to be done — exactly who each message would reach, before a button
+appears.
+
+**The model never touches the database.** It emits a typed plan
+([src/copilot/plan.ts](src/copilot/plan.ts)) from a closed set of filters, and
+a compiler resolves every key against the blueprint and writes the SQL itself.
+Values arrive as parameters; field keys are parameters too, so a key cannot
+become a column. Press *Show the plan this ran* to see it — the model wrote
+that, not the query.
+
+This matters more than it first sounds. The records being asked about contain
+text that respondents typed, so the model reads attacker-controlled input every
+time it answers a question. The planning step is given the process schema and
+not one answer.
+
+Three refusals worth knowing:
+
+- **A restricted field cannot be filtered on.** "Which records have a national
+  insurance number starting QQ" reads restricted data one yes/no at a time and
+  never displays it, so redaction never gets a turn. `QRY004`.
+- **An action cannot carry a message.** A reminder names a template from the
+  blueprint. There is no body and no recipient override; the schema refuses
+  both.
+- **The confirmation is bound to the plan.** The preview hashes the plan with
+  the exact ids it resolved, and execution works from that list rather than
+  re-running the query. A record that becomes overdue between preview and
+  confirmation is not swept up — you confirmed eleven records, not "whatever
+  matches when I press the button".
+
+Confirming twice sends once, via the same idempotency key the workflow's own
+actions use. Every run leaves a `copilot_run` row carrying the model, prompt
+version, plan, targets, confirmation and result (§7.3).
+
+## Exporting a record
+
+§20.1 step 11, the **Export** button on any record. JSON or CSV, containing the
+record, its full audit history, every decision with its stated reason, every
+message, and every document with its checksum.
+
+- **Redaction applies.** An export is a read. An administrator who also holds a
+  process role that hides payroll fields gets a file without them, and the
+  bundle *names* what was withheld rather than quietly being shorter.
+- **The checksum is stable**, so a file you were handed can be checked against
+  the system later. It covers the record, not the log of who has copied it.
+- **The export is itself an event** on the record's history.
+
+Then `npm run retention` applies the configured action. The order in that
+sentence is the requirement: retention deletes the record and its events, so
+afterwards there is nothing left to export.
+
 ## The respondent side
 
 ```bash
@@ -177,16 +238,25 @@ Named here rather than implied by silence:
   password and a session cookie; §12.1's other authentication rows are not done.
 - **Rate limiting and spam control on public submission** (§12.3).
 - **Malware scanning and upload quarantine** (§12.1). Files are metadata only.
-- **A verified sending domain.** Delivery is wired to RelyKit and needs two
-  switches to leave the machine: `RELYKIT_API_KEY` and `EMAIL_PROVIDER=relykit`.
-  Without them everything is logged and nothing is sent, which is the right
-  default for a local database.
+- **A verified sending domain.** Delivery needs two switches to leave the
+  machine: `EMAIL_PROVIDER` naming a provider *and* that provider's
+  credentials. Without both, everything is logged and nothing is sent.
+  `spike`, `seed` and `eval` ignore the setting entirely and say so on stdout —
+  a test harness reading the same `.env` as the server will otherwise mail real
+  people the day somebody configures a provider.
 - **DOCX rendering.** HTML templates become PDFs; a blueprint asking for DOCX
   gets a document that says so rather than a silently incomplete one.
 - **Object storage for documents.** The bytes live in Postgres, which is fine
   at a packet's size and wrong at scale (§10.1).
 - **Bounce and complaint handling.** `email_log` has the statuses; nothing
   consumes the provider's webhooks yet, so nothing moves past `sent`.
+- **Bulk assignment and status changes.** The copilot's action schema names
+  `assign` and `change_state`; the compiler refuses both with `ACT001`.
+  Reminders are the only bulk action the runtime performs.
+- **A graph editor for transitions.** The builder has form editors for fields,
+  states, approvals, tasks and roles; everything else goes through its JSON
+  tab. There is also no draft locking, so two people editing one process will
+  overwrite each other.
 - **Parallel task joins, approval quorums, date-relative timers, separation of
   duties** — the v0.2 list in [docs/failure-cases.md](docs/failure-cases.md).
 

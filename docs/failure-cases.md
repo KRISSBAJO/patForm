@@ -157,6 +157,39 @@ The guard cannot live in the Engine, which has no way to tell a proof run from a
 
 Third general shape, and the one that connects all of these: **a comment claiming a safeguard is not a safeguard.** Two of the eight faults here were found because the code disagreed with a sentence written directly above it.
 
+### 9. A reminder addressed to a role reached nobody, and the log said it was sent
+
+`resolveParty` turned `{ role: 'hr_approver' }` into the literal string `role:hr_approver`. That string went into `email_log.recipients`, where it reads as a delivered reminder — and was filtered out of the provider's `to` list one line later. Every role-addressed message was logged against the role and handed to the provider with nobody on it.
+
+The comment justifying it said the spike had no directory and left fan-out to a notification service. `membership` and `actor` had become a directory, and the notification service was never built.
+
+The database held its own proof, from a live send before the fix:
+
+| recipients | provider | status | failure |
+|---|---|---|---|
+| `{role:hr_approver}` | resend | failed | `422 missing_required_field Missing 'to' field.` |
+| `{sam@example.test}` | console | queued | — |
+
+The provider rejected it for having no recipient. Nothing here noticed, because the log row looked fine.
+
+**Fixed,** and more narrowly than it first appears. `role:X` is a correct *identity*: the policy engine reads it as "anyone currently holding this role", which is what `completableBy: 'assignee'` promises and what stops a task becoming uncompletable the moment one person leaves. So tasks and approvals keep the marker and only email resolves it. The distinction worth carrying: **a party is an identity; a recipient is an address.** A role nobody holds now writes a `skipped` row saying so.
+
+Fifth instance of *present in review, absent at runtime*, and the second where the code contradicted a comment directly above it.
+
+### 10. Recording the export made the export unreproducible
+
+Exporting a record appends a `record_exported` event, which is right — taking a copy of somebody's personal data is what an audit is for. But the second export's history then contains the first export's event, so no two exports of an unchanged record hash the same, and the checksum exists precisely so a file can be checked against the system that made it.
+
+**Fixed:** `record_exported` entries are carried in the bundle, where a reader can see who took a copy, and left out of the digest. Nothing about the record itself is excluded.
+
+The general shape: **a feature that observes something must not change what it observes.** Worth remembering for anything else that writes an audit trail about reads.
+
+### 11. Five queries on one client is not parallelism
+
+The export fetched history, approvals, tasks, messages and documents with `Promise.all` over a single pooled client. A pg client is one connection and one statement at a time, so this is a deprecation warning today and a lost query later. The parallelism was imaginary.
+
+**Fixed:** awaited in sequence.
+
 ---
 
 ## What the compiler structurally cannot catch
