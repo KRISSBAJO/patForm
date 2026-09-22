@@ -1172,7 +1172,11 @@ async function performEffect(
         [
           delivery.status,
           delivery.providerMessageId,
-          delivery.status === 'failed' ? (delivery.detail ?? 'send failed') : null,
+          // `failure` carries the reason a send failed, and also a warning
+          // about a send that partly did not happen — a recipient the
+          // provider dropped is not a failure of the message, but it is
+          // something the record must show.
+          delivery.status === 'failed' ? (delivery.detail ?? 'send failed') : (delivery.warning ?? null),
           logged[0]!.id,
         ],
       );

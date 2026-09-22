@@ -51,6 +51,15 @@ export interface DeliveryResult {
    * instead. Retrying it would bury the real problem under attempt counts.
    */
   retryable?: boolean;
+  /**
+   * Something the operator should know about a send that otherwise succeeded.
+   *
+   * The case this exists for is a partially suppressed message: the send is
+   * real, some of the intended recipients were dropped, and neither `status`
+   * nor `failure` has anywhere to put that. Without it the record shows a
+   * reminder sent to three people when two of them were never going to get it.
+   */
+  warning?: string;
 }
 
 export interface EmailProvider {
@@ -127,9 +136,15 @@ export class RelyKitProvider implements EmailProvider {
       status?: string;
       message?: string;
       name?: string;
+      last_error?: string;
+      suppressed?: { email: string; reason: string }[];
+      to?: string[];
     };
 
     if (!res.ok) {
+      // RelyKit's errors are { name, message, status_code }. 422 is a
+      // validation failure and 401 a bad key: both fail identically forever,
+      // so they are recorded rather than retried.
       return {
         providerMessageId: null,
         status: 'failed',
@@ -138,10 +153,41 @@ export class RelyKitProvider implements EmailProvider {
       };
     }
 
+    /*
+     * A 201 does not mean somebody will receive this.
+     *
+     * RelyKit removes suppressed recipients before queueing, and when none are
+     * left it records the message as `cancelled` with a reason rather than
+     * failing the request — which is the right call on their side: the sender
+     * gets an id and can see what happened instead of wondering why nothing
+     * arrived.
+     *
+     * It is only right if the caller reads it. Mapping anything that is not
+     * `sent` to `queued` would put a delivery in our log that will never
+     * happen, which is precisely the fault ADR-0010 found in role-addressed
+     * mail, arriving again through a different door. Suppression is permanent
+     * until somebody removes the address, so it is not retryable.
+     */
+    if (payload.status === 'cancelled') {
+      return {
+        providerMessageId: payload.id ?? null,
+        status: 'failed',
+        detail: payload.last_error ?? 'every recipient is on the suppression list',
+        retryable: false,
+      };
+    }
+
+    // Some recipients dropped, others kept. The send is real, and the log
+    // should still say who was left out — otherwise the record shows a
+    // reminder sent to three people when two of them were skipped.
+    const dropped = payload.suppressed ?? [];
     return {
       providerMessageId: payload.id ?? null,
       status: payload.status === 'sent' || payload.status === 'delivered' ? 'sent' : 'queued',
       detail: payload.status,
+      warning: dropped.length
+        ? `dropped as suppressed: ${dropped.map((d) => `${d.email} (${d.reason})`).join(', ')}`
+        : undefined,
     };
   }
 }
