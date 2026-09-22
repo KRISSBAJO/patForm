@@ -537,7 +537,38 @@ Two properties worth knowing:
 
 ## What is not built
 
-Named here rather than implied by silence:
+Named here rather than implied by silence.
+
+**Four §6 requirements marked "Must" are not met.** They are listed first
+because they are the only unmet *Must* rows in the document, and because they
+were missing from this list until somebody asked — which is exactly the
+failure this list exists to prevent.
+
+- **IAM-01: "Users can create or join a tenant workspace."** A workspace is
+  created by `npm run seed` or by a CLI. There is no sign-up, no invitation,
+  and no way to join an existing one. Everything above this assumes a
+  workspace already exists and somebody is already in it.
+- **IAM-04: "Owners can invite, deactivate, and revoke sessions for users."**
+  Only the third is built. `actor.active` exists and the policy engine
+  honours it, but nothing sets it, and there is no invitation at all.
+- **IAM-05: "Enterprise SSO and SCIM are deferred but the identity model must
+  accommodate them."** Marked *Design now*, and it was not: `actor` has an
+  email and a workspace role and no external identity anchor, so adding an IdP
+  later means a schema change and a migration of every existing account. This
+  is the one that gets more expensive with time rather than less.
+- **BLD-02: "Generated blueprint includes assumptions, missing decisions,
+  …"** The generator is told to record what it assumed in `intent.outcome`,
+  which is prose in a field meant for something else. Assumptions and open
+  decisions are not modelled, so the compiler cannot check them and the
+  builder cannot list them for review — the one thing they exist for.
+
+BLD-01 asks for "a guided prompt, a process pack, **or blank canvas**". The
+first two are built; the third was deliberately left out, because a blank
+skeleton opens with a dozen errors and teaches people the diagnostics panel is
+noise. That is a product judgement rather than an omission, and it is recorded
+here so it can be overruled.
+
+Everything below is a deliberate deferral:
 
 - **Email verification, MFA, OAuth/OIDC, password reset.** Sign-in is a scrypt
   password and a session cookie; §12.1's other authentication rows are not done.
