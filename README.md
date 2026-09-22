@@ -654,6 +654,34 @@ What a generator cannot do is know somebody's process. These compile and run
 on day one, which is what a template is. The builder is where they stop being
 generic.
 
+### Editing the automation
+
+Fields, states, roles, approvals and tasks have had editors from the start,
+across twenty-two field types. The one thing that could not be changed without
+hand-editing JSON was the part that makes this a process rather than a form:
+**when something happens, if something is true, do these things.**
+
+The **Automation** tab in the builder is that, as rules. Each one reads as a
+sentence — *"When the form is submitted, move to With hiring manager"* — and
+opens into its trigger, its condition and its actions. Rules are grouped by
+the state they leave, in the order a record meets them.
+
+A rule list rather than a node canvas, for a reason that outlives the
+aesthetics: a transition already *is* a rule, so the mapping is one to one,
+and the compiler's diagnostics point at transition keys — which means every
+error appears against the rule that caused it rather than being translated
+onto a shape.
+
+Two things the editor knows that the JSON tab cannot:
+
+- **Only one timer may leave a state.** Entering a state cancels that
+  occupancy's timers, so a second one never fires. The compiler has no opinion
+  — it is a property of the runtime — so the warning appears where somebody is
+  about to add the second.
+- **Numeric comparisons are only offered against numeric fields**, and a
+  number typed into one is stored as a number. The compiler refuses `"1000"`
+  against a currency field, and quoting it would be a type error nobody typed.
+
 ### What is reachable
 
 ```bash

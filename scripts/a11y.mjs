@@ -264,6 +264,15 @@ async function main() {
   }
   all.push(...(await audit(page, 'Builder')));
 
+  // The automation editor: the one part of the builder that was JSON-only.
+  // Thirteen rules of selects and inputs is where a label goes missing.
+  const automation = page.locator('.bd__group').nth(2).locator('button').nth(1);
+  if (await automation.count()) {
+    await automation.click();
+    await page.waitForTimeout(1800);
+    all.push(...(await audit(page, 'The automation rules')));
+  }
+
   const publish = page.locator('button', { hasText: /Publish/ }).first();
   if (await publish.count()) {
     await publish.click();

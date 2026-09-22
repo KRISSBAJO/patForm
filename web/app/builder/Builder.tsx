@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { RulesEditor } from './Rules';
 import './builder.css';
 import { useDialog } from '../useDialog';
 
@@ -28,7 +29,7 @@ import { useDialog } from '../useDialog';
 
 // ------------------------------------------------------------------- types
 
-interface Diagnostic {
+export interface Diagnostic {
   code: string;
   severity: 'error' | 'warning';
   message: string;
@@ -109,6 +110,10 @@ interface Blueprint {
     tasks?: BpTask[];
     [k: string]: unknown;
   };
+  /* Named rather than left in the index signature, because the automation
+     editor offers these as choices and an untyped `{}` gives it nothing. */
+  communications?: { email?: { key: string; name: string }[]; [k: string]: unknown };
+  outputs?: { documents?: { key: string; name: string }[]; [k: string]: unknown };
   [k: string]: unknown;
 }
 
@@ -151,7 +156,7 @@ interface ScenarioResult {
   failures: string[];
 }
 
-type Tab = 'fields' | 'states' | 'approvals' | 'tasks' | 'roles' | 'json';
+type Tab = 'fields' | 'states' | 'rules' | 'approvals' | 'tasks' | 'roles' | 'json';
 
 interface PackContents {
   fields: number;
@@ -626,6 +631,32 @@ export function Builder() {
                     onRemove={() => removeAt('roles', index)}
                   />
                 )}
+                {tab === 'rules' && (
+                  <RulesEditor
+                    transitions={(blueprint.workflow.transitions ?? []) as never}
+                    ctx={{
+                      states: blueprint.workflow.states.map((s2) => ({ key: s2.key, name: s2.name, type: s2.type })),
+                      approvals: (blueprint.workflow.approvals ?? []).map((a) => ({ key: a.key, name: a.name })),
+                      tasks: (blueprint.workflow.tasks ?? []).map((t) => ({ key: t.key, name: t.name })),
+                      templates: (blueprint.communications?.email ?? []).map((e) => ({ key: e.key, name: e.name })),
+                      documents: (blueprint.outputs?.documents ?? []).map((d) => ({ key: d.key, name: d.name })),
+                      fields: blueprint.data.fields.map((f) => ({ key: f.key, label: f.label, type: f.type })),
+                      roles: blueprint.roles.map((r) => ({ key: r.key, name: r.name })),
+                    }}
+                    diagnostics={diagnostics}
+                    onChange={(i, next) =>
+                      mutate((bp) => {
+                        bp.workflow.transitions[i] = next as never;
+                      })
+                    }
+                    onAdd={() => addItem('rules')}
+                    onRemove={(i) =>
+                      mutate((bp) => {
+                        bp.workflow.transitions.splice(i, 1);
+                      })
+                    }
+                  />
+                )}
                 {tab === 'json' && <JsonEditor blueprint={blueprint} onReplace={(bp) => replaceAll(bp)} />}
               </section>
 
@@ -712,6 +743,18 @@ export function Builder() {
       }
       if (which === 'states') {
         bp.workflow.states.push({ key: `new_state_${n}`, name: 'New state', type: 'active' });
+      }
+      if (which === 'rules') {
+        bp.workflow.transitions = bp.workflow.transitions ?? [];
+        const first = bp.workflow.states.find((st) => st.type === 'initial') ?? bp.workflow.states[0];
+        const target = bp.workflow.states.find((st) => st.key !== first?.key) ?? first;
+        bp.workflow.transitions.push({
+          key: `new_rule_${n}`,
+          from: first?.key ?? '',
+          to: target?.key ?? '',
+          trigger: { on: 'submission' },
+          actions: [],
+        });
       }
       if (which === 'approvals') {
         bp.workflow.approvals = bp.workflow.approvals ?? [];
@@ -810,6 +853,18 @@ function Outline({
       tab: 'states',
       label: 'States',
       items: blueprint.workflow.states.map((s) => ({ key: s.key, name: s.name, note: s.type })),
+    },
+    {
+      tab: 'rules',
+      label: 'Automation',
+      // What the process does on its own. It was editable only as raw JSON,
+      // which meant the part that makes this more than a form was the part
+      // nobody could change.
+      items: (blueprint.workflow.transitions ?? []).map((t) => ({
+        key: t.key,
+        name: t.key.replace(/_/g, ' '),
+        note: (t.trigger as { on: string }).on.replace(/_/g, ' '),
+      })),
     },
     {
       tab: 'approvals',

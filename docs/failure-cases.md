@@ -580,6 +580,21 @@ All four were genuine. A subject access clock starts when the person *first aske
 **Generalisable:** the value of a rule is not that it encodes what you already knew — it is that it finds the cases where you did not apply it. Four out of five Compliance packs, written the same week by the same author, missed the same control.
 
 
+### 56. The only thing that could not be edited was the point of the product
+
+Fields, states, roles, approvals and tasks all had editors, across twenty-two field types. Transitions — *when this happens, if this is true, do these things* — had none. The only way to change what a process **does** was the raw JSON tab.
+
+Reported as "the forms are static and not flexible", which was half right and pointed at the more important half: the forms were the flexible part.
+
+**Generalisable:** the feature that is hardest to build an editor for is usually the feature the product is about. A tab that says "edit this as JSON for now" is a note that the hard part was deferred, and it reads as finished.
+
+### 57. A screen-reader-only class that only exists on some routes
+
+The rules editor used `.vw__srOnly` for the labels on its selects. That class is declared in the console's stylesheet and in the gallery's, and not in the builder's — so on the builder the labels rendered as visible text in the middle of every rule.
+
+**Generalisable:** a utility class is an invisible dependency. `sr-only` is the one where getting it wrong shows the user the thing you meant to hide from them, and it fails silently in the direction that looks like a content bug rather than a styling one.
+
+
 ---
 
 ## What the compiler structurally cannot catch
