@@ -140,3 +140,52 @@ test('expressions cannot smuggle in executable code', () => {
   (transition as unknown as { when: unknown }).when = { op: 'eval', code: 'process.exit(1)' };
   assert.equal(Blueprint.safeParse(bp).success, false);
 });
+
+/**
+ * SEC009 exists because a role that cannot approve is a different failure from
+ * a role that does not exist, and only the second one was being caught.
+ *
+ * The runtime refuses `approve` for a role without the capability, so an
+ * approval naming one waits forever. Nothing in the blueprint looks wrong when
+ * you read it: the role is real, the approval is wired up, the transition
+ * fires. It is the kind of fault that is only visible from the policy engine's
+ * side, which is why the compiler has to carry it.
+ */
+test('an approver who cannot approve is an error, not a runtime surprise', () => {
+  const bp = load('employee-onboarding.blueprint.json');
+  assert.equal(validate(bp).errors.filter((e) => e.code === 'SEC009').length, 0);
+
+  // hr_admin holds administer, operate and edit — everything except approve.
+  const unclearable = structuredClone(bp);
+  const admin = unclearable.roles.find((r) => r.key === 'hr_admin')!;
+  assert.ok(!admin.capabilities.includes('approve'), 'the fixture must not already grant approve');
+  unclearable.workflow.approvals[0]!.approvers.push({ role: 'hr_admin' });
+
+  const d = validate(unclearable);
+  assert.ok(
+    d.errors.some((e) => e.code === 'SEC009' && e.message.includes('hr_admin')),
+    'naming a role without the approve capability must be an error',
+  );
+  assert.equal(d.publishable, false);
+
+  // Granting the capability resolves it, which is what the fix line suggests.
+  const granted = structuredClone(unclearable);
+  granted.roles.find((r) => r.key === 'hr_admin')!.capabilities.push('approve');
+  assert.equal(validate(granted).errors.filter((e) => e.code === 'SEC009').length, 0);
+});
+
+test('a respondent role may never be named as an approver', () => {
+  const bp = load('employee-onboarding.blueprint.json');
+  const selfApproving = structuredClone(bp);
+  const newHire = selfApproving.roles.find((r) => r.kind === 'respondent')!;
+  // Even with the capability granted, authorize() refuses `approve` for a
+  // respondent principal before it looks at any role, so this can never work.
+  newHire.capabilities.push('approve');
+  selfApproving.workflow.approvals[0]!.approvers = [{ role: newHire.key }];
+
+  const d = validate(selfApproving);
+  assert.ok(
+    d.errors.some((e) => e.code === 'SEC009' && e.message.includes('respondent')),
+    'a respondent approving their own submission must be an error',
+  );
+});

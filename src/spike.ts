@@ -4,8 +4,16 @@ import { Blueprint } from './blueprint/index.js';
 import { createPool, describeTarget, resetSchema, type Pool } from './runtime/db.js';
 import { Engine, newWorkerId } from './runtime/engine.js';
 import { AuthorizationError } from './runtime/policy.js';
-import { proveDocumentsAndDelivery, proveIntake, proveRespondentScope, proveRetention, proveWorkerFiresTimers } from './spike-proofs.js';
+import {
+  proveBuilderRoundTrip,
+  proveDocumentsAndDelivery,
+  proveIntake,
+  proveRespondentScope,
+  proveRetention,
+  proveWorkerFiresTimers,
+} from './spike-proofs.js';
 import { runScenarios } from './runtime/scenarios.js';
+import { suppressDelivery } from './runtime/email.js';
 
 const GREEN = '\x1b[32m';
 const RED = '\x1b[31m';
@@ -468,6 +476,7 @@ function completeFor(bp: Blueprint, overrides: Record<string, unknown>): Record<
 // --------------------------------------------------------------------------
 
 async function main(): Promise<void> {
+  suppressDelivery('the proof suite must not deliver to real inboxes');
   const pool = createPool(16);
   console.log(`\n${BOLD}Runtime spike${OFF} ${DIM}- ${describeTarget()}${OFF}`);
 
@@ -484,6 +493,7 @@ async function main(): Promise<void> {
     ['intake', () => proveIntake(ctx)],
     ['documents and delivery', () => proveDocumentsAndDelivery(ctx)],
     ['respondent scope', () => proveRespondentScope(ctx)],
+    ['builder round trip', () => proveBuilderRoundTrip(ctx)],
     ['worker', () => proveWorkerFiresTimers(ctx)],
     ['retention', () => proveRetention(ctx)],
     ['idempotent email', () => proveIdempotentEmail(pool, onboarding)],

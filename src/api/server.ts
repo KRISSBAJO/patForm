@@ -20,6 +20,18 @@ import {
   submitForm,
 } from '../runtime/intake.js';
 import type { Answers } from '../blueprint/answers.js';
+import {
+  createDraft,
+  discardDraft,
+  listForBuilder,
+  loadDraft as loadProcessDraft,
+  openDraft as openProcessDraft,
+  publishDraft,
+  publishImpact,
+  saveDraft as saveProcessDraft,
+  testDraft,
+  type NewProcess,
+} from '../runtime/builder.js';
 
 /**
  * The operator console's API.
@@ -98,6 +110,49 @@ route('POST', /^\/api\/forms\/([a-z0-9_]+)\/submit$/, async ({ pool, engine, url
   if (result.ok) await engine.drain(new Date(), 'intake');
   return result;
 });
+
+// ------------------------------------------------------------------ builder
+
+route('GET', /^\/api\/builder\/processes$/, async ({ pool, principal }) =>
+  listForBuilder(pool, principal),
+);
+
+route('POST', /^\/api\/builder\/open$/, async ({ pool, principal }, body) => {
+  const { processKey } = body as { processKey?: string };
+  if (!processKey) throw new HttpError(400, 'processKey is required');
+  return openProcessDraft(pool, { principal, processKey });
+});
+
+route('POST', /^\/api\/builder\/create$/, async ({ pool, principal }, body) =>
+  createDraft(pool, { principal, input: body as NewProcess }),
+);
+
+route('POST', /^\/api\/builder\/drafts\/([0-9a-f-]{36})\/discard$/, async ({ pool, principal, url }) =>
+  discardDraft(pool, { principal, draftId: url.pathname.split('/')[4]! }),
+);
+
+route('GET', /^\/api\/builder\/drafts\/([0-9a-f-]{36})$/, async ({ pool, principal, url }) =>
+  loadProcessDraft(pool, principal, url.pathname.split('/').pop()!),
+);
+
+route('POST', /^\/api\/builder\/drafts\/([0-9a-f-]{36})\/save$/, async ({ pool, principal, url }, body) => {
+  const draftId = url.pathname.split('/')[4]!;
+  const { blueprint } = body as { blueprint?: unknown };
+  if (!blueprint) throw new HttpError(400, 'blueprint is required');
+  return saveProcessDraft(pool, { principal, draftId, blueprint });
+});
+
+route('POST', /^\/api\/builder\/drafts\/([0-9a-f-]{36})\/test$/, async ({ pool, principal, url }) =>
+  testDraft(pool, { principal, draftId: url.pathname.split('/')[4]! }),
+);
+
+route('GET', /^\/api\/builder\/drafts\/([0-9a-f-]{36})\/impact$/, async ({ pool, principal, url }) =>
+  publishImpact(pool, { principal, draftId: url.pathname.split('/')[4]! }),
+);
+
+route('POST', /^\/api\/builder\/drafts\/([0-9a-f-]{36})\/publish$/, async ({ pool, principal, url }) =>
+  publishDraft(pool, { principal, draftId: url.pathname.split('/')[4]! }),
+);
 
 // ------------------------------------------------------------------ session
 
@@ -346,8 +401,18 @@ async function main(): Promise<void> {
   server.listen(PORT, () => {
     console.log(`\n  Patform console API  http://localhost:${PORT}`);
     console.log(`  database             ${describeTarget()}`);
-    console.log(`\n  \x1b[33mNo authentication: this server believes the x-actor-id header.`);
-    console.log(`  Local use only.\x1b[0m\n`);
+    // This line used to say the server believed an `x-actor-id` header. It
+    // stopped being true when session cookies went in, and a banner that
+    // understates the security posture is as misleading as one that
+    // overstates it — somebody reads it and decides what to expose.
+    console.log(`  auth                 session cookie, HttpOnly, SameSite=Lax${SECURE ? ', Secure' : ''}`);
+    if (!SECURE) {
+      const warn = '\u001b[33m';
+      const off = '\u001b[0m';
+      console.log(`\n  ${warn}Secure is off, so the session cookie travels over plain HTTP.`);
+      console.log(`  Set NODE_ENV=production behind TLS before this is reachable from anywhere else.${off}`);
+    }
+    console.log('');
   });
 }
 

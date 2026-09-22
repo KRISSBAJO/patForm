@@ -14,6 +14,8 @@
  * exactly the boundary where it matters most.
  */
 
+import { smtpFromEnv } from './smtp.js';
+
 export interface Attachment {
   filename: string;
   content: Buffer;
@@ -145,19 +147,146 @@ export class RelyKitProvider implements EmailProvider {
 }
 
 /**
+ * Resend.
+ *
+ * Same shape as RelyKit — that is the point of the interface. Swapping one for
+ * the other is a line in `.env`, and everything above this file, including the
+ * idempotency guarantee, is unchanged.
+ */
+export class ResendProvider implements EmailProvider {
+  readonly name = 'resend';
+
+  constructor(
+    private readonly apiKey: string,
+    private readonly baseUrl = process.env.RESEND_URL ?? 'https://api.resend.com',
+  ) {}
+
+  async send(email: OutgoingEmail): Promise<DeliveryResult> {
+    const body: Record<string, unknown> = {
+      from: email.from,
+      to: email.to,
+      subject: email.subject,
+      text: email.text,
+    };
+    if (email.html) body.html = email.html;
+    if (email.cc?.length) body.cc = email.cc;
+    if (email.replyTo) body.reply_to = email.replyTo;
+    if (email.tags) {
+      body.tags = Object.entries(email.tags).map(([name, value]) => ({ name, value }));
+    }
+    if (email.attachments?.length) {
+      body.attachments = email.attachments.map((a) => ({
+        filename: a.filename,
+        content: a.content.toString('base64'),
+        content_type: a.contentType,
+      }));
+    }
+
+    let res: Response;
+    try {
+      res = await fetch(`${this.baseUrl}/emails`, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${this.apiKey}`,
+          'content-type': 'application/json',
+          'Idempotency-Key': email.idempotencyKey,
+        },
+        body: JSON.stringify(body),
+      });
+    } catch (err) {
+      // Never reached the provider, so trying again is the right answer.
+      return {
+        providerMessageId: null,
+        status: 'failed',
+        detail: err instanceof Error ? err.message : String(err),
+        retryable: true,
+      };
+    }
+
+    const payload = (await res.json().catch(() => ({}))) as {
+      id?: string;
+      message?: string;
+      name?: string;
+      error?: { message?: string };
+    };
+
+    if (!res.ok) {
+      return {
+        providerMessageId: null,
+        status: 'failed',
+        detail: `${res.status} ${payload.name ?? ''} ${payload.error?.message ?? payload.message ?? ''}`.trim(),
+        retryable: res.status >= 500 || res.status === 429,
+      };
+    }
+
+    return { providerMessageId: payload.id ?? null, status: 'queued' };
+  }
+}
+
+/**
+ * The address messages are sent from.
+ *
+ * `MAIL_FROM` is the name in the deployment's environment; `EMAIL_FROM` is
+ * accepted because it was the name here first, and silently ignoring one of
+ * them would mean mail going out from `no-reply@localhost`.
+ */
+export function mailFrom(displayName: string): string {
+  const address = process.env.MAIL_FROM ?? process.env.EMAIL_FROM ?? 'no-reply@localhost';
+  return address.includes('<') ? address : `${displayName} <${address}>`;
+}
+
+/**
  * Picks a provider from the environment.
  *
- * Nothing sends unless a key is configured AND `EMAIL_PROVIDER` names it. Two
- * switches rather than one, because a key left in a `.env` from a week ago
- * should not quietly turn a test run into real mail.
+ * Nothing leaves the machine unless `EMAIL_PROVIDER` names a provider AND that
+ * provider's credentials are present. Two switches rather than one, because a
+ * key left in a `.env` from last week should not quietly turn a test run into
+ * real mail in somebody's inbox.
+ *
+ * A named provider whose credentials are missing throws rather than falling
+ * back to the console: a deployment that believes it is sending and is not is
+ * worse than one that will not start.
  */
 export function emailProviderFromEnv(): EmailProvider {
-  const named = process.env.EMAIL_PROVIDER;
-  const key = process.env.RELYKIT_API_KEY;
-
-  if (named === 'relykit') {
-    if (!key) throw new Error('EMAIL_PROVIDER=relykit but RELYKIT_API_KEY is not set');
-    return new RelyKitProvider(key);
+  switch (process.env.EMAIL_PROVIDER) {
+    case 'relykit': {
+      const key = process.env.RELYKIT_API_KEY;
+      if (!key) throw new Error('EMAIL_PROVIDER=relykit but RELYKIT_API_KEY is not set');
+      return new RelyKitProvider(key);
+    }
+    case 'resend': {
+      const key = process.env.RESEND_API_KEY;
+      if (!key) throw new Error('EMAIL_PROVIDER=resend but RESEND_API_KEY is not set');
+      return new ResendProvider(key);
+    }
+    case 'smtp':
+      return smtpFromEnv();
+    case 'console':
+    case undefined:
+    case '':
+      return new ConsoleProvider();
+    default:
+      throw new Error(
+        `EMAIL_PROVIDER="${process.env.EMAIL_PROVIDER}" is not one of: relykit, resend, smtp, console`,
+      );
   }
-  return new ConsoleProvider();
+}
+
+/**
+ * Turns delivery off for this process, whatever the environment says.
+ *
+ * A test harness that reads the same `.env` as the server will send real mail
+ * the moment somebody configures a provider — and they will, because that is
+ * the point of configuring one. The guard belongs in the harness rather than
+ * in the Engine, because the Engine cannot tell whether it is running a proof
+ * or running the business.
+ *
+ * Called at the top of a harness, before anything constructs an Engine.
+ */
+export function suppressDelivery(reason: string): void {
+  const named = process.env.EMAIL_PROVIDER;
+  delete process.env.EMAIL_PROVIDER;
+  if (named && named !== 'console') {
+    console.log(`\n  \x1b[33mEMAIL_PROVIDER=${named} ignored: ${reason}.\x1b[0m`);
+  }
 }

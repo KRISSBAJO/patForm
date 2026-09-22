@@ -4,6 +4,7 @@ import { createPool, describeTarget, resetSchema } from './runtime/db.js';
 import { Engine } from './runtime/engine.js';
 import type { Principal } from './runtime/policy.js';
 import { setPassword } from './runtime/auth.js';
+import { suppressDelivery } from './runtime/email.js';
 
 /** Every seeded account gets this. It only ever exists in a local database. */
 const DEV_PASSWORD = 'patform-dev-password';
@@ -62,6 +63,7 @@ function answersFor(hire: (typeof HIRES)[number], index: number) {
 }
 
 async function main(): Promise<void> {
+  suppressDelivery('seeding fabricates records for example.test addresses');
   const pool = createPool(8);
   const engine = new Engine(pool);
 

@@ -372,3 +372,54 @@ export function rejectUneditable(blueprint: Blueprint, roleKeys: string[], patch
   const allowed = editableFields(blueprint, roleKeys);
   return Object.keys(patch).filter((key) => !allowed.has(key));
 }
+
+/**
+ * A gate that does not need a process.
+ *
+ * Every other check in this file resolves a capability through a blueprint
+ * role, which is right for anything done *to* a record. Creating a process has
+ * no blueprint to consult — the whole point is that one does not exist yet —
+ * so the only honest source is the workspace role in WORKSPACE_GRANTS. Making
+ * this its own function rather than handing `authorize` a stub blueprint keeps
+ * the two kinds of authority distinguishable when reading the audit.
+ *
+ * `builder`, `admin` and `owner` hold `administer`; `operator` and below do
+ * not, so an operator can run processes but cannot invent them.
+ */
+export async function requireWorkspaceCapability(
+  pool: Pool,
+  principal: Principal,
+  capability: Capability,
+  resource: string,
+): Promise<{ workspaceRole: WorkspaceRole; email: string }> {
+  if (principal.kind !== 'actor') {
+    throw new AuthorizationError('administer', `${principal.kind} principals hold no workspace role`);
+  }
+
+  // Written on its own connection for the same reason as recordDenialIndependently:
+  // the caller usually throws, and a refusal recorded inside the doomed
+  // transaction would roll back with it.
+  const refuse = async (reason: string): Promise<never> => {
+    await pool.query(
+      `insert into access_denial
+         (tenant_id, actor_id, actor_label, action, resource, instance_id, reason, occurred_at)
+       values ($1, $2, $3, 'administer', $4, null, $5, now())`,
+      [principal.tenantId, principal.actorId, `actor:${principal.actorId}`, resource, reason],
+    );
+    throw new AuthorizationError('administer', reason);
+  };
+
+  const { rows } = await pool.query<{ active: boolean; email: string; workspace_role: WorkspaceRole }>(
+    'select active, email, workspace_role from actor where id = $1 and tenant_id = $2',
+    [principal.actorId, principal.tenantId],
+  );
+  const actor = rows[0];
+  if (!actor) return refuse('no such actor in this tenant');
+  if (!actor.active) return refuse('actor is deactivated');
+
+  const granted = WORKSPACE_GRANTS[actor.workspace_role] as readonly Capability[] | undefined;
+  if (!granted?.includes(capability)) {
+    return refuse(`workspace role "${actor.workspace_role}" does not grant "${capability}"`);
+  }
+  return { workspaceRole: actor.workspace_role, email: actor.email };
+}

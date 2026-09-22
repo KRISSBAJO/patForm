@@ -154,6 +154,28 @@ create table resume_token (
   revoked_at  timestamptz
 );
 
+-- ------------------------------------------------------------------ drafts
+
+-- BLD-06: "Published versions are immutable; edits create a new draft."
+--
+-- A draft is where a process is edited. It is not a version and nothing runs
+-- against it — the compiler decides whether it may ever become one.
+create table process_draft (
+  id              uuid primary key default gen_random_uuid(),
+  tenant_id       uuid not null references tenant(id),
+  process_key     text not null,
+  /** The published version this was opened from, so the impact of publishing is knowable. */
+  based_on_version int,
+  blueprint       jsonb not null,
+  created_by      text not null,
+  created_at      timestamptz not null default now(),
+  updated_at      timestamptz not null default now(),
+  published_as    int,
+  unique (tenant_id, process_key, id)
+);
+
+create index draft_open on process_draft (tenant_id, process_key) where published_as is null;
+
 -- ------------------------------------------------------------------ intake
 
 -- §6.3: "Autosave and secure resume link." A draft is a form somebody has

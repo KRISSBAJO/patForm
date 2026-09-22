@@ -2,7 +2,13 @@ import { createHash, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { issueResumeToken } from './auth.js';
 import { htmlToBlocks, renderPdf, type Block } from './pdf.js';
-import { ConsoleProvider, emailProviderFromEnv, type Attachment, type EmailProvider } from './email.js';
+import {
+  ConsoleProvider,
+  emailProviderFromEnv,
+  mailFrom,
+  type Attachment,
+  type EmailProvider,
+} from './email.js';
 import type { Blueprint, Action, Party, Transition } from '../blueprint/index.js';
 import { evaluate, render, withCalculatedFields, type Answers } from './expr.js';
 import { inTransaction, isUniqueViolation, type Client, type Pool } from './db.js';
@@ -72,8 +78,12 @@ export class Engine {
     private readonly pool: Pool,
     email?: EmailProvider,
   ) {
-    // Console by default: a local database must never deliver real mail to a
-    // real person because somebody forgot to unset a variable.
+    // This used to claim it defaulted to console so a local database could
+    // never deliver real mail. It does not: naming a provider in the
+    // environment is enough, which is how `npm run spike` came to fire
+    // forty live sends at a transactional API. The Engine has no way to tell
+    // a proof run from a real one, so the guard lives in the harness —
+    // suppressDelivery() in email.ts — and this says what it actually does.
     this.email = email ?? (process.env.EMAIL_PROVIDER ? emailProviderFromEnv() : new ConsoleProvider());
   }
 
@@ -1024,7 +1034,7 @@ async function performEffect(
       );
 
       const delivery = await args.email.send({
-        from: `${bp.communications.fromName} <${process.env.EMAIL_FROM ?? 'no-reply@localhost'}>`,
+        from: mailFrom(bp.communications.fromName),
         to: recipients.filter((r) => !r.startsWith('role:')),
         subject,
         text: body,

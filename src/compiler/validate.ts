@@ -82,6 +82,42 @@ export function validate(bp: Blueprint): Diagnostics {
     typeCheckExpr(d, expr, at, fieldByKey);
   };
 
+  /**
+   * An approver must actually be able to approve.
+   *
+   * checkParty only asks whether the role exists. A role that exists but does
+   * not hold `approve` is refused by the policy engine at runtime, so the
+   * approval never clears and the record waits in that state until somebody
+   * notices — which is the same failure as an approval nobody was assigned,
+   * arrived at by a route that reads fine in review.
+   *
+   * Respondents are worse: authorize() refuses the `approve` action for a
+   * respondent principal before it looks at any role at all, so the capability
+   * on the role would not save it even if it were granted.
+   */
+  const checkApprover = (p: Party, at: string, approvalKey: string): void => {
+    if (!('role' in p)) return;
+    const role = roleByKey.get(p.role);
+    if (!role) return; // already reported by checkParty
+    if (role.kind === 'respondent') {
+      d.error(
+        'SEC009',
+        at,
+        `Approval "${approvalKey}" names respondent role "${role.key}" as an approver.`,
+        'Respondents are outside the workspace and may never approve. Name an internal role.',
+      );
+      return;
+    }
+    if (!role.capabilities.includes('approve')) {
+      d.error(
+        'SEC009',
+        at,
+        `Approval "${approvalKey}" names role "${role.key}", which does not have the "approve" capability.`,
+        `Add "approve" to role "${role.key}", or name a role that already has it.`,
+      );
+    }
+  };
+
   const checkParty = (p: Party, at: string, what: string): void => {
     if ('role' in p && !roleByKey.has(p.role)) {
       d.error('REF008', at, `${what} refers to unknown role "${p.role}".`);
@@ -285,7 +321,10 @@ export function validate(bp: Blueprint): Diagnostics {
           d.error('REF006', at, `Unknown approval "${action.approval}".`);
           return;
         }
-        approval.approvers.forEach((p) => checkParty(p, at, `Approval "${approval.key}" approver`));
+        approval.approvers.forEach((party) => {
+          checkParty(party, at, `Approval "${approval.key}" approver`);
+          checkApprover(party, at, approval.key);
+        });
         for (const key of approval.contextFields ?? []) requireField(key, at, `Approval "${approval.key}" context`);
         if (approval.mode === 'sequential' && approval.approvers.length < 2) {
           d.warn('OPS003', at, `Approval "${approval.key}" is sequential but has only one approver.`);

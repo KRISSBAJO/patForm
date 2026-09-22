@@ -1,5 +1,5 @@
 {
-  "ranAt": "2026-09-22T00:02:25.676Z",
+  "ranAt": "2026-09-22T01:08:20.901Z",
   "postgres": "PostgreSQL 17.11 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit",
   "proofs": [
     {
@@ -31,6 +31,12 @@
       "claim": "Section 12.3: broken object authorization in public resume and file links.",
       "passed": true,
       "detail": "The holder read their own record and was refused somebody else's (\"resume token is for a different record\"). A respondent with no token was refused even their own (\"respondent has no resume token for any record\"), and approving was refused (\"a respondent may not approve\"). Revoking the link made it resolve to nothing. Before this, \"a respondent may view\" meant any record in the tenant."
+    },
+    {
+      "name": "A draft opens, refuses to publish while broken, and says what a publish would change",
+      "claim": "BLD-03, BLD-04, BLD-07 and §9.2: the compiler is the gate, and versioning is opt-in per record.",
+      "passed": true,
+      "detail": "Opening twice returned one draft, not two. An operator was refused (\"actor holds no role in this process, and workspace role \"operator\" does not grant \"administer\"\"). Naming a role without the approve capability produced 2 SEC009 error(s), and publishing anyway was refused server-side (\"the draft has 2 error(s) and cannot be published — SEC009: Approval \"manager_app\"). A draft saved as {\"half\":\"typed\"} was kept and reopened as 11 shape diagnostic(s) rather than throwing. After the fix the impact summary counted 1 record still running and named \"proof_note\" as added; version 2 published and the running record stayed on v1."
     },
     {
       "name": "A worker fires deadlines with nobody watching",
@@ -84,7 +90,7 @@
       "name": "Submission and workflow start are far inside the section 10.4 budget",
       "claim": "Beta targets: acknowledgment p95 under 1.5s, workflow start p95 under 30s.",
       "passed": true,
-      "detail": "Over 100 submissions: acknowledgment p95 18.1ms (budget 1500ms), first action p95 37.4ms (budget 30000ms). Database round trips only, local container."
+      "detail": "Over 100 submissions: acknowledgment p95 15.3ms (budget 1500ms), first action p95 35.6ms (budget 30000ms). Database round trips only, local container."
     }
   ]
 }

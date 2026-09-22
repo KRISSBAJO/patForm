@@ -77,7 +77,7 @@ is specific to either.
 
 Section 23 week 3 asks for a spike of workflow state, timers, idempotent email,
 versioning, and migration, producing architecture decision records and
-performance evidence. `npm run spike` is that, and it proves eight things:
+performance evidence. `npm run spike` is that, and it proves fifteen things:
 
 | Proof | Result |
 |---|---|
@@ -85,6 +85,10 @@ performance evidence. `npm run spike` is that, and it proves eight things:
 | A form can be filled in, saved, submitted and amended when asked | §20.1 steps 4 and 6, end to end |
 | Documents are real files, and email actually leaves | §20.1 step 8: one PDF, one send, refusals recorded |
 | Authorization is enforced by the runtime, not the caller | cross-tenant, wrong capability, and un-named approver all refused |
+| A resume link opens one record and no others | somebody else's record refused, revoking the link kills it |
+| A draft opens, refuses to publish while broken, and says what a publish would change | operator refused, SEC009 blocks publish server-side, impact counts the in-flight record |
+| A worker fires deadlines with nobody watching | 49 hours passed, 1 reminder, 0 timers left unfired |
+| Retention deletes, only for an administrator, and says what it removed | preview first, then 1 instance and 1 event, against an append-only history |
 | Idempotent email under replay | 3 deliveries, 1 email |
 | Concurrent workers never double-process | 8 workers, 40 instances, 40 emails, 0 duplicates |
 | A dead worker loses nothing and duplicates nothing | recovered after the visibility timeout, 1 email |
@@ -112,6 +116,38 @@ prints them. Who you sign in as is the most useful control on the screen:
 | Priya — hiring_manager / approver | 2 approvals, 0 tasks, and no automation panel at all |
 | Ini — it_operator / operator | only the 2 IT tasks, not HR's |
 | Dana — hiring_manager / read_only | refused: *not named as an approver on this request* |
+
+## The builder
+
+```bash
+npm run db:up && npm run seed && npm run api    # API on 3310
+npm --prefix web run dev                        # builder at localhost:3210/builder
+```
+
+§20.1 step 3 — change a field and an approval threshold, resolve the warnings,
+publish. Sign in as Joy (`hr_admin / admin`); an operator is refused, because
+`administer` is what lets you rewrite a process rather than run one.
+
+The third column is the point. It is the compiler, it never collapses, it
+updates on every keystroke, and clicking an entry selects what caused it —
+renaming one field key produces thirteen errors naming the form page, both
+approvals, the document placeholder and the scenario tests, and greys out
+publish until they are gone.
+
+- **Test** runs the blueprint's own scenarios against the real engine in a
+  scratch workspace — the same policy checks, the same effects, nothing
+  simulated.
+- **Publish** shows what changes first: fields added, removed or retyped,
+  states added or removed, any data the removed fields strand, and how many
+  records are still running. Those stay on the version they started under,
+  which is safe and surprising enough to be worth a number on the screen.
+- A draft that does not compile is still saved. Nothing you type is lost
+  because it is currently invalid.
+
+Fields, states, approvals, tasks and roles have form editors. Intent, the form
+experience, transitions, messages, documents and tests are edited through the
+JSON tab — a stated gap, not a hidden one. There is no draft locking yet, so
+two people editing the same process will overwrite each other.
 
 ## The respondent side
 

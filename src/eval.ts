@@ -3,6 +3,7 @@ import type { Blueprint } from './blueprint/index.js';
 import { DATA_CLASS_RANK, type DataClass } from './blueprint/index.js';
 import { availableProviders, blueprintSchema, generateBlueprint, providerFor, type ProviderName } from './ai/index.js';
 import type { GenerationOutcome } from './ai/pipeline.js';
+import { suppressDelivery } from './runtime/email.js';
 
 const RED = '\x1b[31m';
 const YELLOW = '\x1b[33m';
@@ -220,6 +221,7 @@ function runChecks(bp: Blueprint | undefined, expect: Expectation, outcome: Gene
 // -------------------------------------------------------------------- runner
 
 async function main(): Promise<void> {
+  suppressDelivery('evaluation runs blueprints that name invented people');
   const available = availableProviders();
   if (!available.length) {
     console.error('No API key is set. Put ANTHROPIC_API_KEY or OPENAI_API_KEY in .env');

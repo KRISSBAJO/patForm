@@ -5,6 +5,13 @@ import { AuthorizationError, type Principal } from './runtime/policy.js';
 import { resolveResumeToken } from './runtime/auth.js';
 import { runRetention } from './runtime/retention.js';
 import { checkAnswers, loadDraft, publicForm, respondentStatus, respondentUpdate, saveDraft, submitForm } from './runtime/intake.js';
+import {
+  loadDraft as loadBuilderDraft,
+  openDraft,
+  publishDraft,
+  publishImpact,
+  saveDraft as saveBuilderDraft,
+} from './runtime/builder.js';
 
 /**
  * Proofs for the gaps closed after the first spike: respondent scoping, a
@@ -462,5 +469,118 @@ export async function proveDocumentsAndDelivery({ pool, bp, T0, record, complete
       `the packet attached. Each send carried a distinct idempotency key, which is the same key the ledger uses, so a ` +
       `retry that reaches the provider is deduplicated there too. A permanent rejection was recorded as failed with ` +
       `its reason ("${failures[0]?.failure}") rather than logged as delivered.`,
+  );
+}
+
+/**
+ * The builder's round trip: open, break, be told, fix, publish.
+ *
+ * This proof exists because the first version of `openDraft` read the draft
+ * back through the pool from inside the transaction that had just inserted it
+ * — a second connection, which cannot see an uncommitted row. It compiled, it
+ * type-checked, and it failed on the first click. The same shape as the
+ * refusal audit and the delivery log, approached from the opposite side: there
+ * the write had to escape the transaction, here the read had to wait for it.
+ *
+ * It also pins the gate itself. `publishDraft` re-validates rather than
+ * trusting whatever the browser last said was publishable, and a publish
+ * endpoint that believes the client is not a gate at all.
+ */
+export async function proveBuilderRoundTrip({ pool, bp, T0, record, completeFor }: ProofCtx): Promise<void> {
+  const engine = new Engine(pool);
+  const tenantId = await engine.createTenant('proof:builder');
+  const version = await engine.publish(tenantId, bp, 'proof');
+
+  const builder = await engine.createActor(tenantId, 'builder@proof.test', 'A Builder', 'builder');
+  const operator = await engine.createActor(tenantId, 'operator@proof.test', 'An Operator', 'operator');
+  const as = (actorId: string): Principal => ({ kind: 'actor', tenantId, actorId });
+
+  // A record left running, so the impact summary has something to count.
+  const { instanceId } = await engine.submit({
+    version,
+    answers: completeFor(bp, { personal_email: 'inflight@example.test' }),
+    now: T0,
+  });
+  await engine.drain(T0);
+
+  // 1. Opening returns the draft it just created, in the same call.
+  const opened = await openDraft(pool, { principal: as(builder), processKey: bp.key });
+  const reopened = await openDraft(pool, { principal: as(builder), processKey: bp.key });
+
+  // 2. An operator may run the process but may not rewrite it.
+  let operatorRefused: string | null = null;
+  try {
+    await openDraft(pool, { principal: as(operator), processKey: bp.key });
+  } catch (err) {
+    operatorRefused = err instanceof AuthorizationError ? err.reason : `unexpected: ${String(err)}`;
+  }
+
+  // 3. Break it the way a person would, by naming an approver who cannot approve.
+  const broken = structuredClone(opened.blueprint);
+  broken.workflow.approvals[0]!.approvers.push({ role: 'hr_admin' });
+  const afterBreak = await saveBuilderDraft(pool, {
+    principal: as(builder),
+    draftId: opened.id,
+    blueprint: broken,
+  });
+
+  // 4. A publish attempt while broken must be refused by the server, not just
+  //    by a disabled button.
+  let publishRefused: string | null = null;
+  try {
+    await publishDraft(pool, { principal: as(builder), draftId: opened.id });
+  } catch (err) {
+    publishRefused = err instanceof Error ? err.message : String(err);
+  }
+
+  // 5. Work that does not even parse is still kept.
+  await saveBuilderDraft(pool, { principal: as(builder), draftId: opened.id, blueprint: { half: 'typed' } });
+  const survived = await loadBuilderDraft(pool, as(builder), opened.id);
+
+  // 6. Fix it, and change something that shows up in the impact summary.
+  const fixed = structuredClone(opened.blueprint);
+  fixed.workflow.approvals[0]!.mode = 'sequential';
+  fixed.workflow.approvals[0]!.approvers.push({ role: 'hr_approver' });
+  fixed.data.fields.push({
+    key: 'proof_note',
+    type: 'short_text',
+    label: 'A note added by the proof',
+    classification: 'internal',
+    setBy: 'operator',
+  });
+  const afterFix = await saveBuilderDraft(pool, { principal: as(builder), draftId: opened.id, blueprint: fixed });
+
+  const impact = await publishImpact(pool, { principal: as(builder), draftId: opened.id });
+  const published = await publishDraft(pool, { principal: as(builder), draftId: opened.id });
+
+  // 7. The running record stays on the version it started under (§9.2).
+  const { rows: stillOnV1 } = await pool.query<{ version: number }>(
+    `select pv.version from instance i
+       join process_version pv on pv.id = i.process_version_id
+      where i.id = $1`,
+    [instanceId],
+  );
+
+  record(
+    'A draft opens, refuses to publish while broken, and says what a publish would change',
+    'BLD-03, BLD-04, BLD-07 and §9.2: the compiler is the gate, and versioning is opt-in per record.',
+    opened.id === reopened.id &&
+      operatorRefused !== null &&
+      afterBreak.diagnostics.some((d) => d.code === 'SEC009') &&
+      afterBreak.publishable === false &&
+      publishRefused !== null &&
+      survived.publishable === false &&
+      survived.diagnostics.some((d) => d.code === 'SHAPE') &&
+      afterFix.publishable === true &&
+      impact.inFlight === 1 &&
+      impact.fields.added.includes('proof_note') &&
+      published.version === 2 &&
+      stillOnV1[0]?.version === 1,
+    `Opening twice returned one draft, not two. An operator was refused ("${operatorRefused}"). ` +
+      `Naming a role without the approve capability produced ${afterBreak.diagnostics.filter((d) => d.code === 'SEC009').length} SEC009 error(s), ` +
+      `and publishing anyway was refused server-side ("${publishRefused?.slice(0, 80)}"). ` +
+      `A draft saved as ${JSON.stringify({ half: 'typed' })} was kept and reopened as ${survived.diagnostics.length} shape diagnostic(s) rather than throwing. ` +
+      `After the fix the impact summary counted ${impact.inFlight} record still running and named "proof_note" as added; ` +
+      `version ${published.version} published and the running record stayed on v${stillOnV1[0]?.version}.`,
   );
 }

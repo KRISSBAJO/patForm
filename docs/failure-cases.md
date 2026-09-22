@@ -125,6 +125,38 @@ The first run of the new authorization proof failed on its last assertion: four 
 
 Worth naming the general shape, because it will recur: **anything written to explain why a transaction failed cannot live inside that transaction.**
 
+### 6. An approver who could not approve
+
+Naming an approver went through `checkParty`, which asked whether the role exists. It never asked whether that role holds the `approve` capability — and the policy engine refuses `approve` to a role that does not, so an approval naming one waits forever.
+
+Nothing reads as wrong. The role is real, the approval is wired up, the transition fires, the scenarios that do not exercise that approver pass. It is only visible from the policy engine's side.
+
+Found by using the builder: changing an approval to sequential and picking `hr_admin` — which holds `administer`, `operate` and `edit`, everything except `approve` — compiled clean.
+
+**Fixed:** **SEC009**, which also refuses a respondent role named as an approver, since `authorize()` rejects `approve` for a respondent principal before it looks at any role at all.
+
+That is the fourth of these, and the pattern is now the thing to watch for rather than any individual instance: **a control that is present in review and absent at runtime.** The first three were the safeguarding task nothing waited for, the permission model above, and `editableFields` that no code path could reach.
+
+### 7. A read that could not see its own write
+
+`openDraft` inserted a draft inside a transaction and then called `loadDraft(pool, …)` to return it. That takes a second connection out of the pool, and a second connection cannot see an uncommitted row. It compiled, it type-checked, and it failed on the first click with `no such draft`.
+
+Same family as case 5, from the opposite direction: there the write had to escape the transaction; here the read had to wait for it. The general shape is worth stating as **a pool is not a connection** — any helper taking a `Pool` is a different session from the transaction that called it.
+
+**Fixed:** the transaction returns an id and nothing else; the draft is read after it commits.
+
+### 8. The proof suite was sending real email
+
+The Engine's constructor carried a comment saying it defaulted to the console provider "so a local database never delivers real mail to a real person because somebody forgot to unset a variable". It did not. Naming a provider in the environment was enough, and the harnesses read the same `.env` as the server.
+
+So once `EMAIL_PROVIDER=resend` was configured, `npm run spike` began firing forty live sends per run at addresses under `example.test`. It surfaced as a concurrency proof reporting 19 emails for 40 instances — the provider was rejecting and throttling them, and the proof was reading that as a concurrency fault.
+
+The guard cannot live in the Engine, which has no way to tell a proof run from a real one. It lives in the harness.
+
+**Fixed:** `suppressDelivery(reason)` at the top of `spike`, `seed` and `eval` unsets the variable and says on stdout that it did. The Engine's comment now describes what the code does rather than what it was supposed to do.
+
+Third general shape, and the one that connects all of these: **a comment claiming a safeguard is not a safeguard.** Two of the eight faults here were found because the code disagreed with a sentence written directly above it.
+
 ---
 
 ## What the compiler structurally cannot catch
