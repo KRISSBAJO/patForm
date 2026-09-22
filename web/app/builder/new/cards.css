@@ -590,3 +590,44 @@
     margin-top: 24px;
   }
 }
+
+/* What the category enforces — the reason to take a pack over drawing a form. */
+.pd__guarantee {
+  padding: 16px 18px;
+  background: var(--green-tint);
+  border: 1px solid var(--green-border);
+  border-radius: 9px;
+}
+
+.pd__guarantee h3 {
+  color: var(--green-deep);
+}
+
+.pd__says {
+  margin: 0 0 12px;
+  font-size: 14.5px;
+  line-height: 1.6;
+  color: var(--ink);
+}
+
+.pd__checks {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pd__checks li {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin-top: 7px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--ink-soft);
+}
+
+.pd__checks svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--green);
+}

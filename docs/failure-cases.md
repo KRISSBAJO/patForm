@@ -551,6 +551,35 @@ The pack detail took focus on its outer container and put the scrolling on an in
 **Generalisable:** focus belongs on the element that scrolls, not on the element that looks like the dialog. The two are usually different, and only one of them is what somebody needs to operate.
 
 
+### 53. Two timers leaving one state, and the second never fires
+
+Every generated pack had a reminder that looped back to the review state after three days, and an expiry that closed the record after thirty. The comment beside them said *"nothing stalls forever"*.
+
+Entering a state cancels the timers of the previous occupancy and schedules the new ones. A self-loop re-enters the state, so the three-day reminder **restarted the thirty-day expiry every time it fired**. The expiry was always thirty days away from three days ago. It could never arrive.
+
+Eighty-eight packs shipped with it, and every one compiled: this is not a property of a blueprint, it is a property of the runtime, so the compiler has nothing to say about it. The process looks complete on the page and a record waits forever.
+
+**Fixed** by giving every non-terminal state exactly one outgoing timer, and making escalation a *state* rather than a second timer — which is also what escalation means. `timerConflicts()` in `src/packs/audit.ts` now fails the build on any state with more than one.
+
+**Generalisable:** two mechanisms competing for the same clock is a race with no error message. The tell was that both timers were written in the same function, five lines apart, by somebody who had read the code that cancels them — knowing the rule is not the same as noticing it applies.
+
+### 54. A rule that matched a field name matched one pack
+
+Finance's threshold tier was declared as `field: 'amount'`. One of the seven Finance packs calls its money field `amount`; the others use `estimated_cost`, `invoice_amount`, `refund_amount`, `transfer_amount`. Six packs silently got no tier, which is worse than having no rule — the category page would have claimed a control that six of its seven packs did not carry.
+
+**Fixed** by attaching the tier to the pack's **money field**, whatever it is called: the first required currency field, and nothing if the pack asks for no money.
+
+**Generalisable:** a rule keyed on a name is a rule that applies wherever somebody happened to use that name. Keying on a *type* or a *property* applies wherever the thing actually is.
+
+### 55. The audit found four forms on its first run
+
+Compliance requires that a record captures when the thing happened, not only when it was reported. Four packs did not: a data subject request, a policy acknowledgement, a conflict of interest and a whistleblowing report.
+
+All four were genuine. A subject access clock starts when the person *first asked*, and they usually email somebody before finding the form. An acknowledgement that does not name a dated policy version proves nothing. An interest declared in June that arose in January is the thing a register exists to show.
+
+**Generalisable:** the value of a rule is not that it encodes what you already knew — it is that it finds the cases where you did not apply it. Four out of five Compliance packs, written the same week by the same author, missed the same control.
+
+
 ---
 
 ## What the compiler structurally cannot catch

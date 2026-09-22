@@ -13,6 +13,8 @@ import { Blueprint } from '../blueprint/index.js';
 import { validate } from '../compiler/validate.js';
 import { CATALOGUE } from './catalogue.js';
 import { buildBlueprint } from './generate.js';
+import { auditPack, describeControl } from './audit.js';
+import { rulesFor } from './rules.js';
 
 const GREEN = '\x1b[32m';
 const RED = '\x1b[31m';
@@ -48,10 +50,29 @@ for (const spec of CATALOGUE) {
       console.log(`          ${DIM}[${d.code}] ${d.at}: ${d.message}${OFF}`);
     }
   } else {
-    warned += warnings.length;
-    console.log(
-      `  ${GREEN}ok${OFF}      ${spec.key.padEnd(26)} ${DIM}${spec.category} · ${warnings.length} warning(s)${OFF}`,
-    );
+    /*
+     * The compiler says the blueprint is coherent. The audit says it does
+     * what its category promises — which the compiler has no opinion about,
+     * because "a Health & safety process records when it happened" is a
+     * property of a kind of work rather than of a blueprint.
+     */
+    const { findings, conflicts } = auditPack(parsed.data, spec.category);
+    const missed = findings.filter((f) => !f.ok);
+
+    if (missed.length || conflicts.length) {
+      failed++;
+      console.log(`  ${RED}MISSES${OFF}  ${spec.key} ${DIM}(${spec.category})${OFF}`);
+      for (const m of missed) {
+        console.log(`          ${DIM}does not ${describeControl(m.control)} — ${m.detail}${OFF}`);
+      }
+      for (const c of conflicts) console.log(`          ${DIM}${c}${OFF}`);
+    } else {
+      warned += warnings.length;
+      console.log(
+        `  ${GREEN}ok${OFF}      ${spec.key.padEnd(26)} ${DIM}${spec.category.padEnd(15)} ` +
+          `${findings.length} control(s) · ${warnings.length} warning(s)${OFF}`,
+      );
+    }
   }
 }
 

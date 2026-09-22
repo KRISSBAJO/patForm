@@ -3,6 +3,7 @@ import { validate } from '../compiler/validate.js';
 import type { Diagnostic } from '../compiler/diagnostics.js';
 import { inTransaction, type Client, type Pool } from './db.js';
 import { requireWorkspaceCapability, type Principal } from './policy.js';
+import { CONTROL_MEANS, rulesFor } from '../packs/rules.js';
 
 /**
  * Process packs — the template marketplace, §21's P2 line.
@@ -41,6 +42,17 @@ export interface PackContents {
   metrics: number;
   roles: { key: string; name: string; kind: string }[];
   /** The policy defaults §1.2 names, which are the part a template never carries. */
+  /**
+   * What the category guarantees, said on the pack.
+   *
+   * Carried rather than looked up so it travels with the pack: a workspace
+   * reading an installed pack next year sees the rule it was generated
+   * under, not whatever the rule became.
+   */
+  guarantees?: {
+    says: string;
+    controls: string[];
+  };
   /** What a card can draw, rather than describe. */
   preview: {
     flow: { name: string; kind: string }[];
@@ -79,7 +91,7 @@ export interface PackSummary {
  * not thought about who sees what, and that is visible before installing
  * rather than after.
  */
-export function describeContents(bp: Blueprint): PackContents {
+export function describeContents(bp: Blueprint, category?: string): PackContents {
   const restricted = bp.data.fields.filter((f) => f.classification === 'restricted');
   const hidden = new Set(bp.roles.flatMap((r) => r.hiddenFields ?? []));
 
@@ -99,6 +111,14 @@ export function describeContents(bp: Blueprint): PackContents {
       fieldsHiddenFromSomeone: hidden.size,
     },
     scenarios: bp.tests.length,
+    ...(category
+      ? {
+          guarantees: {
+            says: rulesFor(category).says,
+            controls: rulesFor(category).requires.map((c) => CONTROL_MEANS[c]),
+          },
+        }
+      : {}),
     /*
      * Enough to draw the pack rather than describe it.
      *
@@ -227,7 +247,7 @@ export async function publishPack(
       args.category,
       args.audience ?? '',
       JSON.stringify(parsed.data),
-      JSON.stringify(describeContents(parsed.data)),
+      JSON.stringify(describeContents(parsed.data, args.category)),
       publishedBy,
     ],
   );

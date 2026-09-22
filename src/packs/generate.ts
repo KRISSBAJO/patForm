@@ -25,6 +25,7 @@
  */
 
 import type { Blueprint } from '../blueprint/index.js';
+import { rulesFor, type CategoryRules } from './rules.js';
 
 export type Sensitivity = 'public' | 'internal' | 'confidential' | 'restricted';
 
@@ -104,9 +105,21 @@ function standardFields(spec: PackSpec): PackField[] {
   ];
 }
 
-function roles(spec: PackSpec) {
+/**
+ * The field a threshold tier attaches to.
+ *
+ * The pack's money field — the first one it asks for in currency. A pack with
+ * no money has no tier, which is correct: a request to change a budget code
+ * is not made riskier by being large.
+ */
+function moneyField(spec: PackSpec): string | null {
+  return spec.fields.find((f) => f.type === 'currency' && f.required !== false)?.key ?? null;
+}
+
+function roles(spec: PackSpec, rules: CategoryRules) {
   const approverRoles = [...new Set(spec.approvals.map((a) => a.byRole))];
   const taskRole = spec.task?.byRole;
+  const restricted = spec.fields.filter((f) => f.classification === 'restricted').map((f) => f.key);
 
   const out = [
     {
@@ -135,6 +148,38 @@ function roles(spec: PackSpec) {
     });
   }
 
+  /*
+   * The escalation role.
+   *
+   * It exists because the category says somebody is told when nobody decides,
+   * and it is the role restricted fields are hidden from: escalating is about
+   * *that nothing has happened*, not about what the record says. Somebody
+   * chasing a decision does not need to read a medical note to chase it.
+   */
+  if (
+    rules.escalateTo !== OPERATOR_ROLE &&
+    !approverRoles.includes(rules.escalateTo) &&
+    rules.escalateTo !== taskRole
+  ) {
+    out.push({
+      key: rules.escalateTo,
+      name: titleOf(rules.escalateTo),
+      kind: 'internal' as 'internal' | 'respondent',
+      capabilities: ['view', 'approve'],
+      ...(restricted.length ? { hiddenFields: restricted } : {}),
+    });
+  }
+
+  const threshold = rules.threshold && moneyField(spec) ? rules.threshold : null;
+  if (threshold && !out.some((r) => r.key === threshold.approval.byRole)) {
+    out.push({
+      key: threshold.approval.byRole,
+      name: titleOf(threshold.approval.byRole),
+      kind: 'internal' as 'internal' | 'respondent',
+      capabilities: ['view', 'approve'],
+    });
+  }
+
   out.push({
     key: 'submitter',
     name: 'The person submitting',
@@ -154,15 +199,35 @@ function titleOf(key: string): string {
     .join(' ');
 }
 
-/** The states, which depend only on how many approvals there are. */
-function states(spec: PackSpec) {
+/**
+ * The states.
+ *
+ * Every non-terminal state has **exactly one** outgoing timer, and that is not
+ * a style choice. Entering a state cancels the timers of the previous
+ * occupancy and schedules the new ones, so a self-loop reminder restarts the
+ * clock on everything — including the transition meant to close the record.
+ * The first version of this generator had a 72-hour reminder loop and a
+ * 720-hour expiry on the same state, and the expiry could never fire.
+ *
+ * Escalation is therefore a state rather than a second timer: not decided in
+ * time, so more people are told, which is what escalation means anyway.
+ */
+function states(spec: PackSpec, rules: CategoryRules) {
+  const firstSla = Math.min(spec.approvals[0]!.dueInHours ?? rules.decideWithinHours, rules.decideWithinHours);
   const out: Record<string, unknown>[] = [
     { key: 'draft', name: 'Not yet submitted', type: 'initial' },
     {
       key: 'review_1',
       name: `With ${titleOf(spec.approvals[0]!.byRole).toLowerCase()}`,
       type: 'active',
-      slaHours: spec.approvals[0]!.dueInHours ?? 72,
+      slaHours: firstSla,
+      publicLabel: 'Being reviewed',
+    },
+    {
+      key: 'escalated',
+      name: `Escalated to ${titleOf(rules.escalateTo).toLowerCase()}`,
+      type: 'active',
+      slaHours: rules.escalationHours,
       publicLabel: 'Being reviewed',
     },
   ];
@@ -172,7 +237,18 @@ function states(spec: PackSpec) {
       key: 'review_2',
       name: `With ${titleOf(spec.approvals[1].byRole).toLowerCase()}`,
       type: 'active',
-      slaHours: spec.approvals[1].dueInHours ?? 72,
+      slaHours: spec.approvals[1].dueInHours ?? rules.decideWithinHours,
+      publicLabel: 'Being reviewed',
+    });
+  }
+
+  // Only where the pack actually asks for money.
+  if (rules.threshold && moneyField(spec)) {
+    out.push({
+      key: 'review_threshold',
+      name: `With ${titleOf(rules.threshold.approval.byRole).toLowerCase()}`,
+      type: 'active',
+      slaHours: rules.threshold.approval.dueInHours,
       publicLabel: 'Being reviewed',
     });
   }
@@ -196,8 +272,10 @@ function states(spec: PackSpec) {
   return out;
 }
 
-function approvals(spec: PackSpec, contextFields: string[]) {
-  return spec.approvals.map((a, i) => ({
+function approvals(spec: PackSpec, contextFields: string[], rules: CategoryRules) {
+  const threshold = rules.threshold && moneyField(spec) ? rules.threshold : null;
+
+  const declared = spec.approvals.map((a, i) => ({
     key: a.key,
     name: a.name,
     approvers: [{ role: a.byRole }],
@@ -205,8 +283,24 @@ function approvals(spec: PackSpec, contextFields: string[]) {
     allowRequestChanges: true,
     reasonRequired: true,
     contextFields: contextFields.slice(0, 6),
-    dueInHours: a.dueInHours ?? (i === 0 ? 72 : 120),
+    dueInHours: Math.min(a.dueInHours ?? rules.decideWithinHours, i === 0 ? rules.decideWithinHours : 336),
   }));
+
+  return threshold
+    ? [
+        ...declared,
+        {
+          key: threshold.approval.key,
+          name: threshold.approval.name,
+          approvers: [{ role: threshold.approval.byRole }],
+          mode: 'single',
+          allowRequestChanges: true,
+          reasonRequired: true,
+          contextFields: contextFields.slice(0, 6),
+          dueInHours: threshold.approval.dueInHours,
+        },
+      ]
+    : declared;
 }
 
 /**
@@ -217,10 +311,17 @@ function approvals(spec: PackSpec, contextFields: string[]) {
  * non-terminal state with a way out, nothing leaving a terminal state, and
  * every self-loop carrying a timer so it cannot fire forever.
  */
-function transitions(spec: PackSpec) {
+function transitions(spec: PackSpec, rules: CategoryRules) {
   const first = spec.approvals[0]!;
   const second = spec.approvals[1];
-  const afterApprovals = spec.task ? 'doing' : 'done';
+  const threshold = rules.threshold;
+  const thresholdOn = threshold ? moneyField(spec) : null;
+  const hasThresholdField = Boolean(thresholdOn);
+
+  const firstSla = Math.min(first.dueInHours ?? rules.decideWithinHours, rules.decideWithinHours);
+  const done = spec.task ? 'doing' : 'done';
+  /** Where a final approval lands: the threshold tier if this pack has one. */
+  const afterLast = hasThresholdField ? 'review_threshold' : done;
 
   const out: Record<string, unknown>[] = [
     {
@@ -233,13 +334,27 @@ function transitions(spec: PackSpec) {
         { do: 'request_approval', key: 'ask_1', approval: first.key },
       ],
     },
-    // A self-loop with a timer: the SLA on review_1 has something that fires.
+    /*
+     * The only timer out of review_1.
+     *
+     * Not a reminder loop: entering a state cancels the previous occupancy's
+     * timers, so a self-loop restarts the clock on everything else leaving
+     * that state. The first version of this generator had a 72-hour reminder
+     * loop and a 720-hour expiry on the same state, and the expiry could
+     * never fire — the loop reset it every time.
+     *
+     * Escalating IS the reminder: it tells the original approver and somebody
+     * above them at the same moment, which is what escalation means.
+     */
     {
-      key: 'nudge_1',
+      key: 'escalate_1',
       from: 'review_1',
-      to: 'review_1',
-      trigger: { on: 'timer', afterHoursInState: first.dueInHours ?? 72 },
-      actions: [{ do: 'send_email', key: 'nudge_1', template: 'reminder' }],
+      to: 'escalated',
+      trigger: { on: 'timer', afterHoursInState: firstSla },
+      actions: [
+        { do: 'send_email', key: 'nudge', template: 'reminder' },
+        { do: 'send_email', key: 'escalate', template: 'escalation' },
+      ],
     },
     {
       key: 'rejected_1',
@@ -248,12 +363,29 @@ function transitions(spec: PackSpec) {
       trigger: { on: 'approval_decided', approval: first.key, decision: 'rejected' },
       actions: [{ do: 'send_email', key: 'say_no', template: 'rejected' }],
     },
-    // Nothing stalls forever: a review that is never decided expires.
+
+    // ---- the escalation. Still decidable, and it closes itself if it is not.
     {
-      key: 'give_up_1',
-      from: 'review_1',
+      key: 'escalated_approved',
+      from: 'escalated',
+      to: second ? 'review_2' : afterLast,
+      trigger: { on: 'approval_decided', approval: first.key, decision: 'approved' },
+      actions: second
+        ? [{ do: 'request_approval', key: 'ask_2_late', approval: second.key }]
+        : landing(afterLast, spec, 'late', threshold?.approval.key),
+    },
+    {
+      key: 'escalated_rejected',
+      from: 'escalated',
+      to: 'rejected',
+      trigger: { on: 'approval_decided', approval: first.key, decision: 'rejected' },
+      actions: [{ do: 'send_email', key: 'say_no_late', template: 'rejected' }],
+    },
+    {
+      key: 'give_up',
+      from: 'escalated',
       to: 'withdrawn',
-      trigger: { on: 'timer', afterHoursInState: (first.dueInHours ?? 72) * 10 },
+      trigger: { on: 'timer', afterHoursInState: rules.escalationHours },
       actions: [{ do: 'send_email', key: 'say_expired', template: 'expired' }],
     },
   ];
@@ -268,20 +400,11 @@ function transitions(spec: PackSpec) {
         actions: [{ do: 'request_approval', key: 'ask_2', approval: second.key }],
       },
       {
-        key: 'nudge_2',
-        from: 'review_2',
-        to: 'review_2',
-        trigger: { on: 'timer', afterHoursInState: second.dueInHours ?? 120 },
-        actions: [{ do: 'send_email', key: 'nudge_2', template: 'reminder' }],
-      },
-      {
         key: 'approved_2',
         from: 'review_2',
-        to: afterApprovals,
+        to: afterLast,
         trigger: { on: 'approval_decided', approval: second.key, decision: 'approved' },
-        actions: spec.task
-          ? [{ do: 'create_task', key: 'do_work', task: spec.task.key }]
-          : [{ do: 'send_email', key: 'say_yes', template: 'approved' }],
+        actions: landing(afterLast, spec, 'second', threshold?.approval.key),
       },
       {
         key: 'rejected_2',
@@ -294,7 +417,7 @@ function transitions(spec: PackSpec) {
         key: 'give_up_2',
         from: 'review_2',
         to: 'withdrawn',
-        trigger: { on: 'timer', afterHoursInState: (second.dueInHours ?? 120) * 10 },
+        trigger: { on: 'timer', afterHoursInState: (second.dueInHours ?? rules.decideWithinHours) * 4 },
         actions: [{ do: 'send_email', key: 'say_expired_2', template: 'expired' }],
       },
     );
@@ -302,23 +425,48 @@ function transitions(spec: PackSpec) {
     out.push({
       key: 'approved_1',
       from: 'review_1',
-      to: afterApprovals,
+      to: afterLast,
       trigger: { on: 'approval_decided', approval: first.key, decision: 'approved' },
-      actions: spec.task
-        ? [{ do: 'create_task', key: 'do_work', task: spec.task.key }]
-        : [{ do: 'send_email', key: 'say_yes', template: 'approved' }],
+      actions: landing(afterLast, spec, 'first', threshold?.approval.key),
     });
+  }
+
+  /*
+   * The category's threshold tier.
+   *
+   * Only where the pack actually holds the field the rule names. A rule
+   * firing on a field that does not exist is a compile error; a rule that
+   * silently did nothing would be worse, which is why the audit checks that
+   * every pack carrying the field also carries the tier.
+   */
+  if (hasThresholdField && threshold) {
+    out.push(
+      {
+        key: 'threshold_approved',
+        from: 'review_threshold',
+        to: done,
+        trigger: { on: 'approval_decided', approval: threshold.approval.key, decision: 'approved' },
+        actions: landing(done, spec, 'big'),
+      },
+      {
+        key: 'threshold_rejected',
+        from: 'review_threshold',
+        to: 'rejected',
+        trigger: { on: 'approval_decided', approval: threshold.approval.key, decision: 'rejected' },
+        actions: [{ do: 'send_email', key: 'say_no_threshold', template: 'rejected' }],
+      },
+      {
+        key: 'give_up_threshold',
+        from: 'review_threshold',
+        to: 'withdrawn',
+        trigger: { on: 'timer', afterHoursInState: threshold.approval.dueInHours * 4 },
+        actions: [{ do: 'send_email', key: 'say_expired_threshold', template: 'expired' }],
+      },
+    );
   }
 
   if (spec.task) {
     out.push(
-      {
-        key: 'nudge_task',
-        from: 'doing',
-        to: 'doing',
-        trigger: { on: 'timer', afterHoursInState: 120 },
-        actions: [{ do: 'send_email', key: 'nudge_task', template: 'reminder' }],
-      },
       {
         key: 'finished',
         from: 'doing',
@@ -332,7 +480,7 @@ function transitions(spec: PackSpec) {
         key: 'give_up_task',
         from: 'doing',
         to: 'withdrawn',
-        trigger: { on: 'timer', afterHoursInState: 1200 },
+        trigger: { on: 'timer', afterHoursInState: 720 },
         actions: [{ do: 'send_email', key: 'say_expired_task', template: 'expired' }],
       },
     );
@@ -341,7 +489,21 @@ function transitions(spec: PackSpec) {
   return out;
 }
 
-function emails(spec: PackSpec) {
+/**
+ * What happens on arriving at the state after the last approval.
+ *
+ * Named per arrival rather than shared, because every action inside one
+ * transition needs a distinct key — they become idempotency keys, and two the
+ * same would collapse into one run.
+ */
+function landing(to: string, spec: PackSpec, tag: string, thresholdApproval?: string) {
+  if (to === 'doing') return [{ do: 'create_task', key: `do_work_${tag}`, task: spec.task!.key }];
+  if (to === 'done') return [{ do: 'send_email', key: `say_yes_${tag}`, template: 'approved' }];
+  // Landing on the threshold tier: the approval is requested on arrival.
+  return [{ do: 'request_approval', key: `ask_threshold_${tag}`, approval: thresholdApproval! }];
+}
+
+function emails(spec: PackSpec, rules: CategoryRules) {
   const first = spec.approvals[0]!;
   return [
     {
@@ -361,6 +523,19 @@ function emails(spec: PackSpec) {
       cc: [],
       subject: `Still waiting on you: ${spec.name.toLowerCase()}`,
       body: `{{submitter_name}} is waiting on a decision.\n\nOpen the record in the console to approve or decline it.`,
+    },
+    {
+      key: 'escalation',
+      name: 'Nobody has decided',
+      class: 'transactional',
+      to: [{ role: rules.escalateTo }],
+      cc: [],
+      subject: `Not decided in time: ${spec.name.toLowerCase()}`,
+      // No name and no detail: this goes to somebody who is being asked to
+      // chase, not to read. The record says who and what, behind a check.
+      body: `Something has been waiting on a decision for longer than this kind of work allows.
+
+Open it in the console — it is still decidable, and it closes itself if nobody does.`,
     },
     {
       key: 'approved',
@@ -399,7 +574,7 @@ function emails(spec: PackSpec) {
  * happy path only — which is the state most templates are in, and the reason
  * most of them break the first time something goes wrong.
  */
-function tests(spec: PackSpec, answers: Record<string, unknown>) {
+function tests(spec: PackSpec, answers: Record<string, unknown>, rules: CategoryRules) {
   const first = spec.approvals[0]!;
   const second = spec.approvals[1];
   const lastApproval = second ?? first;
@@ -446,12 +621,14 @@ function tests(spec: PackSpec, answers: Record<string, unknown>) {
     {
       key: 'timeout',
       kind: 'timeout',
-      name: 'Nobody decides, so it is chased and then closed',
+      name: 'Nobody decides, so it escalates rather than sitting there',
       steps: [
         { step: 'submit', answers },
-        { step: 'advance_hours', hours: (first.dueInHours ?? 72) + 1 },
+        { step: 'advance_hours', hours: Math.min(first.dueInHours ?? rules.decideWithinHours, rules.decideWithinHours) + 1 },
       ],
-      expect: { state: 'review_1', instanceCount: 1 },
+      // The escalation, not review_1: the whole point of the category rule is
+      // that an undecided record moves rather than waits.
+      expect: { state: 'escalated', instanceCount: 1 },
     },
     {
       key: 'duplicate',
@@ -531,6 +708,7 @@ function sampleAnswers(fields: PackField[]): Record<string, unknown> {
 }
 
 export function buildBlueprint(spec: PackSpec): unknown {
+  const rules = rulesFor(spec.category);
   const fields = standardFields(spec);
   const placed = fields.filter((f) => f.key !== 'decision_note');
   const contextFields = placed.map((f) => f.key);
@@ -564,17 +742,32 @@ export function buildBlueprint(spec: PackSpec): unknown {
        * says so in words rather than leaving a blank. A baptism register is
        * the case this exists for.
        */
-      ...(spec.retentionDays === null ? {} : { retentionDays: spec.retentionDays }),
+      /*
+       * The category's floor, applied rather than checked.
+       *
+       * A statutory period is not a preference — a pack that declares less
+       * than its category requires is raised to it, and the audit verifies
+       * the result. `null` still means forever, which is longer than any
+       * floor and so is left alone.
+       */
+      ...(spec.retentionDays === null
+        ? {}
+        : {
+            retentionDays: Math.max(spec.retentionDays, rules.retentionFloorDays ?? 0),
+          }),
       assumptions: [
         {
-          statement:
-            'The approval chain is the one most organizations use for this. Yours may have more steps, or fewer.',
+          statement: `${spec.category}: ${rules.says}`,
           affects: 'workflow',
         },
         {
-          statement: 'Reminders go out after three days and the record closes itself after thirty.',
-          affects: 'workflow',
+          statement:
+            'The people in the chain are roles, not names. Map them to your own in the builder before publishing.',
+          affects: 'roles',
         },
+        ...(rules.threshold && moneyField(spec)
+          ? [{ statement: rules.threshold.because, affects: 'workflow' }]
+          : []),
       ],
       openDecisions: [
         {
@@ -584,7 +777,7 @@ export function buildBlueprint(spec: PackSpec): unknown {
         },
       ],
     },
-    roles: roles(spec),
+    roles: roles(spec, rules),
     data: {
       identity: ['submitter_email', 'submitter_name'],
       fields: fields.map((f) => ({
@@ -622,8 +815,8 @@ export function buildBlueprint(spec: PackSpec): unknown {
     },
     workflow: {
       timezone: 'Europe/London',
-      states: states(spec),
-      approvals: approvals(spec, contextFields),
+      states: states(spec, rules),
+      approvals: approvals(spec, contextFields, rules),
       tasks: spec.task
         ? [
             {
@@ -635,27 +828,22 @@ export function buildBlueprint(spec: PackSpec): unknown {
             },
           ]
         : [],
-      transitions: transitions(spec),
+      transitions: transitions(spec, rules),
     },
     communications: {
       fromName: spec.ownerName,
       sms: [],
-      email: emails(spec),
+      email: emails(spec, rules),
     },
     outputs: {
       webhookEvents: [`${spec.key}.approved`, `${spec.key}.rejected`],
       exportFields: contextFields.slice(0, 8),
       documents: [],
       dashboard: {
-        metrics: [
-          { key: 'received', name: 'Received', kind: 'intake' },
-          { key: 'cycle_time', name: 'Time from start to finish', kind: 'cycle_time' },
-          { key: 'completion', name: 'Finished', kind: 'completion_rate' },
-          { key: 'aging', name: 'Waiting the longest', kind: 'stage_aging' },
-          { key: 'approval_time', name: 'Time waiting on a decision', kind: 'approval_time' },
-        ],
+        // What this kind of work is worth watching for, from the category.
+        metrics: rules.monitors,
       },
     },
-    tests: tests(spec, answers),
+    tests: tests(spec, answers, rules),
   };
 }

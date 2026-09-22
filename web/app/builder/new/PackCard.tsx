@@ -32,6 +32,8 @@ export interface PackContents {
   roles: { key: string; name: string; kind: string }[];
   /** Absent on packs published before previews existed. */
   preview?: PackPreview;
+  /** What the pack's category enforced when it was generated. */
+  guarantees?: { says: string; controls: string[] };
   policy: {
     sensitivityCeiling: string;
     retentionDays: number | null;

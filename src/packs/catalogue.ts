@@ -868,6 +868,10 @@ export const CATALOGUE: PackSpec[] = [
     sensitivityCeiling: 'restricted',
     fields: [
       f.choice('request_kind', 'What you are asking for', ['access', 'deletion', 'correction', 'portability', 'objection']),
+      // The statutory clock starts when the request is *received*, and people
+      // usually email somebody first. Asking when they first asked is what
+      // makes the deadline defensible rather than convenient.
+      f.date('first_asked_on', 'When you first asked us'),
       f.notes('request_detail', 'What specifically', true),
       f.sensitive(
         'identity_evidence',
@@ -912,6 +916,9 @@ export const CATALOGUE: PackSpec[] = [
     fields: [
       f.text('policy_name', 'Which policy'),
       f.text('policy_version', 'Version'),
+      // Which version, and when it was issued — an acknowledgement that does
+      // not name a dated version proves nothing to an auditor.
+      f.date('policy_issued_on', 'Date on that version'),
       f.yesNo('read_and_understood', 'Have you read and understood it?'),
       f.notes('questions', 'Anything unclear', false),
     ],
@@ -929,6 +936,9 @@ export const CATALOGUE: PackSpec[] = [
     retentionDays: 3650,
     fields: [
       f.choice('interest_kind', 'Kind of interest', ['financial', 'family', 'directorship', 'gift', 'other']),
+      // When it arose, not when it was declared. The gap between the two is
+      // the thing a register is for.
+      f.date('arose_on', 'When it arose'),
       f.notes('interest_detail', 'Describe it', true),
       f.money('interest_value', 'Value, if it has one', false),
       f.yesNo('ongoing', 'Is it ongoing?'),
@@ -949,6 +959,7 @@ export const CATALOGUE: PackSpec[] = [
     sensitivityCeiling: 'restricted',
     fields: [
       f.choice('concern_kind', 'What this concerns', ['fraud', 'safety', 'bribery', 'conduct', 'other']),
+      f.date('concern_since', 'When it started, as far as you know'),
       f.notes('concern_detail', 'What you have seen', true),
       f.sensitive(
         'people_named',

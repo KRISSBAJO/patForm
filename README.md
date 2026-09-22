@@ -610,6 +610,46 @@ every state, an SLA with something that fires when it passes, six kinds of
 test scenario, a reason for every restricted field — is produced once,
 correctly, for all of them.
 
+### Rules by category
+
+The packs were honest starting points and nothing more: every one declared
+*"the approval chain is a reasonable guess"* as an open decision. That is fine
+for a form and not fine for a process, because the part worth having is not
+the questions — it is **who decides, by when, what happens when nobody does,
+and what is watched afterwards.**
+
+So the domain rules live in [`src/packs/rules.ts`](src/packs/rules.ts), one
+entry per category. A pack says what it is about; its category says how it
+must behave:
+
+| | |
+|---|---|
+| **Health & safety** | Looked at within a day, escalated to a director within two, kept ten years |
+| **Compliance** | Assessed in two days, counsel in three, kept seven years, and it must record *when the thing happened* |
+| **Finance** | Over a thousand needs a controller as well, everything kept seven years |
+| **IT** | Triaged the same working day, escalated within one |
+| **Customer** | Acknowledged within a day — the deadline a complaints regulator measures |
+| **Church** | A week with the minister, then the senior minister |
+| **Communications** | Eight hours — a journalist has a deadline whether or not anybody replies |
+
+Three things follow, and the third is the point:
+
+1. **Rules apply by construction.** The escalation chain, the retention floor
+   and the threshold tier are generated, so a new pack cannot forget them.
+2. **Changing a rule changes every pack in that category** — the only way
+   eighty-eight stay consistent.
+3. **Nothing can be missed.** `npm run packs:check` audits every pack against
+   its category's controls and *fails the build*. On its first run it found
+   four Compliance packs that recorded when something was reported and not
+   when it happened — all four genuine.
+
+The audit also checks something the compiler structurally cannot: that no
+state has two outgoing timers. Entering a state cancels the previous
+occupancy's timers, so a reminder loop restarts the expiry it shares a state
+with, and the expiry never fires. Every pack shipped with that fault and every
+one compiled — see entry 53 in
+[docs/failure-cases.md](docs/failure-cases.md).
+
 What a generator cannot do is know somebody's process. These compile and run
 on day one, which is what a template is. The builder is where they stop being
 generic.

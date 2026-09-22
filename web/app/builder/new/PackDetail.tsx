@@ -141,6 +141,45 @@ export function PackDetail({
             </section>
           </div>
 
+          {/*
+            * The part that makes this a process rather than a form.
+            *
+            * The category enforces it — the escalation path, the retention
+            * floor, the threshold tier — and the build fails if a pack in
+            * that category does not carry it. Worth saying on the page,
+            * because it is the reason to take a pack rather than draw a form.
+            */}
+          {c.guarantees && (
+            <section className="pd__section pd__guarantee">
+              <h3>What {pack.category} enforces</h3>
+              <p className="pd__says">{c.guarantees.says}</p>
+              <ul className="pd__checks">
+                {c.guarantees.controls.map((control) => (
+                  <li key={control}>
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 20 20"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth={2}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <path d="M4 10.6 8.2 15 16 5.6" />
+                    </svg>
+                    {control}
+                  </li>
+                ))}
+              </ul>
+              <p className="pd__note" style={{ marginTop: 12 }}>
+                Every pack in this category is checked against these before it can ship. A pack that
+                stops carrying one fails the build rather than reaching you.
+              </p>
+            </section>
+          )}
+
           <section className="pd__section">
             <h3>What comes with it</h3>
             <div className="pd__counts">
