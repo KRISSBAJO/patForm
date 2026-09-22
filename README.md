@@ -585,15 +585,15 @@ second factor becomes a support queue.
 npm run packs:check
 ```
 
-Fifty-eight process packs, across People, Finance, IT, Facilities, Customer,
-Compliance, Health & safety, Education, Community, Healthcare, Property,
-Operations, Legal, Procurement, Sales and Communications. Every one compiles,
-and the build fails if one stops — a template that does not compile teaches
-somebody that the compiler is an obstacle rather than a check.
+Eighty-eight process packs across nineteen areas — Church 10, Projects 10,
+Events 10, People 9, Finance 7, IT 5, Compliance 5, Community 5, Operations 5,
+and the rest. Every one compiles, and the build fails if one stops: a template
+that does not compile teaches somebody that the compiler is an obstacle rather
+than a check.
 
-They are **generated, not hand-written**. Fifty hand-authored blueprints would
-be fifty chances to get the compiler's fifty rules wrong and fifty places to
-fix anything the schema learns next. Each pack declares only what makes it
+They are **generated, not hand-written**. Eighty-eight hand-authored
+blueprints would be eighty-eight chances to get the compiler's fifty rules
+wrong and eighty-eight places to fix anything the schema learns next. Each pack declares only what makes it
 different — its fields, who approves, how long it is kept — and
 [`src/packs/generate.ts`](src/packs/generate.ts) produces the shape they all
 share:

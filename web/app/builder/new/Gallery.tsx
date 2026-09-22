@@ -155,53 +155,80 @@ export function Gallery() {
         </a>
       </header>
 
-      <main className="gl__main" id="gallery-main">
-        <div className="gl__head">
+      <div className="gl__head">
+        <div className="gl__headInner">
           <h1>Start from something that already works</h1>
           <p>
-            Every one of these is a whole process — the form, the approvals, the reminders and the
-            dashboard — not a form template. Installing opens it as a draft; nothing goes live until
-            you publish it.
+            A whole process — the form, the approvals, the reminders and the dashboard — not a form
+            template. Installing opens it as a draft; nothing goes live until you publish it.
           </p>
-        </div>
-
-        <div className="gl__controls">
           <div className="gl__search">
             <label className="vw__srOnly" htmlFor="pack-search">
               Search the packs
             </label>
+            <svg
+              className="gl__searchIcon"
+              width="17"
+              height="17"
+              viewBox="0 0 20 20"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={1.8}
+              strokeLinecap="round"
+              aria-hidden="true"
+            >
+              <circle cx="8.8" cy="8.8" r="5.6" />
+              <path d="m13 13 4 4" />
+            </svg>
             <input
               id="pack-search"
-              className="cs__input"
+              className="gl__searchInput"
               type="search"
-              placeholder="Search — leave, expenses, incident, consent…"
+              placeholder="Search — leave, expenses, wedding, milestone…"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
           </div>
-
-          <div className="gl__cats" role="group" aria-label="Filter by area">
-            <button
-              type="button"
-              className={`gl__cat${category === 'all' ? ' gl__cat--on' : ''}`}
-              aria-pressed={category === 'all'}
-              onClick={() => setCategory('all')}
-            >
-              Everything <span className="gl__count">{packs?.length ?? 0}</span>
-            </button>
-            {categories.map(([name, count]) => (
-              <button
-                key={name}
-                type="button"
-                className={`gl__cat${category === name ? ' gl__cat--on' : ''}`}
-                aria-pressed={category === name}
-                onClick={() => setCategory(name)}
-              >
-                {name} <span className="gl__count">{count}</span>
-              </button>
-            ))}
-          </div>
         </div>
+      </div>
+
+      <div className="gl__body" id="gallery-main">
+        {/*
+          * Categories run down the side rather than wrapping across the top.
+          * Nineteen of them wrapped into three ragged rows that fought the
+          * search box for the same corner; a list is scannable at any length
+          * and does not reflow when one is added.
+          */}
+        <nav className="gl__side" aria-label="Filter by area">
+          <button
+            type="button"
+            className={`gl__cat${category === 'all' ? ' gl__cat--on' : ''}`}
+            aria-current={category === 'all' ? 'true' : undefined}
+            onClick={() => setCategory('all')}
+          >
+            Everything <span className="gl__count">{packs?.length ?? 0}</span>
+          </button>
+          {categories.map(([name, count]) => (
+            <button
+              key={name}
+              type="button"
+              className={`gl__cat${category === name ? ' gl__cat--on' : ''}`}
+              aria-current={category === name ? 'true' : undefined}
+              onClick={() => setCategory(name)}
+            >
+              {name} <span className="gl__count">{count}</span>
+            </button>
+          ))}
+        </nav>
+
+        <div className="gl__results">
+        <p className="gl__resultCount" role="status">
+          {packs === null
+            ? ' '
+            : `${shown.length} ${shown.length === 1 ? 'process' : 'processes'}${
+                category === 'all' ? '' : ` in ${category}`
+              }${query.trim() ? ` matching “${query.trim()}”` : ''}`}
+        </p>
 
         {error && (
           <p className="gl__error" role="alert">
@@ -271,7 +298,8 @@ export function Gallery() {
           Nothing here fits? <a href="/builder">Describe your process in a sentence</a> and the
           builder will draft it, or copy one you already have.
         </p>
-      </main>
+        </div>
+      </div>
 
       {/* What is inside, counted from the blueprint rather than written. */}
       {viewing && (

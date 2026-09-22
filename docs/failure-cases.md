@@ -519,6 +519,21 @@ It verified the session at load and never again, so a session that ended while s
 **Generalisable:** authentication is not a condition to check at startup, it is a condition that can stop being true at any moment. Anything that checks it once is describing the past.
 
 
+### 49. Nineteen chips where six used to fit
+
+The pack gallery filtered by category with a wrapped row of chips. With six categories that reads as a toolbar; with nineteen it made three ragged rows that fought the search box for the same corner, and the reported symptom was simply that it looked wrong.
+
+**Fixed** by moving the categories into a column beside the results, which does not reflow when one is added and stays scannable at any length.
+
+**Generalisable:** a wrapped row is a layout that works until the number of things in it changes, and the number of things in it is exactly what a catalogue is expected to grow. Choosing it is a bet that the list will stay short.
+
+### 50. `null` is not the same as absent
+
+A baptism register is kept forever, so its pack declared `retentionDays: null`. The schema takes a number or nothing, and rejected it — while the rest of the system already reads *absent* as "kept indefinitely", and the data map says so in words rather than leaving a blank.
+
+**Generalisable:** when a schema offers "omitted" as a meaning, `null` is a second way to say the same thing and therefore a second thing to handle. One of the two will be forgotten.
+
+
 ---
 
 ## What the compiler structurally cannot catch

@@ -556,7 +556,15 @@ export function buildBlueprint(spec: PackSpec): unknown {
       expectedVolume: spec.volume ?? { count: 40, per: 'month' },
       sensitivityCeiling: ceiling,
       completionState: 'done',
-      retentionDays: spec.retentionDays,
+      /*
+       * Omitted rather than null when a record is kept forever.
+       *
+       * The schema takes a number or nothing, and "nothing" is what the rest
+       * of the system already reads as "kept indefinitely" — the data map
+       * says so in words rather than leaving a blank. A baptism register is
+       * the case this exists for.
+       */
+      ...(spec.retentionDays === null ? {} : { retentionDays: spec.retentionDays }),
       assumptions: [
         {
           statement:
