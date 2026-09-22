@@ -1,54 +1,25 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
-import './form.css';
-
 /**
- * The respondent's form.
+ * The respondent's form: loading, answering, checking, submitting.
  *
- * This component knows how to *render* a field and nothing about whether an
- * answer is acceptable. Constraint values arrive from the API and become
- * native HTML attributes, so the browser enforces the same numbers the server
- * holds; `validateAnswers` on the server is what decides. One source of truth
- * in the blueprint, two enforcers, no second copy of the rules to drift.
+ * How a field *looks* lives in `components/form-surface`, which the builder's
+ * preview renders too. What an answer *means* lives on the server. Constraint
+ * values arrive from the API and become native HTML attributes, so the
+ * browser enforces the same numbers the server holds; `validateAnswers` is
+ * what decides. One source of truth in the blueprint, two enforcers, no
+ * second copy of the rules to drift.
  */
 
-interface PublicField {
-  key: string;
-  type: string;
-  label: string;
-  help?: string;
-  required: boolean;
-  choices?: { value: string; label: string }[];
-  constraints?: Record<string, unknown>;
-  fields?: PublicField[];
-  default?: unknown;
-}
+import { useCallback, useEffect, useRef, useState } from 'react';
 
-interface Section {
-  key: string;
-  title?: string;
-  description?: string;
-  visibleWhen?: unknown;
-  fields: PublicField[];
-}
-
-interface Page {
-  key: string;
-  title: string;
-  description?: string;
-  sections: Section[];
-}
-
-interface PublicForm {
-  processKey: string;
-  processName: string;
-  version: number;
-  showProgress: boolean;
-  saveAndResume: boolean;
-  confirmation: { message: string; showStatusLink: boolean };
-  pages: Page[];
-}
+import {
+  FieldCell,
+  FormHeader,
+  accentStyle,
+  type PublicForm,
+  Field,
+} from '../../../components/form-surface';
 
 type Answers = Record<string, unknown>;
 type Errors = Record<string, string>;
@@ -68,9 +39,6 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
   if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
   return body as T;
 }
-
-const n = (v: unknown): number | undefined => (typeof v === 'number' ? v : undefined);
-const s = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined);
 
 export function Form({ processKey }: { processKey: string }) {
   const [form, setForm] = useState<PublicForm | null>(null);
@@ -278,17 +246,23 @@ export function Form({ processKey }: { processKey: string }) {
   const last = pageIndex === form.pages.length - 1;
   const shown = (key: string) => !visible || visible.has(key);
 
+  const brand = form.branding;
+  const saveNote = saving === 'saving' ? 'Saving…' : saving === 'saved' ? 'Saved — you can close this and come back' : '';
+
   return (
-    <div className="fm">
+    /*
+     * The accent is a hex colour the schema has already checked, and it is set
+     * by overriding the token rather than by styling each control — so a
+     * branded form is the same form in a different colour, not a second set of
+     * styles that can fall out of step with the first.
+     */
+    <div className="fm" data-branded={brand ? 'true' : undefined} style={accentStyle(brand?.accent)}>
       <div className="fm__shell">
-        <header className="fm__head">
-          <span className="fm__process">{form.processName}</span>
-          {form.saveAndResume && (
-            <span className="fm__save" aria-live="polite">
-              {saving === 'saving' ? 'Saving…' : saving === 'saved' ? 'Saved — you can close this and come back' : ''}
-            </span>
-          )}
-        </header>
+        <FormHeader
+          branding={brand}
+          fallbackName={form.processName}
+          note={form.saveAndResume ? saveNote : undefined}
+        />
 
         {form.showProgress && (
           <div className="fm__progress">
@@ -314,16 +288,19 @@ export function Form({ processKey }: { processKey: string }) {
               <section className="fm__section" key={section.key}>
                 {section.title && <h2 className="fm__sectionTitle">{section.title}</h2>}
                 {section.description && <p className="fm__sectionLede">{section.description}</p>}
-                {fields.map((field) => (
-                  <Field
-                    key={field.key}
-                    field={field}
-                    value={answers[field.key]}
-                    computed={computed[field.key]}
-                    error={errors[field.key]}
-                    onChange={(v) => set(field.key, v)}
-                  />
-                ))}
+                <div className="fm__grid">
+                  {fields.map((field) => (
+                    <FieldCell section={section} fieldKey={field.key} key={field.key}>
+                      <Field
+                        field={field}
+                        value={answers[field.key]}
+                        computed={computed[field.key]}
+                        error={errors[field.key]}
+                        onChange={(v) => set(field.key, v)}
+                      />
+                    </FieldCell>
+                  ))}
+                </div>
               </section>
             );
           })}
@@ -353,362 +330,9 @@ export function Form({ processKey }: { processKey: string }) {
             )}
           </div>
         </div>
+
+        {brand?.footer && <p className="fm__foot">{brand.footer}</p>}
       </div>
-    </div>
-  );
-}
-
-/** One field. Constraint values become native attributes; nothing is decided here. */
-function Field({
-  field,
-  value,
-  computed,
-  error,
-  onChange,
-}: {
-  field: PublicField;
-  value: unknown;
-  computed?: unknown;
-  error?: string;
-  onChange: (value: unknown) => void;
-}) {
-  const id = `f-${field.key}`;
-  const describedBy = [field.help ? `${id}-help` : null, error ? `${id}-error` : null].filter(Boolean).join(' ');
-  const c = field.constraints ?? {};
-
-  const wrap = (control: React.ReactNode, labelFor = true) => (
-    <div className="fm__field" data-invalid={error ? 'true' : undefined}>
-      {labelFor ? (
-        <label className="fm__label" htmlFor={id}>
-          {field.label}
-          {field.required && <span className="fm__req" aria-hidden="true"> *</span>}
-        </label>
-      ) : (
-        <span className="fm__label">
-          {field.label}
-          {field.required && <span className="fm__req" aria-hidden="true"> *</span>}
-        </span>
-      )}
-      {field.help && (
-        <p className="fm__help" id={`${id}-help`}>
-          {field.help}
-        </p>
-      )}
-      {control}
-      {error && (
-        <p className="fm__error" id={`${id}-error`} role="alert">
-          {error}
-        </p>
-      )}
-    </div>
-  );
-
-  const common = {
-    id,
-    'aria-describedby': describedBy || undefined,
-    'aria-invalid': error ? true : undefined,
-    required: field.required,
-    className: `fm__input ${error ? 'fm__input--bad' : ''}`,
-  };
-
-  switch (field.type) {
-    case 'long_text':
-      return wrap(
-        <textarea
-          {...common}
-          rows={4}
-          minLength={n(c.minLength)}
-          maxLength={n(c.maxLength)}
-          value={(value as string) ?? ''}
-          onChange={(e) => onChange(e.target.value)}
-        />,
-      );
-
-    case 'number':
-    case 'currency':
-      return wrap(
-        <input
-          {...common}
-          type="number"
-          step="any"
-          min={n(c.min)}
-          max={n(c.max)}
-          value={(value as number | string) ?? ''}
-          onChange={(e) => onChange(e.target.value === '' ? null : Number(e.target.value))}
-        />,
-      );
-
-    case 'date':
-      return wrap(
-        <input {...common} type="date" value={(value as string) ?? ''} onChange={(e) => onChange(e.target.value)} />,
-      );
-
-    case 'time':
-      return wrap(
-        <input {...common} type="time" value={(value as string) ?? ''} onChange={(e) => onChange(e.target.value)} />,
-      );
-
-    case 'email':
-      return wrap(
-        <input
-          {...common}
-          type="email"
-          autoComplete="email"
-          value={(value as string) ?? ''}
-          onChange={(e) => onChange(e.target.value)}
-        />,
-      );
-
-    case 'phone':
-      return wrap(
-        <input
-          {...common}
-          type="tel"
-          autoComplete="tel"
-          value={(value as string) ?? ''}
-          onChange={(e) => onChange(e.target.value)}
-        />,
-      );
-
-    case 'url':
-      return wrap(
-        <input {...common} type="url" value={(value as string) ?? ''} onChange={(e) => onChange(e.target.value)} />,
-      );
-
-    case 'dropdown':
-      return wrap(
-        <select {...common} value={(value as string) ?? ''} onChange={(e) => onChange(e.target.value || null)}>
-          <option value="">Choose…</option>
-          {field.choices?.map((choice) => (
-            <option key={choice.value} value={choice.value}>
-              {choice.label}
-            </option>
-          ))}
-        </select>,
-      );
-
-    case 'single_choice':
-      return wrap(
-        <div className="fm__choices" role="radiogroup" aria-labelledby={id}>
-          {field.choices?.map((choice) => (
-            <label className="fm__choice" key={choice.value}>
-              <input
-                type="radio"
-                name={field.key}
-                value={choice.value}
-                checked={value === choice.value}
-                onChange={() => onChange(choice.value)}
-              />
-              <span>{choice.label}</span>
-            </label>
-          ))}
-        </div>,
-        false,
-      );
-
-    case 'multi_choice': {
-      const selected = Array.isArray(value) ? (value as string[]) : [];
-      return wrap(
-        <div className="fm__choices">
-          {field.choices?.map((choice) => (
-            <label className="fm__choice" key={choice.value}>
-              <input
-                type="checkbox"
-                checked={selected.includes(choice.value)}
-                onChange={(e) =>
-                  onChange(
-                    e.target.checked
-                      ? [...selected, choice.value]
-                      : selected.filter((v) => v !== choice.value),
-                  )
-                }
-              />
-              <span>{choice.label}</span>
-            </label>
-          ))}
-        </div>,
-        false,
-      );
-    }
-
-    case 'yes_no':
-      return wrap(
-        <div className="fm__choices">
-          {[
-            { v: true, label: 'Yes' },
-            { v: false, label: 'No' },
-          ].map((o) => (
-            <label className="fm__choice" key={String(o.v)}>
-              <input type="radio" name={field.key} checked={value === o.v} onChange={() => onChange(o.v)} />
-              <span>{o.label}</span>
-            </label>
-          ))}
-        </div>,
-        false,
-      );
-
-    case 'signature_ack':
-      return (
-        <div className="fm__field" data-invalid={error ? 'true' : undefined}>
-          <label className="fm__ack">
-            <input type="checkbox" checked={value === true} onChange={(e) => onChange(e.target.checked)} />
-            <span>
-              {field.label}
-              {field.required && <span className="fm__req" aria-hidden="true"> *</span>}
-            </span>
-          </label>
-          {error && (
-            <p className="fm__error" role="alert">
-              {error}
-            </p>
-          )}
-        </div>
-      );
-
-    case 'file':
-      return wrap(
-        <FileField field={field} value={value} onChange={onChange} accept={(c.accept as string[]) ?? undefined} />,
-        false,
-      );
-
-    case 'calculated':
-      return (
-        <div className="fm__field">
-          <span className="fm__label">{field.label}</span>
-          <output className="fm__computed">{computed === undefined || computed === null ? '—' : String(computed)}</output>
-        </div>
-      );
-
-    case 'repeating_group':
-      return <RepeatingGroup field={field} value={value} error={error} onChange={onChange} />;
-
-    case 'address':
-      return wrap(
-        <textarea
-          {...common}
-          rows={3}
-          autoComplete="street-address"
-          value={(value as string) ?? ''}
-          onChange={(e) => onChange(e.target.value)}
-        />,
-      );
-
-    default:
-      return wrap(
-        <input
-          {...common}
-          type="text"
-          minLength={n(c.minLength)}
-          maxLength={n(c.maxLength)}
-          pattern={s(c.pattern)}
-          value={(value as string) ?? ''}
-          onChange={(e) => onChange(e.target.value)}
-        />,
-      );
-  }
-}
-
-/**
- * File input. The bytes go to local disk behind the API — there is no object
- * storage, no malware scan and no quarantine yet (§12.1), and the form says
- * nothing it cannot back up.
- */
-function FileField({
-  field,
-  value,
-  onChange,
-  accept,
-}: {
-  field: PublicField;
-  value: unknown;
-  onChange: (v: unknown) => void;
-  accept?: string[];
-}) {
-  const names = Array.isArray(value) ? (value as string[]) : value ? [value as string] : [];
-  const max = typeof field.constraints?.maxFiles === 'number' ? field.constraints.maxFiles : 1;
-
-  return (
-    <div>
-      <input
-        id={`f-${field.key}`}
-        className="fm__file"
-        type="file"
-        multiple={max > 1}
-        accept={accept?.join(',')}
-        onChange={(e) => {
-          const picked = [...(e.target.files ?? [])].map((f) => f.name);
-          onChange(max > 1 ? picked : (picked[0] ?? null));
-        }}
-      />
-      {names.length > 0 && (
-        <ul className="fm__files">
-          {names.map((name) => (
-            <li key={name}>{name}</li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
-
-function RepeatingGroup({
-  field,
-  value,
-  error,
-  onChange,
-}: {
-  field: PublicField;
-  value: unknown;
-  error?: string;
-  onChange: (v: unknown) => void;
-}) {
-  const rows = Array.isArray(value) ? (value as Record<string, unknown>[]) : [];
-
-  const update = (index: number, key: string, v: unknown) => {
-    const next = rows.map((row, i) => (i === index ? { ...row, [key]: v } : row));
-    onChange(next);
-  };
-
-  return (
-    <div className="fm__field" data-invalid={error ? 'true' : undefined}>
-      <span className="fm__label">
-        {field.label}
-        {field.required && <span className="fm__req" aria-hidden="true"> *</span>}
-      </span>
-      {field.help && <p className="fm__help">{field.help}</p>}
-
-      {rows.map((row, index) => (
-        <div className="fm__row" key={index}>
-          <div className="fm__rowFields">
-            {field.fields?.map((child) => (
-              <Field
-                key={child.key}
-                field={child}
-                value={row[child.key]}
-                onChange={(v) => update(index, child.key, v)}
-              />
-            ))}
-          </div>
-          <button
-            type="button"
-            className="fm__remove"
-            aria-label={`Remove item ${index + 1}`}
-            onClick={() => onChange(rows.filter((_, i) => i !== index))}
-          >
-            Remove
-          </button>
-        </div>
-      ))}
-
-      <button type="button" className="fm__btn" onClick={() => onChange([...rows, {}])}>
-        Add {field.label.toLowerCase().replace(/s$/, '')}
-      </button>
-
-      {error && (
-        <p className="fm__error" role="alert">
-          {error}
-        </p>
-      )}
     </div>
   );
 }

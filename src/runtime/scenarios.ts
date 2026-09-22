@@ -93,7 +93,7 @@ export async function runScenarios(pool: Pool, bp: Blueprint): Promise<ScenarioR
       cast.set(role.key, { principal: { kind: 'actor', tenantId, actorId }, email });
     }
 
-    results.push(await runOne(engine, bp, version, test, cast));
+    results.push(await runOne(engine, bp, version, test, cast, tenantId));
   }
 
   return results;
@@ -105,6 +105,8 @@ async function runOne(
   version: Awaited<ReturnType<Engine['publish']>>,
   test: ScenarioTest,
   cast: Map<string, CastMember>,
+  /** The scenario's own tenant. Every drain here runs on an invented clock. */
+  tenantId: string,
 ): Promise<ScenarioResult> {
   const failures: string[] = [];
   let now = new Date('2026-09-21T09:00:00.000Z');
@@ -132,7 +134,7 @@ async function runOne(
             break;
           }
           instanceId = result.instanceId;
-          await engine.drain(now);
+          await engine.drain(now, `scenario:${test.key}`, tenantId);
           break;
         }
 
@@ -160,7 +162,7 @@ async function runOne(
           } catch (err) {
             fail(`"${step.as}" was refused the decision: ${err instanceof Error ? err.message : String(err)}`);
           }
-          await engine.drain(now);
+          await engine.drain(now, `scenario:${test.key}`, tenantId);
           break;
         }
 
@@ -181,13 +183,18 @@ async function runOne(
           } catch (err) {
             fail(`"${step.as}" was refused the task: ${err instanceof Error ? err.message : String(err)}`);
           }
-          await engine.drain(now);
+          await engine.drain(now, `scenario:${test.key}`, tenantId);
           break;
         }
 
         case 'advance_hours': {
+          /*
+           * The whole reason the tenant has to be named. This moves the clock
+           * days or weeks to prove a timer fires, and without the scope it
+           * claimed every tenant's due work at a time that has not happened.
+           */
           now = new Date(now.getTime() + step.hours * 3_600_000);
-          await engine.drain(now);
+          await engine.drain(now, `scenario:${test.key}`, tenantId);
           break;
         }
 

@@ -355,6 +355,33 @@ export function redact(blueprint: Blueprint, roleKeys: string[], data: Answers):
 }
 
 /**
+ * Which fields this principal may *see*, as keys.
+ *
+ * `redact` answers the same question by rewriting a record. Searching needs
+ * the answer before there is a record to rewrite: a search that matched a
+ * hidden field would report which records contain a value without showing it,
+ * and "one record matches 'QQ123456C'" discloses the value to anybody willing
+ * to guess. The same intersection rule as `redact` — a field is hidden only
+ * when every role the actor holds hides it.
+ */
+export function visibleFields(blueprint: Blueprint, roleKeys: string[]): string[] {
+  const all = blueprint.data.fields.map((f) => f.key);
+  if (!roleKeys.length) return all;
+
+  const roles = blueprint.roles.filter((r) => roleKeys.includes(r.key));
+  if (!roles.length) return all;
+
+  const hidden = roles
+    .map((r) => new Set(r.hiddenFields ?? []))
+    .reduce<Set<string>>((intersection, next, index) => {
+      if (index === 0) return next;
+      return new Set([...intersection].filter((key) => next.has(key)));
+    }, new Set());
+
+  return all.filter((key) => !hidden.has(key));
+}
+
+/**
  * §6.4 again, from the other direction: which fields this principal may change
  * after submission. A role with no `editableFields` may change nothing, which
  * is the safe reading of an omission.

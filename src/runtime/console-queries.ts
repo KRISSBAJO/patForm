@@ -283,6 +283,15 @@ export async function listRecords(
 }
 
 /** §8.2's record view: current state, owner, next action, timeline, decisions. */
+/** `role:hr_admin` is an assignment. "the hr_admin role" is a sentence. */
+function named(party: string | null | undefined): string {
+  if (!party) return 'nobody';
+  if (party.startsWith('role:')) return `the ${party.slice(5)} role`;
+  if (party.startsWith('user:')) return party.slice(5);
+  if (party.startsWith('actor:')) return party.slice(6);
+  return party;
+}
+
 export async function recordDetail(pool: Pool, principal: Principal, instanceId: string) {
   return inTransaction(pool, async (client) => {
     const { rows: instances } = await client.query<{
@@ -331,13 +340,19 @@ export async function recordDetail(pool: Pool, principal: Principal, instanceId:
       client.query('select document_key, filename, checksum, created_at from document where instance_id = $1 order by id', [instanceId]),
     ]);
 
-    // What the record is waiting for, in words.
+    /*
+     * What the record is waiting for, in words — and "in words" has to include
+     * who. An assignee is stored as `role:hr_admin`, which is the correct
+     * assignment and not a sentence. This is the only place the sentence is
+     * built, so it is the right place to open it out: the console, the export
+     * and the API all read the same string.
+     */
     const pending = approvals.rows.find((a) => a.status === 'pending');
     const openTask = tasks.rows.find((t) => t.status === 'open');
     const nextAction = pending
-      ? `${bp.workflow.approvals.find((a) => a.key === pending.approval_key)?.name ?? pending.approval_key} — with ${pending.approvers.join(', ')}`
+      ? `${bp.workflow.approvals.find((a) => a.key === pending.approval_key)?.name ?? pending.approval_key} — with ${pending.approvers.map(named).join(', ')}`
       : openTask
-        ? `${bp.workflow.tasks.find((t) => t.key === openTask.task_key)?.name ?? openTask.task_key} — assigned to ${openTask.assignee ?? 'nobody'}`
+        ? `${bp.workflow.tasks.find((t) => t.key === openTask.task_key)?.name ?? openTask.task_key} — assigned to ${named(openTask.assignee)}`
         : instance.completed_at
           ? 'Finished'
           : 'Waiting on a timer';

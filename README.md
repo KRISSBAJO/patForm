@@ -940,17 +940,20 @@ Everything below is a deliberate deferral:
   gets a document that says so rather than a silently incomplete one.
 - **Object storage for documents.** The bytes live in Postgres, which is fine
   at a packet's size and wrong at scale (§10.1).
-- **Bounce and complaint handling.** `email_log` has the statuses; nothing
-  consumes the provider's webhooks yet, so nothing moves past `queued`. The
-  status in our log is the provider's *acceptance*, not delivery — RelyKit will
-  say `delivered` for a message we still show as queued.
+- **Re-sending after an address is reinstated** (above). Bounce and complaint
+  handling itself is built: RelyKit's Standard Webhooks are verified and
+  ingested, a hard bounce or a complaint suppresses the address, and a send to
+  a suppressed address is skipped with that reason on the record. What is not
+  built is the *rate* alerting, also above.
 - **Bulk assignment and status changes.** The copilot's action schema names
   `assign` and `change_state`; the compiler refuses both with `ACT001`.
   Reminders are the only bulk action the runtime performs.
-- **A graph editor for transitions.** The builder has form editors for fields,
-  states, approvals, tasks and roles; everything else goes through its JSON
-  tab. There is also no draft locking, so two people editing one process will
-  overwrite each other.
+- **Form editors for the rest of the blueprint.** The builder edits fields,
+  states, rules, approvals, tasks, roles and the form's header and field
+  widths, and draws the flow as a read-only map. Intent, the rest of the form
+  experience, message templates, documents and scenario tests still go through
+  its JSON tab. There is also no draft locking, so two people editing one
+  process will overwrite each other.
 - **SMS.** §6.6 is explicit: *"SMS is not required for MVP; messaging consent
   and jurisdictional rules must be designed before launch."* Building the
   channel without consent capture would be building the thing that sentence

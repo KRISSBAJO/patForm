@@ -77,7 +77,7 @@ async function main(): Promise<void> {
     },
     now,
   });
-  await engine.drain(now);
+  await engine.drain(now, 'proof', tenantId);
   console.log(`  submitted  ${instanceId.slice(0, 8).toUpperCase()}`);
 
   await engine.decide({
@@ -88,7 +88,7 @@ async function main(): Promise<void> {
     reason: 'Confirmed headcount.',
     now,
   });
-  await engine.drain(now);
+  await engine.drain(now, 'proof', tenantId);
 
   await engine.decide({
     instanceId,
@@ -98,12 +98,12 @@ async function main(): Promise<void> {
     reason: 'Right to work verified.',
     now,
   });
-  await engine.drain(now);
+  await engine.drain(now, 'proof', tenantId);
 
   await engine.completeTask({ instanceId, taskKey: 'issue_equipment', principal: as(it), now });
-  await engine.drain(now);
+  await engine.drain(now, 'proof', tenantId);
   await engine.completeTask({ instanceId, taskKey: 'create_accounts', principal: as(it), now });
-  await engine.drain(now);
+  await engine.drain(now, 'proof', tenantId);
 
   const { rows: docs } = await pool.query<{ filename: string; byte_size: number; checksum: string }>(
     'select filename, byte_size, checksum from document where instance_id = $1',

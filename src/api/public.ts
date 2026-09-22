@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { Blueprint } from '../blueprint/index.js';
 import { inTransaction, type Pool } from './../runtime/db.js';
-import { redact, require_, type Principal } from '../runtime/policy.js';
+import { redact, require_, visibleFields, type Principal } from '../runtime/policy.js';
 import type { Capability } from '../blueprint/roles.js';
 
 /**
@@ -214,6 +214,16 @@ export function toPublicRecord(
  * because silently returning everything when a caller asked for a subset is how
  * an integration leaks.
  */
+/**
+ * The orders a page of records may be read in.
+ *
+ * A fixed set rather than a column name from the caller: an order is part of
+ * the cursor's meaning, and a cursor issued under one order is nonsense under
+ * another. Each of these has its own comparison below.
+ */
+export const RECORD_ORDERS = ['newest', 'oldest', 'reference'] as const;
+export type RecordOrder = (typeof RECORD_ORDERS)[number];
+
 export async function listRecordsPage(
   pool: Pool,
   args: {
@@ -222,6 +232,9 @@ export async function listRecordsPage(
     state?: string;
     updatedSince?: Date;
     completed?: boolean;
+    /** Free text, matched against the reference and the answers this caller may see. */
+    query?: string;
+    order?: RecordOrder;
     limit: number;
     cursor?: string;
   },
@@ -262,12 +275,56 @@ export async function listRecordsPage(
     if (args.completed !== undefined) {
       where.push(args.completed ? 'i.completed_at is not null' : 'i.completed_at is null');
     }
+    const order: RecordOrder = args.order ?? 'newest';
+    if (!RECORD_ORDERS.includes(order)) {
+      throw apiErrors.validation(`"${order}" is not an order`, { orders: [...RECORD_ORDERS] });
+    }
+
+    /*
+     * Searching, without disclosing what it searched.
+     *
+     * The text is matched against the reference and against the answers this
+     * caller is allowed to see — never the hidden ones. Matching a hidden
+     * field would answer "which records contain this value" without showing
+     * the value, and a handful of guesses turns that into the value itself.
+     * So the visible keys are computed first and the match is restricted to
+     * them, in SQL, before any row is returned.
+     */
+    const q = args.query?.trim();
+    if (q) {
+      const visible = visibleFields(bp, decision.roles);
+      /*
+       * `!` as the escape character rather than a backslash. Either works in
+       * Postgres; this one survives being read, copied and pasted, which a
+       * doubled backslash inside a template literal inside a shell heredoc
+       * repeatedly has not.
+       */
+      const safe = q.replace(/[%_!]/g, (m) => `!${m}`);
+      where.push(
+        `(i.id::text ilike ${push(`${safe}%`)} escape '!'
+          or exists (
+            select 1 from jsonb_each_text(i.data) kv
+             where kv.key = any(${push(visible)}::text[]) and kv.value ilike ${push(`%${safe}%`)} escape '!'))`,
+      );
+    }
+
     if (args.cursor) {
       const c = decodeCursor(args.cursor);
       // Strictly after the cursor, tie-broken by id, so a row created in the
-      // same millisecond is neither skipped nor repeated.
-      where.push(`(i.created_at, i.id) < (${push(new Date(c.createdAt))}, ${push(c.id)})`);
+      // same millisecond is neither skipped nor repeated. Which way "after"
+      // runs is the order's business, not the cursor's.
+      if (order === 'reference') where.push(`i.id > ${push(c.id)}`);
+      else if (order === 'oldest') {
+        where.push(`(i.created_at, i.id) > (${push(new Date(c.createdAt))}, ${push(c.id)})`);
+      } else where.push(`(i.created_at, i.id) < (${push(new Date(c.createdAt))}, ${push(c.id)})`);
     }
+
+    const orderBy =
+      order === 'reference'
+        ? 'i.id asc'
+        : order === 'oldest'
+          ? 'i.created_at asc, i.id asc'
+          : 'i.created_at desc, i.id desc';
 
     const limit = Math.min(Math.max(args.limit, 1), 100);
     const { rows } = await client.query<{
@@ -285,7 +342,7 @@ export async function listRecordsPage(
               i.completed_at, pv.version
          from instance i join process_version pv on pv.id = i.process_version_id
         where ${where.join(' and ')}
-        order by i.created_at desc, i.id desc
+        order by ${orderBy}
         limit ${limit + 1}`,
       params,
     );

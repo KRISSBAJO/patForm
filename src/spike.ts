@@ -84,7 +84,7 @@ async function proveIdempotentEmail(pool: Pool, bp: Blueprint): Promise<void> {
     answers: completeFor(bp, { personal_email: 'once@example.test' }),
     now: T0,
   });
-  await engine.drain(T0);
+  await engine.drain(T0, 'proof', tenantId);
   const afterFirst = (await engine.emails(instanceId)).length;
 
   // Replay the delivery exactly as a crashed-and-retried worker would: the
@@ -138,7 +138,7 @@ async function proveConcurrentWorkers(pool: Pool, bp: Blueprint): Promise<void> 
   const processed = await Promise.all(workers.map((w) => engine.runOutbox(w, T0, 10)));
 
   // Drain anything the first pass did not reach.
-  await engine.drain(T0);
+  await engine.drain(T0, 'proof', tenantId);
 
   const { rows: dupes } = await pool.query<{ count: number }>(
     `select count(*)::int as count from (
@@ -184,7 +184,7 @@ async function proveCrashRecovery(pool: Pool, bp: Blueprint): Promise<void> {
   const tooSoon = await engine.runOutbox(newWorkerId(), new Date(T0.getTime() + 5_000), 10);
   const afterTimeout = new Date(T0.getTime() + 45_000);
   const recovered = await engine.runOutbox(newWorkerId(), afterTimeout, 10);
-  await engine.drain(afterTimeout);
+  await engine.drain(afterTimeout, 'proof', tenantId);
 
   const emails = await engine.emails(instanceId);
   const state = (await engine.instance(instanceId)).state;
@@ -208,12 +208,12 @@ async function proveTimers(pool: Pool, bp: Blueprint): Promise<void> {
     answers: completeFor(bp, { personal_email: 'timer@example.test' }),
     now: T0,
   });
-  await engine.drain(T0);
+  await engine.drain(T0, 'proof', tenantId);
 
   const early = await engine.fireDueTimers(new Date(T0.getTime() + hours(47)));
   const onTime = await engine.fireDueTimers(new Date(T0.getTime() + hours(49)));
   const again = await engine.fireDueTimers(new Date(T0.getTime() + hours(49)));
-  await engine.drain(new Date(T0.getTime() + hours(49)));
+  await engine.drain(new Date(T0.getTime() + hours(49)), 'proof', tenantId);
 
   const reminders = (await engine.emails(instanceId)).filter((e) => e.template_key === 'approval_reminder');
 
@@ -227,7 +227,7 @@ async function proveTimers(pool: Pool, bp: Blueprint): Promise<void> {
     principal: { kind: 'actor', tenantId, actorId: managerId },
     now: new Date(T0.getTime() + hours(50)),
   });
-  await engine.drain(new Date(T0.getTime() + hours(50)));
+  await engine.drain(new Date(T0.getTime() + hours(50)), 'proof', tenantId);
   const { rows: cancelled } = await pool.query<{ count: number }>(
     'select count(*)::int as count from timer where instance_id = $1 and cancelled_at is not null',
     [instanceId],
@@ -238,7 +238,69 @@ async function proveTimers(pool: Pool, bp: Blueprint): Promise<void> {
     'Section 6.5: relative deadlines and reminders, stored canonically in UTC.',
     early === 0 && onTime === 1 && again === 0 && reminders.length === 1 && cancelled[0]!.count > 0,
     `Nothing at +47h, ${onTime} firing at +49h, ${again} on a second sweep at the same instant. ` +
-      `${reminders.length} reminder sent; ${cancelled[0]!.count} pending timer(s) cancelled when the record moved on.`,
+      `${reminders.length} reminder sent; ${cancelled[0]!.count} pending timer${cancelled[0]!.count === 1 ? '' : 's'} cancelled when the record moved on.`,
+  );
+}
+
+/**
+ * A clock one workspace invented must not move another workspace's work.
+ *
+ * The queue is shared on purpose — one worker drains every tenant, which is
+ * what makes it a queue — but `now` is a parameter, and anything simulating
+ * time was claiming every tenant's due work at a time that had not happened.
+ * Running the scenario tests in the builder fired other workspaces' reminders
+ * a fortnight early, sent those emails, and left their records with a
+ * `state_entered_at` in the future. Their dashboards then reported a negative
+ * stage age, which is the only reason anybody noticed.
+ */
+async function proveTenantClock(pool: Pool, bp: Blueprint): Promise<void> {
+  const engine = new Engine(pool);
+
+  const mine = await engine.createTenant('proof:clock:mine');
+  const theirs = await engine.createTenant('proof:clock:theirs');
+  const mineVersion = await engine.publish(mine, bp, 'proof');
+  const theirsVersion = await engine.publish(theirs, bp, 'proof');
+
+  const a = await engine.submit({
+    version: mineVersion,
+    answers: completeFor(bp, { personal_email: 'mine@example.test' }),
+    now: T0,
+  });
+  const b = await engine.submit({
+    version: theirsVersion,
+    answers: completeFor(bp, { personal_email: 'theirs@example.test' }),
+    now: T0,
+  });
+  await engine.drain(T0, 'proof', mine);
+  await engine.drain(T0, 'proof', theirs);
+
+  // My workspace runs a scenario that jumps a fortnight to prove a reminder
+  // fires. Theirs is doing nothing at all.
+  const fortnight = new Date(T0.getTime() + hours(24 * 14));
+  await engine.drain(fortnight, 'scenario', mine);
+
+  const minesReminders = (await engine.emails(a.instanceId)).filter((e) => e.template_key === 'approval_reminder');
+  const theirsReminders = (await engine.emails(b.instanceId)).filter((e) => e.template_key === 'approval_reminder');
+
+  const theirRecord = await engine.instance(b.instanceId);
+  const theirStateIsInTheFuture = theirRecord.state_entered_at.getTime() > Date.now();
+
+  // And the guard itself: a fabricated clock with no tenant is refused rather
+  // than quietly applied to everybody.
+  let refused = false;
+  try {
+    await engine.drain(fortnight, 'unscoped');
+  } catch {
+    refused = true;
+  }
+
+  record(
+    'A simulated clock moves only the tenant that invented it',
+    'Section 9: the outbox is shared across tenants; a fabricated clock is not.',
+    minesReminders.length > 0 && theirsReminders.length === 0 && !theirStateIsInTheFuture && refused,
+    `Advancing my workspace fourteen days sent ${minesReminders.length} reminder${minesReminders.length === 1 ? '' : 's'} here and ` +
+      `${theirsReminders.length} next door. Their record's state clock is ${theirStateIsInTheFuture ? 'in the future' : 'still in the past'}. ` +
+      `An unscoped fabricated clock was ${refused ? 'refused' : 'ACCEPTED'}.`,
   );
 }
 
@@ -254,7 +316,7 @@ async function proveDuplicateSubmission(pool: Pool, bp: Blueprint): Promise<void
     engine.submit({ version, answers, now: T0 }),
     engine.submit({ version, answers, now: T0 }),
   ]);
-  await engine.drain(T0);
+  await engine.drain(T0, 'proof', tenantId);
 
   const { rows } = await pool.query<{ count: number }>(
     'select count(*)::int as count from instance where tenant_id = $1',
@@ -285,7 +347,7 @@ async function proveVersionImmutability(pool: Pool, bp: Blueprint): Promise<void
     answers: completeFor(bp, { personal_email: 'v1@example.test' }),
     now: T0,
   });
-  await engine.drain(T0);
+  await engine.drain(T0, 'proof', tenantId);
 
   // Publish a changed version while the first record is in flight.
   const changed: Blueprint = structuredClone(bp);
@@ -366,7 +428,7 @@ async function proveAuthorization(pool: Pool, bp: Blueprint): Promise<void> {
     answers: completeFor(bp, { personal_email: 'auth@example.test' }),
     now: T0,
   });
-  await engine.drain(T0);
+  await engine.drain(T0, 'proof', tenantId);
 
   // The person the record actually names as approver.
   const namedId = await engine.createActor(tenantId, 'manager_email@example.test', 'Named Manager');
@@ -518,6 +580,7 @@ async function main(): Promise<void> {
     ['concurrency', () => proveConcurrentWorkers(pool, onboarding)],
     ['crash recovery', () => proveCrashRecovery(pool, onboarding)],
     ['timers', () => proveTimers(pool, onboarding)],
+    ['tenant clock', () => proveTenantClock(pool, onboarding)],
     ['duplicates', () => proveDuplicateSubmission(pool, onboarding)],
     ['versioning', () => proveVersionImmutability(pool, onboarding)],
     ['performance', () => measurePerformance(pool, onboarding)],

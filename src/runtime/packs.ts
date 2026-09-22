@@ -165,8 +165,18 @@ function orderedStates(bp: Blueprint): { name: string; kind: string }[] {
     seen.add(key);
     const state = byKey.get(key);
     if (!state) continue;
+    /*
+     * The state's real name, not its public label.
+     *
+     * `publicLabel` is what an applicant is told, and several internal steps
+     * deliberately share one — "Being reviewed" whether it is with the
+     * minister, escalated, or with a second approver — because the applicant
+     * has no business seeing the routing. This preview is read by whoever is
+     * choosing a pack to run, and it was showing them the applicant's view:
+     * four identical steps, as though the record went round in circles.
+     */
     out.push({
-      name: state.publicLabel ?? state.name,
+      name: state.name,
       kind: state.type === 'terminal' ? (state.outcome ?? 'terminal') : state.type,
     });
     // Breadth first, and success before refusal, so the happy path leads.

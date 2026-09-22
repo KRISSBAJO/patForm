@@ -56,12 +56,35 @@ export interface PublicForm {
   showProgress: boolean;
   saveAndResume: boolean;
   confirmation: { message: string; showStatusLink: boolean };
+  /**
+   * What the respondent sees at the top.
+   *
+   * Public by necessity — it is the header of a page a stranger loads — and
+   * safe by construction: a title, a tagline, two image URLs and a hex
+   * colour, none of which say anything about the process's internals.
+   */
+  branding?: {
+    title?: string;
+    tagline?: string;
+    logoUrl?: string;
+    bannerUrl?: string;
+    accent?: string;
+    footer?: string;
+  };
   pages: {
     key: string;
     title: string;
     description?: string;
     visibleWhen?: unknown;
-    sections: { key: string; title?: string; description?: string; visibleWhen?: unknown; fields: PublicField[] }[];
+    sections: {
+      key: string;
+      title?: string;
+      description?: string;
+      visibleWhen?: unknown;
+      /** Field key to width, so two short answers can share a line. */
+      widths?: Record<string, string>;
+      fields: PublicField[];
+    }[];
   }[];
 }
 
@@ -105,6 +128,7 @@ export async function publicForm(pool: Pool, processKey: string): Promise<Public
     showProgress: bp.experience.showProgress,
     saveAndResume: bp.experience.saveAndResume,
     confirmation: bp.experience.confirmation,
+    branding: bp.experience.branding,
     pages: bp.experience.pages.map((page) => ({
       key: page.key,
       title: page.title,
@@ -115,6 +139,7 @@ export async function publicForm(pool: Pool, processKey: string): Promise<Public
         title: section.title,
         description: section.description,
         visibleWhen: section.visibleWhen,
+        widths: section.widths,
         fields: section.fields.map((key) => publicField(byKey.get(key)!)),
       })),
     })),

@@ -326,7 +326,13 @@
               "personal_email",
               "phone",
               "address"
-            ]
+            ],
+            "widths": {
+              "full_name": "half",
+              "preferred_name": "half",
+              "personal_email": "half",
+              "phone": "half"
+            }
           },
           {
             "key": "emergency",
@@ -335,7 +341,11 @@
             "fields": [
               "emergency_contact_name",
               "emergency_contact_phone"
-            ]
+            ],
+            "widths": {
+              "emergency_contact_name": "half",
+              "emergency_contact_phone": "half"
+            }
           }
         ]
       },
@@ -351,7 +361,13 @@
               "job_title",
               "employment_type",
               "manager_email"
-            ]
+            ],
+            "widths": {
+              "start_date": "half",
+              "department": "half",
+              "job_title": "half",
+              "employment_type": "half"
+            }
           }
         ]
       },
@@ -366,7 +382,11 @@
               "national_id",
               "bank_account",
               "id_document"
-            ]
+            ],
+            "widths": {
+              "national_id": "half",
+              "bank_account": "half"
+            }
           }
         ]
       },

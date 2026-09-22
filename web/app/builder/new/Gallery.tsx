@@ -18,7 +18,6 @@ import '../builder.css';
 import './gallery.css';
 import './cards.css';
 import { PackCard, type Pack } from './PackCard';
-import { PackDetail } from './PackDetail';
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
@@ -46,7 +45,6 @@ export function Gallery() {
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState('all');
-  const [viewing, setViewing] = useState<Pack | null>(null);
   const [installing, setInstalling] = useState<Pack | null>(null);
   const [processKey, setProcessKey] = useState('');
   const [processName, setProcessName] = useState('');
@@ -240,7 +238,6 @@ export function Gallery() {
                   <PackCard
                     key={p.id}
                     pack={p}
-                    onView={() => setViewing(p)}
                     onUse={() => {
                       setInstalling(p);
                       setProcessKey(keyFrom(p.name));
@@ -261,19 +258,6 @@ export function Gallery() {
       </div>
 
       {/* What is inside, counted from the blueprint rather than written. */}
-      {viewing && (
-        <PackDetail
-          pack={viewing}
-          onClose={() => setViewing(null)}
-          onUse={() => {
-            setInstalling(viewing);
-            setProcessKey(keyFrom(viewing.name));
-            setProcessName(viewing.name);
-            setViewing(null);
-          }}
-        />
-      )}
-
       {installing && (
         <div className="gl__sheet" role="dialog" aria-modal="true" aria-labelledby="install-title">
           <div className="gl__sheetBox">

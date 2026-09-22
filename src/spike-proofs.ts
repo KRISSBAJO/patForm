@@ -94,7 +94,7 @@ export async function proveRespondentScope({ pool, bp, T0, record, completeFor }
 
   const mine = await engine.submit({ version, answers: completeFor(bp, { personal_email: 'mine@example.test' }), now: T0 });
   const theirs = await engine.submit({ version, answers: completeFor(bp, { personal_email: 'theirs@example.test' }), now: T0 });
-  await engine.drain(T0);
+  await engine.drain(T0, 'proof', tenantId);
 
   const scope = await resolveResumeToken(pool, mine.resumeToken!);
   const holder: Principal = { kind: 'respondent', tenantId, instanceId: scope!.instanceId };
@@ -155,7 +155,7 @@ export async function proveWorkerFiresTimers({ pool, bp, T0, record, completeFor
     answers: completeFor(bp, { personal_email: 'timer@example.test' }),
     now: T0,
   });
-  await engine.drain(T0);
+  await engine.drain(T0, 'proof', tenantId);
 
   // Nobody opens the console and nobody calls the API. This is the loop
   // src/worker.ts runs; before it existed, the reminder below never went out.
@@ -212,7 +212,7 @@ export async function proveRetention({ pool, bp, T0, record, completeFor }: Proo
     answers: completeFor(bp, { personal_email: 'recent@example.test' }),
     now: T0,
   });
-  await engine.drain(T0);
+  await engine.drain(T0, 'proof', tenantId);
 
   // Finished long enough ago to be past the blueprint's retention period.
   const ancient = new Date(T0.getTime() - 4000 * 86_400_000);
@@ -325,7 +325,7 @@ export async function proveIntake({ pool, bp, record, completeFor }: ProofCtx): 
     token: draft.token,
     answers: completeFor(bp, { personal_email: 'intake@example.test', full_name: 'Ada Nwosu' }),
   });
-  await engine.drain(new Date());
+  await engine.drain(new Date(), 'proof', tenantId);
 
   // 6. The draft is spent: the same link cannot start a second record.
   const spent = await loadDraft(pool, draft.token);
@@ -342,7 +342,7 @@ export async function proveIntake({ pool, bp, record, completeFor }: ProofCtx): 
     reason: 'Your phone number has a digit missing.',
     now: new Date(),
   });
-  await engine.drain(new Date());
+  await engine.drain(new Date(), 'proof', tenantId);
 
   const status = await respondentStatus(pool, submitted.resumeToken!);
   const permitted = await respondentUpdate(pool, {
@@ -429,7 +429,7 @@ export async function proveDocumentsAndDelivery({ pool, bp, T0, record, complete
     }),
     now: T0,
   });
-  await engine.drain(T0);
+  await engine.drain(T0, 'proof', tenantId);
 
   const manager = await engine.createActor(tenantId, 'manager_email@example.test', 'Manager', 'approver');
   await engine.grant({ tenantId, actorId: manager, processKey: bp.key, roleKey: 'hiring_manager' });
@@ -443,7 +443,7 @@ export async function proveDocumentsAndDelivery({ pool, bp, T0, record, complete
     principal: { kind: 'actor', tenantId, actorId: manager },
     now: T0,
   });
-  await engine.drain(T0);
+  await engine.drain(T0, 'proof', tenantId);
   await engine.decide({
     instanceId,
     approvalKey: 'hr_approval',
@@ -451,7 +451,7 @@ export async function proveDocumentsAndDelivery({ pool, bp, T0, record, complete
     principal: { kind: 'actor', tenantId, actorId: hr },
     now: T0,
   });
-  await engine.drain(T0);
+  await engine.drain(T0, 'proof', tenantId);
 
   // The packet is generated at HR approval; the welcome email that attaches
   // it only goes out when provisioning finishes, so the process has to reach
@@ -460,9 +460,9 @@ export async function proveDocumentsAndDelivery({ pool, bp, T0, record, complete
   await engine.grant({ tenantId, actorId: it, processKey: bp.key, roleKey: 'it_operator' });
   const itPrincipal: Principal = { kind: 'actor', tenantId, actorId: it };
   await engine.completeTask({ instanceId, taskKey: 'issue_equipment', principal: itPrincipal, now: T0 });
-  await engine.drain(T0);
+  await engine.drain(T0, 'proof', tenantId);
   await engine.completeTask({ instanceId, taskKey: 'create_accounts', principal: itPrincipal, now: T0 });
-  await engine.drain(T0);
+  await engine.drain(T0, 'proof', tenantId);
 
   const { rows: docs } = await pool.query<{
     filename: string;
@@ -483,7 +483,7 @@ export async function proveDocumentsAndDelivery({ pool, bp, T0, record, complete
   // and no second send — and the provider would have deduplicated anyway on
   // the key it was handed.
   await pool.query('update outbox set done_at = null, available_at = $1 where instance_id = $2', [T0, instanceId]);
-  await engine.drain(T0);
+  await engine.drain(T0, 'proof', tenantId);
   const { rows: afterReplay } = await pool.query<{ count: number }>(
     'select count(*)::int as count from document where instance_id = $1',
     [instanceId],
@@ -499,7 +499,7 @@ export async function proveDocumentsAndDelivery({ pool, bp, T0, record, complete
     answers: completeFor(bp, { personal_email: 'refused@example.test' }),
     now: T0,
   });
-  await engine.drain(T0);
+  await engine.drain(T0, 'proof', tenantId);
   const { rows: failures } = await pool.query<{ status: string; failure: string | null }>(
     "select status, failure from email_log where instance_id = $1 and status = 'failed'",
     [doomed],
@@ -557,7 +557,7 @@ export async function proveBuilderRoundTrip({ pool, bp, T0, record, completeFor 
     answers: completeFor(bp, { personal_email: 'inflight@example.test' }),
     now: T0,
   });
-  await engine.drain(T0);
+  await engine.drain(T0, 'proof', tenantId);
 
   // 1. Opening returns the draft it just created, in the same call.
   const opened = await openDraft(pool, { principal: as(builder), processKey: bp.key });
@@ -685,7 +685,8 @@ export async function proveCopilot({ pool, bp, T0, record, completeFor }: ProofC
     });
     ids.push(instanceId);
   }
-  await engine.drain(T0);
+  // These three were submitted into `version`, which belongs to `tenantId`.
+  await engine.drain(T0, 'proof', tenantId);
 
   const later = new Date(T0.getTime() + hours(72));
 
@@ -734,7 +735,7 @@ export async function proveCopilot({ pool, bp, T0, record, completeFor }: ProofC
     answers: completeFor(bp, { personal_email: 'theirs@example.test' }),
     now: T0,
   });
-  await engine.drain(T0);
+  await engine.drain(T0, 'proof', otherTenant);
   const strangerSees = await runPlan(pool, {
     principal: { kind: 'actor', tenantId: otherTenant, actorId: stranger },
     plan: QueryPlan.parse(overduePlan),
@@ -795,14 +796,14 @@ export async function proveCopilot({ pool, bp, T0, record, completeFor }: ProofC
 
   const emailsBefore = await countEmails(pool, tenantId);
   const report = await confirm(pool, { principal: as(admin), runId, digest: preview.digest, now: later });
-  await engine.drain(later, 'copilot');
+  await engine.drain(later, 'copilot', tenantId);
   const emailsAfter = await countEmails(pool, tenantId);
 
   // 8. Confirming again sends nothing: the same idempotency key, and the same
   //    mechanism the workflow's own actions use.
   await pool.query("update copilot_run set status = 'previewed' where id = $1", [runId]);
   const second = await confirm(pool, { principal: as(admin), runId, digest: preview.digest, now: later });
-  await engine.drain(later, 'copilot');
+  await engine.drain(later, 'copilot', tenantId);
   const emailsAfterReplay = await countEmails(pool, tenantId);
 
   // 9. The reminder is on the record's own history, not only in a log.
@@ -904,7 +905,7 @@ export async function proveExportThenRetain({ pool, bp, T0, record, completeFor 
     }),
     now: T0,
   });
-  await engine.drain(T0);
+  await engine.drain(T0, 'proof', tenantId);
   // Run it to the end. Step 11 follows steps 7 and 8, so the record being
   // exported is a finished one — which is also the only kind retention will
   // touch, and the reason an unfinished record deleted nothing on the first
@@ -917,7 +918,7 @@ export async function proveExportThenRetain({ pool, bp, T0, record, completeFor 
     reason: 'Confirmed headcount.',
     now: T0,
   });
-  await engine.drain(T0);
+  await engine.drain(T0, 'proof', tenantId);
   await engine.decide({
     instanceId,
     approvalKey: 'hr_approval',
@@ -926,7 +927,7 @@ export async function proveExportThenRetain({ pool, bp, T0, record, completeFor 
     reason: 'Right to work verified.',
     now: T0,
   });
-  await engine.drain(T0);
+  await engine.drain(T0, 'proof', tenantId);
   // book_orientation is assigned to hr_admin, not IT. The policy engine is
   // what said so.
   for (const [taskKey, who] of [
@@ -935,7 +936,7 @@ export async function proveExportThenRetain({ pool, bp, T0, record, completeFor 
     ['book_orientation', admin],
   ] as const) {
     await engine.completeTask({ instanceId, taskKey, principal: as(who), now: T0 });
-    await engine.drain(T0);
+    await engine.drain(T0, 'proof', tenantId);
   }
 
   const bundle = await exportRecord(pool, { principal: as(admin), instanceId, now: T0 });
@@ -1040,7 +1041,7 @@ export async function proveTraceability({ pool, bp, T0, record, completeFor }: P
 
   // The work happens outside that context, the way a worker does: a separate
   // process, minutes later, with no memory of the request.
-  await engine.drain(T0, 'proof-worker');
+  await engine.drain(T0, 'proof-worker', tenantId);
 
   const one = async (sql: string, params: unknown[] = []): Promise<number> => {
     const { rows } = await pool.query<{ count: number }>(sql, params);
@@ -1153,7 +1154,7 @@ export async function provePrivacy({ pool, bp, T0, record, completeFor }: ProofC
     answers: completeFor(bp, { personal_email: 'staying@example.test', manager_email: 'mgr@proof.test' }),
     now: T0,
   });
-  await engine.drain(T0);
+  await engine.drain(T0, 'proof', tenantId);
 
   // Drive the first to completion.
   const hr = await engine.createActor(tenantId, 'hr@proof.test', 'HR', 'approver');
@@ -1170,7 +1171,7 @@ export async function provePrivacy({ pool, bp, T0, record, completeFor }: ProofC
       reason: 'Fine.',
       now: T0,
     });
-    await engine.drain(T0);
+    await engine.drain(T0, 'proof', tenantId);
   }
   for (const [taskKey, who] of [
     ['issue_equipment', operator],
@@ -1178,7 +1179,7 @@ export async function provePrivacy({ pool, bp, T0, record, completeFor }: ProofC
     ['book_orientation', admin],
   ] as const) {
     await engine.completeTask({ instanceId: finished.instanceId, taskKey, principal: as(who), now: T0 });
-    await engine.drain(T0);
+    await engine.drain(T0, 'proof', tenantId);
   }
 
   // ---- the data map, derived rather than written
@@ -1366,7 +1367,7 @@ export async function proveWebhooks({ pool, bp, T0, record, completeFor }: Proof
       answers: completeFor(bp, { personal_email: 'hook@example.test' }),
       now: T0,
     });
-    await engine.drain(T0);
+    await engine.drain(T0, 'proof', tenantId);
     await deliverBatch(pool, { workerId: 'proof', now: T0 });
 
     const delivered = received[0];
@@ -1378,7 +1379,7 @@ export async function proveWebhooks({ pool, bp, T0, record, completeFor }: Proof
       answers: completeFor(bp, { personal_email: 'rotate@example.test' }),
       now: T0,
     });
-    await engine.drain(T0);
+    await engine.drain(T0, 'proof', tenantId);
     await deliverBatch(pool, { workerId: 'proof', now: T0 });
     // The receiver is still verifying with the OLD secret, which is the whole
     // point: a consumer redeploys at its own pace and drops nothing.
@@ -1391,7 +1392,7 @@ export async function proveWebhooks({ pool, bp, T0, record, completeFor }: Proof
       answers: completeFor(bp, { personal_email: 'deadletter@example.test' }),
       now: T0,
     });
-    await engine.drain(T0);
+    await engine.drain(T0, 'proof', tenantId);
 
     let attempts = 0;
     let deadLettered = 0;
@@ -1445,7 +1446,7 @@ export async function proveWebhooks({ pool, bp, T0, record, completeFor }: Proof
       answers: completeFor(bp, { personal_email: 'nobody-listening@example.test' }),
       now: T0,
     });
-    await engine.drain(T0);
+    await engine.drain(T0, 'proof', tenantId);
     const { rows: unsubscribed } = await pool.query<{ count: number }>(
       `select count(*)::int as count from webhook_delivery
         where instance_id = $1 and status = 'no_subscriber'`,
@@ -1822,7 +1823,7 @@ export async function proveDeliveryOutcomes({ pool, bp, T0, record, completeFor 
     answers: completeFor(bp, { personal_email: 'bouncer@proof-delivery.test', full_name: 'Bo Unser' }),
     now: T0,
   });
-  await engine.drain(T0);
+  await engine.drain(T0, 'proof', tenantId);
 
   const { rows: firstLog } = await pool.query<{ id: string; provider_message_id: string; status: string }>(
     `select id, provider_message_id, status from email_log
@@ -1922,7 +1923,7 @@ export async function proveDeliveryOutcomes({ pool, bp, T0, record, completeFor 
     }),
     now: new Date(T0.getTime() + hours(1)),
   });
-  await engine.drain(new Date(T0.getTime() + hours(1)));
+  await engine.drain(new Date(T0.getTime() + hours(1)), 'proof', tenantId);
   const afterBlocked = sent.length;
 
   const { rows: skipped } = await pool.query<{ status: string; failure: string; recipients: string[] }>(

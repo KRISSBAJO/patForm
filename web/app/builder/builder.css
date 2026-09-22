@@ -1655,3 +1655,40 @@ a.bd__newBtn {
   font-size: 11.5px;
   color: var(--muted);
 }
+
+/* ------------------------------------------------- the column beside it */
+/*
+ * The preview renders a 640px form. Three hundred and twenty pixels of
+ * column would show it at a third size, which is a picture of a form rather
+ * than a form — so that one view, and only that one, takes more room.
+ */
+.bd__body[data-side='preview'] {
+  grid-template-columns: 240px minmax(0, 1fr) 420px;
+}
+
+/* A quiet division in the rail: the four places, then the three views of the
+   thing you have open. */
+.bd__railRule {
+  width: 26px;
+  height: 1px;
+  margin: 6px 0;
+  background: var(--line);
+}
+
+.bd__railItem:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+}
+
+.bd__railItem:disabled:hover {
+  background: none;
+}
+
+@media (max-width: 1180px) {
+  .bd__body[data-side='preview'] { grid-template-columns: 200px minmax(0, 1fr) 380px; }
+}
+
+@media (max-width: 960px) {
+  .bd__body[data-side='preview'] { grid-template-columns: minmax(0, 1fr); }
+  .sp { border-left: none; border-top: 1px solid var(--line); }
+}

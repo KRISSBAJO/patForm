@@ -109,25 +109,18 @@ export function PackThumb({ pack }: { pack: Pack }) {
   );
 }
 
-export function PackCard({
-  pack,
-  onView,
-  onUse,
-}: {
-  pack: Pack;
-  onView: () => void;
-  onUse: () => void;
-}) {
+export function PackCard({ pack, onUse }: { pack: Pack; onUse: () => void }) {
   const c = pack.contents;
   return (
     <li className="pk">
       {/*
         * The whole preview is the view control, the way a template gallery
-        * works — but it is a real button with a real name, not a div with a
-        * click handler, so it is reachable by keyboard and announced as what
-        * it does.
+        * works — and it is a link rather than a button now, because it goes
+        * to a page. That is not a detail: a link can be opened in a new tab,
+        * copied, and followed with the middle mouse button, all of which
+        * somebody comparing two packs will try.
         */}
-      <button type="button" className="pk__preview" onClick={onView} aria-label={`What is inside ${pack.name}`}>
+      <a className="pk__preview" href={`/builder/new/${pack.id}`} aria-label={`What is inside ${pack.name}`}>
         <PackThumb pack={pack} />
         <span className="pk__peek">
           <svg
@@ -146,7 +139,7 @@ export function PackCard({
           </svg>
           View
         </span>
-      </button>
+      </a>
 
       <div className="pk__body">
         <h3 className="pk__name">{pack.name}</h3>

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { RulesEditor } from './Rules';
 import './builder.css';
+import { FormPreview, TestsPanel, Versions, type VersionRow } from './SidePanel';
 import { useDialog } from '../useDialog';
 
 /**
@@ -97,6 +98,34 @@ interface BpRole {
   editableFields?: string[];
 }
 
+interface BpBranding {
+  title?: string;
+  tagline?: string;
+  logoUrl?: string;
+  bannerUrl?: string;
+  accent?: string;
+  footer?: string;
+}
+
+interface BpSection {
+  key: string;
+  title?: string;
+  description?: string;
+  fields?: string[];
+  /** Field key to 'full' | 'half' | 'third'. Absent means full. */
+  widths?: Record<string, string>;
+  [k: string]: unknown;
+}
+
+interface BpExperience {
+  showProgress?: boolean;
+  saveAndResume?: boolean;
+  confirmation?: { message: string; showStatusLink?: boolean };
+  branding?: BpBranding;
+  pages?: { key: string; title: string; description?: string; sections?: BpSection[]; [k: string]: unknown }[];
+  [k: string]: unknown;
+}
+
 interface Blueprint {
   key: string;
   name: string;
@@ -110,6 +139,9 @@ interface Blueprint {
     tasks?: BpTask[];
     [k: string]: unknown;
   };
+  /* Named rather than left in the index signature, because the preview reads
+     it and an untyped `{}` gives it nothing to render. */
+  experience?: BpExperience;
   /* Named rather than left in the index signature, because the automation
      editor offers these as choices and an untyped `{}` gives it nothing. */
   communications?: { email?: { key: string; name: string }[]; [k: string]: unknown };
@@ -157,6 +189,19 @@ interface ScenarioResult {
 }
 
 type Tab = 'fields' | 'states' | 'rules' | 'approvals' | 'tasks' | 'roles' | 'json';
+
+/*
+ * The right-hand column. `checks` is what it always was; the other three are
+ * the things that used to be a modal, a missing endpoint and nothing at all.
+ */
+type Side = 'checks' | 'preview' | 'versions' | 'tests';
+
+const SIDES: { key: Side; label: string; icon: 'checks' | 'preview' | 'versions' | 'tests' }[] = [
+  { key: 'checks', label: 'Checks', icon: 'checks' },
+  { key: 'preview', label: 'Preview', icon: 'preview' },
+  { key: 'versions', label: 'Versions', icon: 'versions' },
+  { key: 'tests', label: 'Tests', icon: 'tests' },
+];
 
 interface PackContents {
   fields: number;
@@ -296,6 +341,7 @@ export function Builder() {
   const [diagnostics, setDiagnostics] = useState<Diagnostic[]>([]);
   const [publishable, setPublishable] = useState(false);
   const [tab, setTab] = useState<Tab>('fields');
+  const [side, setSide] = useState<Side>('checks');
   const [index, setIndex] = useState(0);
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [error, setError] = useState<string | null>(null);
@@ -340,6 +386,7 @@ export function Builder() {
     setDiagnostics(detail.diagnostics);
     setPublishable(detail.publishable);
     setTab('fields');
+    setSide('checks');
     setIndex(0);
     setTests(null);
     setImpact(null);
@@ -403,6 +450,7 @@ export function Builder() {
     if (!draft) return;
     setBusy('test');
     setImpact(null);
+    setSide('tests');
     try {
       setTests(await call(`/api/builder/drafts/${draft.id}/test`, { method: 'POST' }));
     } catch (err) {
@@ -547,6 +595,31 @@ export function Builder() {
           <span>Catalogue</span>
         </a>
 
+        {/*
+          * Three destinations rather than three buttons hidden in a header.
+          * They are disabled with nothing open because there is genuinely
+          * nothing to preview, version or test — a control that does nothing
+          * is worse than one that is not there.
+          */}
+        <span className="bd__railRule" aria-hidden="true" />
+
+        {SIDES.filter((s2) => s2.key !== 'checks').map((s2) => (
+          <button
+            type="button"
+            key={s2.key}
+            className={`bd__railItem${side === s2.key && draft ? ' bd__railItem--on' : ''}`}
+            disabled={!draft}
+            aria-pressed={side === s2.key && Boolean(draft)}
+            onClick={() => {
+              setSide(s2.key);
+              if (s2.key === 'tests' && !tests && publishable) void runTests();
+            }}
+          >
+            <RailIcon name={s2.icon} />
+            <span>{s2.label}</span>
+          </button>
+        ))}
+
         <span className="bd__railSpacer" />
 
         <a className="bd__railItem" href="/console">
@@ -657,7 +730,7 @@ export function Builder() {
               </div>
             </header>
 
-            <div className="bd__body">
+            <div className="bd__body" data-side={side}>
               <Outline
                 blueprint={blueprint}
                 tab={tab}
@@ -673,6 +746,22 @@ export function Builder() {
                 {tab === 'fields' && (
                   <FieldEditor
                     field={blueprint.data.fields[index]}
+                    width={widthFor(blueprint, blueprint.data.fields[index]?.key)}
+                    onWidth={
+                      sectionHolding(blueprint, blueprint.data.fields[index]?.key)
+                        ? (next) =>
+                            mutate((bp) => {
+                              const key = bp.data.fields[index]?.key;
+                              const section = key ? sectionHolding(bp, key) : undefined;
+                              if (!key || !section) return;
+                              const widths = { ...(section.widths ?? {}) };
+                              if (next === 'full') delete widths[key];
+                              else widths[key] = next;
+                              if (Object.keys(widths).length) section.widths = widths;
+                              else delete section.widths;
+                            })
+                        : undefined
+                    }
                     onChange={(fn) => mutate((bp) => fn(bp.data.fields[index]!))}
                     onRemove={() => removeAt('fields', index)}
                   />
@@ -746,20 +835,73 @@ export function Builder() {
                 {tab === 'json' && <JsonEditor blueprint={blueprint} onReplace={(bp) => replaceAll(bp)} />}
               </section>
 
-              <DiagnosticsPanel
-                blueprint={blueprint}
-                errors={errors}
-                warnings={warnings}
-                onGo={(where) => {
-                  setTab(where.tab);
-                  setIndex(where.index);
-                }}
-              />
+              {/*
+                * One column, four things. They were a panel, a modal, an
+                * endpoint that did not exist and nothing — which is why
+                * somebody could design a whole form and never see it.
+                */}
+              <aside className="sp">
+                <div className="sp__tabs" role="tablist" aria-label="Beside the editor">
+                  {SIDES.map((s2) => (
+                    <button
+                      type="button"
+                      key={s2.key}
+                      role="tab"
+                      className="sp__tab"
+                      aria-selected={side === s2.key}
+                      onClick={() => {
+                        setSide(s2.key);
+                        if (s2.key === 'tests' && !tests && publishable) void runTests();
+                      }}
+                    >
+                      {s2.label}
+                      {s2.key === 'checks' && errors.length > 0 && ` (${errors.length})`}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="sp__scroll">
+                  {side === 'checks' && (
+                    <DiagnosticsPanel
+                      blueprint={blueprint}
+                      errors={errors}
+                      warnings={warnings}
+                      onGo={(where) => {
+                        setTab(where.tab);
+                        setIndex(where.index);
+                      }}
+                    />
+                  )}
+                  {side === 'preview' && (
+                    <FormPreview
+                      blueprint={blueprint}
+                      onBranding={(next) =>
+                        mutate((bp) => {
+                          bp.experience = { ...(bp.experience ?? {}), branding: next };
+                        })
+                      }
+                    />
+                  )}
+                  {side === 'versions' && (
+                    <Versions
+                      processKey={draft.processKey}
+                      load={(key) => call<VersionRow[]>(`/api/builder/processes/${encodeURIComponent(key)}/versions`)}
+                    />
+                  )}
+                  {side === 'tests' && (
+                    <TestsPanel
+                      tests={tests}
+                      busy={busy === 'test'}
+                      publishable={publishable}
+                      onRun={() => void runTests()}
+                    />
+                  )}
+                </div>
+              </aside>
             </div>
           </>
         )}
 
-        {tests && <TestDrawer tests={tests} onClose={() => setTests(null)} />}
         {impact && (
           <PublishDrawer
             impact={impact}
@@ -951,7 +1093,32 @@ function FormLink({ processKey, live }: { processKey: string; live: boolean }) {
   );
 }
 
-function RailIcon({ name }: { name: 'processes' | 'new' | 'catalogue' | 'console' }) {
+/**
+ * Which section a field is placed in, if any.
+ *
+ * A field can exist without being on a page — an operator sets it, or nobody
+ * has placed it yet — and in that case there is no width to choose, which is
+ * why this returns nothing rather than inventing a section.
+ */
+function sectionHolding(bp: Blueprint, key: string | undefined): BpSection | undefined {
+  if (!key) return undefined;
+  for (const page of bp.experience?.pages ?? []) {
+    for (const section of page.sections ?? []) {
+      if ((section.fields ?? []).includes(key)) return section;
+    }
+  }
+  return undefined;
+}
+
+function widthFor(bp: Blueprint, key: string | undefined): string | undefined {
+  return key ? sectionHolding(bp, key)?.widths?.[key] : undefined;
+}
+
+function RailIcon({
+  name,
+}: {
+  name: 'processes' | 'new' | 'catalogue' | 'console' | 'checks' | 'preview' | 'versions' | 'tests';
+}) {
   const p = {
     width: 20,
     height: 20,
@@ -992,6 +1159,34 @@ function RailIcon({ name }: { name: 'processes' | 'new' | 'catalogue' | 'console
         <svg {...p}>
           <rect x="2.6" y="4" width="14.8" height="12" rx="2" />
           <path d="M2.6 8h14.8M6.4 12h7.2" />
+        </svg>
+      );
+    case 'checks':
+      return (
+        <svg {...p}>
+          <path d="M3.4 10.4 7 14l9.6-9.6" />
+        </svg>
+      );
+    case 'preview':
+      return (
+        <svg {...p}>
+          <path d="M1.8 10S4.8 4.6 10 4.6 18.2 10 18.2 10 15.2 15.4 10 15.4 1.8 10 1.8 10Z" />
+          <circle cx="10" cy="10" r="2.4" />
+        </svg>
+      );
+    case 'versions':
+      return (
+        <svg {...p}>
+          <circle cx="6" cy="4.8" r="1.9" />
+          <circle cx="6" cy="15.2" r="1.9" />
+          <path d="M6 6.7v6.6M9.4 4.8h5.2M9.4 15.2h5.2" />
+        </svg>
+      );
+    case 'tests':
+      return (
+        <svg {...p}>
+          <path d="M7.6 2.6v5.1L3.6 15a1.5 1.5 0 0 0 1.3 2.3h10.2A1.5 1.5 0 0 0 16.4 15l-4-7.3V2.6" />
+          <path d="M6.6 2.6h6.8M7.2 11.4h5.6" />
         </svg>
       );
   }
@@ -1373,10 +1568,15 @@ function num(value: string): number | undefined {
 
 function FieldEditor({
   field,
+  width,
+  onWidth,
   onChange,
   onRemove,
 }: {
   field: BpField | undefined;
+  /** Absent when this field is not on any form page, so there is no width to set. */
+  width?: string;
+  onWidth?: (next: string) => void;
   onChange: (fn: (f: BpField) => void) => void;
   onRemove: () => void;
 }) {
@@ -1422,6 +1622,21 @@ function FieldEditor({
           </select>
         </Row>
       </div>
+
+      {/*
+        * Width is a property of where the field sits, not of the field, so it
+        * is stored on the section. A first and last name that share a line
+        * read as one question; the same two stacked read as two.
+        */}
+      {onWidth && (
+        <Row label="Width on the form" hint="phones always get one column, whatever this says">
+          <select className="bd__input" value={width ?? 'full'} onChange={(e) => onWidth(e.target.value)}>
+            <option value="full">the full width</option>
+            <option value="half">a half — two share a line</option>
+            <option value="third">a third — three share a line</option>
+          </select>
+        </Row>
+      )}
 
       <div className="bd__pair">
         <Row label="Filled in by">
@@ -2206,47 +2421,6 @@ function DiagnosticsPanel({
 }
 
 // ---------------------------------------------------------------- drawers
-
-function TestDrawer({
-  tests,
-  onClose,
-}: {
-  tests: { results: ScenarioResult[]; passed: number; total: number };
-  onClose: () => void;
-}) {
-  const box = useDialog(onClose);
-  return (
-    <div className="bd__drawer" role="dialog" aria-modal="true" aria-labelledby="test-drawer-title">
-      <div className="bd__drawerBox" ref={box} tabIndex={-1}>
-        <header className="bd__drawerHead">
-          <h2 id="test-drawer-title">
-            {tests.passed} of {tests.total} scenarios passed
-          </h2>
-          <button className="bd__iconBtn" onClick={onClose}>
-            ×
-          </button>
-        </header>
-        <p className="bd__note">
-          Each one ran against the real engine in a scratch workspace — the same policy checks, the same
-          transitions, the same effects. Nothing here is simulated.
-        </p>
-        {!tests.total && <p className="bd__none">This blueprint declares no scenarios, so nothing was proved.</p>}
-        {tests.results.map((r) => (
-          <article key={r.test} className={`bd__test bd__test--${r.passed ? 'ok' : 'bad'}`}>
-            <header>
-              <strong>{r.test}</strong>
-              <span>{r.kind}</span>
-              <span className="bd__testMark">{r.passed ? 'passed' : 'failed'}</span>
-            </header>
-            {r.failures.map((f, i) => (
-              <p key={i}>{f}</p>
-            ))}
-          </article>
-        ))}
-      </div>
-    </div>
-  );
-}
 
 function PublishDrawer({
   impact,

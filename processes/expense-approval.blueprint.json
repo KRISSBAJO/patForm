@@ -263,7 +263,11 @@
               "claimant_name",
               "employee_email",
               "manager_email"
-            ]
+            ],
+            "widths": {
+              "employee_email": "half",
+              "manager_email": "half"
+            }
           },
           {
             "key": "context",
@@ -272,7 +276,12 @@
               "cost_centre",
               "category",
               "business_purpose"
-            ]
+            ],
+            "widths": {
+              "expense_date": "half",
+              "cost_centre": "half",
+              "category": "half"
+            }
           }
         ]
       },

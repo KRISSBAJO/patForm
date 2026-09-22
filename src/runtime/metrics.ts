@@ -78,6 +78,45 @@ export interface Dashboard {
   metrics: Measurement[];
   /** The blueprint's own declared metrics, and whether they are computable. */
   declared: { key: string; name: string; computed: boolean }[];
+  /**
+   * Where the open records are sitting, right now.
+   *
+   * Nine numbers say how the process is doing and none of them says *where*
+   * the work is. This is the one an operator acts on: a state holding eleven
+   * records, the oldest of them six days in, is a queue with a name.
+   *
+   * A count, not a rate — and of records this caller may already open one by
+   * one in the console, so it discloses nothing the record list does not.
+   */
+  standing: {
+    state: string;
+    name: string;
+    count: number;
+    oldestHours: number;
+    slaHours: number | null;
+    /** Whether the oldest record in this state is past the state's own limit. */
+    overdue: boolean;
+  }[];
+  /**
+   * Arrivals and completions per bucket, over the period.
+   *
+   * Counts rather than rates, deliberately. A rate over a small bucket is the
+   * disclosure `MIN_COHORT` exists to stop — "67% of this Tuesday's three
+   * applications were rejected" describes three people. A count of how many
+   * arrived says nothing about any of them, and it is what answers the
+   * question a trend is asked: is this getting worse.
+   */
+  series: { bucket: string; label: string; arrived: number; finished: number }[];
+  /** How wide each bucket is, so the chart can say so rather than imply it. */
+  bucketDays: number;
+}
+
+/** A bucket's label, at the resolution the bucket actually has. */
+function labelFor(bucket: Date, bucketDays: number): string {
+  const day = bucket.getUTCDate();
+  const month = bucket.toLocaleString('en-GB', { month: 'short', timeZone: 'UTC' });
+  if (bucketDays >= 30) return `${month} ${bucket.getUTCFullYear()}`;
+  return `${day} ${month}`;
 }
 
 function percentile(sorted: number[], p: number): number {
@@ -103,7 +142,7 @@ function rate(numerator: number, denominator: number, definition: MetricDefiniti
       ...base,
       value: null,
       of: denominator,
-      suppressed: `only ${denominator} record(s) — a percentage over fewer than ${MIN_COHORT} identifies them`,
+      suppressed: `only ${denominator} ${denominator === 1 ? 'record' : 'records'} — a percentage over fewer than ${MIN_COHORT} identifies them`,
       percentiles: null,
     };
   }
@@ -248,9 +287,37 @@ export async function dashboard(
         where d.tenant_id = $1 and pv.process_key = $2 and d.created_at >= $3 and d.created_at <= $4`,
     );
 
-    const duration = (key: string, values: number[]): Measurement => {
+    const duration = (key: string, raw: number[]): Measurement => {
       const d = DEFINITIONS.find((x) => x.key === key)!;
       const base = { key: d.key, name: d.name, unit: d.unit, definition: d.definition };
+
+      /*
+       * A duration cannot be negative, and one that is means the data is
+       * wrong rather than the process slow.
+       *
+       * This dashboard reported a stage age of −301.9h. The cause was a bug
+       * elsewhere — a simulated clock draining another tenant's timers, since
+       * fixed — but the reporting is a separate fault: the number was averaged
+       * in and shown as a percentile, stating something impossible with the
+       * same confidence as everything beside it. A measure that can print an
+       * impossibility is a measure nobody checks the rest of.
+       *
+       * Dropped and counted, not clamped to zero: clamping would quietly fold
+       * a broken row into the distribution as "no time at all", which is a
+       * second wrong answer with no trace.
+       */
+      const values = raw.filter((v) => Number.isFinite(v) && v >= 0);
+      const impossible = raw.length - values.length;
+      if (impossible > 0) {
+        return {
+          ...base,
+          value: null,
+          of: raw.length,
+          percentiles: null,
+          suppressed: `${impossible} of ${raw.length} ${impossible === 1 ? 'record is' : 'records are'} dated in the future — this cannot be measured until that is fixed`,
+        };
+      }
+
       if (!values.length) {
         return { ...base, value: null, of: 0, percentiles: null, suppressed: 'nothing to measure in this period' };
       }
@@ -263,7 +330,7 @@ export async function dashboard(
           value: null,
           of: values.length,
           percentiles: null,
-          suppressed: `only ${values.length} observation(s) — fewer than ${MIN_COHORT}`,
+          suppressed: `only ${values.length} ${values.length === 1 ? 'observation' : 'observations'} — fewer than ${MIN_COHORT}`,
         };
       }
       const sorted = [...values].sort((a, b) => a - b);
@@ -313,6 +380,89 @@ export async function dashboard(
       computed: computable.has(m.kind),
     }));
 
+    /*
+     * Where the work is sitting. Read from the blueprint's states rather than
+     * from whatever states happen to hold records, so a queue that has just
+     * emptied still appears at zero — an empty step is information, and a step
+     * that vanishes when it clears makes the shape of the process change
+     * under the reader.
+     */
+    const { rows: standingRows } = await client.query<{
+      state: string;
+      count: number;
+      oldest_hours: number;
+    }>(
+      `select i.state,
+              count(*)::int as count,
+              max(extract(epoch from ($3::timestamptz - i.state_entered_at)) / 3600) as oldest_hours
+         from instance i
+        where i.tenant_id = $1 and i.process_key = $2 and i.completed_at is null
+        group by i.state`,
+      [tenantId, args.processKey, now],
+    );
+    const standingByState = new Map(standingRows.map((r) => [r.state, r]));
+
+    const standing = bp.workflow.states
+      .filter((st) => st.type !== 'terminal')
+      .map((st) => {
+        const row = standingByState.get(st.key);
+        const sla = typeof st.slaHours === 'number' ? st.slaHours : null;
+        const oldest = row ? Math.max(0, Math.round(Number(row.oldest_hours) * 10) / 10) : 0;
+        return {
+          state: st.key,
+          name: st.name,
+          count: row?.count ?? 0,
+          oldestHours: oldest,
+          slaHours: sla,
+          // Whether the *oldest* is past the limit. How many are late is a
+          // question the work list already answers, per record, with a button
+          // beside it — this page's job is to point at the queue.
+          overdue: sla !== null && oldest > sla,
+        };
+      });
+
+    /*
+     * The trend. Bucket width follows the period so a chart never draws three
+     * hundred and sixty-five columns nobody can read, and the width is
+     * returned rather than inferred, because "per week" and "per day" are
+     * different claims about the same shape.
+     */
+    const bucketDays = days <= 14 ? 1 : days <= 120 ? 7 : 30;
+    const { rows: seriesRows } = await client.query<{ bucket: Date; arrived: number; finished: number }>(
+      /*
+       * `$3` is already the start of the window. Subtracting the window
+       * length from it again drew two months of columns under a heading that
+       * said thirty days — the chart and the footnote beneath it describing
+       * different periods.
+       */
+      `with buckets as (
+         select generate_series(
+           date_trunc('day', $3::timestamptz),
+           date_trunc('day', $4::timestamptz),
+           make_interval(days => $5)
+         ) as bucket
+       )
+       select b.bucket,
+              (select count(*)::int from instance i
+                where i.tenant_id = $1 and i.process_key = $2
+                  and i.created_at >= b.bucket
+                  and i.created_at < b.bucket + make_interval(days => $5)) as arrived,
+              (select count(*)::int from instance i
+                where i.tenant_id = $1 and i.process_key = $2
+                  and i.completed_at >= b.bucket
+                  and i.completed_at < b.bucket + make_interval(days => $5)) as finished
+         from buckets b
+        order by b.bucket`,
+      [tenantId, args.processKey, from, now, bucketDays],
+    );
+
+    const series = seriesRows.map((r) => ({
+      bucket: r.bucket.toISOString(),
+      label: labelFor(r.bucket, bucketDays),
+      arrived: r.arrived,
+      finished: r.finished,
+    }));
+
     return {
       processKey: args.processKey,
       processName: bp.name,
@@ -323,6 +473,9 @@ export async function dashboard(
       minCohort: MIN_COHORT,
       metrics,
       declared,
+      standing,
+      series,
+      bucketDays,
     };
   });
 }

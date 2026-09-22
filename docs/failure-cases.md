@@ -649,6 +649,69 @@ The builder's left column was a full-width list in a three-column editor, perman
 **Generalisable:** a navigation column is sized for the largest list it might hold, and lives with the smallest one it usually does.
 
 
+### 63. A label that named nothing
+
+Every field in the respondent's form drew its label two ways: bound to the control with `htmlFor` for an ordinary input, or as a plain `<span>` for the radio and checkbox groups, which have no single control to point at. The file field was passed the `<span>` form — and it does have a single control, carrying the very id the label would have pointed at.
+
+So the label was visible, looked correct in every screenshot, and named nothing. A screen reader reached the attachment on every form in the catalogue that takes one and announced an unlabelled file input.
+
+It surfaced only because the builder's new preview renders the respondent's own components inside the builder's page, and the accessibility scan drives the builder. No flow in the gate had ever opened a form with a file field on it.
+
+**Generalisable:** a shared renderer with a flag that turns off the label binding will eventually be passed that flag by something that needed it on. And the reason to run the same components in two places is not only consistency — it doubles the paths a scan can reach them through.
+
+### 64. The summary that admitted it did not know
+
+The version history describes what changed between two published versions by comparing fields, states, rules and approvals. The first real use of it published a change to the form's header, which is none of those, and the panel said:
+
+> changed in ways this summary does not cover — compare the two blueprints
+
+That sentence was written as a last resort and it did its job in the first five minutes: it is the reason the gap was noticed at all rather than a version quietly reporting nothing. The comparison now covers the form as well.
+
+**Generalisable:** a summary that cannot say "I do not know" reports silence instead, and silence reads as "nothing happened". The escape hatch is worth writing before it is needed, because you find out you needed it by reading it.
+
+### 65. Two controls that changed something nobody was looking at
+
+Clicking a record's reference in **Records** loaded the record and rendered nothing, because the detail panel lived inside the **My work** view and the Records branch was the one caller that did not switch to it. The other two callers did. Clicking a process in the sidebar had the same shape: on Integrations or People it set `processKey`, which nothing on those pages shows, so the button was indistinguishable from a dead one.
+
+Neither is a crash, neither logs anything, and both pass a review of the code that changed — the handler does exactly what it says. They are only visible by clicking the thing and watching the screen not move.
+
+**Fixed** by making both navigate. A record now has its own page and its own address, so it can be linked in a ticket and survives a reload.
+
+**Generalisable:** a control that writes state the current screen does not render is a broken control, however correct the write is. The test is not "did the state change" but "did anything change that the person can see".
+
+### 66. A definition list with three children
+
+The record's answers became a `<dl>`: a `<div>` per row holding `<dt>`, `<dd>` and the classification chip. A `<div>` inside a `<dl>` may hold a label/value group and nothing else, so the third child made the whole list malformed — not that row, the list — and a screen reader loses the pairing between every label and every value on the page.
+
+It was caught the same minute it was written, by the scan that already drives the console. That is the entire argument for having the gate run on every flow rather than on the four in §20.2: this would have looked correct in a screenshot forever.
+
+**Generalisable:** semantic markup has rules about what may sit next to what, and "it renders fine" is not evidence of anything.
+
+### 67. A clock one workspace invented, applied to everybody
+
+`Engine.drain(now)` takes the time as a parameter, and the outbox and timer tables are shared across tenants by design — one worker drains the whole database, which is what makes it a queue. Both of those are right. Together they were not.
+
+Anything that simulates time was claiming **every tenant's** due work at a time that had not happened. The scenario runner advances the clock a fortnight to prove a reminder fires; the seed writes a week of history. Each of those fired other workspaces' timers early, sent their reminder emails, and left their records with a `state_entered_at` in the future.
+
+In production that reads: customer A clicks "run the scenarios" in the builder, and customer B's overdue-approval reminders all send two weeks early.
+
+It surfaced as a cosmetic oddity. A dashboard tile read **−301.9h** of stage aging, and a negative waiting time is not a rounding error. Nothing in the tests caught it because every proof makes its own tenant and then checks only its own tenant.
+
+**Fixed** in two places, because there are two faults:
+
+- `drain`, `runOutbox` and `fireDueTimers` take an optional tenant, and `drain` **refuses** a clock more than a minute from the real one unless a tenant is named. Refused rather than scoped automatically: a caller that invented a clock knows what it invented it for, and guessing would hide the next one. The guard immediately caught nine more callers in the proof suite.
+- The dashboard no longer averages an impossible duration into a percentile. A negative age is dropped and reported — "1 of 7 records is dated in the future" — rather than clamped to zero, which would have folded a broken row silently into the distribution.
+
+Proof 25 now advances one workspace fourteen days and checks that the workspace next door sent nothing, its state clock did not move, and an unscoped fabricated clock is refused.
+
+**Generalisable, three ways.** A shared queue and an injectable clock are each fine and are not fine together — the dangerous bugs live at the seam between two correct decisions. Test isolation that only ever asserts about its own tenant cannot see damage done to another. And a measure that can print an impossibility is worth having precisely because somebody notices: this was found by a number looking wrong, not by anything that was watching for it.
+
+### 68. Patching by script, and the site it got wrong
+
+Scoping forty-odd `drain` calls was done with a regex that attached the nearest preceding tenant variable. One proof submits into its own tenant and then talks to a neighbouring one, so the nearest variable was the wrong one — and the suite still passed, because that particular drain settles nothing the assertion reads.
+
+**Generalisable:** a mechanical edit needs a mechanical check. The fix was to print every call site with its function and its argument and read the list — thirty seconds, and it is the only reason the wrong one was found.
+
 ---
 
 ## What the compiler structurally cannot catch

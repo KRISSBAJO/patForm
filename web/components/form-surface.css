@@ -554,3 +554,128 @@ textarea.fm__input {
   min-height: 44px;
   border-radius: 7px;
 }
+
+/* ------------------------------------------------ the header, branded */
+/*
+ * A form somebody receives by link has no surrounding site to say who sent
+ * it, so the header is the whole answer to "is this really from my church /
+ * my employer". That is why it can carry a banner, a logo and a colour — and
+ * why all three are optional: a plain form is still a correct form.
+ */
+
+.fm__head[data-banner='true'] {
+  display: block;
+  padding: 18px 0 18px;
+}
+
+.fm__banner {
+  height: 132px;
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--paper-2);
+}
+
+.fm__banner img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.fm__brand {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+}
+
+/* Over the banner, not beside it — the logo belongs to the picture. */
+.fm__head[data-banner='true'] .fm__brand {
+  position: relative;
+  margin-top: -26px;
+  padding-top: 0;
+}
+
+.fm__logo {
+  width: 54px;
+  height: 54px;
+  flex-shrink: 0;
+  object-fit: contain;
+  border-radius: 11px;
+  background: #fff;
+  border: 1px solid var(--card-line, #e4e2dd);
+  padding: 5px;
+}
+
+.fm__brandText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.fm__head[data-banner='true'] .fm__brandText {
+  padding-top: 26px;
+}
+
+.fm__tagline {
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--ink-soft);
+}
+
+.fm__foot {
+  margin: 26px 0 0;
+  padding-top: 16px;
+  border-top: 1px solid var(--card-line, #e4e2dd);
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+/*
+ * A custom accent replaces both green tokens, so the primary button would
+ * have no hover. Darkening it keeps the feedback without a second colour to
+ * pick.
+ */
+.fm[data-branded='true'] .fm__btn--primary:hover {
+  background: var(--green);
+  filter: brightness(0.91);
+}
+
+/* -------------------------------------------------- fields on one line */
+
+.fm__grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  column-gap: 14px;
+}
+
+.fm__cell {
+  grid-column: span 6;
+  min-width: 0;
+}
+
+.fm__cell[data-width='half'] {
+  grid-column: span 3;
+}
+
+.fm__cell[data-width='third'] {
+  grid-column: span 2;
+}
+
+/* A phone is one column. A width is a hint about a desktop, and a third of a
+   360px screen is not a field anybody can fill in. */
+@media (max-width: 560px) {
+  .fm__cell[data-width='half'],
+  .fm__cell[data-width='third'] {
+    grid-column: span 6;
+  }
+
+  .fm__head[data-banner='true'] .fm__brand {
+    margin-top: -20px;
+  }
+
+  .fm__banner {
+    height: 104px;
+  }
+}

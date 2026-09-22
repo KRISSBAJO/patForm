@@ -455,3 +455,149 @@ export async function discardDraft(
   );
   return { discarded: (rowCount ?? 0) > 0 };
 }
+
+// --------------------------------------------------------------- versions
+
+export interface VersionRow {
+  version: number;
+  publishedAt: string;
+  publishedBy: string;
+  /** Records that started under this version, whether or not they finished. */
+  records: number;
+  /** What changed from the version before it, in plain sentences. */
+  changes: string[];
+}
+
+/** A list, then the differences between neighbours. Order is oldest first. */
+function changesBetween(before: Blueprint | null, after: Blueprint): string[] {
+  if (!before) return ['first published version'];
+  const out: string[] = [];
+
+  if (before.name !== after.name) out.push(`renamed from "${before.name}" to "${after.name}"`);
+
+  const beforeFields = new Map(before.data.fields.map((f) => [f.key, f]));
+  const afterFields = new Map(after.data.fields.map((f) => [f.key, f]));
+
+  const added = [...afterFields.keys()].filter((k) => !beforeFields.has(k));
+  const removed = [...beforeFields.keys()].filter((k) => !afterFields.has(k));
+  const retyped = [...afterFields.entries()].filter(
+    ([k, f]) => beforeFields.has(k) && beforeFields.get(k)!.type !== f.type,
+  );
+  const required = [...afterFields.entries()].filter(
+    ([k, f]) => beforeFields.has(k) && !beforeFields.get(k)!.required && f.required,
+  );
+
+  if (added.length) out.push(`added ${added.length === 1 ? 'the question' : 'the questions'} ${list(added)}`);
+  if (removed.length) out.push(`removed ${removed.length === 1 ? 'the question' : 'the questions'} ${list(removed)}`);
+  for (const [k, f] of retyped) out.push(`changed ${k} from ${beforeFields.get(k)!.type} to ${f.type}`);
+  if (required.length) out.push(`made ${list(required.map(([k]) => k))} required`);
+
+  const beforeStates = new Set(before.workflow.states.map((s) => s.key));
+  const afterStates = new Set(after.workflow.states.map((s) => s.key));
+  const statesAdded = [...afterStates].filter((s) => !beforeStates.has(s));
+  const statesGone = [...beforeStates].filter((s) => !afterStates.has(s));
+  if (statesAdded.length) out.push(`added the step ${list(statesAdded)}`);
+  if (statesGone.length) out.push(`removed the step ${list(statesGone)}`);
+
+  const ruleDelta = (after.workflow.transitions ?? []).length - (before.workflow.transitions ?? []).length;
+  if (ruleDelta > 0) out.push(`added ${ruleDelta} automation rule${ruleDelta === 1 ? '' : 's'}`);
+  if (ruleDelta < 0) out.push(`removed ${-ruleDelta} automation rule${ruleDelta === -1 ? '' : 's'}`);
+
+  const approvalDelta = (after.workflow.approvals ?? []).length - (before.workflow.approvals ?? []).length;
+  if (approvalDelta > 0) out.push(`added ${approvalDelta} approval${approvalDelta === 1 ? '' : 's'}`);
+  if (approvalDelta < 0) out.push(`removed ${-approvalDelta} approval${approvalDelta === -1 ? '' : 's'}`);
+
+  /*
+   * The form itself, which is most of what somebody changes and none of what
+   * the checks above look at. Compared as a whole rather than field by field:
+   * the useful sentence is "the form changed", and the preview and the
+   * blueprint say how.
+   */
+  const experience = (bp: Blueprint) => JSON.stringify(bp.experience);
+  if (experience(before) !== experience(after)) {
+    const header = JSON.stringify(before.experience.branding) !== JSON.stringify(after.experience.branding);
+    const layout =
+      JSON.stringify(before.experience.pages.map((p) => p.sections.map((s2) => s2.widths))) !==
+      JSON.stringify(after.experience.pages.map((p) => p.sections.map((s2) => s2.widths)));
+
+    if (header) out.push('changed the form header');
+    if (layout) out.push('changed how the questions are laid out');
+    if (!header && !layout) out.push('changed the form');
+  }
+
+  const emailDelta =
+    (after.communications?.email ?? []).length - (before.communications?.email ?? []).length;
+  if (emailDelta > 0) out.push(`added ${emailDelta} message${emailDelta === 1 ? '' : 's'}`);
+  if (emailDelta < 0) out.push(`removed ${-emailDelta} message${emailDelta === -1 ? '' : 's'}`);
+
+  /*
+   * A difference nothing above catches still has to be reported. Saying
+   * "nothing changed" about a version that did change is worse than saying
+   * something vague, because somebody would stop looking.
+   */
+  if (!out.length) {
+    out.push(
+      JSON.stringify(before) === JSON.stringify(after)
+        ? 'republished with no changes'
+        : 'changed in ways this summary does not cover — compare the two blueprints',
+    );
+  }
+  return out;
+}
+
+function list(keys: string[]): string {
+  if (keys.length <= 3) return keys.join(', ');
+  return `${keys.slice(0, 3).join(', ')} and ${keys.length - 3} more`;
+}
+
+/**
+ * Every published version of one process, newest first.
+ *
+ * `process_version` is append-only and refuses UPDATE by database trigger, so
+ * this is the record rather than a reconstruction of it — nobody, including
+ * this code, can have edited a past version into agreeing with the present.
+ */
+export async function versionHistory(
+  pool: Pool,
+  principal: Principal,
+  processKey: string,
+): Promise<VersionRow[]> {
+  if (principal.kind !== 'actor') throw new Error('the builder is for signed-in members');
+
+  const { rows } = await pool.query<{
+    id: string;
+    version: number;
+    blueprint: Blueprint;
+    published_at: Date;
+    published_by: string;
+    records: number;
+  }>(
+    /*
+     * `published_by` is an audit string like `actor:<uuid>`, which is the right
+     * thing to store and the wrong thing to read. Resolved to a name here, and
+     * left as it was stored when no actor matches — a person who has since
+     * been removed still published that version.
+     */
+    `select v.id, v.version, v.blueprint, v.published_at,
+            coalesce(a.display_name, v.published_by) as published_by,
+            (select count(*)::int from instance i where i.process_version_id = v.id) as records
+       from process_version v
+       left join actor a
+         on v.published_by like 'actor:%'
+        and a.id::text = split_part(v.published_by, ':', 2)
+        and a.tenant_id = v.tenant_id
+      where v.tenant_id = $1 and v.process_key = $2
+      order by v.version asc`,
+    [principal.tenantId, processKey],
+  );
+
+  const out = rows.map((row, i) => ({
+    version: row.version,
+    publishedAt: row.published_at.toISOString(),
+    publishedBy: row.published_by,
+    records: row.records,
+    changes: changesBetween(i === 0 ? null : rows[i - 1]!.blueprint, row.blueprint),
+  }));
+
+  return out.reverse();
+}

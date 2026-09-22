@@ -2292,3 +2292,15 @@ html {
 }
 
 .bd__packWarn { margin-top: 8px; color: var(--red-text); }
+
+/* Who is signed in, beside the button that takes them back to their work.
+   The name, not the email: this sits in public chrome on a page anybody can
+   load, and an address on screen is an address over somebody's shoulder. */
+.nav__who {
+  font-size: 14.5px;
+  color: var(--ink-soft);
+  max-width: 18ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

@@ -164,7 +164,7 @@ async function main(): Promise<void> {
       answers: answersFor(hire, index),
       now: submittedAt,
     });
-    await engine.drain(submittedAt);
+    await engine.drain(submittedAt, 'seed', tenantId);
 
     if (hire.reach === 'manager') {
       // Left with the manager. Daniel is nine days in, which is late.
@@ -181,7 +181,7 @@ async function main(): Promise<void> {
       reason: hire.reach === 'rejected' ? 'Role was withdrawn.' : 'Confirmed headcount.',
       now: managerAt,
     });
-    await engine.drain(managerAt);
+    await engine.drain(managerAt, 'seed', tenantId);
     if (hire.reach === 'rejected') continue;
     if (hire.reach === 'hr') continue;
 
@@ -194,14 +194,14 @@ async function main(): Promise<void> {
       reason: 'Right to work verified.',
       now: hrAt,
     });
-    await engine.drain(hrAt);
+    await engine.drain(hrAt, 'seed', tenantId);
     if (hire.reach === 'provisioning') continue;
 
     const itAt = new Date(hrAt.getTime() + 20 * HOUR);
     await engine.completeTask({ instanceId, taskKey: 'issue_equipment', principal: actors.get('ini')!.principal, now: itAt });
-    await engine.drain(itAt);
+    await engine.drain(itAt, 'seed', tenantId);
     await engine.completeTask({ instanceId, taskKey: 'create_accounts', principal: actors.get('ini')!.principal, now: itAt });
-    await engine.drain(itAt);
+    await engine.drain(itAt, 'seed', tenantId);
   }
 
   // One automation that genuinely failed, so the health panel has something

@@ -10,6 +10,7 @@ import {
   apiErrors,
   getRecord,
   listRecordsPage,
+  type RecordOrder,
   SCOPE_FOR,
   withIdempotency,
 } from './public.js';
@@ -86,7 +87,7 @@ route('GET', /^\/v1\/records$/, 'GET /records', async ({ pool, principal, url })
   // Explicit filtering: a parameter this does not recognise is refused rather
   // than ignored. Silently returning everything when a caller asked for a
   // subset is how an integration leaks.
-  const known = new Set(['process', 'state', 'completed', 'limit', 'cursor', 'updated_since']);
+  const known = new Set(['process', 'state', 'completed', 'limit', 'cursor', 'updated_since', 'q', 'order']);
   const unknown = [...url.searchParams.keys()].filter((k) => !known.has(k));
   if (unknown.length) throw apiErrors.validation(`unknown filter: ${unknown.join(', ')}`, { known: [...known] });
 
@@ -98,6 +99,11 @@ route('GET', /^\/v1\/records$/, 'GET /records', async ({ pool, principal, url })
       state: url.searchParams.get('state') ?? undefined,
       completed: url.searchParams.has('completed') ? url.searchParams.get('completed') === 'true' : undefined,
       updatedSince: since ? new Date(since) : undefined,
+      // Same search and same orders as the console's list, because it is the
+      // same function — the console is a client of this API and not a
+      // privileged path around it.
+      query: url.searchParams.get('q') ?? undefined,
+      order: (url.searchParams.get('order') as RecordOrder | null) ?? undefined,
       limit: Number(url.searchParams.get('limit') ?? 25),
       cursor: url.searchParams.get('cursor') ?? undefined,
     }),

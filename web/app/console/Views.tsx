@@ -1,6 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { Icon } from './Icon';
+import { Trend, WhereItSits, type Point, type Standing } from './Charts';
 
 /**
  * The three nav items that used to say "Not built yet".
@@ -48,6 +50,9 @@ interface DashboardData {
   minCohort: number;
   metrics: Measurement[];
   declared: { key: string; name: string; computed: boolean }[];
+  standing: Standing[];
+  series: Point[];
+  bucketDays: number;
 }
 
 function formatted(m: Measurement): string {
@@ -143,6 +148,15 @@ export function DashboardView({ processKey }: { processKey: string }) {
         </p>
       )}
 
+      {/*
+        * Under the numbers, the two questions they leave open: where the work
+        * is, and which way it is going. The panel below them was empty, and
+        * an empty half-page under nine tiles reads as a dashboard that has
+        * not been finished.
+        */}
+      <WhereItSits standing={data.standing} />
+      <Trend series={data.series} bucketDays={data.bucketDays} />
+
       <p className="vw__footnote">
         {data.from.slice(0, 10)} to {data.to.slice(0, 10)} · version
         {data.versions.length > 1 ? 's' : ''} {data.versions.join(', ')} · definitions{' '}
@@ -190,21 +204,38 @@ export function RecordsView({
   const [cursor, setCursor] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const [filter, setFilter] = useState<'all' | 'open' | 'done'>('all');
+  const [order, setOrder] = useState<'newest' | 'oldest' | 'reference'>('newest');
+  const [typed, setTyped] = useState('');
+  const [query, setQuery] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  /*
+   * A pause before searching.
+   *
+   * Each keystroke here is a round trip and a fresh cursor — the server has
+   * to do the searching, because searching the twenty-five rows that happen
+   * to be loaded would report "nothing matches" about a set of eight hundred.
+   */
+  useEffect(() => {
+    const t = setTimeout(() => setQuery(typed.trim()), 300);
+    return () => clearTimeout(t);
+  }, [typed]);
 
   const load = useCallback(
     async (next?: string) => {
       setBusy(true);
       setError(null);
       try {
-        const params = new URLSearchParams({ limit: '25' });
+        const params = new URLSearchParams({ limit: '25', order });
         if (next) params.set('cursor', next);
         if (filter === 'open') params.set('completed', 'false');
         if (filter === 'done') params.set('completed', 'true');
+        if (query) params.set('q', query);
         const page = await call<Page>(`/api/browse/${processKey}?${params}`);
-        // Appending on "load more", replacing on a filter change: the cursor
-        // is only meaningful against the query that produced it.
+        // Appending on "load more", replacing on any change to the query: a
+        // cursor is only meaningful against the query that produced it, and
+        // that now includes the order and the search text.
         setRows((current) => (next ? [...current, ...page.data] : page.data));
         setCursor(page.next_cursor);
         setHasMore(page.has_more);
@@ -214,7 +245,7 @@ export function RecordsView({
         setBusy(false);
       }
     },
-    [processKey, filter],
+    [processKey, filter, order, query],
   );
 
   useEffect(() => {
@@ -226,20 +257,49 @@ export function RecordsView({
       <div className="cs__panelHead">
         <h2 className="cs__tab">Records</h2>
         <span className="cs__sort">
-          <label htmlFor="rec-filter" className="vw__srOnly">
-            Show
-          </label>
-          <select
-            id="rec-filter"
-            className="vw__period"
-            value={filter}
-            onChange={(e) => setFilter(e.target.value as typeof filter)}
-          >
-            <option value="all">everything</option>
-            <option value="open">still running</option>
-            <option value="done">finished</option>
-          </select>
+          {busy ? 'searching…' : `${rows.length}${hasMore ? '+' : ''} shown`}
         </span>
+      </div>
+
+      {/*
+        * Searching, filtering and ordering all happen on the server, against
+        * every record rather than the page that is loaded. The search reaches
+        * the reference and the answers this role may see — never the hidden
+        * ones, which would answer "which record contains this value" without
+        * showing it.
+        */}
+      <div className="wk__controls">
+        <div className="wk__search">
+          <Icon name="search" />
+          <input
+            className="wk__searchInput"
+            type="search"
+            value={typed}
+            placeholder="Search the reference or any answer you can see"
+            aria-label="Search records"
+            onChange={(e) => setTyped(e.target.value)}
+          />
+        </div>
+
+        <label className="wk__pick">
+          <span className="cs__srOnly">Show</span>
+          <Icon name="filter" />
+          <select className="wk__select" value={filter} onChange={(e) => setFilter(e.target.value as typeof filter)}>
+            <option value="all">Everything</option>
+            <option value="open">Still running</option>
+            <option value="done">Finished</option>
+          </select>
+        </label>
+
+        <label className="wk__pick">
+          <span className="cs__srOnly">Order</span>
+          <Icon name="sort" />
+          <select className="wk__select" value={order} onChange={(e) => setOrder(e.target.value as typeof order)}>
+            <option value="newest">Newest first</option>
+            <option value="oldest">Oldest first</option>
+            <option value="reference">By reference</option>
+          </select>
+        </label>
       </div>
 
       {error && (
@@ -278,7 +338,23 @@ export function RecordsView({
           {!rows.length && !busy && (
             <tr>
               <td colSpan={4} className="ask__empty">
-                Nothing here.
+                {query || filter !== 'all' ? (
+                  <>
+                    Nothing matches that.{' '}
+                    <button
+                      type="button"
+                      className="cs__linkBtn cs__linkBtn--onLight"
+                      onClick={() => {
+                        setTyped('');
+                        setFilter('all');
+                      }}
+                    >
+                      Clear the filters
+                    </button>
+                  </>
+                ) : (
+                  'No records yet. They arrive when somebody submits the form.'
+                )}
               </td>
             </tr>
           )}
@@ -292,12 +368,14 @@ export function RecordsView({
           </button>
         ) : (
           <span className="vw__footnote">
-            {rows.length} record{rows.length === 1 ? '' : 's'} — that is all of them.
+            {rows.length} record{rows.length === 1 ? '' : 's'}
+            {query || filter !== 'all' ? ' matching' : ''} — that is all of them.
           </span>
         )}
         {rows[0]?.omitted_fields.length ? (
           <span className="vw__footnote">
-            {rows[0].omitted_fields.length} field(s) withheld from your roles.
+            {rows[0].omitted_fields.length} field{rows[0].omitted_fields.length === 1 ? '' : 's'} withheld from your
+            roles.
           </span>
         ) : null}
       </div>

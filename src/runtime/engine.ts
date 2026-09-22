@@ -650,7 +650,7 @@ export class Engine {
   // ----------------------------------------------------------------- timers
 
   /** Fires every timer that is due, at most once each. */
-  async fireDueTimers(now: Date, batch = 50): Promise<number> {
+  async fireDueTimers(now: Date, batch = 50, tenantId?: string): Promise<number> {
     const { rows: due } = await this.pool.query<{
       id: number;
       instance_id: string;
@@ -662,12 +662,13 @@ export class Engine {
         where id in (
           select id from timer
            where fired_at is null and cancelled_at is null and due_at <= $1
+             and ($3::uuid is null or tenant_id = $3)
            order by due_at, id
              for update skip locked
            limit $2
         )
         returning id, instance_id, transition_key, state_key, entered_at`,
-      [now, batch],
+      [now, batch, tenantId ?? null],
     );
 
     let fired = 0;
@@ -719,7 +720,14 @@ export class Engine {
    * never take the same row, and a worker that dies mid-flight releases its
    * rows when the visibility timeout expires.
    */
-  async runOutbox(workerId: string, now: Date, batch = 10): Promise<number> {
+  /**
+   * How far a caller's clock may be from the real one before it has to say
+   * which tenant it is pretending for. A minute covers an ordinary request
+   * that took a while; a fortnight does not.
+   */
+  private static readonly CLOCK_TOLERANCE = 60_000;
+
+  async runOutbox(workerId: string, now: Date, batch = 10, tenantId?: string): Promise<number> {
     const { rows: claimed } = await this.pool.query<{
       id: number;
       tenant_id: string;
@@ -734,12 +742,13 @@ export class Engine {
         where id in (
           select id from outbox
            where done_at is null and available_at <= $2
+             and ($5::uuid is null or tenant_id = $5)
            order by id
              for update skip locked
            limit $3
         )
         returning id, tenant_id, instance_id, event_id, transition_key, request_id`,
-      [workerId, now, batch, VISIBILITY_TIMEOUT_SECONDS],
+      [workerId, now, batch, VISIBILITY_TIMEOUT_SECONDS, tenantId ?? null],
     );
 
     let processed = 0;
@@ -811,10 +820,35 @@ export class Engine {
   }
 
   /** Runs outbox and timers until neither has anything left to do. */
-  async drain(now: Date, workerId = 'drain'): Promise<void> {
+  async drain(now: Date, workerId = 'drain', tenantId?: string): Promise<void> {
+    /*
+     * A clock that is not the real one must name the tenant it belongs to.
+     *
+     * The queue is deliberately shared: one worker drains every tenant, which
+     * is what makes it a queue. But `now` is a parameter, and a caller
+     * simulating time — a scenario proving a reminder fires after fourteen
+     * days, a seed writing a fortnight of history — was claiming *every*
+     * tenant's due work at that made-up time. So running the scenario tests
+     * in the builder fired other workspaces' timers two weeks early, sent
+     * their reminder emails, and left their records with a `state_entered_at`
+     * in the future. Their dashboards then reported a negative stage age,
+     * which is how this was found.
+     *
+     * Refused rather than scoped automatically: a caller that has invented a
+     * clock knows which tenant it invented it for, and guessing on their
+     * behalf would hide the next one of these.
+     */
+    const drift = Math.abs(now.getTime() - Date.now());
+    if (!tenantId && drift > Engine.CLOCK_TOLERANCE) {
+      throw new Error(
+        `drain was given a clock ${Math.round(drift / 60_000)} minutes from now with no tenant. ` +
+          'A simulated clock must name its tenant, or it drains every tenant at a time that has not happened.',
+      );
+    }
+
     for (let i = 0; i < 100; i++) {
-      const done = await this.runOutbox(workerId, now, 50);
-      const fired = await this.fireDueTimers(now);
+      const done = await this.runOutbox(workerId, now, 50, tenantId);
+      const fired = await this.fireDueTimers(now, 50, tenantId);
       if (!done && !fired) return;
     }
     throw new Error('drain did not settle after 100 rounds, which suggests a workflow loop');

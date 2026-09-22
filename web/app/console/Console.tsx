@@ -7,6 +7,8 @@ import { DashboardView, HealthView, RecordsView, SecurityView } from './Views';
 import { PeopleView, ProcessesView } from './Manage';
 import { DataView, IntegrationsView } from './Settings';
 import { RecordTrail } from './Trail';
+import { RecordPage } from './Record';
+import { WorkList } from './WorkList';
 
 /**
  * Calls go to the same origin so the HttpOnly, SameSite=Lax session cookie is
@@ -91,7 +93,19 @@ export function Console() {
   const [work, setWork] = useState<Work | null>(null);
   const [health, setHealth] = useState<Health | null>(null);
   const [record, setRecord] = useState<RecordDetail | null>(null);
-  const [view, setView] = useState<'work' | 'ask' | 'records' | 'dashboard' | 'health' | 'security' | 'people' | 'processes' | 'integrations' | 'data'>('work');
+  const [view, setView] = useState<
+    | 'work'
+    | 'record'
+    | 'ask'
+    | 'records'
+    | 'dashboard'
+    | 'health'
+    | 'security'
+    | 'people'
+    | 'processes'
+    | 'integrations'
+    | 'data'
+  >('work');
   /*
    * Whether this sign-in screen is a first visit or an ejection.
    *
@@ -126,6 +140,31 @@ export function Console() {
   useEffect(() => {
     void refreshSession();
   }, [refreshSession]);
+
+  /*
+   * A record in the address bar is opened on arrival, and the browser's back
+   * button closes it. Both directions, because a page that pushes history and
+   * ignores it leaves the arrow pointing at a state the page will not return
+   * to.
+   */
+  useEffect(() => {
+    if (!session) return;
+    const fromUrl = new URLSearchParams(window.location.search).get('record');
+    if (fromUrl && !record) void open(fromUrl);
+
+    const onPop = () => {
+      const id = new URLSearchParams(window.location.search).get('record');
+      if (id) void open(id);
+      else {
+        setRecord(null);
+        setView('work');
+      }
+    };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+    // `open` is recreated every render and would resubscribe forever.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session]);
 
   const load = useCallback(async () => {
     if (!session) return;
@@ -173,13 +212,24 @@ export function Console() {
     }
   };
 
-  const decide = (instanceId: string, approvalKey: string, decision: 'approved' | 'rejected') =>
+  /*
+   * The reason is written into the record's history and may be shown to the
+   * applicant, so the record page asks for one on a rejection. The list's
+   * quick buttons still send a default — a decision made in one click is
+   * still a real decision and has to say where it came from.
+   */
+  const decide = (
+    instanceId: string,
+    approvalKey: string,
+    decision: 'approved' | 'rejected',
+    reason = 'Decided in the console',
+  ) =>
     act(
       `${instanceId}:${approvalKey}`,
       () =>
         call(`/api/records/${instanceId}/decide`, {
           method: 'POST',
-          body: JSON.stringify({ approvalKey, decision, reason: 'Decided in the console' }),
+          body: JSON.stringify({ approvalKey, decision, reason }),
         }),
       decision === 'approved' ? 'Approved. The process moved on.' : 'Rejected. The record is closed.',
     );
@@ -224,14 +274,33 @@ export function Console() {
     }
   };
 
+  /**
+   * Opens a record as its own page.
+   *
+   * It also puts the record in the address bar. A console where the thing you
+   * are looking at has no URL cannot be linked to in a ticket, cannot be
+   * reopened from history, and loses your place on reload — and this is a page
+   * people are sent to in order to decide something.
+   */
   const open = async (instanceId: string) => {
     try {
-      setRecord(await call<RecordDetail>(`/api/records/${instanceId}`));
+      const detail = await call<RecordDetail>(`/api/records/${instanceId}`);
+      setRecord(detail);
+      setView('record');
+      window.history.pushState({ record: instanceId }, '', `?record=${encodeURIComponent(instanceId)}`);
     } catch (err) {
       if (err instanceof Unauthenticated) return endSession();
       setToast({ message: err instanceof Error ? err.message : String(err), refused: true });
     }
   };
+
+  /** Back to the work list, and out of the address bar with it. */
+  const closeRecord = useCallback(() => {
+    setRecord(null);
+    setShowTrail(false);
+    setView('work');
+    window.history.pushState({}, '', window.location.pathname);
+  }, []);
 
   const signOut = async () => {
     await call('/api/auth/logout', { method: 'POST' }).catch(() => {});
@@ -377,7 +446,18 @@ export function Console() {
               type="button"
               className="cs__process"
               aria-current={processKey === p.process_key}
-              onClick={() => setProcessKey(p.process_key)}
+              /*
+               * Switching process on a page that has nothing to do with a
+               * process — Integrations, People, your account — changed a value
+               * nothing on screen was showing, so the button read as broken.
+               * It now takes you to that process's work, which is what
+               * choosing a process is for.
+               */
+              onClick={() => {
+                setProcessKey(p.process_key);
+                setRecord(null);
+                setView('work');
+              }}
             >
               <span className="cs__dot" aria-hidden="true" />
               {p.name}
@@ -437,8 +517,10 @@ export function Console() {
         {!me.email_verified_at && <VerifyBanner email={me.email} />}
         <div className="cs__head">
           <h1>
-            {view === 'ask'
-              ? 'Ask'
+            {view === 'record'
+              ? (record?.reference ?? 'Record')
+              : view === 'ask'
+                ? 'Ask'
               : view === 'records'
                 ? 'Records'
                 : view === 'dashboard'
@@ -460,7 +542,7 @@ export function Console() {
           {/* The process pill is context for the record views. On People,
               Processes and Your account it named a process the page has
               nothing to do with. */}
-          {work && ['work', 'ask', 'records', 'dashboard'].includes(view) && (
+          {work && ['work', 'record', 'ask', 'records', 'dashboard'].includes(view) && (
             <span className="cs__version">{work.processName}</span>
           )}
           <span style={{ flexGrow: 1 }} />
@@ -471,7 +553,18 @@ export function Console() {
 
         <div className="cs__body">
           <div className="cs__left">
-            {view === 'integrations' ? (
+            {view === 'record' && record ? (
+              <RecordPage
+                record={record}
+                approval={work?.approvals.find((a) => a.instanceId === record.instanceId)}
+                task={work?.tasks.find((t) => t.instanceId === record.instanceId)}
+                busy={busy}
+                onBack={closeRecord}
+                onDecide={(id, key, decision, reason) => void decide(id, key, decision, reason)}
+                onCompleteTask={(id, key) => void completeTask(id, key)}
+                onExport={(id, ref, format) => void exportRecord(id, ref, format)}
+              />
+            ) : view === 'integrations' ? (
               <IntegrationsView />
             ) : view === 'data' ? (
               <DataView processes={session.processes} />
@@ -496,8 +589,15 @@ export function Console() {
             ) : view === 'records' ? (
               <RecordsView
                 processKey={processKey}
+                /*
+                 * The detail panel lives in the work view, so opening a record
+                 * from anywhere else has to go there too. This one did not, and
+                 * the result was a reference you could click all day: the record
+                 * loaded, and it loaded behind a view nobody was looking at.
+                 */
                 onOpenRecord={(id) => {
                   void open(id);
+                  setView('work');
                 }}
               />
             ) : view === 'ask' ? (
@@ -529,146 +629,21 @@ export function Console() {
                   <Tile label="FAILED" value={counts.failed} meta="safe to replay" tone="failed" />
                 </div>
 
-                <div className="cs__panel">
-                  <div className="cs__panelHead">
-                    <h2 className="cs__tab">
-                      Needs you
-                    </h2>
-                    <span className="cs__sort">SORTED BY AGE</span>
-                  </div>
-
-                  {!work || (work.approvals.length === 0 && work.tasks.length === 0) ? (
-                    <div className="cs__empty">Nothing is waiting on you in this process.</div>
-                  ) : (
-                    <>
-                      {work.approvals.map((a) => (
-                        <div className="cs__row" key={`${a.instanceId}:${a.approvalKey}`}>
-                          <span className={`cs__stripe ${a.late ? 'cs__stripe--late' : 'cs__stripe--waiting'}`} />
-                          <span className="cs__ref">{a.reference}</span>
-                          <div className="cs__rowMain">
-                            <div className="cs__rowTitle">{a.summary}</div>
-                            <div className="cs__rowMeta">
-                              {a.approvalName} · waiting {a.waitingHours}h{a.late ? ' · past its SLA' : ''}
-                            </div>
-                          </div>
-                          <button type="button" className="cs__btn" onClick={() => void open(a.instanceId)}>
-                            Open
-                          </button>
-                          <button
-                            type="button"
-                            className="cs__btn cs__btn--danger"
-                            disabled={busy !== null}
-                            onClick={() => void decide(a.instanceId, a.approvalKey, 'rejected')}
-                          >
-                            Reject
-                          </button>
-                          <button
-                            type="button"
-                            className="cs__btn cs__btn--primary"
-                            disabled={busy !== null}
-                            onClick={() => void decide(a.instanceId, a.approvalKey, 'approved')}
-                          >
-                            Approve
-                          </button>
-                        </div>
-                      ))}
-
-                      {work.tasks.map((t) => (
-                        <div className="cs__row" key={`${t.instanceId}:${t.taskKey}`}>
-                          <span className={`cs__stripe ${t.late ? 'cs__stripe--late' : ''}`} />
-                          <span className="cs__ref">{t.reference}</span>
-                          <div className="cs__rowMain">
-                            <div className="cs__rowTitle">{t.summary}</div>
-                            <div className="cs__rowMeta">
-                              {t.taskName} · assigned to {t.assignee ?? 'nobody'}
-                            </div>
-                          </div>
-                          <button type="button" className="cs__btn" onClick={() => void open(t.instanceId)}>
-                            Open
-                          </button>
-                          <button
-                            type="button"
-                            className="cs__btn cs__btn--primary"
-                            disabled={busy !== null}
-                            onClick={() => void completeTask(t.instanceId, t.taskKey)}
-                          >
-                            Mark done
-                          </button>
-                        </div>
-                      ))}
-                    </>
-                  )}
-                </div>
-
-                {record && (
-                  <div className="cs__panel">
-                    <div className="cs__panelHead">
-                      <h2 className="cs__tab">
-                        {record.reference} · {record.stateName}
-                      </h2>
-                      <span className="cs__sort">
-                        v{record.version} · seen as {record.viewerRoles.join(', ') || 'no process role'}
-                      </span>
-                      <button
-                        type="button"
-                        className="cs__btn"
-                        style={{ marginLeft: 12 }}
-                        onClick={() => void exportRecord(record.instanceId, record.reference, 'json')}
-                        title="The record, its full audit history, every decision, message and document"
-                      >
-                        Export
-                      </button>
-                      <button
-                        type="button"
-                        className="cs__btn"
-                        onClick={() => void exportRecord(record.instanceId, record.reference, 'csv')}
-                      >
-                        CSV
-                      </button>
-                      {/* The observability work made every action traceable
-                          by request, event, job, attempt and result — and the
-                          only reader was a command-line tool. */}
-                      <button
-                        type="button"
-                        className="cs__btn"
-                        aria-expanded={showTrail}
-                        onClick={() => setShowTrail((was) => !was)}
-                      >
-                        {showTrail ? 'Hide the trail' : 'Show the trail'}
-                      </button>
-                      <button type="button" className="cs__btn" onClick={() => setRecord(null)}>
-                        Close
-                      </button>
-                    </div>
-                    <div style={{ padding: '14px 18px' }}>
-                      {showTrail && <RecordTrail instanceId={record.instanceId} />}
-                      <div className="cs__rowMeta" style={{ marginBottom: 12 }}>
-                        <strong>Next:</strong> {record.nextAction}
-                      </div>
-                      {record.fields.map((f) => (
-                        <div className="cs__field" key={f.key}>
-                          <span className="cs__fieldLabel">{f.label}</span>
-                          <span className="cs__fieldValue">
-                            {f.value === '[redacted]' ? (
-                              <span className="cs__redacted">hidden from your role</span>
-                            ) : f.value === null || f.value === '' ? (
-                              <span style={{ color: 'var(--muted-2)' }}>—</span>
-                            ) : (
-                              String(Array.isArray(f.value) ? f.value.join(', ') : f.value)
-                            )}
-                          </span>
-                          <span className={`cs__class cs__class--${f.classification}`}>
-                            {f.classification.slice(0, 4).toUpperCase()}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
+                <WorkList
+                  approvals={work?.approvals ?? []}
+                  tasks={work?.tasks ?? []}
+                  busy={busy}
+                  onOpen={(id) => void open(id)}
+                  onDecide={(id, key, decision) => void decide(id, key, decision)}
+                  onCompleteTask={(id, key) => void completeTask(id, key)}
+                />
               </>
             )}
           </div>
 
+          {/* The record page carries its own side column; two of them would
+              be a column of cards about a different subject. */}
+          {view !== 'record' && (
           <div className="cs__right">
             {health ? (
               <div className="cs__card">
@@ -735,6 +710,7 @@ export function Console() {
               </p>
             </div>
           </div>
+          )}
         </div>
       </main>
       </div>

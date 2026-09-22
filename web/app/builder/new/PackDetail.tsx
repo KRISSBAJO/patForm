@@ -1,18 +1,21 @@
 'use client';
 
 /**
- * What is inside a pack, as a panel worth reading.
+ * What is inside a pack.
  *
  * The first version was a definition list of counts — eight rows of "14
  * fields", "7 states". Counts answer *how much*, and the only question
  * somebody has here is *what happens*. So this leads with the path a record
  * takes, drawn, and puts the numbers underneath where they belong.
  *
- * Everything shown is read from the blueprint at publish time, so the panel
- * cannot promise something installing does not give you.
+ * Then it was a modal, which was the wrong container for the same reason the
+ * gallery stopped being one: this is a screenful of reading that somebody
+ * compares against another pack, sends to a colleague, and comes back to.
+ * None of that survives a dialog. It has its own page now, and this file
+ * holds only the contents of it — `PackBody` — so nothing about the layout
+ * had to be rewritten to move it.
  */
 
-import { useEffect, useRef } from 'react';
 import type { Pack } from './PackCard';
 
 const CEILING: Record<string, string> = {
@@ -22,67 +25,19 @@ const CEILING: Record<string, string> = {
   restricted: 'sensitive personal data',
 };
 
-export function PackDetail({
-  pack,
-  onClose,
-  onUse,
-}: {
-  pack: Pack;
-  onClose: () => void;
-  onUse: () => void;
-}) {
+export function PackBody({ pack }: { pack: Pack }) {
   const c = pack.contents;
   // Same reason as the card: a pack published before previews existed still
   // has to open rather than throw.
   const preview = c.preview ?? { flow: [], askedFor: [], deciders: [] };
-  const panel = useRef<HTMLDivElement>(null);
-
-  /*
-   * Focus moves in, Escape closes, and focus goes back where it came from.
-   * A panel that claims `aria-modal` and does none of this is the failure
-   * this project has already made once, recorded as entry 16.
-   */
-  useEffect(() => {
-    const returnTo = document.activeElement as HTMLElement | null;
-    panel.current?.focus();
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => {
-      window.removeEventListener('keydown', onKey);
-      returnTo?.focus?.();
-    };
-  }, [onClose]);
-
   const years = c.policy.retentionDays ? Math.round(c.policy.retentionDays / 365) : null;
 
   return (
-    <div className="pd" role="dialog" aria-modal="true" aria-labelledby="pd-title">
-      <div className="pd__panel">
-        <header className="pd__head">
-          <div>
-            <span className="pd__cat">{pack.category}</span>
-            <h2 id="pd-title">{pack.name}</h2>
-          </div>
-          <button type="button" className="pd__close" onClick={onClose} aria-label="Close">
-            <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" aria-hidden="true">
-              <path d="m5 5 10 10M15 5 5 15" />
-            </svg>
-          </button>
-        </header>
-
-        {/*
-          * The scrolling region takes the focus, and is focusable.
-          *
-          * axe's `scrollable-region-focusable`, and it is a real fault rather
-          * than a technicality: somebody using a keyboard could open this
-          * panel and not be able to scroll it, which on a long pack means
-          * they can read the first screen and nothing else.
-          */}
-        <div className="pd__scroll" ref={panel} tabIndex={0} role="region" aria-label="What is inside this pack">
+    <>
+          {/* The audience line is in the page header, above the title's rule.
+              It was here as well, so the page opened by saying the same
+              sentence twice. */}
           <p className="pd__summary">{pack.summary}</p>
-          <p className="pd__audience">{pack.audience}</p>
 
           <section className="pd__section">
             <h3>What happens to a record</h3>
@@ -227,18 +182,6 @@ export function PackDetail({
               can go live.
             </p>
           </section>
-        </div>
-
-        <footer className="pd__foot">
-          <button type="button" className="pd__use" onClick={onUse}>
-            Use this
-          </button>
-          <button type="button" className="pd__cancel" onClick={onClose}>
-            Close
-          </button>
-          <span className="pd__footNote">Installing opens a draft. Nothing goes live until you publish it.</span>
-        </footer>
-      </div>
-    </div>
+    </>
   );
 }

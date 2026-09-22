@@ -1886,6 +1886,46 @@ a.cs__navItem {
   color: var(--ink-soft);
 }
 
+/*
+ * An action reads as a sentence and its outcome as a mark. They were a dash
+ * between two values, which is fine when both are there and reads as a missing
+ * word when one is not.
+ */
+.tr__actions li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.tr__actionName { color: var(--ink); }
+
+.tr__actionMark {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--paper-2);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+}
+
+.tr__actionMark[data-status='done'] {
+  background: var(--green-tint, #f4f8f5);
+  color: var(--green-deep);
+}
+
+.tr__actionMark[data-status='failed'],
+.tr__actionMark[data-status='dead'] {
+  background: #fdf4f3;
+  color: var(--red-text);
+}
+
+.tr__tries,
+.tr__result {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
 .tr__related { margin-top: 14px; }
 
 .ask__history { margin-top: 20px; }
@@ -1972,4 +2012,646 @@ a.cs__navItem {
   align-items: center;
   gap: 7px;
   margin-bottom: 7px;
+}
+
+/* ===================================================== the record, as a page */
+/*
+ * It was a panel under the work list. The decision somebody came to make was
+ * in one place and the button for it was in another, so this gives the record
+ * the page and puts the decision at the top of it.
+ */
+
+.cs__icon {
+  flex-shrink: 0;
+  margin-right: 6px;
+  margin-bottom: -2px;
+}
+
+/* A button is a row of icon and word. Without this the icon sits on the text
+   baseline and the word drops. */
+.cs__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cs__srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.rc {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.rc__bar {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.rc__back {
+  display: inline-flex;
+  align-items: center;
+  height: 34px;
+  padding: 0 12px 0 10px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: none;
+  font-family: inherit;
+  font-size: 13.5px;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+.rc__back:hover {
+  border-color: var(--line-strong);
+  color: var(--ink);
+}
+
+.rc__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.rc__ref {
+  margin: 0;
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 12.5px;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.rc__state {
+  margin: 4px 0 0;
+  font-family: var(--font-display), Georgia, serif;
+  font-size: 27px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  color: var(--ink);
+}
+
+.rc__meta {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* ---------------------------------------------------------- the decision */
+
+.rc__decision {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 20px;
+  border: 1px solid var(--green-border, #d5e5db);
+  border-left: 4px solid var(--green);
+  border-radius: 10px;
+  background: var(--green-tint, #f4f8f5);
+}
+
+.rc__decision[data-late='true'] {
+  border-color: var(--red-border);
+  border-left-color: var(--red-text);
+  background: #fdf4f3;
+}
+
+.rc__decisionText h3 {
+  margin: 0;
+  font-size: 15.5px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.rc__decisionText p {
+  margin: 4px 0 0;
+  max-width: 62ch;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--ink-soft);
+}
+
+.rc__decisionActions {
+  display: flex;
+  gap: 9px;
+  flex-shrink: 0;
+}
+
+/*
+ * A rejection asks why before it happens. The reason goes into the record's
+ * history and may reach the applicant, so it is a sentence somebody writes
+ * rather than a string this page invents.
+ */
+.rc__reason {
+  flex-basis: 100%;
+}
+
+.rc__reasonLabel {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.rc__reasonBox {
+  width: 100%;
+  padding: 9px 11px;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  background: var(--white);
+  font-family: inherit;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--ink);
+  resize: vertical;
+}
+
+.rc__reasonActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 9px;
+  margin-top: 10px;
+}
+
+/* ------------------------------------------------------------ the answers */
+
+.rc__body {
+  display: flex;
+  align-items: flex-start;
+  gap: 20px;
+}
+
+.rc__answers {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.rc__side {
+  width: 300px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.rc__next {
+  margin: 10px 0 0;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--ink);
+}
+
+.rc__sideNote {
+  margin: 10px 0 12px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+.rc__fields {
+  margin: 0;
+  padding: 4px 0;
+}
+
+.rc__field {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  align-items: baseline;
+  gap: 16px;
+  padding: 11px 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+.rc__field:last-child {
+  border-bottom: none;
+}
+
+.rc__label {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.rc__value {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--ink);
+}
+
+.rc__valueText {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.rc__blank {
+  color: var(--muted-2);
+}
+
+/*
+ * The classification, in words. It read CONF / INTE / REST — four letters of
+ * a word that decides who may see the value and how long it is kept, and
+ * nobody outside this codebase can expand INTE.
+ */
+.rc__class {
+  flex-shrink: 0;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  background: var(--paper-2);
+  color: var(--muted);
+  cursor: help;
+}
+
+.rc__class--confidential {
+  background: #fbf3e3;
+  color: #7a5a17;
+}
+
+.rc__class--restricted {
+  background: #fdf0ee;
+  color: var(--red-text);
+}
+
+.rc__trail {
+  margin-top: 2px;
+}
+
+/* ============================================ searching, filtering, sorting */
+
+.wk__controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--line);
+  background: var(--paper-3, #fbfaf7);
+}
+
+.wk__search {
+  display: flex;
+  align-items: center;
+  flex: 1 1 260px;
+  min-width: 0;
+  height: 34px;
+  padding: 0 11px;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  background: var(--white);
+  color: var(--muted);
+}
+
+.wk__search:focus-within {
+  border-color: var(--green);
+  box-shadow: 0 0 0 3px rgba(20, 102, 63, 0.09);
+}
+
+.wk__searchInput {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: none;
+  font-family: inherit;
+  font-size: 13.5px;
+  color: var(--ink);
+}
+
+.wk__searchInput:focus {
+  outline: none;
+}
+
+.wk__pick {
+  display: flex;
+  align-items: center;
+  height: 34px;
+  padding: 0 9px 0 11px;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  background: var(--white);
+  color: var(--muted);
+}
+
+.wk__pick:focus-within {
+  border-color: var(--green);
+}
+
+.wk__select {
+  border: none;
+  background: none;
+  font-family: inherit;
+  font-size: 13.5px;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.wk__select:focus {
+  outline: none;
+}
+
+.wk__more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 14px 18px;
+  border-top: 1px solid var(--line);
+}
+
+.wk__moreNote {
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+@media (max-width: 1080px) {
+  .rc__body {
+    flex-direction: column;
+  }
+
+  .rc__side {
+    width: 100%;
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .rc__side > * {
+    flex: 1 1 260px;
+  }
+
+  .rc__field {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ------------------------------------------------- a row's actions, quietly */
+/*
+ * A list row is not a call to action. Every row here carried a filled green
+ * button, so a screen of five rows had five equally loud primaries and the
+ * eye had nowhere to land. These are small, outlined and the same weight as
+ * each other; the one emphatic button in the product is the decision on the
+ * record's own page, where there is exactly one of it.
+ */
+
+.cs__rowActions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.cs__act {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--white);
+  font-family: inherit;
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.cs__act .cs__icon {
+  width: 13px;
+  height: 13px;
+  margin-right: 5px;
+  color: var(--muted);
+}
+
+.cs__act:hover:not(:disabled) {
+  border-color: var(--muted);
+  color: var(--ink);
+}
+
+.cs__act:hover:not(:disabled) .cs__icon {
+  color: var(--ink-soft);
+}
+
+/* The one that moves the record on. Marked by its colour, not by a fill —
+   enough to find at a glance, not enough to shout across five rows. */
+.cs__act--go {
+  border-color: var(--green-border, #d5e5db);
+  color: var(--green-deep);
+}
+
+.cs__act--go .cs__icon {
+  color: var(--green);
+}
+
+.cs__act--go:hover:not(:disabled) {
+  border-color: var(--green);
+  background: var(--green-tint, #f4f8f5);
+  color: var(--green-deep);
+}
+
+.cs__act:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* =================================================== where it sits, and trend */
+/*
+ * Two pictures under the nine numbers. They are deliberately quiet: a
+ * dashboard where the chart is the loudest thing on the page is a chart
+ * somebody reads instead of the number it came from.
+ */
+
+.ch {
+  padding: 18px 18px 16px;
+  border-top: 1px solid var(--line);
+}
+
+.ch__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.ch__title {
+  margin: 0;
+  font-family: var(--ui);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.ch__note {
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.ch__empty {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.ch__past {
+  color: var(--red-text);
+}
+
+.ch__within {
+  color: var(--muted-2, #a8a294);
+}
+
+/* ------------------------------------------------------------- the queues */
+
+.ch__bars {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.ch__bar {
+  display: grid;
+  grid-template-columns: 190px minmax(60px, 1fr) 34px 180px;
+  align-items: center;
+  gap: 12px;
+  font-size: 12.5px;
+}
+
+.ch__barName {
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ch__barTrack {
+  height: 9px;
+  border-radius: 999px;
+  background: var(--paper-2);
+  overflow: hidden;
+}
+
+.ch__barFill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--green);
+  transition: width 260ms ease;
+}
+
+/* A queue whose oldest record is past the state's own limit. The colour is
+   the state's declared SLA being broken, not an opinion about the number. */
+.ch__barFill[data-overdue='true'] {
+  background: var(--red-text);
+}
+
+.ch__barCount {
+  font-family: var(--font-mono), monospace;
+  font-size: 12.5px;
+  text-align: right;
+  color: var(--ink);
+}
+
+.ch__barAge {
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* -------------------------------------------------------------- the trend */
+
+.ch__plotWrap {
+  overflow-x: auto;
+}
+
+.ch__plot {
+  display: block;
+  width: 100%;
+  min-width: 420px;
+  height: auto;
+}
+
+.ch__grid {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+
+.ch__axis {
+  font-family: var(--ui);
+  font-size: 10px;
+  fill: var(--muted);
+}
+
+.ch__in {
+  fill: var(--green);
+}
+
+.ch__out {
+  fill: #c9d9cf;
+}
+
+.ch__key {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  margin: 10px 0 0;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.ch__keyItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ch__swatch {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+}
+
+.ch__swatch--in {
+  background: var(--green);
+}
+
+.ch__swatch--out {
+  background: #c9d9cf;
+}
+
+.ch__keyNote {
+  margin-left: auto;
+  color: var(--muted-2, #a8a294);
+}
+
+@media (max-width: 1080px) {
+  .ch__bar {
+    grid-template-columns: 130px minmax(50px, 1fr) 30px;
+  }
+
+  .ch__barAge {
+    display: none;
+  }
 }

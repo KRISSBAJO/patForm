@@ -61,7 +61,7 @@ import {
 import { applyImport, planImport } from '../runtime/import.js';
 import { dataMap } from '../runtime/privacy.js';
 import { issueApiKey, listApiKeys, revokeApiKey } from './keys.js';
-import { listRecordsPage } from './public.js';
+import { listRecordsPage, type RecordOrder } from './public.js';
 import {
   checkAnswers,
   loadDraft,
@@ -90,6 +90,7 @@ import {
   saveDraft as saveProcessDraft,
   testDraft,
   type NewProcess,
+  versionHistory,
 } from '../runtime/builder.js';
 
 /**
@@ -174,6 +175,16 @@ route('POST', /^\/api\/forms\/([a-z0-9_]+)\/submit$/, async ({ pool, engine, url
 
 route('GET', /^\/api\/builder\/processes$/, async ({ pool, principal }) =>
   listForBuilder(pool, principal),
+);
+
+/**
+ * Every published version of one process, and what changed at each.
+ *
+ * Read from `process_version`, which is append-only and refuses UPDATE by
+ * trigger — so this is the history rather than a story about it.
+ */
+route('GET', /^\/api\/builder\/processes\/([A-Za-z0-9_.-]+)\/versions$/, async ({ pool, principal, url }) =>
+  versionHistory(pool, principal, decodeURIComponent(url.pathname.split('/')[4]!)),
 );
 
 route('POST', /^\/api\/builder\/open$/, async ({ pool, principal }, body) => {
@@ -329,6 +340,8 @@ route('GET', /^\/api\/browse\/([a-z0-9_]+)$/, async ({ pool, principal, url }) =
     processKey: url.pathname.split('/').pop()!,
     state: url.searchParams.get('state') ?? undefined,
     completed: url.searchParams.has('completed') ? url.searchParams.get('completed') === 'true' : undefined,
+    query: url.searchParams.get('q') ?? undefined,
+    order: (url.searchParams.get('order') as RecordOrder | null) ?? undefined,
     limit: Number(url.searchParams.get('limit') ?? 25),
     cursor: url.searchParams.get('cursor') ?? undefined,
   }),

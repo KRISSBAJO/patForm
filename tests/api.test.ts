@@ -3,11 +3,11 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Blueprint } from '../src/blueprint/index.js';
-import { decodeCursor, encodeCursor, SCOPE_FOR, toPublicRecord } from '../src/api/public.js';
+import { decodeCursor, encodeCursor, RECORD_ORDERS, SCOPE_FOR, toPublicRecord } from '../src/api/public.js';
 import { OPENAPI } from '../src/api/openapi.js';
 import { parseCsv } from '../src/runtime/import.js';
 import { DEFINITIONS, MIN_COHORT } from '../src/runtime/metrics.js';
-import { WORKSPACE_GRANTS } from '../src/runtime/policy.js';
+import { redact, visibleFields, WORKSPACE_GRANTS } from '../src/runtime/policy.js';
 import { appUrl, invitationMail, resetMail, verificationMail } from '../src/runtime/platform-mail.js';
 import { verifyRelyKit } from '../src/runtime/delivery.js';
 import { createHmac } from 'node:crypto';
@@ -216,4 +216,51 @@ test('a rotation sends both versions, and either one verifies', () => {
   assert.equal(verifyRelyKit({ ...base, secret: 'whsec_old' }).ok, true);
   assert.equal(verifyRelyKit({ ...base, secret: 'whsec_new' }).ok, true);
   assert.equal(verifyRelyKit({ ...base, secret: 'whsec_unrelated' }).ok, false);
+});
+
+test('search cannot reach a field the role may not see', () => {
+  /*
+   * Records are searchable by any answer, which makes the set of searchable
+   * fields a disclosure surface in its own right. A hiring manager may not see
+   * a bank account; if they could search by one, "one record matches
+   * 12345678" would confirm the number without ever showing it, and a few
+   * hundred guesses would recover it.
+   *
+   * So the searchable keys are computed from the role before the query runs.
+   * This is that computation, and not a test of the SQL — but the SQL only
+   * ever matches keys this returns.
+   */
+  const manager = bp.roles.find((r) => r.key === 'hiring_manager')!;
+  assert.ok(manager.hiddenFields?.length, 'the fixture must hide something from the hiring manager');
+
+  const visible = visibleFields(bp, ['hiring_manager']);
+  for (const hidden of manager.hiddenFields!) {
+    assert.ok(!visible.includes(hidden), `${hidden} is hidden from this role and must not be searchable`);
+  }
+
+  // And a role that hides nothing keeps every field, rather than losing them
+  // to an over-eager intersection.
+  const admin = bp.roles.find((r) => (r.hiddenFields ?? []).length === 0);
+  if (admin) {
+    assert.equal(visibleFields(bp, [admin.key]).length, bp.data.fields.length);
+  }
+
+  /*
+   * Two roles intersect: holding a second, broader role is how somebody
+   * legitimately sees — and therefore searches — more. This is the same rule
+   * `redact` applies, and the two must not disagree.
+   */
+  const bothVisible = visibleFields(bp, bp.roles.map((r) => r.key));
+  const redacted = redact(bp, bp.roles.map((r) => r.key), Object.fromEntries(bp.data.fields.map((f) => [f.key, 'x'])));
+  const notRedacted = Object.entries(redacted)
+    .filter(([, v]) => v !== '[redacted]')
+    .map(([k]) => k);
+  assert.deepEqual([...bothVisible].sort(), [...notRedacted].sort());
+});
+
+test('an order is one of a fixed set, because a cursor means nothing under another', () => {
+  // A cursor encodes a position in one ordering. Letting a caller name a
+  // column would let them page through a sequence the cursor was not issued
+  // against, which silently skips and repeats rows.
+  assert.deepEqual([...RECORD_ORDERS], ['newest', 'oldest', 'reference']);
 });

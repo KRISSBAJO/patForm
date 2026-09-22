@@ -67,7 +67,15 @@ export interface CategoryRules {
   requires: Control[];
   /** What the dashboard watches for this kind of work. */
   monitors: { key: string; name: string; kind: string }[];
-  /** One sentence, shown on the pack, explaining what the category enforces. */
+  /**
+   * What the category promises, in one sentence, shown on every pack in it.
+   *
+   * Retention is stated as a floor — "at least five years" — because that is
+   * what `retentionFloorDays` is. A pack may keep records longer, and some
+   * should: a baptism register is kept permanently, and the sentence said
+   * "kept five years" directly above a panel saying "kept indefinitely". Two
+   * true statements that read as a contradiction are a page nobody trusts.
+   */
   says: string;
 }
 
@@ -114,7 +122,7 @@ export const RULES: Record<string, CategoryRules> = {
     retentionFloorDays: 3650,
     requires: ['records_when', 'restricted_hidden', 'decided_quickly', 'kept_long_enough', 'escalates'],
     monitors: [...WATCH_BASICS, ...WATCH_DECISIONS, ...WATCH_COMPLETION],
-    says: 'Looked at within a day, escalated to a director within two, and kept for ten years.',
+    says: 'Looked at within a day, escalated to a director within two, and kept at least ten years.',
   },
 
   /*
@@ -129,7 +137,7 @@ export const RULES: Record<string, CategoryRules> = {
     retentionFloorDays: 2555,
     requires: ['records_when', 'restricted_hidden', 'decided_quickly', 'kept_long_enough', 'escalates'],
     monitors: [...WATCH_BASICS, ...WATCH_DECISIONS, ...WATCH_COMPLETION, ...WATCH_AUTOMATION],
-    says: 'Assessed within two days, escalated to counsel within three, and kept for seven years.',
+    says: 'Assessed within two days, escalated to counsel within three, and kept at least seven years.',
   },
 
   Healthcare: {
@@ -139,7 +147,7 @@ export const RULES: Record<string, CategoryRules> = {
     retentionFloorDays: 3650,
     requires: ['restricted_hidden', 'decided_quickly', 'kept_long_enough', 'escalates'],
     monitors: [...WATCH_BASICS, ...WATCH_DECISIONS, ...WATCH_ABANDONMENT],
-    says: 'Triaged within a day, escalated to a clinical lead, and kept for ten years.',
+    says: 'Triaged within a day, escalated to a clinical lead, and kept at least ten years.',
   },
 
   /*
@@ -164,7 +172,7 @@ export const RULES: Record<string, CategoryRules> = {
     },
     requires: ['kept_long_enough', 'escalates', 'restricted_hidden'],
     monitors: [...WATCH_BASICS, ...WATCH_DECISIONS, ...WATCH_COMPLETION],
-    says: 'Over a thousand needs a controller as well, and everything is kept for seven years.',
+    says: 'Over a thousand needs a controller as well, and everything is kept at least seven years.',
   },
 
   People: {
@@ -174,7 +182,7 @@ export const RULES: Record<string, CategoryRules> = {
     retentionFloorDays: 2555,
     requires: ['restricted_hidden', 'kept_long_enough', 'escalates'],
     monitors: [...WATCH_BASICS, ...WATCH_DECISIONS, ...WATCH_COMPLETION],
-    says: 'Two days for a manager, then HR, and employment records kept for seven years.',
+    says: 'Two days for a manager, then HR, and employment records kept at least seven years.',
   },
 
   IT: {
@@ -209,7 +217,7 @@ export const RULES: Record<string, CategoryRules> = {
     retentionFloorDays: 1825,
     requires: ['restricted_hidden', 'escalates'],
     monitors: [...WATCH_BASICS, ...WATCH_COMPLETION, ...WATCH_ABANDONMENT],
-    says: 'A week with the minister, then the senior minister, and pastoral records kept five years.',
+    says: 'A week with the minister, then the senior minister, and pastoral records kept at least five years.',
   },
 
   Projects: {
@@ -239,7 +247,7 @@ export const RULES: Record<string, CategoryRules> = {
     retentionFloorDays: 1095,
     requires: ['restricted_hidden', 'escalates'],
     monitors: [...WATCH_BASICS, ...WATCH_COMPLETION],
-    says: 'Two days with the office, then the head, and kept for three years.',
+    says: 'Two days with the office, then the head, and kept at least three years.',
   },
 
   Community: {
@@ -249,7 +257,7 @@ export const RULES: Record<string, CategoryRules> = {
     retentionFloorDays: 1825,
     requires: ['escalates', 'restricted_hidden'],
     monitors: [...WATCH_BASICS, ...WATCH_COMPLETION, ...WATCH_ABANDONMENT],
-    says: 'Five days, then the trustees — and volunteer records kept for five years.',
+    says: 'Five days, then the trustees — and volunteer records kept at least five years.',
   },
 
   Facilities: {
@@ -289,7 +297,7 @@ export const RULES: Record<string, CategoryRules> = {
     retentionFloorDays: 3650,
     requires: ['escalates', 'kept_long_enough'],
     monitors: [...WATCH_BASICS, ...WATCH_DECISIONS],
-    says: 'Five days with legal, then counsel, and contracts kept for ten years.',
+    says: 'Five days with legal, then counsel, and contracts kept at least ten years.',
   },
 
   Procurement: {
@@ -309,7 +317,7 @@ export const RULES: Record<string, CategoryRules> = {
     },
     requires: ['escalates', 'kept_long_enough'],
     monitors: [...WATCH_BASICS, ...WATCH_DECISIONS],
-    says: 'Over five thousand needs a director, and supplier records are kept for seven years.',
+    says: 'Over five thousand needs a director, and supplier records are kept at least seven years.',
   },
 
   Sales: {

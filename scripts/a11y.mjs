@@ -273,6 +273,45 @@ async function main() {
     all.push(...(await audit(page, 'The automation rules')));
   }
 
+  /*
+   * The three views beside the editor.
+   *
+   * The preview renders the respondent's own components inside the builder's
+   * page, which is the sort of place a duplicate id or a heading level out of
+   * order appears — the form's h1 is an h1 again in a page that already has
+   * one. Worth scanning precisely because it is two designs in one document.
+   */
+  for (const [label, name] of [
+    ['Form preview', 'Preview'],
+    ['Version history', 'Versions'],
+    ['Scenario tests', 'Tests'],
+  ]) {
+    const tab = page.locator('.sp__tab', { hasText: new RegExp(`^${name}$`) }).first();
+    if (!(await tab.count())) continue;
+    await tab.click();
+    await page.waitForTimeout(1500);
+    all.push(...(await audit(page, label)));
+  }
+
+  // The header editor, which is a form inside a preview of a form. Back to
+  // the preview first — the loop above left the panel on Tests, and looking
+  // for a control on a tab that is not showing finds nothing and says
+  // nothing, which is how a flow silently stops being scanned.
+  const backToPreview = page.locator('.sp__tab', { hasText: /^Preview$/ }).first();
+  if (await backToPreview.count()) {
+    await backToPreview.click();
+    await page.waitForTimeout(900);
+  }
+  const editHeader = page.locator('.sp__link', { hasText: /Edit the header/ }).first();
+  if (await editHeader.count()) {
+    await editHeader.click();
+    await page.waitForTimeout(900);
+    all.push(...(await audit(page, 'The form header editor')));
+  }
+
+  await page.locator('.sp__tab', { hasText: /^Checks$/ }).first().click();
+  await page.waitForTimeout(500);
+
   const publish = page.locator('button', { hasText: /Publish/ }).first();
   if (await publish.count()) {
     await publish.click();

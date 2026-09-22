@@ -1,0 +1,288 @@
+'use client';
+
+/**
+ * One record, given the whole page.
+ *
+ * It was a panel below the work list: the thing somebody opens in order to
+ * make a decision, squeezed under the list they opened it from, with the
+ * decision buttons left behind in that list. So the answer to "should I
+ * approve this" was in one place and the Approve button was in another.
+ *
+ * Here the record is the page. The decision sits at the top, above the
+ * answers, because it is the reason anybody came — and it is the same call to
+ * the same endpoint the list made, checked by the runtime and not by this
+ * page.
+ */
+
+import { useState } from 'react';
+import { RecordTrail } from './Trail';
+import { Icon } from './Icon';
+import { answer, who } from './format';
+
+export interface RecordDetail {
+  instanceId: string;
+  reference: string;
+  version: number;
+  stateName: string;
+  nextAction: string;
+  viewerRoles: string[];
+  fields: { key: string; label: string; classification: string; value: unknown }[];
+}
+
+export interface PendingApproval {
+  instanceId: string;
+  approvalKey: string;
+  approvalName: string;
+  waitingHours: number;
+  late: boolean;
+  summary: string;
+}
+
+export interface PendingTask {
+  instanceId: string;
+  taskKey: string;
+  taskName: string;
+  assignee: string | null;
+  late: boolean;
+  summary: string;
+}
+
+/*
+ * The four-letter chips said CONF, INTE, REST and PUBL. They are the field's
+ * data classification, which decides who may see it and how long it is kept,
+ * and nobody outside this codebase reads "INTE".
+ */
+const CLASS_WORDS: Record<string, { short: string; long: string }> = {
+  public: { short: 'public', long: 'Public — no restriction on who may see this.' },
+  internal: { short: 'internal', long: 'Internal — for people in the workspace.' },
+  confidential: {
+    short: 'confidential',
+    long: 'Confidential — only roles this process grants sight of it.',
+  },
+  restricted: {
+    short: 'restricted',
+    long: 'Restricted — the tightest class. Special-category or financial.',
+  },
+};
+
+function classOf(key: string) {
+  return CLASS_WORDS[key] ?? { short: key, long: key };
+}
+
+export function RecordPage({
+  record,
+  approval,
+  task,
+  busy,
+  onBack,
+  onDecide,
+  onCompleteTask,
+  onExport,
+}: {
+  record: RecordDetail;
+  /** Set when this record is waiting on a decision from whoever is signed in. */
+  approval?: PendingApproval;
+  /** Set when a task on this record is assigned to them. */
+  task?: PendingTask;
+  busy: string | null;
+  onBack: () => void;
+  onDecide: (instanceId: string, approvalKey: string, decision: 'approved' | 'rejected', reason: string) => void;
+  onCompleteTask: (instanceId: string, taskKey: string) => void;
+  onExport: (instanceId: string, reference: string, format: 'json' | 'csv') => void;
+}) {
+  const [showTrail, setShowTrail] = useState(false);
+  const [reason, setReason] = useState('');
+  const [rejecting, setRejecting] = useState(false);
+
+  const working = busy !== null;
+  const shown = record.fields.filter((f) => f.value !== '[redacted]');
+  const hidden = record.fields.length - shown.length;
+
+  return (
+    <div className="rc">
+      <div className="rc__bar">
+        <button type="button" className="rc__back" onClick={onBack}>
+          <Icon name="back" />
+          Back to your work
+        </button>
+        <span style={{ flexGrow: 1 }} />
+        <button type="button" className="cs__btn" onClick={() => onExport(record.instanceId, record.reference, 'json')}>
+          <Icon name="export" />
+          Export
+        </button>
+        <button type="button" className="cs__btn" onClick={() => onExport(record.instanceId, record.reference, 'csv')}>
+          <Icon name="table" />
+          CSV
+        </button>
+      </div>
+
+      <header className="rc__head">
+        <div>
+          {/* The reference is in the page heading already; repeating it here
+              made the page open with the same string twice. */}
+          <h2 className="rc__state">{record.stateName}</h2>
+          <p className="rc__meta">
+            Version {record.version} · you are seeing this as{' '}
+            {record.viewerRoles.join(', ') || 'somebody with no role in this process'}
+          </p>
+        </div>
+      </header>
+
+      {/*
+        * The decision, above everything.
+        *
+        * Shown only when the runtime already has work waiting for this person
+        * on this record — the same source the work list reads. A button that
+        * appears and then gets refused teaches people to distrust the page.
+        */}
+      {approval && (
+        <section className="rc__decision" data-late={approval.late ? 'true' : undefined}>
+          <div className="rc__decisionText">
+            <h3>{approval.approvalName}</h3>
+            <p>
+              Waiting {approval.waitingHours}h{approval.late ? ' — past its service level' : ''}. {approval.summary}
+            </p>
+          </div>
+
+          {rejecting ? (
+            <div className="rc__reason">
+              <label className="rc__reasonLabel" htmlFor="reject-reason">
+                Why are you rejecting this? The applicant may be told.
+              </label>
+              <textarea
+                id="reject-reason"
+                className="rc__reasonBox"
+                rows={3}
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+              />
+              <div className="rc__reasonActions">
+                <button type="button" className="cs__btn" onClick={() => setRejecting(false)}>
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="cs__btn cs__btn--danger"
+                  disabled={working || !reason.trim()}
+                  onClick={() => onDecide(record.instanceId, approval.approvalKey, 'rejected', reason.trim())}
+                >
+                  <Icon name="reject" />
+                  Confirm rejection
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="rc__decisionActions">
+              <button type="button" className="cs__btn" disabled={working} onClick={() => setRejecting(true)}>
+                <Icon name="reject" />
+                Reject
+              </button>
+              <button
+                type="button"
+                className="cs__btn cs__btn--primary"
+                disabled={working}
+                onClick={() => onDecide(record.instanceId, approval.approvalKey, 'approved', 'Approved in the console')}
+              >
+                <Icon name="approve" />
+                Approve
+              </button>
+            </div>
+          )}
+        </section>
+      )}
+
+      {task && (
+        <section className="rc__decision" data-late={task.late ? 'true' : undefined}>
+          <div className="rc__decisionText">
+            <h3>{task.taskName}</h3>
+            <p>
+              Assigned to {who(task.assignee)}
+              {task.late ? ' — overdue' : ''}. {task.summary}
+            </p>
+          </div>
+          <div className="rc__decisionActions">
+            <button
+              type="button"
+              className="cs__btn cs__btn--primary"
+              disabled={working}
+              onClick={() => onCompleteTask(record.instanceId, task.taskKey)}
+            >
+              <Icon name="done" />
+              Mark done
+            </button>
+          </div>
+        </section>
+      )}
+
+      <div className="rc__body">
+        <div className="rc__answers">
+          <div className="cs__panel">
+            <div className="cs__panelHead">
+              <h2 className="cs__tab">What they sent</h2>
+              {hidden > 0 && (
+                <span className="cs__sort">
+                  {hidden} {hidden === 1 ? 'answer is' : 'answers are'} hidden from your role
+                </span>
+              )}
+            </div>
+            <dl className="rc__fields">
+              {record.fields.map((f) => (
+                /*
+                  * The chip lives inside the <dd>, not beside it. A <div> in a
+                  * <dl> may hold a dt/dd pair and nothing else — a third
+                  * element makes the whole list malformed, and a screen reader
+                  * then has no reliable pairing between any label and any
+                  * value on the page.
+                  */
+                <div className="rc__field" key={f.key}>
+                  <dt className="rc__label">{f.label}</dt>
+                  <dd className="rc__value">
+                    <span className="rc__valueText">
+                      {f.value === '[redacted]' ? (
+                        <span className="cs__redacted">hidden from your role</span>
+                      ) : (
+                        (answer(f.value) ?? <span className="rc__blank">not answered</span>)
+                      )}
+                    </span>
+                    <span className={`rc__class rc__class--${f.classification}`} title={classOf(f.classification).long}>
+                      {classOf(f.classification).short}
+                    </span>
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+        </div>
+
+        <aside className="rc__side">
+          <div className="cs__card">
+            <span className="cs__cardLabel">WHAT HAPPENS NEXT</span>
+            <p className="rc__next">{record.nextAction}</p>
+          </div>
+
+          <div className="cs__card">
+            <span className="cs__cardLabel">THE TRAIL</span>
+            <p className="rc__sideNote">
+              Every event, job, attempt and result for this record — what ran, in what order, and what failed.
+            </p>
+            <button type="button" className="cs__btn" aria-expanded={showTrail} onClick={() => setShowTrail((w) => !w)}>
+              <Icon name={showTrail ? 'hide' : 'trail'} />
+              {showTrail ? 'Hide the trail' : 'Show the trail'}
+            </button>
+          </div>
+        </aside>
+      </div>
+
+      {showTrail && (
+        <div className="cs__panel rc__trail">
+          <div className="cs__panelHead">
+            <h2 className="cs__tab">The trail</h2>
+          </div>
+          <div style={{ padding: '14px 18px' }}>
+            <RecordTrail instanceId={record.instanceId} />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

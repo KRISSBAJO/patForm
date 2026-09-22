@@ -18,12 +18,21 @@ async function get<T>(path: string): Promise<T> {
   return body as T;
 }
 
+/*
+ * One action the runtime ran. Every field is required and named as the API
+ * names it, on purpose: the previous version guessed at `actionKey` and
+ * `action_key`, both optional, and the API sends neither. Two optional guesses
+ * cost nothing to compile and rendered every action in the trail as a dash.
+ */
 interface Attempt {
-  actionKey?: string;
-  action_key?: string;
+  id: number;
+  action: string;
   status: string;
-  attempts?: number;
-  error?: string | null;
+  attempts: number;
+  performedBy: string | null;
+  completedAt: string | null;
+  lastError: string | null;
+  result: string | null;
 }
 
 interface TraceStep {
@@ -40,7 +49,7 @@ interface TraceStep {
     doneAt: string | null;
     lastError: string | null;
   } | null;
-  actions?: Attempt[];
+  actions: Attempt[];
 }
 
 interface InstanceTrace {
@@ -59,6 +68,36 @@ interface InstanceTrace {
  * happened is first, because somebody asking "why did this stall" is following
  * a story, not scanning a log.
  */
+/*
+ * The action keys, in words.
+ *
+ * This page is read by somebody answering "what happened to my application",
+ * often under pressure, sometimes an auditor. `send_email` is the key the
+ * blueprint uses and not a sentence. Anything unmapped falls back to the key
+ * with its underscores opened out, so a new action reads badly rather than
+ * disappearing — the failure mode that produced the dashes in the first place.
+ */
+const ACTION_WORDS: Record<string, string> = {
+  send_email: 'sent an email',
+  request_approval: 'asked for a decision',
+  call_webhook: 'called a webhook',
+  create_task: 'created a task',
+  assign: 'assigned it to somebody',
+  set_field: 'set a field',
+  generate_document: 'produced a document',
+  schedule_timer: 'set a timer',
+  cancel_timer: 'cancelled a timer',
+};
+
+function actionName(key: string): string {
+  return ACTION_WORDS[key] ?? key.replace(/_/g, ' ');
+}
+
+/** "3 tries", never "1 attempt(s)". Callers only show this above one. */
+function tries(n: number): string {
+  return n === 1 ? '1 try' : `${n} tries`;
+}
+
 export function RecordTrail({ instanceId }: { instanceId: string }) {
   const [trace, setTrace] = useState<InstanceTrace | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -94,7 +133,7 @@ export function RecordTrail({ instanceId }: { instanceId: string }) {
           <ul>
             {trace.stuck.map((s) => (
               <li key={s.jobId}>
-                {s.transitionKey} — {s.attempts} attempt(s)
+                {s.transitionKey} — {tries(s.attempts)}
                 {s.lastError ? `: ${s.lastError}` : ''}
               </li>
             ))}
@@ -132,18 +171,24 @@ export function RecordTrail({ instanceId }: { instanceId: string }) {
 
             {step.job && (
               <div className="tr__job">
-                {step.job.transitionKey} · {step.job.attempts} attempt(s) ·{' '}
-                {step.job.doneAt ? 'done' : 'not done'}
+                {step.job.transitionKey} · {step.job.doneAt ? 'done' : 'not done'}
+                {step.job.attempts > 1 && ` · ${tries(step.job.attempts)}`}
                 {step.job.lastError && <div className="tr__error">{step.job.lastError}</div>}
               </div>
             )}
 
             {step.actions?.length ? (
               <ul className="tr__actions">
-                {step.actions.map((a, i) => (
-                  <li key={i}>
-                    {a.actionKey ?? a.action_key} — {a.status}
-                    {a.error && <span className="tr__error"> {a.error}</span>}
+                {step.actions.map((a) => (
+                  <li key={a.id}>
+                    <span className="tr__actionName">{actionName(a.action)}</span>
+                    <span className="tr__actionMark" data-status={a.status}>
+                      {a.status}
+                    </span>
+                    {a.attempts > 1 && <span className="tr__tries">{tries(a.attempts)}</span>}
+                    {/* What it produced, by identifier — never contents. */}
+                    {a.result && <span className="tr__result">{a.result}</span>}
+                    {a.lastError && <span className="tr__error"> {a.lastError}</span>}
                   </li>
                 ))}
               </ul>

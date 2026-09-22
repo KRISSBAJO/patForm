@@ -631,3 +631,70 @@
   margin-top: 2px;
   color: var(--green);
 }
+
+/* ========================================================== the pack, as a page
+   The panel above is gone; these are the frame that replaced it. Everything
+   inside — the flow, the columns, the guarantees — is unchanged, which is the
+   point of having moved only the container. */
+
+/* `.gl` is the page frame and carries no gutter of its own — the gallery's
+   own band and body each supply theirs. A single column needs its own. */
+.pdp {
+  max-width: 940px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 28px 28px 80px;
+}
+
+.pd__back {
+  display: inline-block;
+  margin-bottom: 18px;
+  font-size: 13.5px;
+  color: var(--green-deep);
+  text-decoration: none;
+}
+
+.pd__back:hover {
+  text-decoration: underline;
+}
+
+.pdp__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--card-line);
+}
+
+.pdp__title {
+  margin: 6px 0 0;
+  font-family: var(--font-display), Georgia, serif;
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+
+.pdp__actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 7px;
+  flex-shrink: 0;
+  max-width: 260px;
+  text-align: right;
+}
+
+.pdp__body {
+  padding-top: 4px;
+}
+
+/* The preview is a link now rather than a button, so it needs a link's
+   defaults undone rather than a button's. */
+a.pk__preview {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+}

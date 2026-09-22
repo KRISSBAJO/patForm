@@ -602,7 +602,7 @@ function inContainer(tools: Tools): boolean {
 /**
  * The connection string as the tool will see it.
  *
- * `127.0.0.1:55801` is the port Docker publishes on the *host*. Run pg_dump
+ * `127.0.0.1:15432` is the port Docker publishes on the *host*. Run pg_dump
  * inside the container and that address is the container's own loopback, where
  * nothing is listening — so the connection is refused by a machine that is
  * running the database perfectly well. Inside, it is the default port on

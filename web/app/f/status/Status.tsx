@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import '../[process]/form.css';
+import '../../../components/form-surface.css';
 
 /**
  * §6.3's respondent status page, and §20.1 step 6: when an approver asks for

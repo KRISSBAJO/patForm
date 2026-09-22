@@ -1,0 +1,320 @@
+/*
+ * The panel beside the editor: preview, versions, tests.
+ *
+ * It borrows the respondent form's own stylesheet for the preview rather than
+ * restating it, so the preview cannot look like something the form does not.
+ * Everything here is chrome around that.
+ */
+
+.sp {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-left: 1px solid var(--line);
+  background: var(--paper-3, #fbfaf7);
+}
+
+.sp__tabs {
+  display: flex;
+  flex-shrink: 0;
+  gap: 2px;
+  padding: 8px 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.sp__tab {
+  flex: 1;
+  min-height: 32px;
+  padding: 0 6px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: none;
+  font-family: var(--ui);
+  font-size: 12.5px;
+  color: var(--muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.sp__tab:hover {
+  color: var(--ink);
+}
+
+.sp__tab[aria-selected='true'] {
+  color: var(--green-deep);
+  border-bottom-color: var(--green);
+  font-weight: 600;
+}
+
+.sp__tab:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.sp__scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* The diagnostics panel draws its own border; inside this column it would be
+   a second line against the first. */
+.sp .bd__diag {
+  border-left: none;
+}
+
+.sp__body {
+  padding: 14px 14px 40px;
+}
+
+.sp__note {
+  margin: 0 0 12px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+.sp__none {
+  margin: 14px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+.sp__warn {
+  margin: 12px 0 0;
+  padding: 9px 11px;
+  border: 1px solid #edcdc9;
+  background: #fdf4f3;
+  border-radius: 6px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: #8a352f;
+}
+
+/* ------------------------------------------------------------- preview */
+
+/*
+ * The form is built for a 640px column and this panel is narrower, so it is
+ * scaled rather than reflowed. Reflowing it would show a layout the
+ * respondent never gets — which is the one thing a preview must not do.
+ */
+.sp__frame {
+  width: 100%;
+  overflow: hidden;
+  border: 1px solid var(--card-line, #e4e2dd);
+  border-radius: 10px;
+  background: var(--paper);
+}
+
+.sp__frame .fm {
+  width: 680px;
+  min-height: 0;
+  padding-bottom: 24px;
+  transform: scale(0.62);
+  transform-origin: top left;
+  /* Scaling leaves the box its unscaled height, so pull the difference back. */
+  margin-bottom: -38%;
+}
+
+.sp__frame .fm__shell {
+  max-width: 640px;
+}
+
+/* ------------------------------------------------------------ versions */
+
+.sp__versions {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sp__version {
+  margin-bottom: 10px;
+  padding: 11px 13px;
+  background: #fff;
+  border: 1px solid var(--card-line, #e4e2dd);
+  border-radius: 8px;
+}
+
+.sp__versionHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.sp__versionHead strong {
+  font-family: var(--ui);
+  font-size: 14px;
+  color: var(--ink);
+}
+
+.sp__versionWhen {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.sp__versionWho {
+  margin: 3px 0 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.sp__changes {
+  margin: 0;
+  padding-left: 17px;
+  list-style: disc;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--ink-soft);
+}
+
+/* --------------------------------------------------------------- tests */
+
+.sp__pass,
+.sp__fail {
+  margin: 14px 0 10px;
+  font-family: var(--ui);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.sp__pass {
+  color: var(--green-deep);
+}
+
+.sp__fail {
+  color: #8a352f;
+}
+
+.sp__test {
+  margin-bottom: 8px;
+  padding: 10px 12px;
+  background: #fff;
+  border: 1px solid var(--card-line, #e4e2dd);
+  border-radius: 8px;
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+.sp__test--bad {
+  border-color: #e3bdb8;
+  box-shadow: inset 3px 0 0 #a8544c;
+}
+
+.sp__test header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.sp__test header strong {
+  font-family: var(--ui);
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.sp__test header span {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.sp__testMark {
+  margin-left: auto;
+}
+
+.sp__test--ok .sp__testMark {
+  color: var(--green-deep);
+}
+
+.sp__test--bad .sp__testMark {
+  color: #8a352f;
+}
+
+.sp__test p {
+  margin: 4px 0 0;
+  color: #8a352f;
+}
+
+/* ------------------------------------------------ editing the header */
+
+.sp__link {
+  display: inline-block;
+  margin-bottom: 10px;
+  padding: 0;
+  border: none;
+  background: none;
+  font-family: var(--ui);
+  font-size: 12.5px;
+  color: var(--green-deep);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.sp__brand {
+  margin-bottom: 14px;
+  padding: 12px 13px;
+  background: #fff;
+  border: 1px solid var(--card-line, #e4e2dd);
+  border-radius: 9px;
+}
+
+.sp__brandRow {
+  display: block;
+  margin-bottom: 9px;
+}
+
+.sp__brandRow > span {
+  display: block;
+  margin-bottom: 4px;
+  font-family: var(--ui);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink-soft);
+}
+
+.sp__brandInput {
+  width: 100%;
+  min-height: 32px;
+  padding: 0 9px;
+  border: 1px solid var(--card-line, #e4e2dd);
+  border-radius: 6px;
+  background: #fff;
+  font-family: var(--ui);
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.sp__brandInput[aria-invalid='true'] {
+  border-color: #c08a84;
+}
+
+.sp__brandColour {
+  display: flex;
+  gap: 8px;
+}
+
+.sp__brandSwatch {
+  width: 40px;
+  min-height: 32px;
+  padding: 2px;
+  border: 1px solid var(--card-line, #e4e2dd);
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.sp__brandHex {
+  flex: 1;
+  font-family: var(--mono, ui-monospace, monospace);
+}
+
+.sp__brandNote {
+  margin: 10px 0 0;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--muted);
+}

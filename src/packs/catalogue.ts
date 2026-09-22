@@ -1443,7 +1443,7 @@ export const CATALOGUE: PackSpec[] = [
     fields: [
       f.person('candidate_name', 'Who is being baptised'),
       f.date('candidate_dob', 'Date of birth'),
-      f.choice('rite_kind', 'Which', ['infant_baptism', 'believer_baptism', 'dedication', 'confirmation']),
+      f.choice('rite_kind', 'Which of these', ['infant_baptism', 'believer_baptism', 'dedication', 'confirmation']),
       f.date('hoped_date', 'Date you hope for'),
       f.notes('godparents', 'Godparents or sponsors', false),
     ],

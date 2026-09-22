@@ -281,6 +281,15 @@ function describeResult(result: unknown): string | null {
  * a retry outranks a wait, and a record doing exactly what it should say so
  * plainly rather than being described in a way that sounds like a problem.
  */
+/*
+ * "1 time(s)" is a programmer writing for a compiler. This line is read by
+ * somebody explaining to an applicant why their form has not moved, and
+ * sometimes by an auditor.
+ */
+function plural(n: number, word: string): string {
+  return `${n} ${word}${n === 1 ? '' : 's'}`;
+}
+
 function diagnose(
   instance: { completed_at: Date | null; outcome: string | null; state: string },
   state: { name: string; type: string; slaHours?: number } | undefined,
@@ -294,11 +303,11 @@ function diagnose(
 
   const retrying = stuck.filter((s) => s.last_error);
   if (retrying.length) {
-    return `Retrying: "${retrying[0]!.transition_key}" has failed ${retrying[0]!.attempts} time(s) and will be attempted again — ${retrying[0]!.last_error}.`;
+    return `Retrying: "${retrying[0]!.transition_key}" has failed ${plural(retrying[0]!.attempts, 'time')} and will be attempted again — ${retrying[0]!.last_error}.`;
   }
 
   if (stuck.length) {
-    return `Queued: ${stuck.length} job(s) scheduled and not yet run. If this does not clear, no worker is running.`;
+    return `Queued: ${plural(stuck.length, 'job')} scheduled and not yet run. If this does not clear, no worker is running.`;
   }
 
   const failedActions = steps.flatMap((s) => s.actions).filter((a) => a.status !== 'done');

@@ -496,6 +496,40 @@ function transitions(spec: PackSpec, rules: CategoryRules) {
  * transition needs a distinct key — they become idempotency keys, and two the
  * same would collapse into one run.
  */
+/*
+ * Short answers next to each other.
+ *
+ * A date, a number and a yes/no each need a fraction of a line, and a column
+ * of them reads as a longer form than it is. Runs of short answers are paired
+ * off; anything that needs room keeps the full width, and a run with an odd
+ * one left over leaves it full rather than stranding half a line.
+ *
+ * Only ever a pair, never three: a third of a line is a judgement about
+ * particular content, and this does not know the content.
+ */
+const SHORT_TYPES = new Set(['date', 'time', 'number', 'currency', 'phone', 'yes_no', 'dropdown', 'rating']);
+
+function widths(fields: { key: string; type: string }[]): { widths?: Record<string, 'half'> } {
+  const out: Record<string, 'half'> = {};
+  let run: string[] = [];
+
+  const pairOff = () => {
+    for (let i = 0; i + 1 < run.length; i += 2) {
+      out[run[i]!] = 'half';
+      out[run[i + 1]!] = 'half';
+    }
+    run = [];
+  };
+
+  for (const field of fields) {
+    if (SHORT_TYPES.has(field.type)) run.push(field.key);
+    else pairOff();
+  }
+  pairOff();
+
+  return Object.keys(out).length ? { widths: out } : {};
+}
+
 function landing(to: string, spec: PackSpec, tag: string, thresholdApproval?: string) {
   if (to === 'doing') return [{ do: 'create_task', key: `do_work_${tag}`, task: spec.task!.key }];
   if (to === 'done') return [{ do: 'send_email', key: `say_yes_${tag}`, template: 'approved' }];
@@ -812,12 +846,18 @@ export function buildBlueprint(spec: PackSpec): unknown {
         {
           key: 'you',
           title: 'About you',
-          sections: [{ key: 'who', fields: ['submitter_name', 'submitter_email'] }],
+          sections: [
+            {
+              key: 'who',
+              fields: ['submitter_name', 'submitter_email'],
+              widths: { submitter_name: 'half', submitter_email: 'half' },
+            },
+          ],
         },
         {
           key: 'details',
           title: spec.name,
-          sections: [{ key: 'what', fields: spec.fields.map((f) => f.key) }],
+          sections: [{ key: 'what', fields: spec.fields.map((f) => f.key), ...widths(spec.fields) }],
         },
       ],
     },

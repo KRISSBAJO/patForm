@@ -250,7 +250,13 @@
               "date_of_birth",
               "address",
               "member_since"
-            ]
+            ],
+            "widths": {
+              "full_name": "half",
+              "email": "half",
+              "phone": "half",
+              "date_of_birth": "half"
+            }
           }
         ]
       },
@@ -314,7 +320,11 @@
             "fields": [
               "reference_name",
               "reference_phone"
-            ]
+            ],
+            "widths": {
+              "reference_name": "half",
+              "reference_phone": "half"
+            }
           },
           {
             "key": "covenant",
