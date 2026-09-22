@@ -65,6 +65,31 @@ export interface GenerateOptions {
  * A model that fails a gate gets the diagnostics back once. A model that fails
  * twice does not get to publish, and the caller is told exactly why.
  */
+/**
+ * BLD-02 as a gate.
+ *
+ * Every generated process makes assumptions — the description never covers
+ * retention, or who approves what above which amount, or what happens when
+ * somebody does not reply. Declaring none is not confidence; it is the model
+ * not having been asked hard enough.
+ */
+function undeclaredAssumptions(bp: Blueprint): Diagnostic[] {
+  const assumptions = bp.intent.assumptions ?? [];
+  if (assumptions.length) return [];
+  return [
+    {
+      code: 'BLD003',
+      severity: 'error',
+      at: 'intent.assumptions',
+      message: 'This blueprint declares no assumptions, which is not credible for a generated process.',
+      fix:
+        'List what you decided that the description did not specify — retention, approval thresholds, what happens ' +
+        'when nobody replies, which fields are required — each with what it affects. Put anything you could not ' +
+        'decide in intent.openDecisions.',
+    },
+  ];
+}
+
 export async function generateBlueprint(
   provider: Provider,
   schema: Record<string, unknown>,
@@ -121,7 +146,7 @@ export async function generateBlueprint(
 
     // ------------------------------------------------------------ gate two
     const compiled = validate(parsed.data);
-    diagnostics = compiled.items;
+    diagnostics = [...compiled.items, ...undeclaredAssumptions(parsed.data)];
     attempts.push({
       attempt,
       meta: response.meta,
@@ -131,10 +156,31 @@ export async function generateBlueprint(
       warnings: compiled.warnings,
     });
 
-    if (compiled.publishable) {
+    /*
+     * A blueprint that declares no assumptions is not finished being
+     * generated.
+     *
+     * BLD-02 asks for assumptions and missing decisions, and adding the
+     * fields plus a line in the prompt did not produce them: the first run
+     * against "something for handling requests from staff, manager signs off"
+     * came back with a complete process and both arrays empty. A model asked
+     * for something optional at the end of a long instruction will skip it.
+     *
+     * So it is a gate rather than a request, repaired through the same loop as
+     * a compiler error. A *hand-written* blueprint legitimately declares none —
+     * a person decided everything deliberately — which is why this lives here
+     * and not in the compiler.
+     */
+    const undeclared = undeclaredAssumptions(parsed.data);
+    if (compiled.publishable && !undeclared.length) {
       blueprint = parsed.data;
       decision = 'publishable';
       break;
+    }
+    if (compiled.publishable) {
+      // It compiles; it is only under-declared. Keep it, so a second refusal
+      // to answer still hands back a working process rather than nothing.
+      blueprint = parsed.data;
     }
 
     decision = 'blocked';

@@ -9,7 +9,7 @@ import type { Diagnostic } from '../compiler/diagnostics.js';
  * record says exactly which instructions produced it. Eval results are only
  * comparable within a version.
  */
-export const PROMPT_VERSION = 'blueprint-gen@2';
+export const PROMPT_VERSION = 'blueprint-gen@3';
 
 export const SYSTEM_PROMPT = `You design business processes for an operations platform.
 
@@ -107,7 +107,17 @@ Tests
 
 # What you return
 
-One JSON object and nothing else. No prose, no markdown fence, no explanation. If the description is too vague to model, still return a blueprint: make reasonable assumptions, and record what you assumed in intent.outcome so a human can correct it.`;
+One JSON object and nothing else. No prose, no markdown fence, no explanation.
+
+If the description is too vague to model, still return a blueprint. Record
+what you decided for them in intent.assumptions — each with the statement and
+what it affects — and what you could not decide in intent.openDecisions, each
+with the question, what you did provisionally, and how much it matters.
+
+These are the two fields a reviewer reads first, so put the real ones there.
+An empty assumptions array on a three-sentence description is not confidence,
+it is a missed chance to tell somebody what you guessed. Do not repeat them in
+intent.outcome: that field is for the result the process produces.`;
 
 export function userTurn(description: string, pack?: string): string {
   const packLine = pack

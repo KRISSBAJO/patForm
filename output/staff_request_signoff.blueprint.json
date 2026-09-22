@@ -1,0 +1,1648 @@
+{
+  "schemaVersion": "0.1",
+  "key": "staff_request_signoff",
+  "name": "Staff Request with Manager Sign-off",
+  "description": "A general-purpose intake process for requests raised by staff (equipment, software access, training, travel or other), triaged by the service desk, signed off by the requester's line manager, with a second sign-off by finance above a cost threshold, then fulfilled and closed with a written outcome.",
+  "intent": {
+    "outcome": "Every request raised by a member of staff reaches a recorded decision by their line manager (and finance where the cost is material), is either fulfilled by the service desk or declined with a reason, and leaves an auditable outcome summary against the requester and the reference number.",
+    "owner": "operations_team",
+    "respondents": "Employees and contractors raising a request about their own work needs",
+    "expectedVolume": {
+      "count": 60,
+      "per": "month"
+    },
+    "sensitivityCeiling": "confidential",
+    "completionState": "request_fulfilled",
+    "retentionDays": 1095,
+    "assumptions": [
+      {
+        "statement": "\"Requests from staff\" means internal work requests (equipment, software access, training, travel, other) rather than HR matters such as leave, grievances or pay changes, which usually need different data and different approvers.",
+        "affects": "data.fields request_type choices, experience pages, absence of any restricted health or payroll fields"
+      },
+      {
+        "statement": "The line manager who signs off is identified by an email address typed on the form by the requester, because no org-chart lookup was described.",
+        "affects": "workflow.approvals.manager_signoff approvers, data.fields line_manager_email"
+      },
+      {
+        "statement": "Manager sign-off alone is enough below an estimated cost of 1000; at or above that a finance approver also signs off.",
+        "affects": "workflow transitions manager_approved_standard / manager_approved_high_value, role finance_approver"
+      },
+      {
+        "statement": "A service desk triage step exists before the manager sees the request, so incomplete or unclear requests are returned to the requester rather than wasting manager time.",
+        "affects": "state with_service_desk, task triage_request, state returned_to_requester"
+      },
+      {
+        "statement": "Service desk responds within 1 working day, managers within 3 days, fulfilment within 5 days; requests with no manager decision after 10 days expire.",
+        "affects": "state slaHours values and all timer transitions"
+      },
+      {
+        "statement": "Supporting evidence is recorded as a quote or catalogue reference rather than uploaded, so no attachments are collected.",
+        "affects": "data.fields supporting_reference, absence of file fields"
+      },
+      {
+        "statement": "Costs are captured as a single estimated amount in GBP rather than itemised lines.",
+        "affects": "data.fields estimated_cost constraints"
+      }
+    ],
+    "openDecisions": [
+      {
+        "question": "What kinds of request does this actually cover, and are there types that need a different approver (for example anything touching payroll, access to personal data, or safety equipment)?",
+        "provisionally": "Five generic request types with an 'other' free-text explanation, all routed to the line manager",
+        "importance": "blocking"
+      },
+      {
+        "question": "What is the real value threshold above which finance must also approve, and who is the finance approver?",
+        "provisionally": "Threshold set at 1000 with a single finance_approver role",
+        "importance": "review"
+      },
+      {
+        "question": "Should a request be blocked if the named line manager is not actually the requester's manager?",
+        "provisionally": "No validation; the service desk checks this during triage and can return the request for correction",
+        "importance": "review"
+      },
+      {
+        "question": "Are the SLA and expiry durations (1 / 3 / 5 / 10 days) acceptable to the business?",
+        "provisionally": "Used as placeholders in every timer transition; easy to change in one place per state",
+        "importance": "minor"
+      },
+      {
+        "question": "Does fulfilment need to hand off to another system (purchasing, IT provisioning) rather than being closed manually by the service desk?",
+        "provisionally": "A request.fulfilled webhook event is emitted so a downstream system can pick it up, but fulfilment is completed as a human task",
+        "importance": "review"
+      }
+    ]
+  },
+  "roles": [
+    {
+      "key": "staff_requester",
+      "name": "Member of staff (requester)",
+      "kind": "respondent",
+      "capabilities": [
+        "submit",
+        "view",
+        "edit"
+      ],
+      "hiddenFields": [
+        "triage_note",
+        "decision_note",
+        "fulfilment_note"
+      ],
+      "editableFields": [
+        "request_summary",
+        "request_detail",
+        "other_type_detail",
+        "needed_by_date",
+        "estimated_cost",
+        "cost_centre",
+        "supporting_reference"
+      ]
+    },
+    {
+      "key": "line_manager",
+      "name": "Line manager",
+      "kind": "internal",
+      "capabilities": [
+        "view",
+        "approve",
+        "report"
+      ],
+      "hiddenFields": [],
+      "editableFields": [
+        "decision_note"
+      ]
+    },
+    {
+      "key": "finance_approver",
+      "name": "Finance approver",
+      "kind": "internal",
+      "capabilities": [
+        "view",
+        "approve",
+        "report"
+      ],
+      "hiddenFields": [],
+      "editableFields": [
+        "decision_note"
+      ]
+    },
+    {
+      "key": "operations_team",
+      "name": "Service desk",
+      "kind": "internal",
+      "capabilities": [
+        "view",
+        "edit",
+        "operate",
+        "report"
+      ],
+      "hiddenFields": [],
+      "editableFields": [
+        "reference_number",
+        "triage_note",
+        "fulfilment_note"
+      ]
+    },
+    {
+      "key": "process_admin",
+      "name": "Process administrator",
+      "kind": "internal",
+      "capabilities": [
+        "view",
+        "administer",
+        "report"
+      ],
+      "hiddenFields": [],
+      "editableFields": []
+    }
+  ],
+  "data": {
+    "fields": [
+      {
+        "key": "requester_name",
+        "type": "short_text",
+        "label": "Your full name",
+        "required": true,
+        "classification": "confidential",
+        "constraints": {
+          "maxLength": 120
+        },
+        "setBy": "respondent"
+      },
+      {
+        "key": "requester_email",
+        "type": "email",
+        "label": "Your work email address",
+        "help": "We send all updates about this request to this address.",
+        "required": true,
+        "classification": "confidential",
+        "setBy": "respondent"
+      },
+      {
+        "key": "department",
+        "type": "dropdown",
+        "label": "Your department",
+        "required": true,
+        "classification": "internal",
+        "choices": [
+          {
+            "value": "operations",
+            "label": "Operations"
+          },
+          {
+            "value": "sales",
+            "label": "Sales"
+          },
+          {
+            "value": "finance",
+            "label": "Finance"
+          },
+          {
+            "value": "technology",
+            "label": "Technology"
+          },
+          {
+            "value": "people",
+            "label": "People team"
+          },
+          {
+            "value": "other",
+            "label": "Other"
+          }
+        ],
+        "setBy": "respondent"
+      },
+      {
+        "key": "line_manager_email",
+        "type": "email",
+        "label": "Your line manager's work email address",
+        "help": "This is the person who will be asked to sign off your request.",
+        "required": true,
+        "classification": "confidential",
+        "setBy": "respondent"
+      },
+      {
+        "key": "request_type",
+        "type": "single_choice",
+        "label": "What kind of request is this?",
+        "required": true,
+        "classification": "internal",
+        "choices": [
+          {
+            "value": "equipment",
+            "label": "Equipment or hardware"
+          },
+          {
+            "value": "software_access",
+            "label": "Software or system access"
+          },
+          {
+            "value": "training",
+            "label": "Training or conference"
+          },
+          {
+            "value": "travel",
+            "label": "Work travel"
+          },
+          {
+            "value": "other",
+            "label": "Something else"
+          }
+        ],
+        "setBy": "respondent"
+      },
+      {
+        "key": "other_type_detail",
+        "type": "long_text",
+        "label": "Tell us what kind of request this is",
+        "required": true,
+        "classification": "confidential",
+        "constraints": {
+          "maxLength": 500
+        },
+        "setBy": "respondent"
+      },
+      {
+        "key": "request_summary",
+        "type": "short_text",
+        "label": "One-line summary of your request",
+        "help": "For example: second monitor for home desk setup.",
+        "required": true,
+        "classification": "confidential",
+        "constraints": {
+          "maxLength": 140
+        },
+        "setBy": "respondent"
+      },
+      {
+        "key": "request_detail",
+        "type": "long_text",
+        "label": "What do you need, and why do you need it?",
+        "help": "Your manager decides from this text, so say what the request is for and what happens if it is not approved.",
+        "required": true,
+        "classification": "confidential",
+        "constraints": {
+          "minLength": 20,
+          "maxLength": 2000
+        },
+        "setBy": "respondent"
+      },
+      {
+        "key": "needed_by_date",
+        "type": "date",
+        "label": "Date you need this by",
+        "required": true,
+        "classification": "internal",
+        "constraints": {
+          "minDaysFromToday": 1,
+          "maxDaysFromToday": 365
+        },
+        "setBy": "respondent"
+      },
+      {
+        "key": "estimated_cost",
+        "type": "currency",
+        "label": "Estimated cost",
+        "help": "Enter 0 if there is no cost. Requests of 1000 or more also need finance sign-off.",
+        "required": true,
+        "classification": "internal",
+        "constraints": {
+          "min": 0,
+          "max": 100000,
+          "currencyCode": "GBP"
+        },
+        "setBy": "respondent"
+      },
+      {
+        "key": "cost_centre",
+        "type": "short_text",
+        "label": "Cost centre code (if you know it)",
+        "required": false,
+        "classification": "internal",
+        "constraints": {
+          "maxLength": 20
+        },
+        "setBy": "respondent"
+      },
+      {
+        "key": "supporting_reference",
+        "type": "short_text",
+        "label": "Quote, catalogue or course reference",
+        "help": "Give the reference where the price can be checked rather than attaching a document.",
+        "required": false,
+        "classification": "internal",
+        "constraints": {
+          "maxLength": 80
+        },
+        "setBy": "respondent"
+      },
+      {
+        "key": "confirm_policy",
+        "type": "signature_ack",
+        "label": "I confirm the information above is accurate and this request is for my own work needs.",
+        "required": true,
+        "classification": "internal",
+        "setBy": "respondent"
+      },
+      {
+        "key": "reference_number",
+        "type": "short_text",
+        "label": "Request reference",
+        "help": "Generated when the request is submitted and quoted in every message.",
+        "classification": "internal",
+        "setBy": "system"
+      },
+      {
+        "key": "triage_note",
+        "type": "long_text",
+        "label": "Service desk triage note",
+        "classification": "internal",
+        "setBy": "operator"
+      },
+      {
+        "key": "decision_note",
+        "type": "long_text",
+        "label": "Approver's decision note",
+        "classification": "confidential",
+        "setBy": "operator"
+      },
+      {
+        "key": "fulfilment_note",
+        "type": "long_text",
+        "label": "What was provided and when",
+        "classification": "internal",
+        "setBy": "operator"
+      }
+    ],
+    "identity": [
+      "requester_email",
+      "request_type",
+      "needed_by_date"
+    ]
+  },
+  "experience": {
+    "pages": [
+      {
+        "key": "about_you",
+        "title": "About you",
+        "description": "So we know who is asking and who signs it off.",
+        "sections": [
+          {
+            "key": "your_details",
+            "title": "Your details",
+            "fields": [
+              "requester_name",
+              "requester_email",
+              "department",
+              "line_manager_email"
+            ]
+          }
+        ]
+      },
+      {
+        "key": "your_request",
+        "title": "Your request",
+        "sections": [
+          {
+            "key": "request_basics",
+            "title": "What you need",
+            "fields": [
+              "request_type",
+              "request_summary",
+              "request_detail",
+              "needed_by_date"
+            ]
+          },
+          {
+            "key": "other_type_section",
+            "title": "More about this request",
+            "fields": [
+              "other_type_detail"
+            ],
+            "visibleWhen": {
+              "op": "eq",
+              "left": {
+                "field": "request_type"
+              },
+              "right": {
+                "literal": "other"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "key": "cost_and_confirmation",
+        "title": "Cost and confirmation",
+        "sections": [
+          {
+            "key": "cost_section",
+            "title": "Cost",
+            "description": "An estimate is fine. Give us a reference where the price can be checked.",
+            "fields": [
+              "estimated_cost",
+              "cost_centre",
+              "supporting_reference"
+            ]
+          },
+          {
+            "key": "confirmation_section",
+            "title": "Confirmation",
+            "fields": [
+              "confirm_policy"
+            ]
+          }
+        ]
+      }
+    ],
+    "showProgress": true,
+    "saveAndResume": true,
+    "confirmation": {
+      "message": "Thanks — your request is with the service desk. We check it within one working day and then send it to your line manager for sign-off. You will get an email at every step.",
+      "showStatusLink": true
+    },
+    "locales": [
+      "en"
+    ]
+  },
+  "workflow": {
+    "states": [
+      {
+        "key": "with_requester",
+        "name": "With the requester (drafting)",
+        "type": "initial",
+        "publicLabel": "Not yet submitted"
+      },
+      {
+        "key": "with_service_desk",
+        "name": "With the service desk (triage)",
+        "type": "active",
+        "slaHours": 24,
+        "publicLabel": "Being checked"
+      },
+      {
+        "key": "with_line_manager",
+        "name": "With the line manager",
+        "type": "waiting",
+        "slaHours": 72,
+        "publicLabel": "Waiting for your manager"
+      },
+      {
+        "key": "with_finance",
+        "name": "With finance",
+        "type": "waiting",
+        "slaHours": 72,
+        "publicLabel": "Waiting for finance sign-off"
+      },
+      {
+        "key": "returned_to_requester",
+        "name": "Back with the requester for changes",
+        "type": "waiting",
+        "publicLabel": "Needs more from you"
+      },
+      {
+        "key": "with_operations_fulfilment",
+        "name": "With the service desk (fulfilment)",
+        "type": "active",
+        "slaHours": 120,
+        "publicLabel": "Being arranged"
+      },
+      {
+        "key": "request_fulfilled",
+        "name": "Fulfilled and closed",
+        "type": "terminal",
+        "outcome": "success",
+        "publicLabel": "Done"
+      },
+      {
+        "key": "request_declined",
+        "name": "Declined",
+        "type": "terminal",
+        "outcome": "rejected",
+        "publicLabel": "Declined"
+      },
+      {
+        "key": "request_withdrawn",
+        "name": "Withdrawn by the requester",
+        "type": "terminal",
+        "outcome": "cancelled",
+        "publicLabel": "Withdrawn"
+      },
+      {
+        "key": "closed_no_response",
+        "name": "Closed with no response",
+        "type": "terminal",
+        "outcome": "expired",
+        "publicLabel": "Closed — no response"
+      }
+    ],
+    "transitions": [
+      {
+        "key": "submit_request",
+        "from": "with_requester",
+        "to": "with_service_desk",
+        "trigger": {
+          "on": "submission"
+        },
+        "actions": [
+          {
+            "do": "create_task",
+            "key": "open_triage",
+            "task": "triage_request"
+          },
+          {
+            "do": "send_email",
+            "key": "email_ack",
+            "template": "ack_submitted"
+          },
+          {
+            "do": "call_webhook",
+            "key": "hook_received",
+            "event": "request.received",
+            "includeFields": [
+              "reference_number",
+              "request_type",
+              "department",
+              "estimated_cost",
+              "needed_by_date"
+            ]
+          }
+        ]
+      },
+      {
+        "key": "triage_nudge",
+        "from": "with_service_desk",
+        "to": "with_service_desk",
+        "trigger": {
+          "on": "timer",
+          "afterHoursInState": 24
+        },
+        "actions": [
+          {
+            "do": "send_email",
+            "key": "email_triage_overdue",
+            "template": "triage_overdue"
+          }
+        ]
+      },
+      {
+        "key": "triage_to_manager",
+        "from": "with_service_desk",
+        "to": "with_line_manager",
+        "trigger": {
+          "on": "task_completed",
+          "task": "triage_request"
+        },
+        "actions": [
+          {
+            "do": "request_approval",
+            "key": "ask_manager",
+            "approval": "manager_signoff"
+          },
+          {
+            "do": "send_email",
+            "key": "email_manager_ask",
+            "template": "manager_action_required"
+          }
+        ]
+      },
+      {
+        "key": "triage_return_for_info",
+        "from": "with_service_desk",
+        "to": "returned_to_requester",
+        "trigger": {
+          "on": "manual",
+          "by": [
+            "operations_team"
+          ]
+        },
+        "actions": [
+          {
+            "do": "send_email",
+            "key": "email_return_triage",
+            "template": "changes_requested"
+          }
+        ]
+      },
+      {
+        "key": "manager_reminder_loop",
+        "from": "with_line_manager",
+        "to": "with_line_manager",
+        "trigger": {
+          "on": "timer",
+          "afterHoursInState": 48
+        },
+        "actions": [
+          {
+            "do": "send_email",
+            "key": "email_manager_reminder",
+            "template": "manager_reminder"
+          }
+        ]
+      },
+      {
+        "key": "manager_no_response_expiry",
+        "from": "with_line_manager",
+        "to": "closed_no_response",
+        "trigger": {
+          "on": "timer",
+          "afterHoursInState": 240
+        },
+        "actions": [
+          {
+            "do": "send_email",
+            "key": "email_expiry_manager",
+            "template": "expiry_notice"
+          },
+          {
+            "do": "call_webhook",
+            "key": "hook_expired_manager",
+            "event": "request.expired",
+            "includeFields": [
+              "reference_number",
+              "request_type",
+              "estimated_cost"
+            ]
+          }
+        ]
+      },
+      {
+        "key": "manager_approved_high_value",
+        "from": "with_line_manager",
+        "to": "with_finance",
+        "trigger": {
+          "on": "approval_decided",
+          "approval": "manager_signoff",
+          "decision": "approved"
+        },
+        "when": {
+          "op": "gte",
+          "left": {
+            "field": "estimated_cost"
+          },
+          "right": {
+            "literal": 1000
+          }
+        },
+        "actions": [
+          {
+            "do": "request_approval",
+            "key": "ask_finance",
+            "approval": "finance_signoff"
+          },
+          {
+            "do": "send_email",
+            "key": "email_finance_ask",
+            "template": "finance_action_required"
+          }
+        ]
+      },
+      {
+        "key": "manager_approved_standard",
+        "from": "with_line_manager",
+        "to": "with_operations_fulfilment",
+        "trigger": {
+          "on": "approval_decided",
+          "approval": "manager_signoff",
+          "decision": "approved"
+        },
+        "when": {
+          "op": "lt",
+          "left": {
+            "field": "estimated_cost"
+          },
+          "right": {
+            "literal": 1000
+          }
+        },
+        "actions": [
+          {
+            "do": "create_task",
+            "key": "open_fulfilment",
+            "task": "fulfil_request"
+          },
+          {
+            "do": "send_email",
+            "key": "email_approved",
+            "template": "approved_notice"
+          }
+        ]
+      },
+      {
+        "key": "manager_rejected",
+        "from": "with_line_manager",
+        "to": "request_declined",
+        "trigger": {
+          "on": "approval_decided",
+          "approval": "manager_signoff",
+          "decision": "rejected"
+        },
+        "actions": [
+          {
+            "do": "send_email",
+            "key": "email_declined_manager",
+            "template": "declined_notice"
+          },
+          {
+            "do": "call_webhook",
+            "key": "hook_declined_manager",
+            "event": "request.declined",
+            "includeFields": [
+              "reference_number",
+              "request_type",
+              "estimated_cost"
+            ]
+          }
+        ]
+      },
+      {
+        "key": "manager_requested_changes",
+        "from": "with_line_manager",
+        "to": "returned_to_requester",
+        "trigger": {
+          "on": "approval_decided",
+          "approval": "manager_signoff",
+          "decision": "changes_requested"
+        },
+        "actions": [
+          {
+            "do": "send_email",
+            "key": "email_changes_manager",
+            "template": "changes_requested"
+          }
+        ]
+      },
+      {
+        "key": "finance_reminder_loop",
+        "from": "with_finance",
+        "to": "with_finance",
+        "trigger": {
+          "on": "timer",
+          "afterHoursInState": 48
+        },
+        "actions": [
+          {
+            "do": "send_email",
+            "key": "email_finance_reminder",
+            "template": "finance_reminder"
+          }
+        ]
+      },
+      {
+        "key": "finance_no_response_expiry",
+        "from": "with_finance",
+        "to": "closed_no_response",
+        "trigger": {
+          "on": "timer",
+          "afterHoursInState": 240
+        },
+        "actions": [
+          {
+            "do": "send_email",
+            "key": "email_expiry_finance",
+            "template": "expiry_notice"
+          }
+        ]
+      },
+      {
+        "key": "finance_approved",
+        "from": "with_finance",
+        "to": "with_operations_fulfilment",
+        "trigger": {
+          "on": "approval_decided",
+          "approval": "finance_signoff",
+          "decision": "approved"
+        },
+        "actions": [
+          {
+            "do": "create_task",
+            "key": "open_fulfilment_hv",
+            "task": "fulfil_request"
+          },
+          {
+            "do": "send_email",
+            "key": "email_approved_hv",
+            "template": "approved_notice"
+          }
+        ]
+      },
+      {
+        "key": "finance_rejected",
+        "from": "with_finance",
+        "to": "request_declined",
+        "trigger": {
+          "on": "approval_decided",
+          "approval": "finance_signoff",
+          "decision": "rejected"
+        },
+        "actions": [
+          {
+            "do": "send_email",
+            "key": "email_declined_finance",
+            "template": "declined_notice"
+          },
+          {
+            "do": "call_webhook",
+            "key": "hook_declined_finance",
+            "event": "request.declined",
+            "includeFields": [
+              "reference_number",
+              "request_type",
+              "estimated_cost"
+            ]
+          }
+        ]
+      },
+      {
+        "key": "finance_requested_changes",
+        "from": "with_finance",
+        "to": "returned_to_requester",
+        "trigger": {
+          "on": "approval_decided",
+          "approval": "finance_signoff",
+          "decision": "changes_requested"
+        },
+        "actions": [
+          {
+            "do": "send_email",
+            "key": "email_changes_finance",
+            "template": "changes_requested"
+          }
+        ]
+      },
+      {
+        "key": "requester_updated_request",
+        "from": "returned_to_requester",
+        "to": "with_service_desk",
+        "trigger": {
+          "on": "record_updated"
+        },
+        "actions": [
+          {
+            "do": "create_task",
+            "key": "reopen_triage",
+            "task": "triage_request"
+          }
+        ]
+      },
+      {
+        "key": "changes_reminder_loop",
+        "from": "returned_to_requester",
+        "to": "returned_to_requester",
+        "trigger": {
+          "on": "timer",
+          "afterHoursInState": 120
+        },
+        "actions": [
+          {
+            "do": "send_email",
+            "key": "email_changes_reminder",
+            "template": "changes_reminder"
+          }
+        ]
+      },
+      {
+        "key": "requester_withdraws",
+        "from": "returned_to_requester",
+        "to": "request_withdrawn",
+        "trigger": {
+          "on": "manual",
+          "by": [
+            "staff_requester",
+            "operations_team"
+          ]
+        },
+        "actions": [
+          {
+            "do": "send_email",
+            "key": "email_withdrawn",
+            "template": "withdrawn_confirmation"
+          }
+        ]
+      },
+      {
+        "key": "returned_abandoned",
+        "from": "returned_to_requester",
+        "to": "closed_no_response",
+        "trigger": {
+          "on": "timer",
+          "afterHoursInState": 336
+        },
+        "actions": [
+          {
+            "do": "send_email",
+            "key": "email_expiry_returned",
+            "template": "expiry_notice"
+          }
+        ]
+      },
+      {
+        "key": "fulfilment_nudge",
+        "from": "with_operations_fulfilment",
+        "to": "with_operations_fulfilment",
+        "trigger": {
+          "on": "timer",
+          "afterHoursInState": 120
+        },
+        "actions": [
+          {
+            "do": "send_email",
+            "key": "email_fulfilment_overdue",
+            "template": "fulfilment_overdue"
+          }
+        ]
+      },
+      {
+        "key": "fulfilment_complete",
+        "from": "with_operations_fulfilment",
+        "to": "request_fulfilled",
+        "trigger": {
+          "on": "task_completed",
+          "task": "fulfil_request"
+        },
+        "actions": [
+          {
+            "do": "generate_document",
+            "key": "make_summary",
+            "document": "outcome_summary"
+          },
+          {
+            "do": "send_email",
+            "key": "email_fulfilled",
+            "template": "fulfilled_notice"
+          },
+          {
+            "do": "call_webhook",
+            "key": "hook_fulfilled",
+            "event": "request.fulfilled",
+            "includeFields": [
+              "reference_number",
+              "request_type",
+              "department",
+              "estimated_cost",
+              "cost_centre"
+            ]
+          }
+        ]
+      }
+    ],
+    "approvals": [
+      {
+        "key": "manager_signoff",
+        "name": "Line manager sign-off",
+        "approvers": [
+          {
+            "field": "line_manager_email"
+          }
+        ],
+        "mode": "single",
+        "allowRequestChanges": true,
+        "reasonRequired": true,
+        "contextFields": [
+          "reference_number",
+          "requester_name",
+          "department",
+          "request_type",
+          "request_summary",
+          "request_detail",
+          "needed_by_date",
+          "estimated_cost",
+          "supporting_reference",
+          "triage_note"
+        ],
+        "dueInHours": 72
+      },
+      {
+        "key": "finance_signoff",
+        "name": "Finance sign-off (1000 or more)",
+        "approvers": [
+          {
+            "role": "finance_approver"
+          }
+        ],
+        "mode": "single",
+        "allowRequestChanges": true,
+        "reasonRequired": true,
+        "contextFields": [
+          "reference_number",
+          "request_summary",
+          "estimated_cost",
+          "cost_centre",
+          "supporting_reference",
+          "decision_note"
+        ],
+        "dueInHours": 72
+      }
+    ],
+    "tasks": [
+      {
+        "key": "triage_request",
+        "name": "Triage the request",
+        "description": "Check the request is clear, the named line manager is right, and the cost has a checkable reference. Record what you found in the triage note, then complete this task to send it for sign-off, or return the request for changes.",
+        "assignee": {
+          "role": "operations_team"
+        },
+        "dueInHours": 24,
+        "blocking": true,
+        "completableBy": "any_operator"
+      },
+      {
+        "key": "fulfil_request",
+        "name": "Fulfil the approved request",
+        "description": "Arrange, order or provision what was approved. Record what was provided and when in the fulfilment note, then complete this task to close the request.",
+        "assignee": {
+          "role": "operations_team"
+        },
+        "dueInHours": 120,
+        "blocking": true,
+        "completableBy": "any_operator"
+      }
+    ],
+    "timezone": "Europe/London"
+  },
+  "communications": {
+    "email": [
+      {
+        "key": "ack_submitted",
+        "name": "Request received",
+        "class": "transactional",
+        "to": [
+          {
+            "submitter": true
+          }
+        ],
+        "cc": [],
+        "subject": "We have your request {{reference_number}}: {{request_summary}}",
+        "body": "Hi {{requester_name}},\n\nWe have your request ({{reference_number}}) for: {{request_summary}}.\n\nThe service desk will check it within one working day, then send it to {{line_manager_email}} for sign-off. You need it by {{needed_by_date}}, so if we have not confirmed a decision within three working days, reply to this email and we will chase it.\n\nService desk",
+        "attachments": []
+      },
+      {
+        "key": "manager_action_required",
+        "name": "Manager: sign-off needed",
+        "class": "notification",
+        "to": [
+          {
+            "field": "line_manager_email"
+          }
+        ],
+        "cc": [],
+        "replyTo": {
+          "role": "operations_team"
+        },
+        "subject": "Sign-off needed: {{requester_name}} - {{request_summary}} ({{reference_number}})",
+        "body": "{{requester_name}} in {{department}} has raised request {{reference_number}}.\n\nWhat they need: {{request_summary}}\nWhy: {{request_detail}}\nNeeded by: {{needed_by_date}}\nEstimated cost: {{estimated_cost}}\nService desk note: {{triage_note}}\n\nPlease approve, decline or ask for changes within three working days. Requests of 1000 or more also go to finance after your approval.\n\nService desk",
+        "attachments": []
+      },
+      {
+        "key": "manager_reminder",
+        "name": "Manager reminder",
+        "class": "reminder",
+        "to": [
+          {
+            "field": "line_manager_email"
+          }
+        ],
+        "cc": [
+          {
+            "role": "operations_team"
+          }
+        ],
+        "subject": "Still waiting on you: {{reference_number}} - {{request_summary}}",
+        "body": "Request {{reference_number}} from {{requester_name}} is still waiting for your sign-off. It is needed by {{needed_by_date}}.\n\nIf there is no decision within 10 days of it reaching you, we close the request and {{requester_name}} has to start again.\n\nService desk",
+        "attachments": []
+      },
+      {
+        "key": "finance_action_required",
+        "name": "Finance: sign-off needed",
+        "class": "notification",
+        "to": [
+          {
+            "role": "finance_approver"
+          }
+        ],
+        "cc": [],
+        "subject": "Finance sign-off needed: {{reference_number}} ({{estimated_cost}})",
+        "body": "Request {{reference_number}} has been approved by the line manager and is at or above the 1000 threshold.\n\nSummary: {{request_summary}}\nEstimated cost: {{estimated_cost}}\nCost centre: {{cost_centre}}\nPrice reference: {{supporting_reference}}\nManager note: {{decision_note}}\n\nPlease approve or decline within three working days.\n\nService desk",
+        "attachments": []
+      },
+      {
+        "key": "finance_reminder",
+        "name": "Finance reminder",
+        "class": "reminder",
+        "to": [
+          {
+            "role": "finance_approver"
+          }
+        ],
+        "cc": [],
+        "subject": "Reminder: finance sign-off for {{reference_number}}",
+        "body": "Request {{reference_number}} ({{estimated_cost}}) is still waiting for finance sign-off. It is needed by {{needed_by_date}}.\n\nService desk",
+        "attachments": []
+      },
+      {
+        "key": "changes_requested",
+        "name": "More information needed",
+        "class": "transactional",
+        "to": [
+          {
+            "submitter": true
+          }
+        ],
+        "cc": [],
+        "subject": "We need a bit more on request {{reference_number}}",
+        "body": "Hi {{requester_name}},\n\nWe cannot move request {{reference_number}} ({{request_summary}}) forward as it stands.\n\nWhat is needed: {{triage_note}}\nApprover's note, if any: {{decision_note}}\n\nOpen the request from the link on your confirmation page, update it and save. That sends it straight back to us. If we hear nothing in 14 days we will close the request.\n\nService desk",
+        "attachments": []
+      },
+      {
+        "key": "changes_reminder",
+        "name": "Reminder: your request is waiting on you",
+        "class": "reminder",
+        "to": [
+          {
+            "submitter": true
+          }
+        ],
+        "cc": [],
+        "subject": "Reminder: request {{reference_number}} is waiting on you",
+        "body": "Hi {{requester_name}},\n\nRequest {{reference_number}} still needs the changes we asked for: {{triage_note}}\n\nUpdate and save it to send it back to us. We will close it if we hear nothing within 14 days of our first message.\n\nService desk",
+        "attachments": []
+      },
+      {
+        "key": "approved_notice",
+        "name": "Request approved",
+        "class": "transactional",
+        "to": [
+          {
+            "submitter": true
+          }
+        ],
+        "cc": [
+          {
+            "field": "line_manager_email"
+          }
+        ],
+        "subject": "Approved: {{reference_number}} - {{request_summary}}",
+        "body": "Hi {{requester_name}},\n\nRequest {{reference_number}} ({{request_summary}}) has been approved.\n\nApprover's note: {{decision_note}}\n\nThe service desk is now arranging it and aims to have it done within five working days, ahead of your needed-by date of {{needed_by_date}}.\n\nService desk",
+        "attachments": []
+      },
+      {
+        "key": "declined_notice",
+        "name": "Request declined",
+        "class": "transactional",
+        "to": [
+          {
+            "submitter": true
+          }
+        ],
+        "cc": [],
+        "subject": "Declined: {{reference_number}} - {{request_summary}}",
+        "body": "Hi {{requester_name}},\n\nRequest {{reference_number}} ({{request_summary}}) has been declined.\n\nReason given: {{decision_note}}\n\nIf your circumstances change, talk to {{line_manager_email}} first and then raise a new request.\n\nService desk",
+        "attachments": []
+      },
+      {
+        "key": "fulfilled_notice",
+        "name": "Request fulfilled",
+        "class": "transactional",
+        "to": [
+          {
+            "submitter": true
+          }
+        ],
+        "cc": [],
+        "subject": "Done: {{reference_number}} - {{request_summary}}",
+        "body": "Hi {{requester_name}},\n\nRequest {{reference_number}} is complete.\n\nWhat we did: {{fulfilment_note}}\n\nA one-page summary is attached for your records. If anything is missing or wrong, reply within five working days and we will reopen it.\n\nService desk",
+        "attachments": [
+          "outcome_summary"
+        ]
+      },
+      {
+        "key": "expiry_notice",
+        "name": "Request closed with no response",
+        "class": "notification",
+        "to": [
+          {
+            "submitter": true
+          }
+        ],
+        "cc": [
+          {
+            "role": "operations_team"
+          }
+        ],
+        "subject": "Closed with no decision: {{reference_number}}",
+        "body": "Hi {{requester_name}},\n\nRequest {{reference_number}} ({{request_summary}}) has been closed because we did not get the decision or information needed in time.\n\nNothing has been ordered or arranged. If you still need this, raise a new request and let us know who should sign it off.\n\nService desk",
+        "attachments": []
+      },
+      {
+        "key": "withdrawn_confirmation",
+        "name": "Request withdrawn",
+        "class": "transactional",
+        "to": [
+          {
+            "submitter": true
+          }
+        ],
+        "cc": [],
+        "subject": "Withdrawn: {{reference_number}}",
+        "body": "Hi {{requester_name}},\n\nRequest {{reference_number}} ({{request_summary}}) has been withdrawn and closed. Nothing has been ordered or arranged.\n\nService desk",
+        "attachments": []
+      },
+      {
+        "key": "triage_overdue",
+        "name": "Service desk: triage overdue",
+        "class": "reminder",
+        "to": [
+          {
+            "role": "operations_team"
+          }
+        ],
+        "cc": [],
+        "subject": "Triage overdue: {{reference_number}} ({{request_type}})",
+        "body": "Request {{reference_number}} from {{requester_name}} has been waiting for triage for more than one working day. Needed by {{needed_by_date}}. Please triage it or return it to the requester today.",
+        "attachments": []
+      },
+      {
+        "key": "fulfilment_overdue",
+        "name": "Service desk: fulfilment overdue",
+        "class": "reminder",
+        "to": [
+          {
+            "role": "operations_team"
+          }
+        ],
+        "cc": [],
+        "subject": "Fulfilment overdue: {{reference_number}}",
+        "body": "Approved request {{reference_number}} ({{request_summary}}) has been open for fulfilment for more than five working days. Needed by {{needed_by_date}}. Please update the fulfilment note and close it, or tell the requester what is holding it up.",
+        "attachments": []
+      }
+    ],
+    "sms": [],
+    "fromName": "Service Desk"
+  },
+  "outputs": {
+    "documents": [
+      {
+        "key": "outcome_summary",
+        "name": "Request outcome summary",
+        "source": "html",
+        "templateRef": "templates/staff_request_outcome_summary.html",
+        "mapping": {
+          "reference": "reference_number",
+          "requester": "requester_name",
+          "department": "department",
+          "request_type": "request_type",
+          "summary": "request_summary",
+          "needed_by": "needed_by_date",
+          "estimated_cost": "estimated_cost",
+          "cost_centre": "cost_centre",
+          "price_reference": "supporting_reference",
+          "approver_note": "decision_note",
+          "what_we_did": "fulfilment_note"
+        },
+        "filename": "request-{{reference_number}}-summary.html",
+        "deliver": [
+          "attach_to_record",
+          "email"
+        ]
+      }
+    ],
+    "dashboard": {
+      "metrics": [
+        {
+          "key": "requests_received",
+          "name": "Requests received",
+          "kind": "intake"
+        },
+        {
+          "key": "fulfilment_rate",
+          "name": "Share of requests fulfilled",
+          "kind": "completion_rate"
+        },
+        {
+          "key": "end_to_end_time",
+          "name": "Time from submission to close",
+          "kind": "cycle_time"
+        },
+        {
+          "key": "manager_decision_time",
+          "name": "Time to manager sign-off",
+          "kind": "approval_time"
+        },
+        {
+          "key": "waiting_on_manager",
+          "name": "Age of requests with the line manager",
+          "kind": "stage_aging",
+          "state": "with_line_manager"
+        },
+        {
+          "key": "returned_rate",
+          "name": "Requests returned for changes",
+          "kind": "rework_rate"
+        },
+        {
+          "key": "abandoned_requests",
+          "name": "Requests closed with no response",
+          "kind": "abandonment"
+        }
+      ]
+    },
+    "webhookEvents": [
+      "request.received",
+      "request.declined",
+      "request.expired",
+      "request.fulfilled"
+    ],
+    "exportFields": [
+      "reference_number",
+      "department",
+      "request_type",
+      "request_summary",
+      "needed_by_date",
+      "estimated_cost",
+      "cost_centre",
+      "fulfilment_note"
+    ]
+  },
+  "tests": [
+    {
+      "key": "standard_request_fulfilled",
+      "kind": "happy_path",
+      "name": "Low-cost request: triage, manager approves, service desk fulfils",
+      "steps": [
+        {
+          "step": "submit",
+          "answers": {
+            "requester_name": "Dana Okoro",
+            "requester_email": "dana.okoro@example.com",
+            "department": "operations",
+            "line_manager_email": "sam.reid@example.com",
+            "request_type": "equipment",
+            "request_summary": "Second monitor for home desk",
+            "request_detail": "I review long documents daily and a second monitor would cut the time spent scrolling between versions.",
+            "needed_by_date": "2025-04-01",
+            "estimated_cost": 180,
+            "confirm_policy": true
+          }
+        },
+        {
+          "step": "complete_task",
+          "task": "triage_request",
+          "as": "operations_team"
+        },
+        {
+          "step": "decide",
+          "approval": "manager_signoff",
+          "as": "line_manager",
+          "decision": "approved",
+          "reason": "Reasonable and within team budget."
+        },
+        {
+          "step": "complete_task",
+          "task": "fulfil_request",
+          "as": "operations_team"
+        }
+      ],
+      "expect": {
+        "state": "request_fulfilled",
+        "emails": [
+          "ack_submitted",
+          "manager_action_required",
+          "approved_notice",
+          "fulfilled_notice"
+        ],
+        "documents": [
+          "outcome_summary"
+        ],
+        "openTasks": []
+      }
+    },
+    {
+      "key": "high_value_request_fulfilled",
+      "kind": "happy_path",
+      "name": "Request of 1000 or more also goes to finance",
+      "steps": [
+        {
+          "step": "submit",
+          "answers": {
+            "requester_name": "Priya Shah",
+            "requester_email": "priya.shah@example.com",
+            "department": "technology",
+            "line_manager_email": "sam.reid@example.com",
+            "request_type": "training",
+            "request_summary": "Three-day security certification course",
+            "request_detail": "The certification is required for us to keep running internal penetration tests without external help.",
+            "needed_by_date": "2025-06-10",
+            "estimated_cost": 2400,
+            "cost_centre": "TECH-204",
+            "supporting_reference": "Course ref SEC-441",
+            "confirm_policy": true
+          }
+        },
+        {
+          "step": "complete_task",
+          "task": "triage_request",
+          "as": "operations_team"
+        },
+        {
+          "step": "decide",
+          "approval": "manager_signoff",
+          "as": "line_manager",
+          "decision": "approved",
+          "reason": "Supports the 2025 team plan."
+        },
+        {
+          "step": "decide",
+          "approval": "finance_signoff",
+          "as": "finance_approver",
+          "decision": "approved",
+          "reason": "Within training budget for TECH-204."
+        },
+        {
+          "step": "complete_task",
+          "task": "fulfil_request",
+          "as": "operations_team"
+        }
+      ],
+      "expect": {
+        "state": "request_fulfilled",
+        "emails": [
+          "ack_submitted",
+          "manager_action_required",
+          "finance_action_required",
+          "approved_notice",
+          "fulfilled_notice"
+        ],
+        "documents": [
+          "outcome_summary"
+        ]
+      }
+    },
+    {
+      "key": "manager_declines_request",
+      "kind": "rejection",
+      "name": "Manager declines with a reason",
+      "steps": [
+        {
+          "step": "submit",
+          "answers": {
+            "requester_name": "Lee Turner",
+            "requester_email": "lee.turner@example.com",
+            "department": "sales",
+            "line_manager_email": "sam.reid@example.com",
+            "request_type": "travel",
+            "request_summary": "Flight to regional sales conference",
+            "request_detail": "I would like to attend the regional conference to meet three accounts in person.",
+            "needed_by_date": "2025-05-02",
+            "estimated_cost": 640,
+            "confirm_policy": true
+          }
+        },
+        {
+          "step": "complete_task",
+          "task": "triage_request",
+          "as": "operations_team"
+        },
+        {
+          "step": "decide",
+          "approval": "manager_signoff",
+          "as": "line_manager",
+          "decision": "rejected",
+          "reason": "Those accounts are covered by the April visit already booked."
+        }
+      ],
+      "expect": {
+        "state": "request_declined",
+        "emails": [
+          "ack_submitted",
+          "manager_action_required",
+          "declined_notice"
+        ]
+      }
+    },
+    {
+      "key": "form_incomplete_no_manager",
+      "kind": "missing_data",
+      "name": "No line manager email and no justification, so nothing starts",
+      "steps": [
+        {
+          "step": "submit",
+          "answers": {
+            "requester_name": "Alex Moss",
+            "requester_email": "alex.moss@example.com",
+            "department": "people",
+            "request_type": "software_access",
+            "request_summary": "Access to the reporting tool",
+            "confirm_policy": true
+          }
+        }
+      ],
+      "expect": {
+        "instanceCount": 0
+      }
+    },
+    {
+      "key": "manager_never_responds",
+      "kind": "timeout",
+      "name": "Manager never decides, so the request is closed after 10 days",
+      "steps": [
+        {
+          "step": "submit",
+          "answers": {
+            "requester_name": "Dana Okoro",
+            "requester_email": "dana.okoro@example.com",
+            "department": "operations",
+            "line_manager_email": "onleave.manager@example.com",
+            "request_type": "equipment",
+            "request_summary": "Standing desk converter",
+            "request_detail": "My current desk cannot be raised and I would like to alternate between sitting and standing.",
+            "needed_by_date": "2025-05-20",
+            "estimated_cost": 220,
+            "confirm_policy": true
+          }
+        },
+        {
+          "step": "complete_task",
+          "task": "triage_request",
+          "as": "operations_team"
+        },
+        {
+          "step": "advance_hours",
+          "hours": 264
+        }
+      ],
+      "expect": {
+        "state": "closed_no_response",
+        "emails": [
+          "manager_reminder",
+          "expiry_notice"
+        ]
+      }
+    },
+    {
+      "key": "same_request_twice",
+      "kind": "duplicate",
+      "name": "Same person submits the same request twice on the same needed-by date",
+      "steps": [
+        {
+          "step": "submit",
+          "answers": {
+            "requester_name": "Dana Okoro",
+            "requester_email": "dana.okoro@example.com",
+            "department": "operations",
+            "line_manager_email": "sam.reid@example.com",
+            "request_type": "equipment",
+            "request_summary": "Second monitor for home desk",
+            "request_detail": "I review long documents daily and a second monitor would cut the time spent scrolling between versions.",
+            "needed_by_date": "2025-04-01",
+            "estimated_cost": 180,
+            "confirm_policy": true
+          }
+        },
+        {
+          "step": "submit",
+          "answers": {
+            "requester_name": "Dana Okoro",
+            "requester_email": "dana.okoro@example.com",
+            "department": "operations",
+            "line_manager_email": "sam.reid@example.com",
+            "request_type": "equipment",
+            "request_summary": "Second monitor (resend, not sure the first went through)",
+            "request_detail": "I review long documents daily and a second monitor would cut the time spent scrolling between versions.",
+            "needed_by_date": "2025-04-01",
+            "estimated_cost": 180,
+            "confirm_policy": true
+          }
+        }
+      ],
+      "expect": {
+        "state": "with_service_desk",
+        "instanceCount": 1
+      }
+    },
+    {
+      "key": "requester_cannot_operate",
+      "kind": "permission",
+      "name": "A member of staff cannot run service desk actions on requests",
+      "steps": [
+        {
+          "step": "attempt",
+          "as": "staff_requester",
+          "action": "operate",
+          "expectDenied": true
+        },
+        {
+          "step": "attempt",
+          "as": "staff_requester",
+          "action": "submit",
+          "expectDenied": false
+        },
+        {
+          "step": "attempt",
+          "as": "line_manager",
+          "action": "approve",
+          "expectDenied": false
+        }
+      ],
+      "expect": {}
+    }
+  ]
+}

@@ -30,9 +30,49 @@ create table actor (
   workspace_role text not null default 'read_only'
     check (workspace_role in ('owner','admin','builder','operator','approver','analyst','read_only')),
   active      boolean not null default true,
+  /*
+   * IAM-05, "Enterprise SSO and SCIM are deferred but the identity model must
+   * accommodate them" — marked *Design now*, which is the whole point: these
+   * two columns cost nothing today and are a migration of every account if
+   * they arrive later.
+   *
+   * `external_id` is SCIM's `externalId`: the identifier the customer's
+   * directory uses, which survives the person changing their name or email.
+   * `provisioned_by` says who owns this row — an account SCIM created must not
+   * be editable in the console, or the directory will overwrite the change on
+   * its next sync and nobody will know why.
+   */
+  external_id    text,
+  provisioned_by text not null default 'seed'
+    check (provisioned_by in ('seed', 'signup', 'invite', 'scim')),
   created_at  timestamptz not null default now(),
   unique (tenant_id, email)
 );
+
+-- One directory identifier per person is not enough. Somebody signs in with a
+-- password today, their company turns on Google tomorrow, and both have to
+-- reach the same account — so identities hang off the actor rather than
+-- living on it. Passwords stay in `credential`, which already had this shape.
+--
+-- The subject, never the email. An IdP's `sub` is stable; an email address is
+-- a display value that changes when somebody marries or a domain is bought.
+-- Matching on email is how one person ends up with two accounts, or worse,
+-- how two people end up with one.
+create table actor_identity (
+  id            uuid primary key default gen_random_uuid(),
+  actor_id      uuid not null references actor(id) on delete cascade,
+  provider      text not null,
+  subject       text not null,
+  -- What the address was when this was linked, for the audit rather than for
+  -- matching.
+  email_at_link text,
+  linked_at     timestamptz not null default now(),
+  last_seen_at  timestamptz,
+  unique (provider, subject)
+);
+
+create index actor_identity_by_actor on actor_identity (actor_id);
+create unique index actor_external_id on actor (tenant_id, external_id) where external_id is not null;
 
 -- §12.1 authentication. The hash is scrypt with a per-credential salt; the
 -- plaintext never reaches this table and never reaches a log.
@@ -727,3 +767,32 @@ create table pack_install (
 );
 
 create index pack_install_by_tenant on pack_install (tenant_id, installed_at desc);
+
+-- ------------------------------------------------------------- invitations
+--
+-- IAM-01's "or join a tenant workspace" and IAM-04's "owners can invite".
+--
+-- Only the hash is stored, like every other credential here: the link is the
+-- credential, and a dump of this table must not let somebody walk into a
+-- workspace.
+create table invitation (
+  id            uuid primary key default gen_random_uuid(),
+  tenant_id     uuid not null references tenant(id),
+  email         text not null,
+  workspace_role text not null
+    check (workspace_role in ('owner','admin','builder','operator','approver','analyst','read_only')),
+  -- Process roles to grant on acceptance, so somebody arrives able to do the
+  -- job they were invited for rather than able to see nothing.
+  process_roles jsonb not null default '[]'::jsonb,
+  token_hash    text not null unique,
+  invited_by    uuid not null references actor(id),
+  message       text not null default '',
+  expires_at    timestamptz not null,
+  accepted_at   timestamptz,
+  accepted_actor_id uuid references actor(id),
+  revoked_at    timestamptz,
+  created_at    timestamptz not null default now()
+);
+
+create index invitation_open on invitation (tenant_id, email)
+  where accepted_at is null and revoked_at is null;

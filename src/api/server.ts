@@ -14,6 +14,20 @@ import { runRetention } from '../runtime/retention.js';
 import { logIfEnabled, requestIdFrom, withTrace } from '../runtime/trace.js';
 import { traceByRequest, traceForInstance } from '../runtime/support.js';
 import { dashboard } from '../runtime/metrics.js';
+import {
+  acceptInvitation,
+  changeRole,
+  createWorkspace,
+  grantableRoles,
+  invite,
+  listInvitations,
+  listMembers,
+  readInvitation,
+  revokeInvitation,
+  setMemberActive,
+  InvalidInput,
+} from '../runtime/workspace.js';
+import type { WorkspaceRole } from '../runtime/policy.js';
 import { installPack, listInstalls, listPacks, publishPack, readPack } from '../runtime/packs.js';
 import { authorize, listGrants, registerClient, revokeGrant } from './oauth.js';
 import {
@@ -452,6 +466,60 @@ route('POST', /^\/api\/packs$/, async ({ pool, principal }, body) => {
   return publishPack(pool, { principal, packKey, name, summary, category, audience, blueprint });
 });
 
+
+// ------------------------------------------------------------------ people
+//
+// IAM-01 and IAM-04. The workspace-creation and invitation-acceptance routes
+// are above, before the session gate, because neither caller has a session.
+
+route('GET', /^\/api\/members$/, async ({ pool, principal }) => listMembers(pool, principal));
+
+route('GET', /^\/api\/members\/grantable$/, async ({ pool, principal, actorId }) => {
+  const { rows } = await pool.query<{ workspace_role: WorkspaceRole }>(
+    'select workspace_role from actor where id = $1',
+    [actorId],
+  );
+  // What this person may hand out, so the interface cannot offer a role the
+  // server will refuse.
+  return { roles: grantableRoles(rows[0]!.workspace_role) };
+});
+
+route('POST', /^\/api\/members\/([0-9a-f-]{36})\/deactivate$/, async ({ pool, principal, url }) =>
+  setMemberActive(pool, { principal, actorId: url.pathname.split('/')[3]!, active: false }),
+);
+
+route('POST', /^\/api\/members\/([0-9a-f-]{36})\/reactivate$/, async ({ pool, principal, url }) =>
+  setMemberActive(pool, { principal, actorId: url.pathname.split('/')[3]!, active: true }),
+);
+
+route('POST', /^\/api\/members\/([0-9a-f-]{36})\/role$/, async ({ pool, principal, url }, body) => {
+  const { workspaceRole } = body as { workspaceRole?: WorkspaceRole };
+  if (!workspaceRole) throw new HttpError(400, 'workspaceRole is required');
+  return changeRole(pool, { principal, actorId: url.pathname.split('/')[3]!, workspaceRole });
+});
+
+route('POST', /^\/api\/members\/([0-9a-f-]{36})\/revoke-sessions$/, async ({ pool, principal, url }) => {
+  await requireWorkspaceCapability(pool, principal, 'administer', 'members');
+  return { revoked: await revokeAllSessions(pool, url.pathname.split('/')[3]!) };
+});
+
+route('GET', /^\/api\/invitations$/, async ({ pool, principal }) => listInvitations(pool, principal));
+
+route('POST', /^\/api\/invitations$/, async ({ pool, principal }, body) => {
+  const { email, workspaceRole, processRoles, message } = body as {
+    email?: string; workspaceRole?: WorkspaceRole;
+    processRoles?: { processKey: string; roleKey: string }[]; message?: string;
+  };
+  if (!email || !workspaceRole) throw new HttpError(400, 'email and workspaceRole are required');
+  // The token comes back once. Delivering it is the caller's job — there is
+  // no invitation email yet, which the README says rather than implies.
+  return invite(pool, { principal, email, workspaceRole, processRoles, message });
+});
+
+route('POST', /^\/api\/invitations\/([0-9a-f-]{36})\/revoke$/, async ({ pool, principal, url }) =>
+  revokeInvitation(pool, { principal, invitationId: url.pathname.split('/')[3]! }),
+);
+
 // ------------------------------------------------------------------ session
 
 route('GET', /^\/api\/session$/, async ({ engine, pool, actorId }) => {
@@ -638,6 +706,72 @@ async function main(): Promise<void> {
       if (url.pathname === '/api/health') return send(res, 200, { ok: true });
 
       try {
+        /*
+         * Three routes precede authentication, and each has a reason.
+         *
+         * Sign-in obviously. Creating a workspace, because there is nobody to
+         * authenticate yet — IAM-01. And reading an invitation, because the
+         * person following the link is not a member until they accept it.
+         */
+        if (url.pathname === '/api/workspaces' && req.method === 'POST') {
+          const b = (await readBody(req)) as Record<string, string>;
+          if (!b.workspaceName || !b.ownerEmail || !b.password) {
+            throw new HttpError(400, 'workspaceName, ownerEmail and password are required');
+          }
+          const created = await createWorkspace(pool, {
+            workspaceName: b.workspaceName,
+            ownerEmail: b.ownerEmail,
+            ownerName: b.ownerName ?? '',
+            password: b.password,
+          });
+          // Signed in immediately: making somebody type the password they just
+          // chose, into the form they just left, is a step with no purpose.
+          const session = await signIn(pool, {
+            email: b.ownerEmail,
+            password: b.password,
+            userAgent: req.headers['user-agent'],
+          });
+          return send(
+            res,
+            201,
+            { ...created, actor: session?.actor },
+            session ? [cookie(SESSION_COOKIE, session.token, session.expiresAt)] : [],
+          );
+        }
+
+        if (url.pathname.startsWith('/api/invitations/') && url.pathname.endsWith('/preview') && req.method === 'GET') {
+          const token = decodeURIComponent(url.pathname.split('/')[3]!);
+          return send(res, 200, await readInvitation(pool, token));
+        }
+
+        if (url.pathname === '/api/invitations/accept' && req.method === 'POST') {
+          const b = (await readBody(req)) as Record<string, string>;
+          if (!b.token || !b.password) throw new HttpError(400, 'token and password are required');
+          const joined = await acceptInvitation(pool, {
+            token: b.token,
+            displayName: b.displayName ?? '',
+            password: b.password,
+          });
+          // The address came from the invitation, not from the request body —
+          // accepting an invitation must not be a way to choose which account
+          // you end up signed in as.
+          const { rows: joinedActor } = await pool.query<{ email: string }>(
+            'select email from actor where id = $1',
+            [joined.actorId],
+          );
+          const session = await signIn(pool, {
+            email: joinedActor[0]!.email,
+            password: b.password,
+            userAgent: req.headers['user-agent'],
+          });
+          return send(
+            res,
+            201,
+            { ...joined, actor: session?.actor },
+            session ? [cookie(SESSION_COOKIE, session.token, session.expiresAt)] : [],
+          );
+        }
+
         // ---- login and logout are the only routes before authentication
         if (url.pathname === '/api/auth/login' && req.method === 'POST') {
           const { email, password } = (await readBody(req)) as { email?: string; password?: string };
@@ -706,7 +840,13 @@ async function main(): Promise<void> {
         send(res, 200, result);
       } catch (err) {
         const status =
-          err instanceof AuthorizationError ? 403 : err instanceof HttpError ? err.status : 500;
+          err instanceof AuthorizationError
+            ? 403
+            : err instanceof HttpError
+              ? err.status
+              : err instanceof InvalidInput
+                ? 400
+                : 500;
         logIfEnabled(status >= 500 ? 'error' : 'warn', 'api.request', {
           method: req.method,
           path: url.pathname,
@@ -724,6 +864,9 @@ async function main(): Promise<void> {
           return send(res, 403, { error: 'refused', action: err.action, reason: err.reason });
         }
         if (err instanceof HttpError) return send(res, err.status, { error: err.message });
+        // Something the caller can fix. Reporting it as 500 would say "we
+        // broke" when the truth is "that password is too short".
+        if (err instanceof InvalidInput) return send(res, 400, { error: err.message });
         console.error(err);
         send(res, 500, { error: 'internal error', requestId });
       }

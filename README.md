@@ -77,7 +77,7 @@ is specific to either.
 
 Section 23 week 3 asks for a spike of workflow state, timers, idempotent email,
 versioning, and migration, producing architecture decision records and
-performance evidence. `npm run spike` is that, and it proves twenty things:
+performance evidence. `npm run spike` is that, and it proves twenty-one things:
 
 | Proof | Result |
 |---|---|
@@ -92,6 +92,7 @@ performance evidence. `npm run spike` is that, and it proves twenty things:
 | Every action traces back to the request that caused it | §20.2 observability: the link survives the worker boundary and a restart |
 | A privacy request erases one person without destroying anybody else | §20.2 privacy: the manager named on somebody else's form is redacted, not deleted |
 | A webhook actually leaves, is signed, survives a rotation, dies in a dead letter, and replays | §11.2, against a real HTTP server that verifies the signature itself |
+| A workspace can be created and joined, and nobody can grant more than they hold | IAM-01, IAM-04, IAM-05: escalation, last owner and session revocation all refused |
 | A worker fires deadlines with nobody watching | 49 hours passed, 1 reminder, 0 timers left unfired |
 | Retention deletes, only for an administrator, and says what it removed | preview first, then 1 instance and 1 event, against an append-only history |
 | Idempotent email under replay | 3 deliveries, 1 email |
@@ -515,6 +516,66 @@ announced as "this content can't be displayed"); Teams gets a MessageCard.
 Neither is signed, because neither verifies our signature — the webhook URL is
 itself the credential, and signing would be theatre.
 
+## Joining a workspace
+
+```bash
+curl -X POST http://localhost:3310/api/workspaces -H 'content-type: application/json'   -d '{"workspaceName":"Acme","ownerEmail":"you@acme.test","ownerName":"You","password":"CHOOSE-A-REAL-PASSWORD"}'
+```
+
+IAM-01 and IAM-04. Before this a workspace came from `npm run seed` and there
+was **no way for a second person to get into one** — invisible in a demo,
+blocking on day one of a pilot.
+
+Three rules, each because the obvious implementation gets it wrong:
+
+- **Nobody can invite somebody more powerful than themselves.** A `builder`
+  holds `administer`, so without this it is a privilege escalation with one
+  extra step: invite an owner, accept it yourself. `GET /api/members/grantable`
+  returns what you may hand out, so the interface cannot offer what the server
+  will refuse.
+- **The last owner cannot be removed** — not by deactivation, not by
+  demotion. A workspace with no owner has nobody who can invite one, and
+  "contact support to get back into your own account" is the failure this
+  prevents.
+- **Deactivation revokes sessions in the same transaction.** `resolveSession`
+  already joins on `a.active`, so they are refused on the next request either
+  way; revoking means the rows are gone rather than ignored, which is what
+  somebody reading the session table during an incident needs.
+
+Invitations are single-use, expire in seven days, and only the hash is stored —
+the link is the credential. The preview a stranger can read shows the workspace
+name, the role and who asked, and nothing else.
+
+**IAM-05** was marked *Design now*, so it is: `actor_identity` holds an
+external identity per provider, and **matching is on the IdP's subject, never
+the email**. An address is a display value that changes with a marriage or a
+domain migration; matching on it is how one person ends up with two accounts.
+`actor.provisioned_by` marks SCIM-managed rows, which the console then refuses
+to edit — a change the directory would overwrite on its next sync is worse
+than one that was never allowed.
+
+## Generated blueprints declare what they assumed
+
+BLD-02. The generator used to be told to record assumptions *in
+`intent.outcome`* — prose in a field meant for something else, where the
+compiler cannot check it and the builder cannot list it.
+
+`intent.assumptions` and `intent.openDecisions` are modelled now, surfaced as
+`BLD001` and `BLD002` warnings, and **enforced as a generation gate**: adding
+the fields and a line in the prompt was not enough, and the first run came back
+with a complete process and both arrays empty. A model asked for something
+optional at the end of a long instruction will skip it, so a generated
+blueprint declaring no assumptions is repaired like a compiler error. A
+*hand-written* one legitimately declares none, which is why the gate lives in
+the pipeline rather than the compiler.
+
+From "Something for handling requests from staff. Manager signs off." it
+produced seven assumptions and five open decisions, one marked blocking —
+including that it had read "requests" as equipment and access rather than
+leave or grievances, that it invented a £1,000 finance threshold, and that it
+collects no attachments. Every one of those is a thing a reviewer needs to
+correct, and none of them was in the description.
+
 ## The respondent side
 
 ```bash
@@ -539,39 +600,24 @@ Two properties worth knowing:
 
 Named here rather than implied by silence.
 
-**Four §6 requirements marked "Must" are not met.** They are listed first
-because they are the only unmet *Must* rows in the document, and because they
-were missing from this list until somebody asked — which is exactly the
-failure this list exists to prevent.
-
-- **IAM-01: "Users can create or join a tenant workspace."** A workspace is
-  created by `npm run seed` or by a CLI. There is no sign-up, no invitation,
-  and no way to join an existing one. Everything above this assumes a
-  workspace already exists and somebody is already in it.
-- **IAM-04: "Owners can invite, deactivate, and revoke sessions for users."**
-  Only the third is built. `actor.active` exists and the policy engine
-  honours it, but nothing sets it, and there is no invitation at all.
-- **IAM-05: "Enterprise SSO and SCIM are deferred but the identity model must
-  accommodate them."** Marked *Design now*, and it was not: `actor` has an
-  email and a workspace role and no external identity anchor, so adding an IdP
-  later means a schema change and a migration of every existing account. This
-  is the one that gets more expensive with time rather than less.
-- **BLD-02: "Generated blueprint includes assumptions, missing decisions,
-  …"** The generator is told to record what it assumed in `intent.outcome`,
-  which is prose in a field meant for something else. Assumptions and open
-  decisions are not modelled, so the compiler cannot check them and the
-  builder cannot list them for review — the one thing they exist for.
+All of §6's `Must` requirements are now met. The four that were not — IAM-01,
+IAM-04, IAM-05 and BLD-02 — are covered under *Joining a workspace* and
+*Generated blueprints declare what they assumed* above.
 
 BLD-01 asks for "a guided prompt, a process pack, **or blank canvas**". The
 first two are built; the third was deliberately left out, because a blank
 skeleton opens with a dozen errors and teaches people the diagnostics panel is
-noise. That is a product judgement rather than an omission, and it is recorded
-here so it can be overruled.
+noise. A product judgement rather than an omission, recorded so it can be
+overruled.
 
 Everything below is a deliberate deferral:
 
-- **Email verification, MFA, OAuth/OIDC, password reset.** Sign-in is a scrypt
-  password and a session cookie; §12.1's other authentication rows are not done.
+- **Email verification and invitation delivery.** Creating a workspace does
+  not prove you own the address, and an invitation returns its token to the
+  caller rather than emailing it. Both are the same shape as the invitation
+  token that already works.
+- **MFA, password reset, and SSO itself.** The identity model now accommodates
+  SSO (IAM-05) and no provider is wired to it.
 - **Rate limiting and spam control on public submission** (§12.3).
 - **Malware scanning and upload quarantine** (§12.1). Files are metadata only.
 - **A verified sending domain.** Delivery needs two switches to leave the

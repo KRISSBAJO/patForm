@@ -296,6 +296,37 @@ export function validate(bp: Blueprint): Diagnostics {
     }
   }
 
+  /*
+   * BLD-02's assumptions and open decisions, surfaced rather than stored.
+   *
+   * A warning, never an error. An assumption is a statement and a missing
+   * decision is a question; neither is a fault, and blocking a publish over
+   * one would teach people to write "none" in the field. What warnings do is
+   * make publishing with them unanswered a choice somebody made.
+   *
+   * A `blocking` decision is the one exception the author themselves declared,
+   * and it still warns — because the compiler refusing to publish on the
+   * strength of a model's own judgement about its own uncertainty is the wrong
+   * authority in the wrong place.
+   */
+  for (const [i, assumption] of (bp.intent.assumptions ?? []).entries()) {
+    d.warn(
+      'BLD001',
+      `intent.assumptions[${i}]`,
+      `Assumed: ${assumption.statement}`,
+      `Affects ${assumption.affects}. Confirm it or change it before this goes in front of respondents.`,
+    );
+  }
+
+  for (const [i, decision] of (bp.intent.openDecisions ?? []).entries()) {
+    d.warn(
+      'BLD002',
+      `intent.openDecisions[${i}]`,
+      `${decision.importance === 'blocking' ? 'Needs an answer' : 'Undecided'}: ${decision.question}`,
+      `For now: ${decision.provisionally}`,
+    );
+  }
+
   if (bp.workflow.approvals.length && !bp.roles.some((r) => r.capabilities.includes('approve'))) {
     d.error('SEC005', 'roles', 'The process has approvals but no role may approve.');
   }

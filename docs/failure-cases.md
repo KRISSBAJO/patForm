@@ -325,6 +325,22 @@ It explains three symptoms that each looked like something else at the time: a d
 
 Replaced with a PowerShell `Get-CimInstance` filter that prints each process it stops.
 
+### 29. A model will not declare uncertainty just because you ask
+
+BLD-02 wants a generated blueprint to carry its assumptions and open decisions. Adding `intent.assumptions` and `intent.openDecisions` to the schema, and a paragraph in the prompt asking for them, produced a complete process for "Something for handling requests from staff. Manager signs off." with **both arrays empty**.
+
+The fields were in the JSON schema handed to the model. The instruction was explicit. It skipped them anyway, because something optional at the end of a long instruction competes with everything before it, and because a confident-looking answer is what the rest of the prompt rewards.
+
+**Fixed** by making it a gate rather than a request: a generated blueprint declaring no assumptions is repaired through the same loop as a compiler error. It then produced seven assumptions and five open decisions — that it had read "requests" as equipment rather than leave, that it invented a £1,000 finance threshold, that it collects no attachments.
+
+The gate lives in the pipeline, not the compiler, because a *hand-written* blueprint legitimately declares none: a person decided everything deliberately. The same claim means different things depending on who made it.
+
+### 30. Validation reported as an outage
+
+`createWorkspace` threw a plain `Error` for a password three characters too short, and the API maps unknown errors to 500. So the one endpoint a stranger can reach answered "internal error" to a mistake they could have fixed in two seconds — wrong twice over, because it also logged as an outage nobody could reproduce.
+
+**Fixed** with an `InvalidInput` type the API maps to 400. Worth noting that every other runtime module still throws plain errors for this class of thing; it matters most here because these are the only unauthenticated write paths.
+
 ---
 
 ## What the compiler structurally cannot catch

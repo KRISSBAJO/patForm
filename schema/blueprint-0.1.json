@@ -72,6 +72,59 @@
             "retentionDays": {
               "type": "integer",
               "exclusiveMinimum": 0
+            },
+            "assumptions": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "statement": {
+                    "type": "string",
+                    "minLength": 5
+                  },
+                  "affects": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "statement",
+                  "affects"
+                ],
+                "additionalProperties": false
+              },
+              "default": []
+            },
+            "openDecisions": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "question": {
+                    "type": "string",
+                    "minLength": 5
+                  },
+                  "provisionally": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "importance": {
+                    "type": "string",
+                    "enum": [
+                      "blocking",
+                      "review",
+                      "minor"
+                    ],
+                    "default": "review"
+                  }
+                },
+                "required": [
+                  "question",
+                  "provisionally"
+                ],
+                "additionalProperties": false
+              },
+              "default": []
             }
           },
           "required": [
@@ -1226,6 +1279,14 @@
                   "blocking": {
                     "type": "boolean",
                     "default": true
+                  },
+                  "completableBy": {
+                    "type": "string",
+                    "enum": [
+                      "assignee",
+                      "any_operator"
+                    ],
+                    "default": "assignee"
                   }
                 },
                 "required": [

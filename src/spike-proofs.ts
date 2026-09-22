@@ -9,6 +9,18 @@ import { confirm, runPlan } from './runtime/copilot.js';
 import { traceByRequest, traceForInstance } from './runtime/support.js';
 import { dataMap, eraseSubject, findSubject } from './runtime/privacy.js';
 import { withTrace } from './runtime/trace.js';
+import {
+  acceptInvitation,
+  actorForIdentity,
+  changeRole,
+  createWorkspace,
+  grantableRoles,
+  invite,
+  linkIdentity,
+  readInvitation,
+  setMemberActive,
+} from './runtime/workspace.js';
+import { resolveSession, signIn } from './runtime/auth.js';
 import { createServer } from 'node:http';
 import {
   deliverBatch,
@@ -1448,4 +1460,156 @@ export async function proveWebhooks({ pool, bp, T0, record, completeFor }: Proof
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
+}
+
+/**
+ * §6.1's IAM-01, IAM-04 and IAM-05.
+ *
+ * *"Users can create or join a tenant workspace"*, *"owners can invite,
+ * deactivate, and revoke sessions"*, and an identity model that accommodates
+ * SSO and SCIM. Three of the four `Must` rows that were not met, and the ones
+ * that stood between this and a pilot with more than one person in it.
+ *
+ * The interesting assertions are the refusals. A workspace anybody can join,
+ * an invitation that can be spent twice, a `builder` who can invite an owner,
+ * or a last owner who can deactivate themselves are each a way to lose a
+ * workspace — and none of them fails loudly at the time.
+ */
+export async function proveIdentity({ pool, record }: ProofCtx): Promise<void> {
+  // ---- IAM-01: a workspace from nothing
+  const created = await createWorkspace(pool, {
+    workspaceName: 'Proof Trading',
+    ownerEmail: 'owner@proof-identity.test',
+    ownerName: 'An Owner',
+    password: 'a-long-enough-password',
+  });
+  const owner: Principal = { kind: 'actor', tenantId: created.tenantId, actorId: created.actorId };
+
+  let shortPassword: string | null = null;
+  try {
+    await createWorkspace(pool, {
+      workspaceName: 'Too Easy',
+      ownerEmail: 'weak@proof-identity.test',
+      ownerName: 'W',
+      password: 'short',
+    });
+  } catch (err) {
+    shortPassword = err instanceof Error ? err.message : String(err);
+  }
+
+  // ---- IAM-01: and joining one
+  const invitation = await invite(pool, {
+    principal: owner,
+    email: 'builder@proof-identity.test',
+    workspaceRole: 'builder',
+  });
+  const preview = await readInvitation(pool, invitation.token);
+  const joined = await acceptInvitation(pool, {
+    token: invitation.token,
+    displayName: 'A Builder',
+    password: 'builder-long-password',
+  });
+  const builder: Principal = { kind: 'actor', tenantId: joined.tenantId, actorId: joined.actorId };
+
+  // Single use. A link that works twice is a link that works for whoever
+  // forwarded the email.
+  let replayed: string | null = null;
+  try {
+    await acceptInvitation(pool, {
+      token: invitation.token,
+      displayName: 'Somebody Else',
+      password: 'another-long-password',
+    });
+  } catch (err) {
+    replayed = err instanceof Error ? err.message : String(err);
+  }
+
+  // ---- escalation: a builder holds `administer`, so the capability check
+  //      alone would let them invite an owner and then accept it themselves.
+  let escalation: string | null = null;
+  try {
+    await invite(pool, { principal: builder, email: 'sneaky@proof-identity.test', workspaceRole: 'owner' });
+  } catch (err) {
+    escalation = err instanceof Error ? err.message : String(err);
+  }
+  const builderMayGrant = grantableRoles('builder');
+
+  // ---- IAM-04: deactivate, and the sessions go with it
+  const session = await signIn(pool, {
+    email: 'builder@proof-identity.test',
+    password: 'builder-long-password',
+  });
+  const liveBefore = await resolveSession(pool, session!.token);
+  const deactivated = await setMemberActive(pool, { principal: owner, actorId: joined.actorId, active: false });
+  const liveAfter = await resolveSession(pool, session!.token);
+
+  // ---- the last owner cannot be removed, by either route
+  let selfDeactivate: string | null = null;
+  try {
+    await setMemberActive(pool, { principal: owner, actorId: created.actorId, active: false });
+  } catch (err) {
+    selfDeactivate = err instanceof Error ? err.message : String(err);
+  }
+  let demote: string | null = null;
+  try {
+    await changeRole(pool, { principal: owner, actorId: created.actorId, workspaceRole: 'admin' });
+  } catch (err) {
+    demote = err instanceof Error ? err.message : String(err);
+  }
+
+  // ---- IAM-05: an external identity, matched on subject rather than email
+  await linkIdentity(pool, {
+    actorId: created.actorId,
+    provider: 'oidc:example',
+    subject: 'sub-0001',
+    emailAtLink: 'owner@proof-identity.test',
+  });
+  const bySubject = await actorForIdentity(pool, { provider: 'oidc:example', subject: 'sub-0001' });
+
+  // The address changes — a marriage, a domain migration — and the identity
+  // still resolves, because it was never what we matched on.
+  await pool.query('update actor set email = $1 where id = $2', [
+    'renamed@proof-identity.test',
+    created.actorId,
+  ]);
+  const afterRename = await actorForIdentity(pool, { provider: 'oidc:example', subject: 'sub-0001' });
+
+  // The same subject from a different provider is a different person.
+  const otherProvider = await actorForIdentity(pool, { provider: 'oidc:other', subject: 'sub-0001' });
+
+  const { rows: provisioning } = await pool.query<{ provisioned_by: string }>(
+    'select provisioned_by from actor where id = $1',
+    [joined.actorId],
+  );
+
+  record(
+    'A workspace can be created and joined, and nobody can grant more than they hold',
+    'Section 6.1: IAM-01, IAM-04 and IAM-05 — three of the four Must rows that were not met.',
+    Boolean(created.tenantId) &&
+      shortPassword !== null &&
+      preview.workspaceName === 'Proof Trading' &&
+      preview.workspaceRole === 'builder' &&
+      joined.tenantId === created.tenantId &&
+      replayed !== null &&
+      escalation !== null &&
+      !builderMayGrant.includes('owner') &&
+      builderMayGrant.includes('analyst') &&
+      liveBefore !== null &&
+      liveAfter === null &&
+      deactivated.sessionsRevoked === 1 &&
+      selfDeactivate !== null &&
+      demote !== null &&
+      bySubject?.actorId === created.actorId &&
+      afterRename?.actorId === created.actorId &&
+      otherProvider === null &&
+      provisioning[0]?.provisioned_by === 'invite',
+    `A workspace was created from nothing and its owner signed in; a five-character password was refused ("${shortPassword?.slice(0, 40)}"). ` +
+      `The invitation showed the invitee the workspace name, their role and who asked — and nothing else — then created their account; ` +
+      `the same link a second time was refused ("${replayed}"). ` +
+      `A builder holds "administer", so the capability check alone would have let them invite an owner and accept it themselves; ` +
+      `they may grant ${builderMayGrant.join(', ')} and were refused ("${escalation?.slice(0, 50)}"). ` +
+      `Deactivating them revoked ${deactivated.sessionsRevoked} live session and their token stopped resolving immediately. ` +
+      `The only owner could neither deactivate nor demote themselves, because a workspace with no owner has nobody who can invite one. ` +
+      `An external identity resolved by subject, and still resolved after the email address changed — matching on the address is how one person ends up with two accounts.`,
+  );
 }

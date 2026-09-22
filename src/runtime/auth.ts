@@ -61,7 +61,13 @@ export function newToken(): string {
 
 // ------------------------------------------------------------------ passwords
 
-export async function setPassword(pool: Pool, actorId: string, password: string): Promise<void> {
+/**
+ * Takes a queryable rather than a pool, so a password can be set inside the
+ * transaction that creates the account. On a pool it would commit separately,
+ * and a rollback would leave an actor with no credential — an account that
+ * exists, occupies its email address, and can never be signed into.
+ */
+export async function setPassword(pool: Pool | Client, actorId: string, password: string): Promise<void> {
   const hash = await hashPassword(password);
   await pool.query(
     `insert into credential (actor_id, password_hash) values ($1, $2)
