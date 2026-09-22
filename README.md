@@ -987,10 +987,13 @@ Everything below is a deliberate deferral:
 - **An effect log outside the database.** The idempotency ledger protects every
   effect the backup knows about and nothing inside the RPO window, so anything
   with an external effect in that window happens twice after a restore.
-- **Approval quorums, date-relative timers, separation of duties** — the v0.2
+- **Approval quorums and date-relative timers** — what is left of the v0.2
   list in [docs/failure-cases.md](docs/failure-cases.md). Parallel task joins
-  were on it and are now built: a `tasks_completed` trigger names the tasks it
-  waits for, and the compiler refuses a join that leaves a blocking task out.
+  and separation of duties were on it and are now built: a `tasks_completed`
+  trigger names the tasks it waits for, and `notTheSubmitter` bars the person
+  who filed a record from deciding it. In both cases the compiler refuses the
+  half-built version — a join that leaves a blocking task out, and a bar on a
+  submitter the process never identifies.
 
 Open a record as Priya and the payroll fields come back `hidden from your
 role` — the same `hiddenFields` the blueprint declares and the compiler
@@ -1026,4 +1029,4 @@ means. See [docs/adr/0006](docs/adr/0006-the-ai-boundary.md).
 
 §21 puts the typed process schema and compiler at **P0**, and AI generation at **P1**. Hand-compiling supports that ordering strongly: a generator without a compiler produces confident, plausible, broken processes. The compiler is what makes generated output safe to publish, and it is useful on its own before any AI exists.
 
-Open questions the schema cannot yet express — approval quorums, quantifiers over repeating groups, date-relative timers, separation of duties — are listed with recommendations in [docs/failure-cases.md](docs/failure-cases.md). None of them blocks a design-partner demo.
+Open questions the schema cannot yet express — approval quorums, quantifiers over repeating groups, date-relative timers — are listed with recommendations in [docs/failure-cases.md](docs/failure-cases.md). None of them blocks a design-partner demo.

@@ -94,6 +94,16 @@ export interface AuthorizeArgs {
    * with the approve capability is not enough — you must be on the request.
    */
   namedApprovers?: string[];
+  /**
+   * For `approve`: an address that must not decide this one, whoever else is
+   * named. Separation of duties — the submitter of a record may not approve
+   * their own request.
+   *
+   * Checked here rather than in the engine so the refusal is reasoned and
+   * audited like every other one, and so there is a single place that decides
+   * whether somebody may approve.
+   */
+  barredApprover?: string | null;
   /** For completing a task: its assignee and its own completion rule. */
   task?: { assignee: string | null; completableBy: 'assignee' | 'any_operator' };
 }
@@ -194,6 +204,21 @@ export async function authorize(client: Client, args: AuthorizeArgs): Promise<De
       return {
         allowed: false,
         reason: `no role held (${roleKeys.join(', ')}) has the "approve" capability`,
+        roles: roleKeys,
+        workspaceRole,
+      };
+    }
+    /*
+     * Separation of duties, before the naming check.
+     *
+     * Ordered first on purpose: being named and being barred are both true of
+     * a claimant who typed their own address into "your manager's email", and
+     * the useful refusal is the one that says why.
+     */
+    if (args.barredApprover && actor.email.toLowerCase() === args.barredApprover.toLowerCase()) {
+      return {
+        allowed: false,
+        reason: 'the person who submitted a record may not approve it',
         roles: roleKeys,
         workspaceRole,
       };

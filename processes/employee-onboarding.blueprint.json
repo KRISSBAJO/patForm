@@ -300,7 +300,8 @@
         "label": "Employee reference",
         "classification": "internal"
       }
-    ]
+    ],
+    "submitterField": "personal_email"
   },
   "experience": {
     "showProgress": true,

@@ -432,6 +432,11 @@ export const CATALOGUE: PackSpec[] = [
       f.text('journey_to', 'To'),
       f.number('miles', 'Miles'),
       f.choice('vehicle', 'Vehicle', ['own_car', 'company_car', 'motorcycle', 'bicycle']),
+      // A mileage claim is a money claim. Without an amount the Finance
+      // threshold had nothing to attach to, so one line manager could sign off
+      // any distance alone — which the two-person control found the moment it
+      // started counting people instead of approvals.
+      f.money('amount_claimed', 'Amount claimed'),
       f.notes('journey_purpose', 'Purpose', true),
     ],
   },

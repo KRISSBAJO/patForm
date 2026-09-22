@@ -411,6 +411,116 @@ async function proveParallelTasks(pool: Pool, bp: Blueprint): Promise<void> {
   );
 }
 
+/**
+ * A claimant cannot approve their own claim.
+ *
+ * Expense approval addresses the manager approval to `{ field: manager_email }`
+ * — an address the claimant types. Nothing stopped them typing their own, and
+ * the blueprint had no way to describe the control that would. It is the most
+ * likely fraud in the whole process.
+ *
+ * Proved against the real claim, not a contrived one: the record is submitted
+ * with the claimant's own address in the manager field, which is exactly what
+ * somebody defrauding this would do.
+ */
+async function proveSeparationOfDuties(pool: Pool, bp: Blueprint): Promise<void> {
+  const engine = new Engine(pool);
+  const tenantId = await engine.createTenant('proof:separation');
+  const version = await engine.publish(tenantId, bp, 'proof');
+
+  const claimantEmail = 'claimant@example.test';
+  const honestManager = 'real.manager@example.test';
+
+  const claimantId = await engine.createActor(tenantId, claimantEmail, 'A Claimant');
+  await engine.grant({ tenantId, actorId: claimantId, processKey: bp.key, roleKey: 'line_manager' });
+  const managerId = await engine.createActor(tenantId, honestManager, 'A Manager');
+  await engine.grant({ tenantId, actorId: managerId, processKey: bp.key, roleKey: 'line_manager' });
+
+  const asClaimant: Principal = { kind: 'actor', tenantId, actorId: claimantId };
+  const asManager: Principal = { kind: 'actor', tenantId, actorId: managerId };
+
+  // 1. The fraud: the claimant names themselves as their own approver.
+  /*
+   * Over the threshold on purpose. A claim of a hundred pounds or less is
+   * approved on submission, so there is no decision for anybody to be barred
+   * from — proving the control against one of those would prove nothing.
+   */
+  const claim = [{ line_description: 'Hotel', line_amount: 450 }];
+  const own = await engine.submit({
+    version,
+    answers: completeFor(bp, {
+      employee_email: claimantEmail,
+      manager_email: claimantEmail,
+      line_items: claim,
+    }),
+    now: T0,
+  });
+  await engine.drain(T0, 'proof', tenantId);
+
+  const reachedReview = (await engine.instance(own.instanceId)).state;
+
+  let refusal = '';
+  try {
+    await engine.decide({
+      instanceId: own.instanceId,
+      approvalKey: 'manager_approval',
+      decision: 'approved',
+      principal: asClaimant,
+      reason: 'Looks fine to me.',
+      now: T0,
+    });
+  } catch (err) {
+    refusal = err instanceof AuthorizationError ? err.reason : String(err);
+  }
+  const stillWaiting = (await engine.instance(own.instanceId)).state;
+
+  /*
+   * 2. And the control is not simply "nobody may approve". A different person
+   *    holding the same role, named the same way, decides it normally — which
+   *    is the half of this that a blunt refusal would break.
+   */
+  /*
+   * A different date, because the two claims would otherwise be the same
+   * claim. `data.identity` is employee, date and cost centre, so submitting
+   * the second with the first's date returns the first record — and the
+   * "somebody else can approve" half would have been run against the record
+   * that names the claimant, and refused for the wrong reason.
+   */
+  const honest = await engine.submit({
+    version,
+    answers: completeFor(bp, {
+      employee_email: claimantEmail,
+      manager_email: honestManager,
+      expense_date: '2026-01-03',
+      line_items: claim,
+    }),
+    now: T0,
+  });
+  await engine.drain(T0, 'proof', tenantId);
+  await engine.decide({
+    instanceId: honest.instanceId,
+    approvalKey: 'manager_approval',
+    decision: 'approved',
+    principal: asManager,
+    reason: 'Checked against the rota.',
+    now: T0,
+  });
+  await engine.drain(T0, 'proof', tenantId);
+  const movedOn = (await engine.instance(honest.instanceId)).state;
+
+  record(
+    'The person who submitted a record cannot approve it',
+    'docs/failure-cases.md G5: the claimant types the approver address, so nothing stopped them typing their own.',
+    reachedReview === 'manager_review' &&
+      refusal === 'the person who submitted a record may not approve it' &&
+      stillWaiting === 'manager_review' &&
+      movedOn !== 'manager_review',
+    `A £450 claim reached "${reachedReview}", so there was a real decision to make. Approving their own ` +
+      `claim was refused — "${refusal || 'NOT REFUSED'}" — and the record stayed in "${stillWaiting}". ` +
+      `The same approval, named the same way, was decided by somebody else and the record moved to "${movedOn}".`,
+  );
+}
+
 async function proveDuplicateSubmission(pool: Pool, bp: Blueprint): Promise<void> {
   const engine = new Engine(pool);
   const tenantId = await engine.createTenant('proof:duplicates');
@@ -663,6 +773,9 @@ async function main(): Promise<void> {
 
   const blueprints = loadBlueprints();
   const onboarding = blueprints.find((b) => b.key === 'employee_onboarding')!;
+  // Separation of duties is proved against expense approval, because that is
+  // the process where the claimant supplies their own approver's address.
+  const expense = blueprints.find((b) => b.key === 'expense_approval')!;
   const ctx = { pool, bp: onboarding, T0, record, completeFor };
 
   const steps: [string, () => Promise<void>][] = [
@@ -689,6 +802,7 @@ async function main(): Promise<void> {
     ['timers', () => proveTimers(pool, onboarding)],
     ['tenant clock', () => proveTenantClock(pool, onboarding)],
     ['parallel tasks', () => proveParallelTasks(pool, onboarding)],
+    ['separation of duties', () => proveSeparationOfDuties(pool, expense)],
     ['duplicates', () => proveDuplicateSubmission(pool, onboarding)],
     ['versioning', () => proveVersionImmutability(pool, onboarding)],
     ['performance', () => measurePerformance(pool, onboarding)],

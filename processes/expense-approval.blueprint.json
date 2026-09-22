@@ -240,7 +240,8 @@
         "label": "Payment reference",
         "classification": "internal"
       }
-    ]
+    ],
+    "submitterField": "employee_email"
   },
   "experience": {
     "showProgress": true,
@@ -378,7 +379,8 @@
           "business_purpose",
           "receipt"
         ],
-        "dueInHours": 72
+        "dueInHours": 72,
+        "notTheSubmitter": true
       },
       {
         "key": "finance_approval",

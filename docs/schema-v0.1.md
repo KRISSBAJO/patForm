@@ -121,7 +121,11 @@ Errors block publication (BLD-07). Warnings appear in review and do not block, o
 | `BLOCK001` | error | A blocking task that no transition waits for |
 | `BLOCK002` | error | A transition waits for a task nothing creates |
 | `BLOCK003` | error | A join leaves out a blocking task that can be open in the same state |
-| `BLOCK004` | error | A transition waits for a task the workflow does not define |
+| `BLOCK005` | error | A join names the same task more than once |
+| `REF014` | error | `data.submitterField` names no field, or one that is not an email |
+| `SEC009` | warning | The submitter field is set by an operator, not by the respondent |
+| `SEC010` | error | An approval bars the submitter, and nothing says which address is theirs |
+| `SEC011` | error | An approval is addressed only to the submitter and also bars them |
 | `ASSIGN001` | error | A message or task addressed to the current assignee where nothing assigns |
 
 ### Tests — `TEST`

@@ -203,11 +203,26 @@ function onboarding() {
   return JSON.parse(readFileSync(join(DIR, 'employee-onboarding.blueprint.json'), 'utf8'));
 }
 
+/*
+ * Parse before validating. Zod applies the schema's defaults — `attachments`
+ * is the one that bites — and the compiler reads a parsed blueprint
+ * everywhere it runs for real. Validating raw JSON tests a shape the compiler
+ * never sees.
+ */
+function codesFrom(raw: unknown): string[] {
+  const parsed = Blueprint.safeParse(raw);
+  const r = validate(parsed.success ? parsed.data : (raw as never));
+  return [...r.errors, ...r.warnings].map((d) => d.code);
+}
+
 function codesFor(mutate: (b: Record<string, never>) => void): string[] {
   const b = onboarding();
   mutate(b);
-  const r = validate(b);
-  return [...r.errors, ...r.warnings].map((d) => d.code);
+  return codesFrom(b);
+}
+
+function expense() {
+  return JSON.parse(readFileSync(join(DIR, 'expense-approval.blueprint.json'), 'utf8'));
 }
 
 test('the reference process fans out rather than chaining', () => {
@@ -263,4 +278,55 @@ test('a joined task counts as awaited, so it is not also reported as orphaned', 
   // have reported the fan-out as a missing control.
   const diagnostics = validate(load('employee-onboarding.blueprint.json'));
   assert.equal(diagnostics.items.filter((d) => d.code === 'BLOCK001').length, 0);
+});
+
+/*
+ * Separation of duties, and the thing it rests on.
+ *
+ * The control bars "the submitter". It is only as good as the runtime's
+ * answer to who that is — which used to be the first field of type email, a
+ * positional guess. A fraud control that guesses bars the wrong person.
+ */
+
+test('a process that bars the submitter must say which field holds their address', () => {
+  const codes = codesFor((b) => {
+    delete b.data.submitterField;
+  });
+  assert.ok(codes.includes('SEC010') === false, 'onboarding does not bar anybody, so it needs no submitter field');
+
+  const claim = expense();
+  delete claim.data.submitterField;
+  const barred = codesFrom(claim);
+  assert.ok(barred.includes('SEC010'), `expected SEC010, got ${barred.join(', ') || 'nothing'}`);
+});
+
+test('the submitter field has to be an address the respondent gives', () => {
+  const notAField = codesFor((b) => {
+    b.data.submitterField = 'no_such_field';
+  });
+  assert.ok(notAField.includes('REF014'), `expected REF014, got ${notAField.join(', ')}`);
+
+  const notAnEmail = codesFor((b) => {
+    b.data.submitterField = 'full_name';
+  });
+  assert.ok(notAnEmail.includes('REF014'), 'a name is not an address');
+});
+
+test('an approval addressed only to the submitter and barred from them is an error', () => {
+  // It would route correctly, sit in a waiting state, and refuse every person
+  // who tried — including the only one it names.
+  const claim = expense();
+  const manager = claim.workflow.approvals.find((a) => a.key === 'manager_approval');
+  manager.approvers = [{ field: claim.data.submitterField }];
+  const codes = codesFrom(claim);
+  assert.ok(codes.includes('SEC011'), `expected SEC011, got ${codes.join(', ') || 'nothing'}`);
+});
+
+test('the expense claim bars the claimant from approving it', () => {
+  // The control is on the shipped process, not merely available to it. This
+  // is the process where the claimant types their own approver's address.
+  const bp = load('expense-approval.blueprint.json');
+  const manager = bp.workflow.approvals.find((a) => a.key === 'manager_approval');
+  assert.ok(manager?.notTheSubmitter, 'the manager approval bars the submitter');
+  assert.equal(bp.data.submitterField, 'employee_email');
 });

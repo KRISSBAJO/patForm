@@ -90,13 +90,21 @@ Employee onboarding wants to chase equipment relative to `start_date`, not relat
 
 **Recommendation:** add `relativeTo: { field }` with an offset in v0.2. Note that this makes timers depend on data that can change after the timer is scheduled, which the runtime has to handle — that is a real design question, not a schema one.
 
-### G5. Nothing expresses "this person may not approve their own request"
+### G5. Nothing expresses "this person may not approve their own request" — **fixed**
 
-Expense approval addresses the manager approval to `{ field: manager_email }`, which the claimant types in. Nothing prevents a claimant entering their own address.
+Expense approval addresses the manager approval to `{ field: manager_email }`, which the claimant types in. Nothing prevented a claimant entering their own address, and the blueprint could not describe the control that would.
 
-This is the most likely fraud vector in the whole expense process and the blueprint cannot describe the control.
+**Fixed** with `Approval.notTheSubmitter`, enforced in the policy engine beside every other refusal.
 
-**Recommendation:** this is a runtime identity concern, not a blueprint one, but the blueprint needs a way to *declare* it — something like `approvers: [{ field: "manager_email", notTheSubmitter: true }]`. Worth deciding before an expense pack ships.
+Three things came out of building it that were not in the original note.
+
+**The flag belongs on the approval, not the party.** The sketch here put it on the party — `{ field: "manager_email", notTheSubmitter: true }`. How an approver is *addressed* is a different question from whether the submitter may be one: put it on the party and an approval addressed two ways needs the flag twice and can carry it once.
+
+**"The submitter" was a guess.** The runtime answered "who submitted this" by taking the first field of type `email`. That was right in all three reference processes and all eighty-eight packs, by luck of declaration order — reorder the fields and every message addressed to the submitter goes to their manager instead. A control that bars the submitter and guesses which address that is reads as enforced in review and bars the wrong person at runtime, which is worse than no control. `data.submitterField` now names it, and **SEC010** refuses to publish a process that bars the submitter without saying who they are.
+
+**`two_person_decision` counted approvals, not people.** The category control audited `approvals.length >= 2`, which two approvals addressed to the same role satisfies, and which one person holding that role satisfies alone. It now requires two approvals, addressed to different parties, with the submitter barred from all of them. Finance requires it, and turning it on immediately found `mileage_claim`: a Finance pack with one approval and no amount field, so one line manager could sign off any distance on their own. A mileage claim is a money claim; it asks for the amount now.
+
+Proof 27 submits a £450 claim with the claimant's own address in the manager field — which is what somebody defrauding this would actually do — and checks the refusal, that the record stays where it was, and that a different person named the same way still decides it normally. That last half matters: a control that refuses everybody is not separation of duties, it is a broken process.
 
 ### G7. Values an operator fills in later had nowhere to live
 

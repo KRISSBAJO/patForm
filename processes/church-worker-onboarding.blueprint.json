@@ -224,7 +224,8 @@
         "label": "Worker reference",
         "classification": "internal"
       }
-    ]
+    ],
+    "submitterField": "email"
   },
   "experience": {
     "showProgress": true,

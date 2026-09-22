@@ -282,6 +282,13 @@ function approvals(spec: PackSpec, contextFields: string[], rules: CategoryRules
     mode: 'single',
     allowRequestChanges: true,
     reasonRequired: true,
+    /*
+     * Nobody approves their own request. Every approval here is addressed to
+     * an internal role, and a submitter who happens to hold that role could
+     * otherwise decide their own — which is the ordinary shape of expense
+     * fraud and is not special to expenses.
+     */
+    notTheSubmitter: true,
     contextFields: contextFields.slice(0, 6),
     dueInHours: Math.min(a.dueInHours ?? rules.decideWithinHours, i === 0 ? rules.decideWithinHours : 336),
   }));
@@ -294,6 +301,7 @@ function approvals(spec: PackSpec, contextFields: string[], rules: CategoryRules
           name: threshold.approval.name,
           approvers: [{ role: threshold.approval.byRole }],
           mode: 'single',
+          notTheSubmitter: true,
           allowRequestChanges: true,
           reasonRequired: true,
           contextFields: contextFields.slice(0, 6),
@@ -822,6 +830,10 @@ export function buildBlueprint(spec: PackSpec): unknown {
     roles: roles(spec, rules),
     data: {
       identity: ['submitter_email', 'submitter_name'],
+      // Named, not guessed. The runtime used to take the first email field,
+      // which is right here by luck of declaration order and would stop being
+      // right the day a pack asked for somebody else's address first.
+      submitterField: 'submitter_email',
       fields: fields.map((f) => ({
         key: f.key,
         type: f.type,

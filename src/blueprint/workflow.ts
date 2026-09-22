@@ -40,6 +40,21 @@ export const Approval = z
     /** Section 6.5: approve, reject, request changes. */
     allowRequestChanges: z.boolean().default(true),
     reasonRequired: z.boolean().default(false),
+    /**
+     * Separation of duties: the person who submitted the record may not decide
+     * this approval, however they are addressed.
+     *
+     * Declared on the approval rather than on the party, which is where the
+     * first sketch of this put it. How an approver is *addressed* — a role, a
+     * field the respondent typed, a named user — is a different question from
+     * whether the submitter may be one. Put it on the party and an approval
+     * addressed two ways needs the flag twice and can carry it once.
+     *
+     * The most likely fraud in an expense process is a claimant typing their
+     * own address into "your manager's email", and nothing in this schema
+     * could describe the control that stops it.
+     */
+    notTheSubmitter: z.boolean().default(false),
     /** Fields the approver needs to decide; drives the approval queue summary. */
     contextFields: z.array(Key).optional(),
     dueInHours: z.number().positive().optional(),

@@ -170,7 +170,7 @@ export const RULES: Record<string, CategoryRules> = {
       },
       because: 'Anything over a thousand takes a second pair of eyes — change the limit in the builder.',
     },
-    requires: ['kept_long_enough', 'escalates', 'restricted_hidden'],
+    requires: ['kept_long_enough', 'escalates', 'restricted_hidden', 'two_person_decision'],
     monitors: [...WATCH_BASICS, ...WATCH_DECISIONS, ...WATCH_COMPLETION],
     says: 'Over a thousand needs a controller as well, and everything is kept at least seven years.',
   },

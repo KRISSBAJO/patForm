@@ -75,6 +75,8 @@ interface BpApproval {
   mode: 'single' | 'sequential' | 'any_of';
   allowRequestChanges?: boolean;
   reasonRequired?: boolean;
+  /** Separation of duties: the person who submitted may not decide this. */
+  notTheSubmitter?: boolean;
   contextFields?: string[];
   dueInHours?: number;
 }
@@ -131,7 +133,7 @@ interface Blueprint {
   name: string;
   description?: string;
   roles: BpRole[];
-  data: { fields: BpField[]; [k: string]: unknown };
+  data: { fields: BpField[]; submitterField?: string; [k: string]: unknown };
   workflow: {
     states: BpState[];
     transitions: { key: string; name?: string; from: string; to: string; [k: string]: unknown }[];
@@ -746,6 +748,15 @@ export function Builder() {
                 {tab === 'fields' && (
                   <FieldEditor
                     field={blueprint.data.fields[index]}
+                    isSubmitter={blueprint.data.submitterField === blueprint.data.fields[index]?.key}
+                    onSubmitter={(next) =>
+                      mutate((bp) => {
+                        const key = bp.data.fields[index]?.key;
+                        if (!key) return;
+                        if (next) bp.data.submitterField = key;
+                        else if (bp.data.submitterField === key) delete bp.data.submitterField;
+                      })
+                    }
                     width={widthFor(blueprint, blueprint.data.fields[index]?.key)}
                     onWidth={
                       sectionHolding(blueprint, blueprint.data.fields[index]?.key)
@@ -993,6 +1004,10 @@ export function Builder() {
           mode: 'single',
           allowRequestChanges: true,
           reasonRequired: false,
+          // On by default. Somebody approving their own request is the
+          // ordinary shape of the fraud these processes exist to prevent, and
+          // an approval that genuinely should allow it can say so.
+          notTheSubmitter: true,
         });
       }
       if (which === 'tasks') {
@@ -1570,6 +1585,8 @@ function FieldEditor({
   field,
   width,
   onWidth,
+  isSubmitter,
+  onSubmitter,
   onChange,
   onRemove,
 }: {
@@ -1577,6 +1594,9 @@ function FieldEditor({
   /** Absent when this field is not on any form page, so there is no width to set. */
   width?: string;
   onWidth?: (next: string) => void;
+  /** Whether this field is the one holding the submitter's own address. */
+  isSubmitter?: boolean;
+  onSubmitter?: (next: boolean) => void;
   onChange: (fn: (f: BpField) => void) => void;
   onRemove: () => void;
 }) {
@@ -1628,6 +1648,24 @@ function FieldEditor({
         * is stored on the section. A first and last name that share a line
         * read as one question; the same two stacked read as two.
         */}
+      {/*
+        * Which address belongs to the person filling the form in.
+        *
+        * It lives on the field because that is what it is a fact about, and
+        * because the alternative — inferring it from declaration order — is
+        * what the runtime used to do. Separation of duties depends on this
+        * answer, so a process that bars the submitter and never says which
+        * address is theirs does not compile.
+        */}
+      {onSubmitter && field.type === 'email' && (
+        <Row label="Whose address" hint="separation of duties depends on this">
+          <label className="bd__check">
+            <input type="checkbox" checked={Boolean(isSubmitter)} onChange={(e) => onSubmitter(e.target.checked)} />
+            <span>this is the address of the person filling the form in</span>
+          </label>
+        </Row>
+      )}
+
       {onWidth && (
         <Row label="Width on the form" hint="phones always get one column, whatever this says">
           <select className="bd__input" value={width ?? 'full'} onChange={(e) => onWidth(e.target.value)}>
@@ -2082,6 +2120,19 @@ function ApprovalEditor({
                 onChange={(e) => onChange((a) => void (a.allowRequestChanges = e.target.checked))}
               />
               <span>may ask for changes</span>
+            </label>
+            {/*
+              * Separation of duties. Worded as what it stops rather than as
+              * its name: "notTheSubmitter" is the schema's word and nobody
+              * reviewing an approval thinks in those terms.
+              */}
+            <label className="bd__check">
+              <input
+                type="checkbox"
+                checked={approval.notTheSubmitter ?? false}
+                onChange={(e) => onChange((a) => void (a.notTheSubmitter = e.target.checked))}
+              />
+              <span>the person who submitted it may not decide it</span>
             </label>
             <label className="bd__check">
               <input

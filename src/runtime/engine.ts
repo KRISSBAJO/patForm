@@ -296,6 +296,7 @@ export class Engine {
         [args.instanceId, args.approvalKey],
       );
       if (!pending.length) return { applied: false };
+      const declared = bp.workflow.approvals.find((a) => a.key === args.approvalKey);
 
       await require_(client, {
         principal: args.principal,
@@ -305,6 +306,12 @@ export class Engine {
         blueprint: bp,
         instanceId: instance.id,
         namedApprovers: pending[0]!.approvers,
+        // Only when the approval asks for it. `submitterOf` returns nothing
+        // when the blueprint never said which field holds the address, and a
+        // bar on nobody bars nobody — the compiler refuses that combination
+        // at publish, so a published version cannot reach this with the
+        // control silently off.
+        barredApprover: declared?.notTheSubmitter ? submitterOf(bp, instance) : null,
       }, this.pool);
 
       const actor = describePrincipal(args.principal);
@@ -1569,6 +1576,23 @@ function renderDocument(
  *
  * It is wrong for an email, which needs an address. See resolveRecipients.
  */
+/**
+ * The submitter's own address, as the blueprint declares it.
+ *
+ * `data.submitterField` names the field. Before it existed the runtime took
+ * the first field of type email, which is a positional guess — right in every
+ * process we happened to write, and wrong the moment somebody puts the
+ * manager's address above the claimant's. Published versions from before the
+ * field existed still fall back to the guess, because they are immutable and
+ * changing what they mean retroactively is worse than the guess.
+ */
+function submitterOf(bp: Blueprint, instance: InstanceRow): string | null {
+  const key = bp.data.submitterField ?? bp.data.fields.find((f) => f.type === 'email')?.key;
+  if (!key) return null;
+  const value = instance.data[key];
+  return typeof value === 'string' && value ? value : null;
+}
+
 function resolveParty(party: Party, instance: InstanceRow, bp: Blueprint): string[] {
   if ('user' in party) return [party.user];
   if ('field' in party) {
@@ -1576,9 +1600,8 @@ function resolveParty(party: Party, instance: InstanceRow, bp: Blueprint): strin
     return typeof value === 'string' && value ? [value] : [];
   }
   if ('submitter' in party) {
-    const submitterField = bp.data.fields.find((f) => f.type === 'email');
-    const value = submitterField ? instance.data[submitterField.key] : undefined;
-    return typeof value === 'string' && value ? [value] : [];
+    const address = submitterOf(bp, instance);
+    return address ? [address] : [];
   }
   if ('assignee' in party) return instance.assignee ? [instance.assignee] : [];
   return [`role:${party.role}`];

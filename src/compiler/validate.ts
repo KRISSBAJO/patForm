@@ -331,6 +331,67 @@ export function validate(bp: Blueprint): Diagnostics {
     d.error('SEC005', 'roles', 'The process has approvals but no role may approve.');
   }
 
+  /*
+   * Separation of duties, and the thing it depends on.
+   *
+   * A control that bars "the submitter" and has to guess which address that
+   * is reads as enforced in review and bars the wrong person at runtime. The
+   * blueprint has to say.
+   */
+  const submitterField = bp.data.submitterField;
+
+  if (submitterField) {
+    const field = fieldByKey.get(submitterField);
+    if (!field) {
+      d.error('REF014', 'data.submitterField', `No field called "${submitterField}".`);
+    } else if (field.type !== 'email') {
+      d.error(
+        'REF014',
+        'data.submitterField',
+        `"${submitterField}" is a ${field.type}, and the submitter is identified by an address.`,
+        'Point it at an email field the respondent fills in.',
+      );
+    } else if ((field.setBy ?? 'respondent') !== 'respondent') {
+      d.warn(
+        'SEC009',
+        'data.submitterField',
+        `"${submitterField}" is set by ${field.setBy}, not by the respondent.`,
+        'The submitter is whoever filled the form in; an operator-set address is somebody else.',
+      );
+    }
+  }
+
+  for (const [ai, approval] of bp.workflow.approvals.entries()) {
+    if (!approval.notTheSubmitter) continue;
+    if (!submitterField) {
+      d.error(
+        'SEC010',
+        `workflow.approvals[${ai}]`,
+        `Approval "${approval.key}" bars the submitter, but the process never says which field holds their address.`,
+        'Set data.submitterField. Without it the runtime would guess, and a fraud control that guesses is worse than none.',
+      );
+    }
+    /*
+     * An approval addressed only to the submitter and barred from them can
+     * never be decided. Worth an error rather than a shrug: the record would
+     * route correctly, sit in a waiting state, and refuse every person who
+     * tried — including the only one it names.
+     */
+    const onlySubmitter =
+      approval.approvers.length > 0 &&
+      approval.approvers.every(
+        (p) => ('submitter' in p) || ('field' in p && p.field === submitterField),
+      );
+    if (onlySubmitter) {
+      d.error(
+        'SEC011',
+        `workflow.approvals[${ai}]`,
+        `Approval "${approval.key}" is addressed only to the submitter and also bars them, so nobody can ever decide it.`,
+        'Address it to somebody else as well, or drop the bar.',
+      );
+    }
+  }
+
   // ---------------------------------------------------------------- workflow
   const initial = bp.workflow.states.filter((s) => s.type === 'initial');
   if (initial.length !== 1) {

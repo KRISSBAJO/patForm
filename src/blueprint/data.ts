@@ -145,6 +145,24 @@ export const DataSchema = z
      * without guessing.
      */
     identity: z.array(Key).optional(),
+    /**
+     * Which field holds the submitter's own address.
+     *
+     * Named rather than inferred. The runtime used to answer "who submitted
+     * this" by taking the first field of type email, which is a positional
+     * guess: reorder the fields and every message addressed to the submitter
+     * goes to their manager. It happened to be right in all three reference
+     * processes and all eighty-eight packs, which is luck and not design.
+     *
+     * It also has to be right for separation of duties to mean anything. A
+     * control that refuses to let the submitter approve their own request, and
+     * guesses which address is the submitter's, is worse than no control —
+     * it reads as enforced in review and bars the wrong person at runtime.
+     *
+     * Optional in the schema because published versions are immutable and must
+     * keep parsing; required by the compiler whenever anything depends on it.
+     */
+    submitterField: Key.optional(),
   })
   .strict();
 export type DataSchema = z.infer<typeof DataSchema>;

@@ -91,10 +91,29 @@ function has(bp: Blueprint, control: Control, rules: CategoryRules): Finding {
     }
 
     case 'two_person_decision': {
+      /*
+       * Two decisions is not two people.
+       *
+       * This counted approvals, which two approvals addressed to the same
+       * role satisfies, and which the person who submitted the record
+       * satisfies on their own if they hold that role. Both of those are one
+       * person deciding twice, which is the thing the control exists to stop.
+       */
+      const approvals = bp.workflow.approvals;
+      const parties = new Set(approvals.flatMap((a) => a.approvers.map((p) => JSON.stringify(p))));
+      const submitterBarred = approvals.every((a) => a.notTheSubmitter);
+
+      const reasons: string[] = [];
+      if (approvals.length < 2) reasons.push(`only ${approvals.length} approval`);
+      if (parties.size < 2) reasons.push('every approval is addressed to the same party');
+      if (!submitterBarred) reasons.push('the submitter is not barred from deciding');
+
       return {
         control,
-        ok: bp.workflow.approvals.length >= 2,
-        detail: `${bp.workflow.approvals.length} approval(s)`,
+        ok: reasons.length === 0,
+        detail: reasons.length
+          ? reasons.join('; ')
+          : `${approvals.length} approvals across ${parties.size} parties, submitter barred from all`,
       };
     }
 
