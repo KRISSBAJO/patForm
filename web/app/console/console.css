@@ -1503,3 +1503,240 @@
 .cs__navItem[aria-current='page'] .cs__navIcon {
   opacity: 1;
 }
+
+/* ------------------------------------------------------ people and forms */
+
+.mg__invite {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px 18px;
+  padding: 18px;
+}
+
+.mg__field--wide {
+  grid-column: 1 / -1;
+}
+
+.mg__actions {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 10px;
+}
+
+.mg__hint {
+  margin-top: 6px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.mg__sub {
+  display: block;
+  margin-top: 2px;
+  font-size: 12.5px;
+  font-weight: 400;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+/* State said in words, not only in opacity. */
+.mg__tag {
+  display: inline-block;
+  margin-top: 5px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: var(--paper-2);
+  border: 1px solid var(--card-line);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.mg__rowActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.mg__inlineSelect {
+  height: 32px;
+  padding: 0 8px;
+  font-size: 13px;
+  min-width: 130px;
+}
+
+.mg__process {
+  margin-bottom: 18px;
+}
+
+.mg__processBody {
+  padding: 16px 18px 18px;
+}
+
+.mg__linkRow {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.mg__linkRow .cs__input {
+  flex-grow: 1;
+  font-family: var(--font-mono), monospace;
+  font-size: 12.5px;
+}
+
+/* The rail's builder entry is a link, not a button, so it needs the button's
+   box explicitly rather than by inheritance. */
+a.cs__navItem {
+  text-decoration: none;
+}
+
+/* ------------------------------------------------- the three asked-for fixes */
+
+/*
+ * 1. The tiles had the number and its caption on one baseline, which made
+ *    "5" and "0 approvals, 5 tasks" compete for the same line and wrap into
+ *    two. The number gets its own line and the caption sits under it.
+ */
+.cs__tile {
+  padding: 16px 18px 18px;
+}
+
+.cs__tileValue {
+  display: block;
+  margin-top: 10px;
+}
+
+.cs__tileNumber {
+  display: block;
+  font-size: 30px;
+  line-height: 1.05;
+}
+
+.cs__tileMeta {
+  display: block;
+  margin-top: 6px;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+/*
+ * 2. A product bar across the full width, above the rail and the content.
+ *
+ * It is what makes the two columns read as one application rather than as a
+ * menu beside a page, and it is where the workspace name belongs — the rail
+ * was carrying it, which meant the product name and the customer's name were
+ * stacked in the same narrow column.
+ */
+.cs {
+  flex-direction: column;
+}
+
+.cs__top {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  height: 48px;
+  flex-shrink: 0;
+  padding: 0 16px;
+  background: var(--green-deep);
+  color: #ffffff;
+  /* Mint, not green: the bar is the one dark surface left. */
+  --focus-ring: var(--green-mint);
+}
+
+.cs__topBrand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-family: var(--ui);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: #ffffff;
+}
+
+.cs__topDivider {
+  width: 1px;
+  height: 20px;
+  background: rgba(255, 255, 255, 0.28);
+}
+
+.cs__topWorkspace {
+  font-family: var(--ui);
+  font-size: 14px;
+  /* #dff0e6 on #0f4e30 is 10.4:1. */
+  color: #dff0e6;
+}
+
+.cs__shell {
+  display: flex;
+  flex-grow: 1;
+  min-height: 0;
+}
+
+/* The rail no longer carries the product name, so it starts at its nav. */
+.cs__side {
+  padding-top: 12px;
+}
+
+/*
+ * 3. Table density. Rows were 9px tall in padding terms with a 13px face,
+ *    which reads as a spreadsheet rather than a list. One row height, one
+ *    header treatment, one hover, used by every table in the console.
+ */
+.vw__table {
+  font-size: 13.5px;
+}
+
+.vw__table th,
+.vw__table td {
+  padding: 13px 18px;
+  vertical-align: top;
+}
+
+.vw__table thead th {
+  padding-top: 11px;
+  padding-bottom: 11px;
+  font-family: var(--font-mono), monospace;
+  font-size: 10.5px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted);
+  background: var(--paper-3);
+  border-bottom: 1px solid var(--card-line);
+}
+
+.vw__table tbody td,
+.vw__table tbody th {
+  border-bottom: 1px solid var(--card-line);
+  line-height: 1.5;
+}
+
+.vw__table tbody tr:last-child td,
+.vw__table tbody tr:last-child th {
+  border-bottom: none;
+}
+
+.vw__table tbody tr:hover {
+  background: var(--paper-3);
+}
+
+/*
+ * `.vw__table th` was written when every `th` in the console was a column
+ * header, and it uppercases. A row header — the person's name in the people
+ * table — is a `th` too, and came out shouting. Scoped rather than removed:
+ * the column headers still want it.
+ */
+.vw__table tbody th {
+  text-transform: none;
+  letter-spacing: normal;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.vw__table tbody th .mg__sub {
+  text-transform: none;
+  letter-spacing: normal;
+}

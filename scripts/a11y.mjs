@@ -179,6 +179,20 @@ async function main() {
     all.push(...(await audit(page, 'Automation health and the suppression list')));
   }
 
+  // The two views that answer "how do records arrive" and "how do people get
+  // in". Both existed as endpoints with nothing calling them.
+  for (const [name, label] of [
+    ['Processes and forms', 'Processes & forms'],
+    ['People, with the invitation form', 'People'],
+  ]) {
+    const item = page.locator('button', { hasText: new RegExp(`^${label.replace('&', '&')}`) }).first();
+    if (await item.count()) {
+      await item.click();
+      await page.waitForTimeout(2000);
+      all.push(...(await audit(page, name)));
+    }
+  }
+
   const account = page.locator('button', { hasText: /^Your account$/ }).first();
   if (await account.count()) {
     await account.click();

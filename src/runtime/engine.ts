@@ -127,9 +127,13 @@ export class Engine {
     workspace_role: WorkspaceRole;
     active: boolean;
     email_verified_at: string | null;
+    workspace_name: string;
   } | null> {
     const { rows } = await this.pool.query(
-      'select id, tenant_id, email, display_name, workspace_role, active, email_verified_at from actor where id = $1',
+      `select a.id, a.tenant_id, a.email, a.display_name, a.workspace_role, a.active,
+              a.email_verified_at, t.name as workspace_name
+         from actor a join tenant t on t.id = a.tenant_id
+        where a.id = $1`,
       [actorId],
     );
     return rows[0] ?? null;

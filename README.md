@@ -579,6 +579,39 @@ missing check away from being a session that counts.
 A phone whose clock is a minute out still works. Rejecting drift is how a
 second factor becomes a support queue.
 
+### What is reachable
+
+```bash
+npm run reachable
+```
+
+Lists the console endpoints nothing in the interface calls. It exists because
+**thirty of seventy-two were unreachable** and every proof passed anyway —
+each one starts from a session and a tenant the harness builds directly, so
+none of them ever tried to get from the front door to a published process.
+Among the thirty: every `members` route, every `invitations` route, every
+`forms` route.
+
+Counting endpoints is not counting features. An endpoint is not a feature
+until something a person can reach calls it.
+
+### Where records come from, and who can see them
+
+Three things the console could not answer, all built and none of them linked:
+
+- **Processes & forms** — each published process serves a form at
+  `/f/<key>`. That link is the answer to "how does a record get created": send
+  it to whoever fills it in, and every submission becomes a record routed by
+  the process's own rules. Nobody needs an account to submit one.
+- **People** — invite, change a role, deactivate, revoke sessions. The
+  invitation link is never shown in the interface, only emailed, because
+  anybody who can invite could otherwise mint one for an address whose owner
+  never sees it. The role list offered is what the *server* will accept from
+  that person, so the interface cannot offer a role it would refuse.
+- **Builder** — linked from the rail. It was not linked at all, which is how
+  somebody could use this console without learning that processes are designed
+  rather than configured.
+
 ### Getting in at all
 
 The landing page now reaches the application. It did not: "Sign in" pointed at

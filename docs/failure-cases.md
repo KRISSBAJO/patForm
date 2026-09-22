@@ -452,6 +452,23 @@ The first instinct was to move the proof to the next window and carry on. The be
 
 **Generalisable:** when a proof trips over a control, the question is whether the control is wrong or the proof is describing a case worth keeping. Stepping around it silently discards a test the system just offered you for free.
 
+### 43. Thirty endpoints with no way in
+
+Asked whether the product was "child's play", the honest check was to diff the console's API surface against the paths the interface actually calls. **Thirty of seventy-two endpoints had nothing calling them.** Among them: every `members` route, every `invitations` route, every `forms` route, CSV import, API keys, webhooks, OAuth grants, the data map and retention.
+
+The three things the user could not find were all built and all unreachable:
+
+| Question | What existed | What reached it |
+|---|---|---|
+| How is a record created? | A public form at `/f/<key>`; a submission starts the record | Nothing in the console mentioned or linked it |
+| Where do forms come from? | The builder, at `/builder` | Not linked from the console at all |
+| How does an organization bring people in? | Invitations, roles, deactivation, session revocation | No page |
+
+This is the ninth instance of **a control present in review and absent at runtime**, and by far the largest — it was most of the product. Every one of the twenty-four proofs passed throughout, because each starts from a session and a tenant the harness builds directly; none of them opens a browser and tries to get from the front door to a published process.
+
+**Generalisable:** counting endpoints is not counting features. The cheap check that would have caught this at any point is the one run here — list the routes, list the paths the client calls, and subtract. It takes a minute and it does not need a person to notice something feels thin.
+
+
 ---
 
 ## What the compiler structurally cannot catch

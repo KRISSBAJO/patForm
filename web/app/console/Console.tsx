@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import './console.css';
 import { Ask } from './Ask';
 import { DashboardView, HealthView, RecordsView, SecurityView } from './Views';
+import { PeopleView, ProcessesView } from './Manage';
 
 /**
  * Calls go to the same origin so the HttpOnly, SameSite=Lax session cookie is
@@ -16,6 +17,7 @@ interface Me {
   email: string;
   workspace_role: string;
   email_verified_at: string | null;
+  workspace_name: string;
 }
 
 interface Work {
@@ -87,7 +89,7 @@ export function Console() {
   const [work, setWork] = useState<Work | null>(null);
   const [health, setHealth] = useState<Health | null>(null);
   const [record, setRecord] = useState<RecordDetail | null>(null);
-  const [view, setView] = useState<'work' | 'ask' | 'records' | 'dashboard' | 'health' | 'security'>('work');
+  const [view, setView] = useState<'work' | 'ask' | 'records' | 'dashboard' | 'health' | 'security' | 'people' | 'processes'>('work');
   /*
    * Whether this sign-in screen is a first visit or an ejection.
    *
@@ -246,15 +248,26 @@ export function Console() {
       <a className="skip-link" href="#console-main">
         Skip to your work
       </a>
-      <aside className="cs__side">
-        <div className="cs__brand">
-          <svg width="22" height="22" viewBox="0 0 26 26" fill="none" aria-hidden="true">
+
+      {/*
+        * The product bar. It carries the product name and the workspace
+        * name side by side — the rail was stacking them in a narrow column,
+        * which read as two brands rather than one application.
+        */}
+      <header className="cs__top">
+        <span className="cs__topBrand">
+          <svg width="20" height="20" viewBox="0 0 26 26" fill="none" aria-hidden="true">
             <rect x="1.5" y="1.5" width="23" height="23" rx="6" stroke="var(--green-mint)" strokeWidth="1.8" />
             <path d="M7 13.2L11 17L19 9" stroke="var(--green-mint)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
           Patform
-        </div>
+        </span>
+        <span className="cs__topDivider" aria-hidden="true" />
+        <span className="cs__topWorkspace">{me.workspace_name}</span>
+      </header>
 
+      <div className="cs__shell">
+      <aside className="cs__side">
         <nav className="cs__nav" aria-label="Console">
           <button
             type="button"
@@ -303,6 +316,32 @@ export function Console() {
             Automation health
             {counts.failed > 0 && <span className="cs__navCount cs__navCount--bad">{counts.failed}</span>}
           </button>
+          <button
+            type="button"
+            className="cs__navItem"
+            aria-current={view === 'processes' ? 'page' : undefined}
+            onClick={() => setView('processes')}
+          >
+            <NavIcon name="processes" />
+            Processes &amp; forms
+          </button>
+          <button
+            type="button"
+            className="cs__navItem"
+            aria-current={view === 'people' ? 'page' : undefined}
+            onClick={() => setView('people')}
+          >
+            <NavIcon name="people" />
+            People
+          </button>
+          {/* The builder is a different application, so a link rather than a
+              view — and it was not linked from here at all, which is how
+              somebody could use this console without ever learning that
+              processes are designed rather than configured. */}
+          <a className="cs__navItem" href="/builder">
+            <NavIcon name="builder" />
+            Builder
+          </a>
         </nav>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -383,9 +422,18 @@ export function Console() {
                     ? 'Automation health'
                     : view === 'security'
                       ? 'Your account'
-                      : 'My work'}
+                      : view === 'people'
+                        ? 'People'
+                        : view === 'processes'
+                          ? 'Processes & forms'
+                          : 'My work'}
           </h1>
-          {work && <span className="cs__version">{work.processName}</span>}
+          {/* The process pill is context for the record views. On People,
+              Processes and Your account it named a process the page has
+              nothing to do with. */}
+          {work && ['work', 'ask', 'records', 'dashboard'].includes(view) && (
+            <span className="cs__version">{work.processName}</span>
+          )}
           <span style={{ flexGrow: 1 }} />
           <button type="button" className="cs__btn" onClick={() => void load()}>
             Refresh
@@ -394,7 +442,11 @@ export function Console() {
 
         <div className="cs__body">
           <div className="cs__left">
-            {view === 'security' ? (
+            {view === 'people' ? (
+              <PeopleView canAdminister={['owner', 'admin', 'builder'].includes(me.workspace_role)} />
+            ) : view === 'processes' ? (
+              <ProcessesView processes={session.processes} />
+            ) : view === 'security' ? (
               <SecurityView />
             ) : view === 'health' ? (
               // `administer` is what the lift endpoint requires, so the button
@@ -612,6 +664,10 @@ export function Console() {
               <p style={{ marginTop: 10, fontSize: 13.5, lineHeight: 1.5, color: 'var(--on-dark-2)' }}>
                 {view === 'health'
                   ? 'What the automation did, and who it can no longer reach. A hard bounce or a spam complaint stops this deployment writing to that address — the record will say "skipped" and this is the page that says why.'
+                  : view === 'people'
+                    ? 'Who is in this workspace and what they may do. An invitation is emailed, works once, and expires in seven days — the link is never shown here, because anybody who can invite could otherwise mint one for an address whose owner never sees it.'
+                  : view === 'processes'
+                    ? 'Where records come from. Each published process serves a form at its own link; every submission becomes a record, routed by that process’s own rules. Nobody needs an account to submit one.'
                   : view === 'security'
                     ? 'Your own account, and nobody else’s. Adding a second factor is the one change here that makes a stolen password insufficient on its own — and turning it off asks for your password rather than a code.'
                   : view === 'dashboard'
@@ -626,6 +682,7 @@ export function Console() {
           </div>
         </div>
       </main>
+      </div>
 
       {toast && (
         <div
@@ -731,7 +788,11 @@ function VerifyBanner({ email }: { email: string }) {
  * one already says what it is, so announcing the icon as well would read the
  * item twice.
  */
-function NavIcon({ name }: { name: 'work' | 'ask' | 'records' | 'dashboard' | 'health' }) {
+function NavIcon({
+  name,
+}: {
+  name: 'work' | 'ask' | 'records' | 'dashboard' | 'health' | 'processes' | 'people' | 'builder';
+}) {
   const common = {
     className: 'cs__navIcon',
     viewBox: '0 0 20 20',
@@ -775,6 +836,29 @@ function NavIcon({ name }: { name: 'work' | 'ask' | 'records' | 'dashboard' | 'h
       return (
         <svg {...common}>
           <path d="M2.8 10.4h3.3l1.7-4.6 2.6 8.6 1.9-5.3 1.1 1.3h3.8" />
+        </svg>
+      );
+    case 'processes':
+      return (
+        <svg {...common}>
+          <rect x="2.6" y="3" width="6" height="4.4" rx="1.2" />
+          <rect x="11.4" y="12.6" width="6" height="4.4" rx="1.2" />
+          <path d="M5.6 7.4v4.2a1.4 1.4 0 0 0 1.4 1.4h4.4" />
+        </svg>
+      );
+    case 'people':
+      return (
+        <svg {...common}>
+          <circle cx="7.6" cy="7" r="2.7" />
+          <path d="M2.8 16.2c0-2.5 2.1-4.2 4.8-4.2s4.8 1.7 4.8 4.2" />
+          <path d="M13.2 5.1a2.7 2.7 0 0 1 0 5.2M14.4 12.4c1.7.5 2.8 1.8 2.8 3.8" />
+        </svg>
+      );
+    case 'builder':
+      return (
+        <svg {...common}>
+          <path d="M11.6 3.4a3.4 3.4 0 0 0 4.4 4.4l-8 8a1.9 1.9 0 0 1-2.7-2.7l8-8Z" />
+          <path d="M4.2 14.2 3 17l2.8-1.2" />
         </svg>
       );
   }
