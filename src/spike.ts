@@ -14,6 +14,7 @@ import {
   proveRespondentScope,
   proveRetention,
   proveTraceability,
+  proveWebhooks,
   proveWorkerFiresTimers,
 } from './spike-proofs.js';
 import { runScenarios } from './runtime/scenarios.js';
@@ -502,6 +503,7 @@ async function main(): Promise<void> {
     ['traceability', () => proveTraceability(ctx)],
     ['export then retain', () => proveExportThenRetain(ctx)],
     ['privacy', () => provePrivacy(ctx)],
+    ['webhooks', () => proveWebhooks(ctx)],
     ['worker', () => proveWorkerFiresTimers(ctx)],
     ['retention', () => proveRetention(ctx)],
     ['idempotent email', () => proveIdempotentEmail(pool, onboarding)],

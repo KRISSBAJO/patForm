@@ -1,5 +1,5 @@
 {
-  "ranAt": "2026-09-22T03:36:09.749Z",
+  "ranAt": "2026-09-22T03:54:46.077Z",
   "postgres": "PostgreSQL 17.11 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit",
   "proofs": [
     {
@@ -48,19 +48,25 @@
       "name": "Every action traces back to the request that caused it, across the worker boundary",
       "claim": "Section 20.2 observability: traceable request, event, job, attempt and result identifiers.",
       "passed": true,
-      "detail": "One submission produced 1 event(s), 1 job(s) and 3 action run(s), every one carrying \"proof-request-0001\" and 0 unattributed. The actions ran in a later drain that knew nothing about the submission — the link survived because the request id is stamped on the outbox row and read back when the job runs. A timer firing got an id of its own (req_56159dc3a2d9…) rather than inheriting one, because a deadline is its own cause. The support view joined them into 2 step(s) with every attempt count present, and answered in a sentence: \"Queued: 1 job(s) scheduled and not yet run. If this does not clear, no worker is\". Asking by request id found 1 record; an admin of another workspace asking the same id found 0."
+      "detail": "One submission produced 1 event(s), 1 job(s) and 3 action run(s), every one carrying \"proof-request-0001\" and 0 unattributed. The actions ran in a later drain that knew nothing about the submission — the link survived because the request id is stamped on the outbox row and read back when the job runs. A timer firing got an id of its own (req_26c1aded63a3…) rather than inheriting one, because a deadline is its own cause. The support view joined them into 2 step(s) with every attempt count present, and answered in a sentence: \"Queued: 1 job(s) scheduled and not yet run. If this does not clear, no worker is\". Asking by request id found 1 record; an admin of another workspace asking the same id found 0."
     },
     {
       "name": "An administrator exports the record with its history, and only then is it deleted",
       "claim": "Section 20.1 step 11, and 6.4: corrections append history; destructive overwriting of audit evidence is prohibited.",
       "passed": true,
-      "detail": "The bundle carried 5 history entries for a finished record — submission, both decisions with the reasons given, and every task completion — plus 2 approval(s), 2 message(s) and 1 document(s). An approver could not export at all (\"neither the roles held (hiring_manager) nor workspace role \"approver\" grant \"administer\"\"). An administrator holding no process role saw every field; one who is also a hiring manager had 3 withheld (id_document, national_id, bank_account) — named in the bundle rather than quietly absent, and not left in the answers as the literal string \"[redacted]\". The export is itself on the record's history, and a second export of an unchanged record produced the same checksum (1e681cd5219c), so a file can be verified later. Retention then deleted 1 instance and 8 event(s) — in that order, because afterwards there is nothing left to export."
+      "detail": "The bundle carried 5 history entries for a finished record — submission, both decisions with the reasons given, and every task completion — plus 2 approval(s), 2 message(s) and 1 document(s). An approver could not export at all (\"neither the roles held (hiring_manager) nor workspace role \"approver\" grant \"administer\"\"). An administrator holding no process role saw every field; one who is also a hiring manager had 3 withheld (id_document, national_id, bank_account) — named in the bundle rather than quietly absent, and not left in the answers as the literal string \"[redacted]\". The export is itself on the record's history, and a second export of an unchanged record produced the same checksum (136615ad207b), so a file can be verified later. Retention then deleted 1 instance and 8 event(s) — in that order, because afterwards there is nothing left to export."
     },
     {
       "name": "A privacy request erases one person without destroying anybody else",
       "claim": "Section 20.2 privacy: data map, deletion workflow. Section 12.1: privacy request workflow.",
       "passed": true,
       "detail": "The data map is derived from the published version: 20 fields, every restricted one carrying a reason and hidden from somebody, and it traces where a value goes — start_date reaches 11 destinations including a webhook that leaves the platform. A read_only member was refused it (\"workspace role \"read_only\" does not grant \"report\"\"). The manager appears in 2 records and is the subject of none, so erasing them redacted 2 field(s) and deleted 0 records — both records survived and the address now reads \"[erased]\", so the audit still shows a manager was asked. A subject whose record is still running was left alone. An operator was refused (\"workspace role \"operator\" does not grant \"administer\"\"). The preview reported 1 deletion and performed none. Erasing the finished record's subject removed it and all 5 of its events, and the erasure_run row records the same number — the account is written before the deletion and had to be counted first, or it would say zero."
+    },
+    {
+      "name": "A webhook actually leaves, is signed, survives a rotation, dies in a dead letter, and replays",
+      "claim": "Section 11.2, against a real HTTP server that verifies the signature itself.",
+      "passed": true,
+      "detail": "A real server received 3 request(s) and verified every signature itself. The envelope carried the event, event id, instance id, process version and occurred-at that §11.2 names — before this, call_webhook wrote a row saying \"delivered\" and made no request at all. Registering a plain-http endpoint off localhost was refused (\"a webhook endpoint must be https, except on localhost for development\"). After rotating the secret the next delivery carried 2 signatures and the receiver, still using the old one, accepted it — which is what \"rotate with overlap\" is for. Against a failing endpoint the delivery retried to 6 attempts and stopped in a dead letter rather than retrying forever; it was inspectable, and replaying it once the endpoint recovered delivered it. An event with no subscriber left a \"no_subscriber\" row, because silence is indistinguishable from never having fired."
     },
     {
       "name": "A worker fires deadlines with nobody watching",
@@ -114,7 +120,7 @@
       "name": "Submission and workflow start are far inside the section 10.4 budget",
       "claim": "Beta targets: acknowledgment p95 under 1.5s, workflow start p95 under 30s.",
       "passed": true,
-      "detail": "Over 100 submissions: acknowledgment p95 22.4ms (budget 1500ms), first action p95 48.6ms (budget 30000ms). Database round trips only, local container."
+      "detail": "Over 100 submissions: acknowledgment p95 18.3ms (budget 1500ms), first action p95 39.1ms (budget 30000ms). Database round trips only, local container."
     }
   ]
 }

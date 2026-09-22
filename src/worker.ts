@@ -1,4 +1,5 @@
 import { createPool, describeTarget } from './runtime/db.js';
+import { deliverBatch } from './runtime/webhooks.js';
 import { Engine, newWorkerId } from './runtime/engine.js';
 import { sweepExpiredTokens } from './runtime/retention.js';
 
@@ -30,7 +31,7 @@ async function main(): Promise<void> {
 
   let running = true;
   let lastSweep = 0;
-  const totals = { actions: 0, timers: 0, errors: 0 };
+  const totals = { actions: 0, timers: 0, webhooks: 0, errors: 0 };
 
   const stop = (signal: string) => {
     if (!running) return;
@@ -55,6 +56,16 @@ async function main(): Promise<void> {
       const fired = await engine.fireDueTimers(now, BATCH);
       totals.timers += fired;
       did += fired;
+
+      // §11.2's delivery. Same loop as the outbox rather than a second
+      // process: a webhook that only leaves when somebody opens a page is the
+      // fault the worker was built to fix, one layer along.
+      const hooks = await deliverBatch(pool, { workerId: id, batch: BATCH, now });
+      totals.webhooks += hooks.delivered;
+      did += hooks.claimed;
+      if (hooks.deadLettered) {
+        console.log(`  ${now.toISOString()}  ${hooks.deadLettered} webhook(s) gave up and went to the dead letter`);
+      }
 
       if (fired) console.log(`  ${now.toISOString()}  fired ${fired} timer(s)`);
 

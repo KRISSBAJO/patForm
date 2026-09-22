@@ -414,16 +414,66 @@ create table document (
   created_at         timestamptz not null
 );
 
+-- §11.2's subscribers. A customer registers a URL and the events they want.
+--
+-- Two secrets, not one. "Secrets rotate with overlap" means a rotation has a
+-- period where both the old and the new are valid, so a consumer can redeploy
+-- without dropping a delivery — every request during that window is signed
+-- with both and the consumer accepts either.
+create table webhook_endpoint (
+  id             uuid primary key default gen_random_uuid(),
+  tenant_id      uuid not null references tenant(id),
+  url            text not null,
+  description    text not null default '',
+  -- The event names this endpoint wants. Empty means every event.
+  events         text[] not null default '{}',
+  secret         text not null,
+  -- Set during a rotation, cleared when it completes.
+  previous_secret text,
+  rotated_at     timestamptz,
+  -- §11.2: "sensitive payload fields are opt-in and shown during webhook
+  -- configuration". Named here rather than inferred, so adding a field to a
+  -- process never silently widens what an existing endpoint receives.
+  include_fields text[] not null default '{}',
+  active         boolean not null default true,
+  created_at     timestamptz not null default now()
+);
+
+create index webhook_endpoint_by_tenant on webhook_endpoint (tenant_id) where active;
+
+-- One row per (event, endpoint). Claimed, attempted, retried and finally
+-- dead-lettered by the same FOR UPDATE SKIP LOCKED pattern as the outbox,
+-- because it is the same problem and one proven mechanism is worth more than
+-- two.
+--
+-- This used to be a single row per event, written with status 'delivered' and
+-- no HTTP request anywhere. A hundred of them said delivered and nothing had
+-- ever left the machine.
 create table webhook_delivery (
   id            bigserial primary key,
   tenant_id     uuid not null,
   instance_id   uuid not null,
-  action_run_id bigint not null references action_run(id) unique,
+  endpoint_id   uuid references webhook_endpoint(id) on delete cascade,
+  action_run_id bigint references action_run(id),
   event_name    text not null,
+  -- §11.2: process version, instance id, event id and occurred timestamp all
+  -- travel with the payload so a consumer can order and deduplicate.
+  event_id      bigint,
   payload       jsonb not null,
-  status        text not null default 'delivered',
-  delivered_at  timestamptz not null
+  status        text not null default 'pending'
+    check (status in ('pending', 'delivered', 'failed', 'dead_letter', 'no_subscriber')),
+  attempts      int not null default 0,
+  available_at  timestamptz not null default now(),
+  claimed_by    text,
+  claimed_at    timestamptz,
+  response_status int,
+  last_error    text,
+  created_at    timestamptz not null default now(),
+  delivered_at  timestamptz
 );
+
+create index webhook_ready on webhook_delivery (available_at, id) where status = 'pending';
+create index webhook_by_instance on webhook_delivery (instance_id);
 
 -- ------------------------------------------------------------------- timers
 
@@ -561,3 +611,64 @@ create table api_idempotency (
   created_at   timestamptz not null default now(),
   primary key (tenant_id, key)
 );
+
+-- ----------------------------------------------------------------- oauth
+--
+-- §11.1's installed integrations. Authorization code with PKCE; no implicit
+-- grant and no password grant, both of which OAuth 2.1 removes.
+create table oauth_client (
+  client_id     text primary key,
+  tenant_id     uuid not null references tenant(id),
+  name          text not null,
+  -- Matched exactly, never by prefix: "starts with" matching is how an open
+  -- redirect on the client's own domain becomes a stolen token.
+  redirect_uris text[] not null,
+  secret_hash   text,
+  confidential  boolean not null default false,
+  created_at    timestamptz not null default now()
+);
+
+create table oauth_authorization (
+  id             uuid primary key default gen_random_uuid(),
+  code_hash      text not null unique,
+  client_id      text not null references oauth_client(client_id),
+  tenant_id      uuid not null references tenant(id),
+  actor_id       uuid not null references actor(id),
+  redirect_uri   text not null,
+  scopes         text[] not null,
+  code_challenge text not null,
+  -- A code presented twice is treated as theft, not as a retry, so this is
+  -- recorded rather than the row being deleted.
+  used_at        timestamptz,
+  expires_at     timestamptz not null,
+  created_at     timestamptz not null default now()
+);
+
+-- The grant is what the customer consented to and what they revoke. Tokens
+-- are what a client happens to hold right now. Keeping them apart is what
+-- makes "revoke this integration" mean something.
+create table oauth_grant (
+  id         uuid primary key default gen_random_uuid(),
+  client_id  text not null references oauth_client(client_id),
+  tenant_id  uuid not null references tenant(id),
+  actor_id   uuid not null references actor(id),
+  scopes     text[] not null,
+  created_at timestamptz not null default now(),
+  revoked_at timestamptz
+);
+
+create table oauth_token (
+  id                 uuid primary key default gen_random_uuid(),
+  grant_id           uuid not null references oauth_grant(id) on delete cascade,
+  access_hash        text not null unique,
+  refresh_hash       text not null unique,
+  access_expires_at  timestamptz not null,
+  refresh_expires_at timestamptz not null,
+  -- Refresh tokens rotate and are single use. A used one presented again
+  -- revokes the whole grant, because a race and a theft look identical from
+  -- here and only one of them is safe to assume.
+  used_at            timestamptz,
+  created_at         timestamptz not null default now()
+);
+
+create index oauth_grant_by_tenant on oauth_grant (tenant_id, created_at desc);

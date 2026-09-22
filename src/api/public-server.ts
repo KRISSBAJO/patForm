@@ -3,7 +3,7 @@ import { createPool, describeTarget, type Pool } from '../runtime/db.js';
 import { Engine } from '../runtime/engine.js';
 import { AuthorizationError, type Principal } from '../runtime/policy.js';
 import { logIfEnabled, requestIdFrom, withTrace } from '../runtime/trace.js';
-import { resolveApiKey, takeRateToken } from './keys.js';
+import { resolveApiKey, takeRateTokenShared } from './keys.js';
 import {
   API_VERSION,
   ApiError,
@@ -17,6 +17,7 @@ import { dashboard } from '../runtime/metrics.js';
 import { applyImport } from '../runtime/import.js';
 import { publicForm, submitForm } from '../runtime/intake.js';
 import { OPENAPI } from './openapi.js';
+import { exchangeCode, OAuthError, refresh, resolveAccessToken } from './oauth.js';
 import type { Capability } from '../blueprint/roles.js';
 
 /**
@@ -164,6 +165,13 @@ function send(res: ServerResponse, status: number, payload: unknown, headers: Re
   res.end(body);
 }
 
+/** The raw body, for the form-encoded token endpoint. */
+async function readRaw(req: IncomingMessage): Promise<string> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of req) chunks.push(chunk as Buffer);
+  return Buffer.concat(chunks).toString('utf8');
+}
+
 async function readBody(req: IncomingMessage): Promise<unknown> {
   const chunks: Buffer[] = [];
   let size = 0;
@@ -200,22 +208,79 @@ async function main(): Promise<void> {
         // it cannot drift from the deployment it describes.
         if (url.pathname === '/openapi.json') return send(res, 200, OPENAPI);
 
+        /*
+         * The token endpoint is before authentication, necessarily: it is how
+         * a client gets something to authenticate with. It is form-encoded
+         * because that is what the RFC specifies and what every OAuth client
+         * library sends.
+         */
+        if (url.pathname === '/oauth/token' && req.method === 'POST') {
+          const form = new URLSearchParams(await readRaw(req));
+          try {
+            const grantType = form.get('grant_type');
+            if (grantType === 'authorization_code') {
+              return send(res, 200, await exchangeCode(pool, {
+                code: form.get('code') ?? '',
+                clientId: form.get('client_id') ?? '',
+                clientSecret: form.get('client_secret') ?? undefined,
+                redirectUri: form.get('redirect_uri') ?? '',
+                codeVerifier: form.get('code_verifier') ?? '',
+              }), { 'cache-control': 'no-store' });
+            }
+            if (grantType === 'refresh_token') {
+              return send(res, 200, await refresh(pool, {
+                refreshToken: form.get('refresh_token') ?? '',
+                clientId: form.get('client_id') ?? '',
+                clientSecret: form.get('client_secret') ?? undefined,
+              }), { 'cache-control': 'no-store' });
+            }
+            throw new OAuthError(400, 'unsupported_grant_type',
+              'only authorization_code and refresh_token are supported; implicit and password are removed in OAuth 2.1');
+          } catch (err) {
+            if (err instanceof OAuthError) {
+              // The RFC's error shape, not this API's: an OAuth client library
+              // is parsing it.
+              return send(res, err.status, { error: err.code, error_description: err.message });
+            }
+            throw err;
+          }
+        }
+
         const header = req.headers.authorization ?? '';
         const [scheme, token] = header.split(' ');
         if (scheme !== 'Bearer' || !token) {
-          throw apiErrors.unauthorized('Send an API key as "Authorization: Bearer pat_live_…".');
+          throw apiErrors.unauthorized('Send a credential as "Authorization: Bearer …".');
         }
 
-        const resolved = await resolveApiKey(pool, token);
-        if (!resolved) throw apiErrors.unauthorized('That API key is not valid, or has been revoked.');
+        /*
+         * Two kinds of credential, one header.
+         *
+         * `pat_live_` is a key somebody's own server holds; `pat_at_` is an
+         * access token an installed integration was granted. They differ in
+         * how they were obtained and not at all in what the routes do with
+         * them, so they resolve to the same shape here and every check
+         * downstream is identical.
+         */
+        const asKey = await resolveApiKey(pool, token);
+        const asOAuth = asKey ? null : await resolveAccessToken(pool, token);
+        const resolved = asKey
+          ? { tenantId: asKey.record.tenantId, actorId: asKey.record.actorId, scopes: asKey.scopes, id: asKey.record.id }
+          : asOAuth
+            ? { tenantId: asOAuth.tenantId, actorId: asOAuth.actorId, scopes: asOAuth.scopes, id: asOAuth.clientId }
+            : null;
+        if (!resolved) throw apiErrors.unauthorized('That credential is not valid, has expired, or was revoked.');
 
         // Tenant- and credential-aware, so ten keys in one workspace do not
         // buy ten times the budget.
-        const verdict = takeRateToken(`${resolved.record.tenantId}:${resolved.record.id}`, RATE_LIMIT);
+        const verdict = await takeRateTokenShared(`${resolved.tenantId}:${resolved.id}`, RATE_LIMIT);
         const rateHeaders = {
           'x-ratelimit-limit': String(verdict.limit),
           'x-ratelimit-remaining': String(verdict.remaining),
           'x-ratelimit-reset': String(Math.ceil(verdict.resetAt / 1000)),
+          // Whether the count is shared across processes or local to this one.
+          // An integrator debugging a limit that seems too generous deserves
+          // to know which they are hitting.
+          'x-ratelimit-scope': verdict.shared ? 'shared' : 'process',
         };
         if (!verdict.ok) {
           throw Object.assign(apiErrors.rateLimited(verdict.retryAfterSeconds), { headers: rateHeaders });
@@ -223,8 +288,8 @@ async function main(): Promise<void> {
 
         const principal: Principal = {
           kind: 'actor',
-          tenantId: resolved.record.tenantId,
-          actorId: resolved.record.actorId,
+          tenantId: resolved.tenantId,
+          actorId: resolved.actorId,
         };
 
         const match = routes.find((r) => r.method === req.method && r.pattern.test(url.pathname));
@@ -244,7 +309,7 @@ async function main(): Promise<void> {
           route: match.name,
           status: result.status ?? 200,
           ms: Date.now() - started,
-          keyId: resolved.record.id,
+          credentialId: resolved.id,
         });
         send(res, result.status ?? 200, result.body, rateHeaders);
       } catch (err) {

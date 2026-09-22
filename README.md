@@ -77,7 +77,7 @@ is specific to either.
 
 Section 23 week 3 asks for a spike of workflow state, timers, idempotent email,
 versioning, and migration, producing architecture decision records and
-performance evidence. `npm run spike` is that, and it proves nineteen things:
+performance evidence. `npm run spike` is that, and it proves twenty things:
 
 | Proof | Result |
 |---|---|
@@ -91,6 +91,7 @@ performance evidence. `npm run spike` is that, and it proves nineteen things:
 | An administrator exports the record with its history, and only then is it deleted | §20.1 step 11: same checksum twice, fields withheld and named, then retention |
 | Every action traces back to the request that caused it | §20.2 observability: the link survives the worker boundary and a restart |
 | A privacy request erases one person without destroying anybody else | §20.2 privacy: the manager named on somebody else's form is redacted, not deleted |
+| A webhook actually leaves, is signed, survives a rotation, dies in a dead letter, and replays | §11.2, against a real HTTP server that verifies the signature itself |
 | A worker fires deadlines with nobody watching | 49 hours passed, 1 reminder, 0 timers left unfired |
 | Retention deletes, only for an administrator, and says what it removed | preview first, then 1 instance and 1 event, against an append-only history |
 | Idempotent email under replay | 3 deliveries, 1 email |
@@ -398,6 +399,67 @@ door with a weaker lock. One bad row refuses the whole file by default: a
 hundred-row spreadsheet with four bad rows should not become ninety-six records
 and a puzzle.
 
+## Webhooks, OAuth and shared rate limits
+
+```bash
+npm run api && npm run worker            # the worker delivers webhooks too
+```
+
+### Webhooks (§11.2)
+
+**These had never been sent.** `call_webhook` wrote a row with status
+`delivered` and made no HTTP request; a hundred of them sat in the seeded
+workspace saying delivered. A customer would have seen success in the console
+and silence in their own system — the worst version of this failure, because
+the evidence agrees with you.
+
+Now: registered endpoints, real delivery through the worker, and
+
+- **HMAC-SHA256 signing** over `timestamp.body`, in Stripe's header layout
+  because an integrator has already written that verification code once. The
+  timestamp is *inside* the signed string, so a captured request cannot be
+  replayed next week.
+- **Rotation with overlap.** Both secrets sign during a rotation, so a consumer
+  redeploys at its own pace and drops nothing. A single-secret rotation is a
+  scheduled outage.
+- **Retry with backoff, then a terminal dead letter** at six attempts — the
+  half people leave out. A delivery that retries forever is a queue that never
+  drains.
+- **Inspect and replay.** Replay resets the attempt budget: a dead letter fixed
+  a day later deserves the full six, not one more try.
+- **The payload is an intersection**, not a union — what the process declares
+  *and* what the endpoint opted into, so adding a field to a process never
+  silently widens what a subscriber receives.
+- An event nobody subscribes to still leaves a `no_subscriber` row. Silence is
+  indistinguishable from never having fired.
+
+### OAuth 2.0 (§11.1)
+
+Authorization code with PKCE for installed integrations, beside the API keys
+for server-to-server. No implicit grant and no password grant — both removed in
+OAuth 2.1, and for good reasons: implicit puts the token in browser history,
+password grant makes the integration handle the customer's password.
+
+- **PKCE on every client**, public or confidential (RFC 9700), and `S256` only.
+- **Exact redirect URI matching.** Prefix matching is how an open redirect on
+  the client's own domain becomes a stolen token.
+- **Refresh tokens rotate and reuse is treated as theft.** A used one revokes
+  the whole grant, because a race and a stolen token look identical from the
+  server and only one assumption is safe.
+- **Scopes are intersected with what the granting member holds *now*.** Somebody
+  demoted this morning cannot leave an integration acting with yesterday's
+  authority.
+
+### Rate limits (§10.1)
+
+`REDIS_URL` gives a counter shared across processes; without it the limit is
+per process, which behind more than one is a limit in name only.
+`X-RateLimit-Scope` says which you are hitting.
+
+**It fails open.** A limiter that refuses everything when its counter is
+unreachable has turned a cache outage into a total outage, and the thing it
+guards against is less harmful than that.
+
 ## The respondent side
 
 ```bash
@@ -447,12 +509,11 @@ Named here rather than implied by silence:
   states, approvals, tasks and roles; everything else goes through its JSON
   tab. There is also no draft locking, so two people editing one process will
   overwrite each other.
-- **OAuth 2.0 for installed integrations** (§11.1). Scoped API keys are the
-  server-to-server half; OAuth is not built.
-- **Webhook signing and a dead-letter state** (§11.2). Webhooks are delivered
-  and retried; payloads are not signed and there is no terminal dead letter.
-- **Rate limiting in one process's memory.** §10.1 names Redis for this;
-  behind more than one API process the count under-reports.
+- **A consent screen for OAuth.** The authorize endpoint is correct and takes
+  the granting member's session; a real deployment puts a page in front of it
+  showing the client's name and the scopes.
+- **Dynamic client registration, and token introspection/revocation
+  endpoints.** Clients are registered through the console.
 - **Privacy terms, a DPIA, consent capture, and a subject access export.**
   The privacy gate's code half is built and its documentation half is in
   [docs/privacy.md](docs/privacy.md); the terms are a document for a lawyer and

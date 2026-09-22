@@ -1,6 +1,7 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { Pool } from '../runtime/db.js';
 import type { Capability } from '../blueprint/roles.js';
+import { redis } from '../runtime/redis.js';
 
 /**
  * Scoped API keys, §11.1: *"OAuth 2.0 for installed integrations and scoped
@@ -168,6 +169,53 @@ export interface RateVerdict {
   remaining: number;
   resetAt: number;
   retryAfterSeconds: number;
+}
+
+/**
+ * The shared counter, when one is configured.
+ *
+ * §10.1 names Redis for exactly this. With more than one API process the
+ * in-memory bucket under-counts by a factor of however many are running, which
+ * is a limit in name only — so this is the correct answer and the memory
+ * version is the fallback.
+ *
+ * It fails **open**. A limiter that refuses everything when its counter is
+ * unreachable has turned a cache outage into a total outage, and the thing it
+ * guards against is less harmful than that. An unreachable Redis drops back to
+ * the local bucket and says so once.
+ */
+export async function takeRateTokenShared(
+  key: string,
+  limit: number,
+  windowSeconds = 60,
+  now = Date.now(),
+): Promise<RateVerdict & { shared: boolean }> {
+  const client = redis();
+  if (!client) return { ...takeRateToken(key, limit, windowSeconds * 1000, now), shared: false };
+
+  // A fixed window, aligned so every process agrees where it starts without
+  // coordinating. A sliding window needs a sorted set and three commands; this
+  // needs two, and the failure mode is a burst at a boundary rather than a
+  // limit nobody shares.
+  const window = Math.floor(now / (windowSeconds * 1000));
+  const resetAt = (window + 1) * windowSeconds * 1000;
+
+  try {
+    const count = await client.incrementWithExpiry(`rl:${key}:${window}`, windowSeconds + 1);
+    return {
+      ok: count <= limit,
+      limit,
+      remaining: Math.max(0, limit - count),
+      resetAt,
+      retryAfterSeconds: Math.max(1, Math.ceil((resetAt - now) / 1000)),
+      shared: true,
+    };
+  } catch (err) {
+    client.warnOnce(
+      `  rate limiting fell back to this process's memory: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    return { ...takeRateToken(key, limit, windowSeconds * 1000, now), shared: false };
+  }
 }
 
 export function takeRateToken(

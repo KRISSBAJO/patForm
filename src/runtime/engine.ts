@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { issueResumeToken } from './auth.js';
 import { currentRequestId, currentTrace, logIfEnabled, newRequestId, withTrace } from './trace.js';
+import { queueWebhook } from './webhooks.js';
 import { htmlToBlocks, renderPdf, type Block } from './pdf.js';
 import {
   ConsoleProvider,
@@ -767,6 +768,7 @@ export class Engine {
               now,
               email: this.email,
               audit: this.pool,
+              eventId: row.event_id,
             }),
           );
         }
@@ -1075,6 +1077,9 @@ async function executeAction(
     now: Date;
     email: EmailProvider;
     audit: Pool;
+    /** The event that scheduled this. Travels into the webhook envelope so a
+        consumer can order and deduplicate (§11.2). */
+    eventId?: number;
   },
 ): Promise<void> {
   const { bp, instance, action, now } = args;
@@ -1115,7 +1120,16 @@ async function executeAction(
   // workers reach this line for the same action, exactly one row is written
   // and the other sees a unique violation, which is success, not failure.
   try {
-    await performEffect(client, { bp, instance, action, runId, now, email: args.email, audit: args.audit });
+    await performEffect(client, {
+      bp,
+      instance,
+      action,
+      runId,
+      now,
+      email: args.email,
+      audit: args.audit,
+      eventId: args.eventId,
+    });
   } catch (err) {
     if (!isUniqueViolation(err)) throw err;
   }
@@ -1133,6 +1147,7 @@ async function performEffect(
     now: Date;
     email: EmailProvider;
     audit: Pool;
+    eventId?: number;
   },
 ): Promise<void> {
   const { bp, instance, action, runId, now } = args;
@@ -1324,12 +1339,32 @@ async function performEffect(
     }
 
     case 'call_webhook': {
-      const payload = Object.fromEntries(action.includeFields.map((f) => [f, answers[f] ?? null]));
-      await client.query(
-        `insert into webhook_delivery (tenant_id, instance_id, action_run_id, event_name, payload, delivered_at)
-         values ($1, $2, $3, $4, $5, $6)`,
-        [instance.tenant_id, instance.id, runId, action.event, JSON.stringify(payload), now],
+      /*
+       * Queued, not delivered.
+       *
+       * This used to insert a row with status 'delivered' and make no request
+       * at all — a hundred of them in the seeded workspace said delivered and
+       * nothing had ever left the machine. The fan-out below writes one
+       * pending row per subscribed endpoint, inside this transaction so the
+       * deliveries commit with the state change that caused them, and the
+       * worker sends them.
+       */
+      const declared = Object.fromEntries(action.includeFields.map((f) => [f, answers[f] ?? null]));
+      const { rows: versionRow } = await client.query<{ version: number }>(
+        'select version from process_version where id = $1',
+        [instance.process_version_id],
       );
+      await queueWebhook(client, {
+        tenantId: instance.tenant_id,
+        instanceId: instance.id,
+        actionRunId: runId,
+        eventName: action.event,
+        eventId: args.eventId ?? null,
+        processKey: instance.process_key,
+        processVersion: versionRow[0]?.version ?? 0,
+        declared,
+        occurredAt: now,
+      });
       return;
     }
 

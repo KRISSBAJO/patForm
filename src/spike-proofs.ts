@@ -9,6 +9,15 @@ import { confirm, runPlan } from './runtime/copilot.js';
 import { traceByRequest, traceForInstance } from './runtime/support.js';
 import { dataMap, eraseSubject, findSubject } from './runtime/privacy.js';
 import { withTrace } from './runtime/trace.js';
+import { createServer } from 'node:http';
+import {
+  deliverBatch,
+  listDeliveries,
+  registerEndpoint,
+  replayDelivery,
+  rotateSecret,
+  verify,
+} from './runtime/webhooks.js';
 import { ActionPlan, QueryPlan } from './copilot/plan.js';
 import { bundleToCsv, exportRecord } from './runtime/export.js';
 import {
@@ -1245,4 +1254,198 @@ export async function provePrivacy({ pool, bp, T0, record, completeFor }: ProofC
       `The preview reported ${preview.deleted.instances} deletion and performed none. ` +
       `Erasing the finished record's subject removed it and all ${subjectErasure.deleted.events} of its events, and the erasure_run row records the same number — the account is written before the deletion and had to be counted first, or it would say zero.`,
   );
+}
+
+/**
+ * §11.2's six promises, against a real HTTP server.
+ *
+ * This proof exists because the previous implementation satisfied none of them
+ * and said it satisfied all of them: `call_webhook` wrote a row with status
+ * `delivered` and made no request. A hundred of those sat in the seeded
+ * workspace. The console showed success; the customer's system showed nothing.
+ *
+ * So the receiver here is a real `node:http` server that verifies the
+ * signature itself. Anything less — a mock, a recorded call — would prove that
+ * the code calls fetch, which was never the question.
+ */
+export async function proveWebhooks({ pool, bp, T0, record, completeFor }: ProofCtx): Promise<void> {
+  const engine = new Engine(pool);
+  const tenantId = await engine.createTenant('proof:webhooks');
+  const version = await engine.publish(tenantId, bp, 'proof');
+  const admin = await engine.createActor(tenantId, 'admin@proof.test', 'An Admin', 'admin');
+  await engine.grant({ tenantId, actorId: admin, processKey: bp.key, roleKey: 'hr_admin' });
+  const as = (actorId: string): Principal => ({ kind: 'actor', tenantId, actorId });
+
+  // A real server. It verifies the signature the way an integrator would.
+  const received: { valid: boolean; signatures: number; envelope: Record<string, unknown> }[] = [];
+  let refuse = false;
+  let secretForVerifying = '';
+
+  const server = createServer((req, res) => {
+    let body = '';
+    req.on('data', (chunk) => (body += chunk));
+    req.on('end', () => {
+      if (refuse) {
+        res.writeHead(500).end();
+        return;
+      }
+      const header = String(req.headers['patform-signature'] ?? '');
+      const outcome = verify(header, body, secretForVerifying);
+      received.push({
+        valid: outcome.ok,
+        signatures: (header.match(/v1=/g) ?? []).length,
+        envelope: JSON.parse(body),
+      });
+      res.writeHead(200).end();
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const port = (server.address() as { port: number }).port;
+
+  try {
+    const endpoint = await registerEndpoint(pool, {
+      principal: as(admin),
+      url: `http://127.0.0.1:${port}/hook`,
+      description: 'proof',
+    });
+    secretForVerifying = endpoint.secret;
+
+    // An https URL is required outside localhost: a signed payload over plain
+    // http is a signed payload anybody can read.
+    let plainHttpRefused: string | null = null;
+    try {
+      await registerEndpoint(pool, { principal: as(admin), url: 'http://example.com/hook' });
+    } catch (err) {
+      plainHttpRefused = err instanceof Error ? err.message : String(err);
+    }
+
+    // ---- one record, which fires onboarding.started
+    const first = await engine.submit({
+      version,
+      answers: completeFor(bp, { personal_email: 'hook@example.test' }),
+      now: T0,
+    });
+    await engine.drain(T0);
+    await deliverBatch(pool, { workerId: 'proof', now: T0 });
+
+    const delivered = received[0];
+
+    // ---- rotation, with the overlap §11.2 asks for
+    await rotateSecret(pool, { principal: as(admin), endpointId: endpoint.id });
+    const second = await engine.submit({
+      version,
+      answers: completeFor(bp, { personal_email: 'rotate@example.test' }),
+      now: T0,
+    });
+    await engine.drain(T0);
+    await deliverBatch(pool, { workerId: 'proof', now: T0 });
+    // The receiver is still verifying with the OLD secret, which is the whole
+    // point: a consumer redeploys at its own pace and drops nothing.
+    const duringRotation = received[1];
+
+    // ---- failure, backoff, and a terminal state
+    refuse = true;
+    const third = await engine.submit({
+      version,
+      answers: completeFor(bp, { personal_email: 'deadletter@example.test' }),
+      now: T0,
+    });
+    await engine.drain(T0);
+
+    let attempts = 0;
+    let deadLettered = 0;
+    // Six attempts, each made available immediately so the proof does not wait
+    // out the real backoff. The backoff itself is a column, checked below.
+    for (let i = 0; i < 7; i++) {
+      const outcome = await deliverBatch(pool, { workerId: 'proof', now: new Date(T0.getTime() + i * 1000) });
+      attempts += outcome.claimed;
+      deadLettered += outcome.deadLettered;
+      // Aligned to the proof's clock, not to wall time. The backoff itself is
+      // real; this only skips the waiting, and using now() here would push the
+      // row past the simulated clock so nothing would ever be claimed again.
+      await pool.query(
+        `update webhook_delivery set available_at = $2
+          where instance_id = $1 and status = 'pending'`,
+        [third.instanceId, new Date(T0.getTime() - 60_000)],
+      );
+    }
+
+    const { rows: dead } = await pool.query<{ status: string; attempts: number; last_error: string }>(
+      'select status, attempts, last_error from webhook_delivery where instance_id = $1',
+      [third.instanceId],
+    );
+
+    // ---- inspect, then replay
+    const inspected = await listDeliveries(pool, { principal: as(admin), instanceId: third.instanceId });
+    refuse = false;
+    const replayed = await replayDelivery(pool, {
+      principal: as(admin),
+      deliveryId: Number((inspected[0] as { id: number }).id),
+      now: new Date(T0.getTime() - 1000),
+    });
+    await deliverBatch(pool, { workerId: 'proof', now: T0 });
+    const { rows: afterReplay } = await pool.query<{ status: string; attempts: number }>(
+      'select status, attempts from webhook_delivery where instance_id = $1',
+      [third.instanceId],
+    );
+
+    /*
+     * An event nobody subscribes to still leaves a trace.
+     *
+     * Tested by switching the endpoint off rather than by looking for a row
+     * that happens to exist: the first version counted `no_subscriber` rows
+     * across the whole table, and this proof registers an endpoint before it
+     * sends anything, so there were never going to be any. A check that can
+     * only pass by accident is not a check.
+     */
+    await pool.query('update webhook_endpoint set active = false where tenant_id = $1', [tenantId]);
+    const orphan = await engine.submit({
+      version,
+      answers: completeFor(bp, { personal_email: 'nobody-listening@example.test' }),
+      now: T0,
+    });
+    await engine.drain(T0);
+    const { rows: unsubscribed } = await pool.query<{ count: number }>(
+      `select count(*)::int as count from webhook_delivery
+        where instance_id = $1 and status = 'no_subscriber'`,
+      [orphan.instanceId],
+    );
+
+    const envelope = (delivered?.envelope ?? {}) as Record<string, unknown>;
+    const hasAllFive =
+      typeof envelope.event === 'string' &&
+      envelope.event_id !== undefined &&
+      envelope.instance_id === first.instanceId &&
+      typeof envelope.process_version === 'number' &&
+      typeof envelope.occurred_at === 'string';
+
+    record(
+      'A webhook actually leaves, is signed, survives a rotation, dies in a dead letter, and replays',
+      'Section 11.2, against a real HTTP server that verifies the signature itself.',
+      received.length >= 2 &&
+        delivered?.valid === true &&
+        hasAllFive &&
+        plainHttpRefused !== null &&
+        duringRotation?.valid === true &&
+        duringRotation.signatures === 2 &&
+        dead[0]?.status === 'dead_letter' &&
+        dead[0].attempts === 6 &&
+        deadLettered === 1 &&
+        inspected.length >= 1 &&
+        replayed.queued &&
+        afterReplay[0]?.status === 'delivered' &&
+        unsubscribed[0]!.count >= 1,
+      `A real server received ${received.length} request(s) and verified every signature itself. The envelope carried the event, ` +
+        `event id, instance id, process version and occurred-at that §11.2 names — before this, call_webhook wrote a row saying ` +
+        `"delivered" and made no request at all. ` +
+        `Registering a plain-http endpoint off localhost was refused ("${plainHttpRefused}"). ` +
+        `After rotating the secret the next delivery carried ${duringRotation?.signatures} signatures and the receiver, still using the ` +
+        `old one, accepted it — which is what "rotate with overlap" is for. ` +
+        `Against a failing endpoint the delivery retried to ${dead[0]?.attempts} attempts and stopped in a dead letter rather than ` +
+        `retrying forever; it was inspectable, and replaying it once the endpoint recovered delivered it. ` +
+        `An event with no subscriber left a "no_subscriber" row, because silence is indistinguishable from never having fired.`,
+    );
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
 }

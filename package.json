@@ -27,7 +27,9 @@
     "data-map": "node --env-file=.env node_modules/tsx/dist/cli.mjs src/privacy-cli.ts map",
     "erase": "node --env-file=.env node_modules/tsx/dist/cli.mjs src/privacy-cli.ts erase",
     "public-api": "node --env-file=.env node_modules/tsx/dist/cli.mjs src/api/public-server.ts",
-    "keys": "node --env-file=.env node_modules/tsx/dist/cli.mjs src/key-cli.ts"
+    "keys": "node --env-file=.env node_modules/tsx/dist/cli.mjs src/key-cli.ts",
+    "redis:up": "docker run -d --name patform-redis -p 56379:6379 redis:7-alpine",
+    "redis:down": "docker rm -f patform-redis"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.127.0",

@@ -14,6 +14,15 @@ import { runRetention } from '../runtime/retention.js';
 import { logIfEnabled, requestIdFrom, withTrace } from '../runtime/trace.js';
 import { traceByRequest, traceForInstance } from '../runtime/support.js';
 import { dashboard } from '../runtime/metrics.js';
+import { authorize, listGrants, registerClient, revokeGrant } from './oauth.js';
+import {
+  completeRotation,
+  listDeliveries,
+  listEndpoints,
+  registerEndpoint,
+  replayDelivery,
+  rotateSecret,
+} from '../runtime/webhooks.js';
 import { applyImport, planImport } from '../runtime/import.js';
 import { dataMap } from '../runtime/privacy.js';
 import { issueApiKey, listApiKeys, revokeApiKey } from './keys.js';
@@ -310,6 +319,99 @@ route('POST', /^\/api\/keys\/([0-9a-f-]{36})\/revoke$/, async ({ pool, principal
   await requireWorkspaceCapability(pool, principal, 'administer', 'api-keys');
   if (principal.kind !== 'actor') throw new HttpError(401, 'sign in first');
   return { revoked: await revokeApiKey(pool, { tenantId: principal.tenantId, id: url.pathname.split('/')[3]! }) };
+});
+
+
+// ----------------------------------------------------------------- webhooks
+//
+// §11.2. The endpoints a customer registers, their signing secrets, and every
+// attempt made against them.
+
+route('GET', /^\/api\/webhooks$/, async ({ pool, principal }) => listEndpoints(pool, principal));
+
+route('POST', /^\/api\/webhooks$/, async ({ pool, principal }, body) => {
+  const { url, description, events, includeFields } = body as {
+    url?: string; description?: string; events?: string[]; includeFields?: string[];
+  };
+  if (!url) throw new HttpError(400, 'url is required');
+  // The secret is returned once, here. It is not readable afterwards.
+  return registerEndpoint(pool, { principal, url, description, events, includeFields });
+});
+
+route('POST', /^\/api\/webhooks\/([0-9a-f-]{36})\/rotate$/, async ({ pool, principal, url }) =>
+  rotateSecret(pool, { principal, endpointId: url.pathname.split('/')[3]! }),
+);
+
+route('POST', /^\/api\/webhooks\/([0-9a-f-]{36})\/rotate\/complete$/, async ({ pool, principal, url }) =>
+  completeRotation(pool, { principal, endpointId: url.pathname.split('/')[3]! }),
+);
+
+route('GET', /^\/api\/webhooks\/deliveries$/, async ({ pool, principal, url }) =>
+  listDeliveries(pool, {
+    principal,
+    instanceId: url.searchParams.get('instance') ?? undefined,
+    status: url.searchParams.get('status') ?? undefined,
+  }),
+);
+
+route('POST', /^\/api\/webhooks\/deliveries\/(\d+)\/replay$/, async ({ pool, principal, url }) =>
+  replayDelivery(pool, { principal, deliveryId: Number(url.pathname.split('/')[4]!) }),
+);
+
+
+// -------------------------------------------------------------------- oauth
+//
+// The consent step lives here rather than on the public API: authorizing an
+// integration is something a signed-in member does, and the session cookie is
+// how we know who they are. The token endpoint is on the public API, because
+// that is where the client goes afterwards with no session at all.
+
+route('GET', /^\/api\/oauth\/grants$/, async ({ pool, principal }) => {
+  await requireWorkspaceCapability(pool, principal, 'administer', 'oauth');
+  if (principal.kind !== 'actor') throw new HttpError(401, 'sign in first');
+  return listGrants(pool, principal.tenantId);
+});
+
+route('POST', /^\/api\/oauth\/grants\/([0-9a-f-]{36})\/revoke$/, async ({ pool, principal, url }) => {
+  await requireWorkspaceCapability(pool, principal, 'administer', 'oauth');
+  if (principal.kind !== 'actor') throw new HttpError(401, 'sign in first');
+  return { revoked: await revokeGrant(pool, { tenantId: principal.tenantId, grantId: url.pathname.split('/')[4]! }) };
+});
+
+route('POST', /^\/api\/oauth\/clients$/, async ({ pool, principal }, body) => {
+  await requireWorkspaceCapability(pool, principal, 'administer', 'oauth');
+  if (principal.kind !== 'actor') throw new HttpError(401, 'sign in first');
+  const { name, redirectUris, confidential } = body as {
+    name?: string; redirectUris?: string[]; confidential?: boolean;
+  };
+  if (!name || !redirectUris?.length) throw new HttpError(400, 'name and redirectUris are required');
+  return registerClient(pool, { tenantId: principal.tenantId, name, redirectUris, confidential });
+});
+
+// The consent decision itself. A real deployment puts a screen in front of
+// this showing the client's name and the scopes; the endpoint is the part that
+// must be right either way.
+route('POST', /^\/api\/oauth\/authorize$/, async ({ pool, principal, actorId }, body) => {
+  if (principal.kind !== 'actor') throw new HttpError(401, 'sign in first');
+  const b = body as {
+    clientId?: string; redirectUri?: string; scopes?: string[];
+    state?: string; codeChallenge?: string; codeChallengeMethod?: string;
+  };
+  if (!b.clientId || !b.redirectUri || !b.codeChallenge) {
+    throw new HttpError(400, 'clientId, redirectUri and codeChallenge are required');
+  }
+  return authorize(pool, {
+    tenantId: principal.tenantId,
+    actorId,
+    request: {
+      clientId: b.clientId,
+      redirectUri: b.redirectUri,
+      scopes: (b.scopes ?? []) as Capability[],
+      state: b.state,
+      codeChallenge: b.codeChallenge,
+      codeChallengeMethod: b.codeChallengeMethod ?? 'S256',
+    },
+  });
 });
 
 // ------------------------------------------------------------------ session

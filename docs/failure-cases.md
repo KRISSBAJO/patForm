@@ -293,6 +293,28 @@ Found by the scope-intersection check refusing to issue the key, which is the ch
 
 **Fixed,** and a test now asserts every route's scope is one some workspace role actually grants.
 
+### 25. Webhooks had never been sent
+
+`call_webhook` inserted a `webhook_delivery` row with status `delivered` and made no HTTP request anywhere. A hundred of them sat in the seeded workspace saying delivered.
+
+This is the seventh instance of *present in review, absent at runtime* and the most consequential, because of where the evidence pointed: a customer integrating against it would have seen success in the console, silence in their own system, and no reason to suspect us. §11.2 describes six behaviours and none of them existed.
+
+**Fixed** with real delivery through the worker, signing, rotation with overlap, backoff into a terminal dead letter, inspect and replay. The proof uses a real `node:http` server that verifies the signature itself — a mock would have proved that the code calls `fetch`, which was never the question.
+
+### 26. A default of `now()` is unclaimable by anything on another clock
+
+Deliveries were inserted with `available_at` defaulting to wall-clock `now()`, and the claim query asks for `available_at <= $now`. Every caller that passes its own time — a replay, a backfill, the proof suite — found nothing to claim, because the row was due in their future.
+
+**Fixed:** `available_at` comes from the event. That is also simply more correct — a delivery is due as of the thing that caused it, not as of the insert.
+
+The general shape, and it cost three rounds of debugging in one sitting: **anything that takes a `now` must take it everywhere, including in defaults.** A single `now()` left in SQL makes the whole path untestable against a simulated clock, and the symptom is silence rather than an error.
+
+### 27. A check that could only pass by accident
+
+The webhook proof asserted that an event with no subscriber leaves a `no_subscriber` row — by counting those rows across the whole table. The proof registers an endpoint before it sends anything, so there were never going to be any, and the count was picking up rows from elsewhere.
+
+Same family as the vacuous replay check in the recovery drill. **Fixed** by switching the endpoint off and asserting on that record specifically.
+
 ---
 
 ## What the compiler structurally cannot catch
