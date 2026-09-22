@@ -907,3 +907,58 @@ create table suppressed_recipient (
 );
 
 create index suppressed_recipient_live on suppressed_recipient (email) where lifted_at is null;
+
+-- --------------------------------------------------- two-step verification
+--
+-- §12.1's MFA option. TOTP (RFC 6238), because it is the second factor
+-- somebody can set up in thirty seconds with an app they already have and it
+-- needs no vendor.
+create table mfa_enrolment (
+  actor_id     uuid primary key references actor(id) on delete cascade,
+  secret       text not null,
+  -- Null until a code proves the authenticator actually has the secret. An
+  -- enrolment that switches on when the secret is generated locks out
+  -- everybody whose scan silently failed.
+  confirmed_at timestamptz,
+  /*
+   * The counter the last accepted code belonged to.
+   *
+   * Without it the same six digits work for every request inside their thirty
+   * seconds, so a code read over a shoulder — or out of a proxy log — is good
+   * for another window. A code from this step or earlier is refused.
+   */
+  last_used_step bigint,
+  created_at   timestamptz not null default now()
+);
+
+-- What gets somebody back in when the phone is gone. Single use, and stored
+-- as hashes: they are the credential at that moment, so a dump of this table
+-- must not be a set of working ones.
+create table mfa_recovery_code (
+  id         bigserial primary key,
+  actor_id   uuid not null references actor(id) on delete cascade,
+  code_hash  text not null,
+  used_at    timestamptz,
+  created_at timestamptz not null default now()
+);
+
+create index mfa_recovery_open on mfa_recovery_code (actor_id) where used_at is null;
+
+-- The half-signed-in state between a correct password and a correct code.
+--
+-- Its own short-lived token rather than a session carrying a flag. A session
+-- that exists but "does not count yet" is one missing check away from being a
+-- session that counts, and that check would have to be repeated on every
+-- route rather than written once here.
+create table mfa_challenge (
+  id         uuid primary key default gen_random_uuid(),
+  token_hash text not null unique,
+  actor_id   uuid not null references actor(id) on delete cascade,
+  -- Six digits is a million possibilities. This is what stops unlimited
+  -- guesses turning a factor into a delay.
+  attempts   int not null default 0,
+  user_agent text,
+  expires_at timestamptz not null,
+  used_at    timestamptz,
+  created_at timestamptz not null default now()
+);

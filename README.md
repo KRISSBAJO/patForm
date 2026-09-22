@@ -549,6 +549,36 @@ over HTTP: it is emailed, and the response says `delivered` instead. Returning
 it as well would let any member who can invite mint a working link for an
 address whose owner never sees it.
 
+### Two-step verification
+
+§12.1's MFA option, as TOTP — the second factor somebody can set up in thirty
+seconds with an app they already have, and it needs no vendor. Five properties
+separate a real one from the appearance of one, and each is a way it is
+usually got wrong:
+
+- **Enrolment is confirmed by a code, never by generating one.** An enrolment
+  that switches on when the secret is created locks out everybody whose scan
+  silently failed.
+- **A code cannot be spent twice.** The counter it belonged to is recorded, so
+  a code read over a shoulder — or out of a proxy log — is not good for
+  another thirty seconds. Including the code that confirmed enrolment.
+- **Guesses are capped at five.** Six digits is a million possibilities;
+  unlimited attempts make that number decorative. The counter is written
+  *outside* the verification transaction, because the first version
+  incremented it inside one that rolled back on every wrong code.
+- **Recovery codes are single use and stored as hashes**, so a dump of the
+  table is not a set of working ones.
+- **Turning it off asks for the password, not a code.** Somebody holding the
+  phone but not the password is exactly who must not remove the factor.
+
+A correct password on an enrolled account returns a challenge token and
+**sets no cookie**. The challenge is its own short-lived row rather than a
+session carrying a flag: a session that exists but "does not count yet" is one
+missing check away from being a session that counts.
+
+A phone whose clock is a minute out still works. Rejecting drift is how a
+second factor becomes a support queue.
+
 ### Getting in at all
 
 The landing page now reaches the application. It did not: "Sign in" pointed at
@@ -703,9 +733,15 @@ overruled.
 
 Everything below is a deliberate deferral:
 
-- **MFA and SSO itself.** The identity model accommodates SSO (IAM-05) and no
-  provider is wired to it. Multi-factor is §12.1's remaining authentication
-  row.
+- **SSO itself.** The identity model accommodates it (IAM-05) — external
+  identities match on the provider's subject, never the email — and no
+  provider is wired to it.
+- **The TOTP secret is stored unencrypted.** It is a credential at rest with
+  no envelope around it. Encrypting it needs a key that does not live in the
+  same database, which needs a KMS this deployment does not have.
+- **No trusted devices, and no step-up.** The second factor is asked for on
+  every sign-in, and never asked for again — a destructive action inside a
+  live session is not re-challenged.
 - **Bounce-rate alerting.** Individual bounces are handled (below); nothing
   watches the *rate*, which is what a provider suspends an account over.
 - **Re-sending after an address is reinstated.** Lifting a suppression lets

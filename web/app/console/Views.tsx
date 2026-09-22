@@ -463,3 +463,292 @@ export function HealthView({ canAdminister }: { canAdminister: boolean }) {
     </div>
   );
 }
+
+// --------------------------------------------------- two-step verification
+
+interface MfaStatus {
+  enabled: boolean;
+  pending: boolean;
+  recoveryCodesLeft: number;
+}
+
+async function post<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(path, {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body ?? {}),
+  });
+  const parsed = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(parsed.reason ?? parsed.error ?? `HTTP ${res.status}`);
+  return parsed as T;
+}
+
+/**
+ * Turning the second factor on, and off.
+ *
+ * Built at the same time as the factor itself rather than after it. An
+ * enrolment endpoint with no screen is a feature nobody can use, and a sign-in
+ * that demands a code from an account that had no way to set one up is a
+ * lockout — which is this project's most repeated failure wearing a new hat.
+ *
+ * The secret is shown as text rather than a QR image on purpose: generating a
+ * QR needs a dependency, and every authenticator app accepts a typed key. The
+ * `otpauth://` link is there for a phone that can open it directly.
+ */
+export function SecurityView() {
+  const [status, setStatus] = useState<MfaStatus | null>(null);
+  const [setup, setSetup] = useState<{ secret: string; uri: string } | null>(null);
+  const [codes, setCodes] = useState<string[] | null>(null);
+  const [code, setCode] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      setStatus(await call<MfaStatus>('/api/account/mfa'));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const run = async (work: () => Promise<void>) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await work();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!status) {
+    return (
+      <div className="cs__panel">
+        <div className="cs__empty">Loading…</div>
+      </div>
+    );
+  }
+
+  // ---- the codes, shown once
+  if (codes) {
+    return (
+      <div className="cs__panel">
+        <div className="cs__panelHead">
+          <h2 className="cs__tab">Save your recovery codes</h2>
+        </div>
+        <p className="vw__note" role="status">
+          Each one works once, and they are the only way back in if you lose your phone. We cannot
+          show them again — we only keep hashes, so a copy of our database is not a set of working
+          codes.
+        </p>
+        <ul className="vw__codes">
+          {codes.map((c) => (
+            <li key={c}>{c}</li>
+          ))}
+        </ul>
+        <p className="vw__note">
+          <button
+            type="button"
+            className="cs__btn"
+            onClick={() => {
+              void navigator.clipboard?.writeText(codes.join('\n'));
+              setNote('Copied.');
+            }}
+          >
+            Copy all
+          </button>{' '}
+          <button
+            type="button"
+            className="cs__btn cs__btn--primary"
+            onClick={() => {
+              setCodes(null);
+              setNote(null);
+              void load();
+            }}
+          >
+            I have saved them
+          </button>
+        </p>
+        {note && (
+          <p className="vw__note" role="status">
+            {note}
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  // ---- mid-enrolment
+  if (setup) {
+    return (
+      <div className="cs__panel">
+        <div className="cs__panelHead">
+          <h2 className="cs__tab">Set up two-step verification</h2>
+        </div>
+        <p className="vw__note" style={{ marginBottom: 0 }}>
+          Add this key to an authenticator app, then type the code it shows. Nothing changes until
+          you do — an account that switched on before you proved the app had the key would be an
+          account you could not sign into.
+        </p>
+        <p className="vw__secret">{setup.secret}</p>
+        <p className="vw__note" style={{ marginTop: 0 }}>
+          <a href={setup.uri} style={{ textDecoration: 'underline', color: 'var(--green-deep)' }}>
+            Open in an authenticator app
+          </a>
+        </p>
+
+        <form
+          className="vw__inline"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void run(async () => {
+              const done = await post<{ recoveryCodes: string[] }>('/api/account/mfa/confirm', { code });
+              setSetup(null);
+              setCode('');
+              setCodes(done.recoveryCodes);
+            });
+          }}
+        >
+          <label className="cs__label" htmlFor="enrol-code">
+            Code from your app
+          </label>
+          <input
+            id="enrol-code"
+            className="cs__input"
+            type="text"
+            autoComplete="one-time-code"
+            inputMode="numeric"
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            required
+          />
+          {error && (
+            <p className="cs__loginError" role="alert">
+              {error}
+            </p>
+          )}
+          <div className="vw__actions">
+            <button type="submit" className="cs__btn cs__btn--primary" disabled={busy}>
+              {busy ? 'Checking…' : 'Turn it on'}
+            </button>
+            <button type="button" className="cs__btn" onClick={() => setSetup(null)}>
+              Cancel
+            </button>
+          </div>
+        </form>
+      </div>
+    );
+  }
+
+  // ---- on, or off
+  return (
+    <div className="cs__panel">
+      <div className="cs__panelHead">
+        <h2 className="cs__tab">Two-step verification</h2>
+        <span className="cs__sort">{status.enabled ? 'on' : 'off'}</span>
+      </div>
+
+      {note && (
+        <p className="vw__note" role="status">
+          {note}
+        </p>
+      )}
+      {error && (
+        <p className="vw__note" role="alert" style={{ color: 'var(--red-text)' }}>
+          {error}
+        </p>
+      )}
+
+      {status.enabled ? (
+        <>
+          <p className="vw__note">
+            Signing in asks for a code from your authenticator app as well as your password.{' '}
+            <strong>{status.recoveryCodesLeft}</strong> recovery{' '}
+            {status.recoveryCodesLeft === 1 ? 'code is' : 'codes are'} unused.
+          </p>
+          <form
+            className="vw__inline"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void run(async () => {
+                const done = await post<{ recoveryCodes: string[] }>('/api/account/mfa/recovery-codes', {
+                  password,
+                });
+                setPassword('');
+                setCodes(done.recoveryCodes);
+              });
+            }}
+          >
+            <label className="cs__label" htmlFor="mfa-password">
+              Your password
+            </label>
+            <input
+              id="mfa-password"
+              className="cs__input"
+              type="password"
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              aria-describedby="mfa-password-hint"
+            />
+            <p id="mfa-password-hint" className="vw__note" style={{ margin: '6px 0 0' }}>
+              Both of these need your password rather than a code. Somebody holding your phone but
+              not your password is exactly who should not be able to turn this off.
+            </p>
+            <div className="vw__actions">
+              <button type="submit" className="cs__btn" disabled={busy || !password}>
+                New recovery codes
+              </button>
+              <button
+                type="button"
+                className="cs__btn"
+                disabled={busy || !password}
+                onClick={() =>
+                  void run(async () => {
+                    await post('/api/account/mfa/disable', { password });
+                    setPassword('');
+                    setNote('Two-step verification is off.');
+                    await load();
+                  })
+                }
+              >
+                Turn it off
+              </button>
+            </div>
+          </form>
+        </>
+      ) : (
+        <>
+          <p className="vw__note">
+            Add a code from an authenticator app to your password. It is the one change here that
+            makes a stolen password insufficient on its own.
+          </p>
+          <p className="vw__note">
+            <button
+              type="button"
+              className="cs__btn cs__btn--primary"
+              disabled={busy}
+              onClick={() =>
+                void run(async () => {
+                  setSetup(await post<{ secret: string; uri: string }>('/api/account/mfa/begin', {}));
+                })
+              }
+            >
+              {status.pending ? 'Continue setting it up' : 'Set it up'}
+            </button>
+          </p>
+        </>
+      )}
+    </div>
+  );
+}

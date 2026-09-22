@@ -5,10 +5,12 @@ import { AuthorizationError, requireWorkspaceCapability, WORKSPACE_GRANTS, type 
 import type { Capability } from '../blueprint/roles.js';
 import {
   devicesFor,
+  needsSecondFactor,
   resolveSession,
   revokeAllSessions,
   signIn,
   signOut,
+  startSession,
 } from '../runtime/auth.js';
 import { runRetention } from '../runtime/retention.js';
 import { logIfEnabled, requestIdFrom, withTrace } from '../runtime/trace.js';
@@ -28,6 +30,14 @@ import {
   InvalidInput,
 } from '../runtime/workspace.js';
 import { requestPasswordReset, resetPassword, sendVerification, verifyEmail } from '../runtime/account.js';
+import {
+  answerChallenge,
+  beginEnrolment,
+  confirmEnrolment,
+  disable as disableMfa,
+  regenerateRecoveryCodes,
+  statusFor as mfaStatusFor,
+} from '../runtime/mfa.js';
 import {
   eventsFor,
   ingest,
@@ -598,6 +608,38 @@ route('GET', /^\/api\/session$/, async ({ engine, pool, actorId }) => {
   return { actor, processes, devices };
 });
 
+// ------------------------------------------------- two-step verification
+//
+// Always your own account. An endpoint that enrols or disables a second
+// factor for an arbitrary actor id is a way to take one off somebody else.
+
+route('GET', /^\/api\/account\/mfa$/, async ({ pool, actorId }) => mfaStatusFor(pool, actorId));
+
+route('POST', /^\/api\/account\/mfa\/begin$/, async ({ pool, actorId }) =>
+  beginEnrolment(pool, { actorId }),
+);
+
+route('POST', /^\/api\/account\/mfa\/confirm$/, async ({ pool, actorId }, body) => {
+  const { code } = body as { code?: string };
+  if (!code) throw new HttpError(400, 'code is required');
+  return confirmEnrolment(pool, { actorId, code });
+});
+
+route('POST', /^\/api\/account\/mfa\/disable$/, async ({ pool, actorId }, body) => {
+  const { password } = body as { password?: string };
+  // The password, not a code. Somebody holding the phone but not the password
+  // is exactly who should not be able to remove the factor.
+  if (!password) throw new HttpError(400, 'password is required');
+  await disableMfa(pool, { actorId, password });
+  return { enabled: false };
+});
+
+route('POST', /^\/api\/account\/mfa\/recovery-codes$/, async ({ pool, actorId }, body) => {
+  const { password } = body as { password?: string };
+  if (!password) throw new HttpError(400, 'password is required');
+  return { recoveryCodes: await regenerateRecoveryCodes(pool, { actorId, password }) };
+});
+
 /** §6.1 IAM-04: revoke sessions. Signing out everywhere is its own control. */
 route('POST', /^\/api\/session\/revoke-all$/, async ({ pool, actorId }) => {
   const revoked = await revokeAllSessions(pool, actorId);
@@ -800,9 +842,12 @@ async function main(): Promise<void> {
           });
           // Signed in immediately: making somebody type the password they just
           // chose, into the form they just left, is a step with no purpose.
-          const session = await signIn(pool, {
-            email: b.ownerEmail,
-            password: b.password,
+          //
+          // `startSession` rather than `signIn`, because an account created
+          // one statement ago cannot have a second factor and re-verifying a
+          // password we just wrote proves nothing.
+          const session = await startSession(pool, {
+            actorId: created.actorId,
             userAgent: req.headers['user-agent'],
           });
           return send(
@@ -829,13 +874,8 @@ async function main(): Promise<void> {
           // The address came from the invitation, not from the request body —
           // accepting an invitation must not be a way to choose which account
           // you end up signed in as.
-          const { rows: joinedActor } = await pool.query<{ email: string }>(
-            'select email from actor where id = $1',
-            [joined.actorId],
-          );
-          const session = await signIn(pool, {
-            email: joinedActor[0]!.email,
-            password: b.password,
+          const session = await startSession(pool, {
+            actorId: joined.actorId,
             userAgent: req.headers['user-agent'],
           });
           return send(
@@ -935,11 +975,48 @@ async function main(): Promise<void> {
           // One message for every failure, so the response cannot be used to
           // find out which addresses have accounts.
           if (!result) return send(res, 401, { error: 'those details do not match an account' });
+
+          /*
+           * A correct password on an account with a second factor. No cookie
+           * is set — the point of the factor is that the password alone
+           * produces nothing that works anywhere.
+           */
+          if (needsSecondFactor(result)) {
+            return send(res, 200, { mfaRequired: true, challengeToken: result.challengeToken });
+          }
+
           return send(
             res,
             200,
             { actor: result.actor },
             [cookie(SESSION_COOKIE, result.token, result.expiresAt)],
+          );
+        }
+
+        /** The second step. Only this exchanges a challenge for a session. */
+        if (url.pathname === '/api/auth/mfa' && req.method === 'POST') {
+          const b = (await readBody(req)) as Record<string, string>;
+          if (!b.challengeToken || !b.code) {
+            throw new HttpError(400, 'challengeToken and code are required');
+          }
+          const answered = await answerChallenge(pool, { token: b.challengeToken, code: b.code });
+          const session = await startSession(pool, {
+            actorId: answered.actorId,
+            userAgent: req.headers['user-agent'],
+          });
+          if (!session) return send(res, 401, { error: 'that account is not active' });
+          return send(
+            res,
+            200,
+            {
+              actor: session.actor,
+              // Surfaced so the console can say how many are left. Somebody
+              // who has just spent one is the person most likely to need the
+              // next, and least likely to check.
+              usedRecoveryCode: answered.usedRecoveryCode,
+              recoveryCodesLeft: answered.recoveryCodesLeft,
+            },
+            [cookie(SESSION_COOKIE, session.token, session.expiresAt)],
           );
         }
 

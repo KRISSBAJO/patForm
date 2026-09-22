@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import './console.css';
 import { Ask } from './Ask';
-import { DashboardView, HealthView, RecordsView } from './Views';
+import { DashboardView, HealthView, RecordsView, SecurityView } from './Views';
 
 /**
  * Calls go to the same origin so the HttpOnly, SameSite=Lax session cookie is
@@ -87,7 +87,7 @@ export function Console() {
   const [work, setWork] = useState<Work | null>(null);
   const [health, setHealth] = useState<Health | null>(null);
   const [record, setRecord] = useState<RecordDetail | null>(null);
-  const [view, setView] = useState<'work' | 'ask' | 'records' | 'dashboard' | 'health'>('work');
+  const [view, setView] = useState<'work' | 'ask' | 'records' | 'dashboard' | 'health' | 'security'>('work');
   const [toast, setToast] = useState<Toast>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -318,6 +318,16 @@ export function Console() {
               </div>
             </div>
           </div>
+          {/* Beside the seat rather than in the main nav: it is about the
+              person signed in, not about the workspace's work. */}
+          <button
+            type="button"
+            className="cs__seatPicker"
+            aria-current={view === 'security' ? 'page' : undefined}
+            onClick={() => setView('security')}
+          >
+            Your account
+          </button>
           <button type="button" className="cs__seatPicker" onClick={() => void signOut()}>
             Sign out
           </button>
@@ -352,7 +362,9 @@ export function Console() {
                   ? 'Dashboard'
                   : view === 'health'
                     ? 'Automation health'
-                    : 'My work'}
+                    : view === 'security'
+                      ? 'Your account'
+                      : 'My work'}
           </h1>
           {work && <span className="cs__version">{work.processName}</span>}
           <span style={{ flexGrow: 1 }} />
@@ -363,7 +375,9 @@ export function Console() {
 
         <div className="cs__body">
           <div className="cs__left">
-            {view === 'health' ? (
+            {view === 'security' ? (
+              <SecurityView />
+            ) : view === 'health' ? (
               // `administer` is what the lift endpoint requires, so the button
               // is only offered to somebody the server will accept it from.
               <HealthView canAdminister={['owner', 'admin', 'builder'].includes(me.workspace_role)} />
@@ -579,6 +593,8 @@ export function Console() {
               <p style={{ marginTop: 10, fontSize: 13.5, lineHeight: 1.5, color: 'var(--on-dark-2)' }}>
                 {view === 'health'
                   ? 'What the automation did, and who it can no longer reach. A hard bounce or a spam complaint stops this deployment writing to that address — the record will say "skipped" and this is the page that says why.'
+                  : view === 'security'
+                    ? 'Your own account, and nobody else’s. Adding a second factor is the one change here that makes a stolen password insufficient on its own — and turning it off asks for your password rather than a code.'
                   : view === 'dashboard'
                     ? 'Nine measures from section 13.1, over the period you choose. A rate over fewer than five records is withheld rather than shown, because a percentage of three people identifies them.'
                     : view === 'records'
@@ -689,7 +705,9 @@ function VerifyBanner({ email }: { email: string }) {
  * layout rather than a thing anybody would write.
  */
 function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
-  const [mode, setMode] = useState<'signin' | 'forgot' | 'sent'>('signin');
+  const [mode, setMode] = useState<'signin' | 'forgot' | 'sent' | 'code'>('signin');
+  const [challengeToken, setChallengeToken] = useState('');
+  const [code, setCode] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -699,7 +717,7 @@ function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
   // 2.4.3: switching screens replaces what is on screen, and focus has to
   // follow. Otherwise the next Tab continues from a control that is gone.
   useEffect(() => {
-    if (mode === 'forgot') emailField.current?.focus();
+    if (mode === 'forgot' || mode === 'code') emailField.current?.focus();
   }, [mode]);
 
   const askForReset = async (e: React.FormEvent) => {
@@ -722,13 +740,45 @@ function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
     setBusy(true);
     setError(null);
     try {
-      await call('/api/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) });
+      const result = await call<{ mfaRequired?: boolean; challengeToken?: string }>('/api/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ email, password }),
+      });
+      // A correct password on an account with a second factor. No cookie was
+      // set, so there is nothing to undo if this is abandoned here.
+      if (result.mfaRequired && result.challengeToken) {
+        setChallengeToken(result.challengeToken);
+        setCode('');
+        setMode('code');
+        return;
+      }
       onSignedIn();
     } catch (err) {
       // One message for every failure. Saying "no such account" would let a
       // stranger enumerate who works here.
       setError(err instanceof Error ? err.message : 'those details do not match an account');
     } finally {
+      setBusy(false);
+    }
+  };
+
+  const answerChallenge = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      const done = await call<{ usedRecoveryCode: boolean; recoveryCodesLeft: number }>('/api/auth/mfa', {
+        method: 'POST',
+        body: JSON.stringify({ challengeToken, code }),
+      });
+      if (done.usedRecoveryCode) {
+        // Said once, plainly, to the person least likely to check and most
+        // likely to need the next one.
+        window.sessionStorage.setItem('patform.recoveryLeft', String(done.recoveryCodesLeft));
+      }
+      onSignedIn();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'that code is not right');
       setBusy(false);
     }
   };
@@ -771,6 +821,69 @@ function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
             Back to sign in
           </button>
         </div>
+      </div>
+    );
+  }
+
+  // ---- the second step
+  if (mode === 'code') {
+    return (
+      <div className="cs__login">
+        <form className="cs__loginBox" onSubmit={answerChallenge}>
+          {brand}
+          <h1 className="cs__loginTitle">Enter your code</h1>
+          <p className="cs__loginNote" style={{ marginTop: 0, marginBottom: 18 }}>
+            Open your authenticator app and type the six-digit code for Patform. Lost your phone? A
+            recovery code works here too.
+          </p>
+
+          <label className="cs__label" htmlFor="mfa-code">
+            Code
+          </label>
+          <input
+            ref={emailField}
+            id="mfa-code"
+            className="cs__input"
+            type="text"
+            /* `one-time-code` is what lets a phone offer the code from the
+               notification, and inputMode numeric gets the right keypad —
+               while still accepting a recovery code, which has letters. */
+            autoComplete="one-time-code"
+            inputMode="numeric"
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            required
+          />
+
+          {error && (
+            <p className="cs__loginError" role="alert">
+              {error}
+            </p>
+          )}
+
+          <button
+            type="submit"
+            className="cs__btn cs__btn--primary"
+            style={{ marginTop: 18, width: '100%', height: 44 }}
+            disabled={busy}
+          >
+            {busy ? 'Checking…' : 'Sign in'}
+          </button>
+
+          <p className="cs__loginNote">
+            <button
+              type="button"
+              className="cs__linkBtn cs__linkBtn--onLight"
+              onClick={() => {
+                setMode('signin');
+                setError(null);
+                setPassword('');
+              }}
+            >
+              Back to sign in
+            </button>
+          </p>
+        </form>
       </div>
     );
   }

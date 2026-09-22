@@ -179,6 +179,22 @@ async function main() {
     all.push(...(await audit(page, 'Automation health and the suppression list')));
   }
 
+  const account = page.locator('button', { hasText: /^Your account$/ }).first();
+  if (await account.count()) {
+    await account.click();
+    await page.waitForTimeout(1500);
+    all.push(...(await audit(page, 'Your account, two-step verification off')));
+
+    // Mid-enrolment: the secret, the link and the code field. The same markup
+    // the sign-in second step uses, so auditing it covers both.
+    const setUp = page.locator('button', { hasText: /^Set it up$/ }).first();
+    if (await setUp.count()) {
+      await setUp.click();
+      await page.waitForTimeout(2000);
+      all.push(...(await audit(page, 'Setting up two-step verification')));
+    }
+  }
+
   const ask = page.locator('button', { hasText: /^Ask$/ }).first();
   if (await ask.count()) {
     await ask.click();

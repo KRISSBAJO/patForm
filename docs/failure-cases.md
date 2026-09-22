@@ -426,6 +426,32 @@ The narrow-screen menu's links sat flush against the edge of the phone. The elem
 
 **Generalisable:** the `padding` and `margin` shorthands are not additive with the longhands; they overwrite the axis you did not mention. Use `padding-block` when you mean vertical.
 
+### 41. The attempt counter that rolled back with the failure
+
+The MFA challenge incremented `attempts` as the first statement of its verification transaction, with a comment explaining that doing it first was the point. Every wrong code then threw, the transaction rolled back, and the increment went with it. The cap never fired: six digits had unlimited guesses, which is not a second factor, it is a thirty-second delay.
+
+This is **entry 1 in this file** — *anything written to explain why a transaction failed cannot live inside that transaction* — committed again with a comment asserting the opposite.
+
+**Found** because the proof asserted the sixth attempt was refused *for exhausting attempts*, not merely refused. A proof that only checked "six wrong codes were all rejected" would have passed.
+
+**Fixed** by claiming the attempt on the pool, in one statement that both increments and enforces the cap:
+
+```sql
+update mfa_challenge set attempts = attempts + 1
+ where token_hash = $1 and used_at is null and expires_at > $2 and attempts < $3
+ returning id, actor_id, attempts
+```
+
+**Generalisable:** a comment claiming a safeguard is not a safeguard — also already in this file, as the lesson from a different bug. Two rules I had written down, broken together, in code whose comments cited both.
+
+### 42. Enrolling and signing in at the same instant
+
+The MFA proof confirmed enrolment with a code and then signed in with the same code, and was refused. The replay guard was right: confirming spends that window like any other use.
+
+The first instinct was to move the proof to the next window and carry on. The better answer was to assert the refusal — anybody who can see the enrolment code can otherwise spend it once more, and nothing else in the proof covered that.
+
+**Generalisable:** when a proof trips over a control, the question is whether the control is wrong or the proof is describing a case worth keeping. Stepping around it silently discards a test the system just offered you for free.
+
 ---
 
 ## What the compiler structurally cannot catch

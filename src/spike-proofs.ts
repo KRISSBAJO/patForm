@@ -41,7 +41,15 @@ function signStandardWebhook(secret: string, id: string, nowMs: number, body: st
   const mac = createHmac('sha256', secret).update(`${id}.${timestamp}.${body}`).digest('base64');
   return { id, timestamp, signature: `v1,${mac}` };
 }
-import { resolveSession, signIn } from './runtime/auth.js';
+import { needsSecondFactor, resolveSession, signIn, startSession } from './runtime/auth.js';
+import {
+  answerChallenge,
+  beginEnrolment,
+  codeFor,
+  confirmEnrolment,
+  disable as disableMfa,
+  stepFor,
+} from './runtime/mfa.js';
 import { createServer } from 'node:http';
 import {
   deliverBatch,
@@ -1568,10 +1576,14 @@ export async function proveIdentity({ pool, record }: ProofCtx): Promise<void> {
   const builderMayGrant = grantableRoles('builder');
 
   // ---- IAM-04: deactivate, and the sessions go with it
-  const session = await signIn(pool, {
+  const signedIn = await signIn(pool, {
     email: 'builder@proof-identity.test',
     password: 'builder-long-password',
   });
+  // Narrowed rather than cast: if this account ever grows a second factor,
+  // this line fails instead of the proof quietly asserting on the wrong thing.
+  if (!signedIn || needsSecondFactor(signedIn)) throw new Error('expected a session, not a challenge');
+  const session = signedIn;
   const liveBefore = await resolveSession(pool, session!.token);
   const deactivated = await setMemberActive(pool, { principal: owner, actorId: joined.actorId, active: false });
   const liveAfter = await resolveSession(pool, session!.token);
@@ -1710,10 +1722,12 @@ export async function proveAccountRecovery({ pool, record }: ProofCtx): Promise<
   );
 
   // ---- a live session, so the revocation has something to revoke
-  const before = await signIn(pool, {
+  const beforeSignIn = await signIn(pool, {
     email: 'moved@proof-recovery.test',
     password: 'the-first-password',
   });
+  if (!beforeSignIn || needsSecondFactor(beforeSignIn)) throw new Error('expected a session, not a challenge');
+  const before = beforeSignIn;
   const liveBefore = await resolveSession(pool, before!.token);
 
   const reset = await resetPassword(pool, { token: known.token!, password: 'the-second-password' });
@@ -1976,5 +1990,198 @@ export async function proveDeliveryOutcomes({ pool, bp, T0, record, completeFor 
       `Then the test that matters: the same address was mailed again by a second record and ${afterBlocked - before} messages left — the send was logged "${skipped[0]?.status}" reading "${skipped[0]?.failure}". ` +
       `An operator lifted it and a fresh hard bounce put it straight back, because the mail server gets the last word. ` +
       `A tenant that had never written to that address saw ${theirs.length} suppressions while the tenant that had saw ${ours.length}.`,
+  );
+}
+
+/**
+ * §12.1's last authentication row: the MFA option.
+ *
+ * Every assertion here is a refusal, because a second factor is defined
+ * entirely by what it stops. The five that separate a real one from the
+ * appearance of one: the password alone stops working, enrolment needs proof
+ * the authenticator has the secret, a code cannot be spent twice, guesses are
+ * capped, and turning it off needs the password rather than the phone.
+ */
+export async function proveSecondFactor({ pool, record }: ProofCtx): Promise<void> {
+  const created = await createWorkspace(pool, {
+    workspaceName: 'Proof Two Step',
+    ownerEmail: 'owner@proof-mfa.test',
+    ownerName: 'An Owner',
+    password: 'the-account-password',
+  });
+  const actorId = created.actorId;
+  const T = Date.UTC(2026, 8, 22, 12, 0, 0);
+
+  // ---- before enrolment, a password is a session
+  const plain = await signIn(pool, { email: 'owner@proof-mfa.test', password: 'the-account-password' });
+  const plainWorked = plain !== null && !needsSecondFactor(plain);
+
+  // ---- enrolment does not switch on when the secret is generated
+  const started = await beginEnrolment(pool, { actorId });
+  const midEnrolment = await signIn(pool, {
+    email: 'owner@proof-mfa.test',
+    password: 'the-account-password',
+  });
+  const stillPlain = midEnrolment !== null && !needsSecondFactor(midEnrolment);
+
+  let wrongCode: string | null = null;
+  try {
+    await confirmEnrolment(pool, { actorId, code: '000000', nowMs: T });
+  } catch (err) {
+    wrongCode = err instanceof Error ? err.message : String(err);
+  }
+
+  // ---- and it does when a real code proves the authenticator has the secret
+  const { recoveryCodes } = await confirmEnrolment(pool, {
+    actorId,
+    code: codeFor(started.secret, stepFor(T)),
+    nowMs: T,
+  });
+
+  // ---- now the password alone produces nothing that works
+  const challenged = await signIn(pool, {
+    email: 'owner@proof-mfa.test',
+    password: 'the-account-password',
+  });
+  const gotChallenge = challenged !== null && needsSecondFactor(challenged);
+  const challengeToken = gotChallenge ? (challenged as { challengeToken: string }).challengeToken : '';
+
+  // A challenge token is not a session. Nothing about it resolves.
+  const challengeAsSession = await resolveSession(pool, challengeToken);
+
+  // ---- the wrong code, five times, and the challenge is spent
+  const burn = await signIn(pool, { email: 'owner@proof-mfa.test', password: 'the-account-password' });
+  const burnToken = (burn as { challengeToken: string }).challengeToken;
+  const refusals: string[] = [];
+  for (let i = 0; i < 6; i++) {
+    try {
+      await answerChallenge(pool, { token: burnToken, code: '123456', nowMs: T });
+    } catch (err) {
+      refusals.push(err instanceof Error ? err.message : String(err));
+    }
+  }
+  const cappedAt = refusals.findIndex((r) => r.includes('too many'));
+
+  /*
+   * ---- the code that CONFIRMED enrolment cannot then sign in.
+   *
+   * It was found by writing this proof: enrolling and signing in at the same
+   * step is refused, because confirming spends that step like any other use.
+   * Worth asserting rather than stepping around — anybody who can see the
+   * enrolment code can otherwise use it once more.
+   */
+  const step = stepFor(T);
+  let enrolmentCodeReused: string | null = null;
+  try {
+    await answerChallenge(pool, { token: challengeToken, code: codeFor(started.secret, step), nowMs: T });
+  } catch (err) {
+    enrolmentCodeReused = err instanceof Error ? err.message : String(err);
+  }
+
+  // ---- the right code, from the next window
+  const answered = await answerChallenge(pool, {
+    token: challengeToken,
+    code: codeFor(started.secret, step + 1),
+    nowMs: T + 30_000,
+  });
+  const session = await startSession(pool, { actorId: answered.actorId });
+  const sessionWorks = session !== null && (await resolveSession(pool, session.token)) !== null;
+
+  // ---- the SAME code again, inside its own thirty seconds
+  const second = await signIn(pool, { email: 'owner@proof-mfa.test', password: 'the-account-password' });
+  const secondToken = (second as { challengeToken: string }).challengeToken;
+  let replayed: string | null = null;
+  try {
+    await answerChallenge(pool, {
+      token: secondToken,
+      code: codeFor(started.secret, step + 1),
+      nowMs: T + 30_000,
+    });
+  } catch (err) {
+    replayed = err instanceof Error ? err.message : String(err);
+  }
+
+  // The next step's code works, so the replay guard blocks reuse rather than
+  // locking the account out of its own authenticator.
+  const nextStep = await answerChallenge(pool, {
+    token: secondToken,
+    code: codeFor(started.secret, step + 2),
+    nowMs: T + 60_000,
+  });
+
+  // ---- a phone thirty seconds out still works
+  const drifting = await signIn(pool, { email: 'owner@proof-mfa.test', password: 'the-account-password' });
+  const driftToken = (drifting as { challengeToken: string }).challengeToken;
+  const drifted = await answerChallenge(pool, {
+    token: driftToken,
+    code: codeFor(started.secret, step + 3),
+    nowMs: T + 120_000,
+  });
+
+  // ---- a recovery code, once
+  const recovery = await signIn(pool, { email: 'owner@proof-mfa.test', password: 'the-account-password' });
+  const recoveryToken = (recovery as { challengeToken: string }).challengeToken;
+  const used = await answerChallenge(pool, { token: recoveryToken, code: recoveryCodes[0]!, nowMs: T + 150_000 });
+
+  const again = await signIn(pool, { email: 'owner@proof-mfa.test', password: 'the-account-password' });
+  const againToken = (again as { challengeToken: string }).challengeToken;
+  let spentRecovery: string | null = null;
+  try {
+    await answerChallenge(pool, { token: againToken, code: recoveryCodes[0]!, nowMs: T + 180_000 });
+  } catch (err) {
+    spentRecovery = err instanceof Error ? err.message : String(err);
+  }
+
+  // ---- only hashes are stored, for either credential
+  const { rows: stored } = await pool.query<{ count: number }>(
+    `select count(*)::int as count from mfa_recovery_code where code_hash = $1`,
+    [recoveryCodes[1]!],
+  );
+
+  // ---- turning it off needs the password, not the phone
+  let withCode: string | null = null;
+  try {
+    await disableMfa(pool, { actorId, password: codeFor(started.secret, stepFor(T)) });
+  } catch (err) {
+    withCode = err instanceof Error ? err.message : String(err);
+  }
+  await disableMfa(pool, { actorId, password: 'the-account-password' });
+  const afterDisable = await signIn(pool, {
+    email: 'owner@proof-mfa.test',
+    password: 'the-account-password',
+  });
+  const plainAgain = afterDisable !== null && !needsSecondFactor(afterDisable);
+
+  record(
+    'A second factor makes the password stop being enough, and cannot be replayed or guessed',
+    'Section 12.1: the MFA option — the last unmet row in authentication.',
+    plainWorked &&
+      stillPlain &&
+      wrongCode !== null &&
+      recoveryCodes.length === 10 &&
+      gotChallenge &&
+      challengeAsSession === null &&
+      cappedAt === 5 &&
+      enrolmentCodeReused !== null &&
+      sessionWorks &&
+      replayed !== null &&
+      !nextStep.usedRecoveryCode &&
+      !drifted.usedRecoveryCode &&
+      used.usedRecoveryCode &&
+      used.recoveryCodesLeft === 9 &&
+      spentRecovery !== null &&
+      stored[0]!.count === 0 &&
+      withCode !== null &&
+      plainAgain,
+    `Before enrolment the password produced a session. Generating a secret did NOT turn the factor on — the password still worked — ` +
+      `and a wrong code was refused ("${wrongCode}"); an enrolment that switches on when the secret is created locks out everybody whose scan silently failed. ` +
+      `A real code confirmed it and returned ${recoveryCodes.length} recovery codes. ` +
+      `From then on the password returned a challenge instead of a session, and the challenge token resolved to nothing — it is not a session with a flag on it. ` +
+      `Five wrong guesses were refused individually and the sixth was refused for exhausting the attempts; six digits is a million possibilities and unlimited guesses would make that number decorative. ` +
+      `The code that confirmed enrolment could not then sign in ("${enrolmentCodeReused}") — confirming spends that window like any other use. ` +
+      `The next window's code signed in. That SAME code a moment later was refused ("${replayed}") while the next one worked — a code read over a shoulder is otherwise good for another thirty seconds. ` +
+      `A phone two minutes fast still signed in, because rejecting clock drift is how a second factor becomes a support queue. ` +
+      `A recovery code worked once and left ${used.recoveryCodesLeft}; the same one again was refused. Searching for a plaintext recovery code found ${stored[0]!.count} rows. ` +
+      `Turning it off with a valid authenticator code was refused ("${withCode}") — somebody holding the phone but not the password is exactly who must not remove the factor — and the password turned it off.`,
   );
 }

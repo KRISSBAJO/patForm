@@ -2,6 +2,7 @@ import { randomBytes, createHash, scrypt as scryptCb, timingSafeEqual } from 'no
 import { promisify } from 'node:util';
 import type { Client, Pool } from './db.js';
 import type { Principal } from './policy.js';
+import { isEnabled, openChallenge } from './mfa.js';
 
 const scrypt = promisify(scryptCb) as (
   password: string | Buffer,
@@ -83,6 +84,61 @@ export interface SignInResult {
 }
 
 /**
+ * A correct password on an account with a second factor.
+ *
+ * Returned instead of a session, never alongside one. The whole value of the
+ * factor is that the password alone does not produce something that works.
+ */
+export interface MfaRequired {
+  mfaRequired: true;
+  challengeToken: string;
+}
+
+export function needsSecondFactor(result: SignInResult | MfaRequired | null): result is MfaRequired {
+  return result !== null && 'mfaRequired' in result;
+}
+
+/** Issues the session itself, once whatever had to be proved has been. */
+export async function startSession(
+  pool: Pool,
+  args: { actorId: string; userAgent?: string },
+): Promise<SignInResult | null> {
+  const { rows } = await pool.query<{
+    id: string;
+    tenant_id: string;
+    display_name: string;
+    email: string;
+    workspace_role: string;
+    active: boolean;
+  }>(
+    'select id, tenant_id, display_name, email, workspace_role, active from actor where id = $1',
+    [args.actorId],
+  );
+  const actor = rows[0];
+  if (!actor?.active) return null;
+
+  const token = newToken();
+  const expiresAt = new Date(Date.now() + SESSION_DAYS * 86_400_000);
+  await pool.query(
+    `insert into session (token_hash, actor_id, tenant_id, user_agent, expires_at)
+     values ($1, $2, $3, $4, $5)`,
+    [sha256(token), actor.id, actor.tenant_id, args.userAgent?.slice(0, 200) ?? null, expiresAt],
+  );
+
+  return {
+    token,
+    expiresAt,
+    actor: {
+      id: actor.id,
+      tenantId: actor.tenant_id,
+      displayName: actor.display_name,
+      email: actor.email,
+      workspaceRole: actor.workspace_role,
+    },
+  };
+}
+
+/**
  * Returns null for every failure — wrong password, unknown email, deactivated
  * account — without saying which. Telling a stranger that an address exists is
  * an account-enumeration oracle (§12.3).
@@ -90,7 +146,7 @@ export interface SignInResult {
 export async function signIn(
   pool: Pool,
   args: { email: string; password: string; userAgent?: string },
-): Promise<SignInResult | null> {
+): Promise<SignInResult | MfaRequired | null> {
   const { rows } = await pool.query<{
     id: string;
     tenant_id: string;
@@ -119,25 +175,20 @@ export async function signIn(
   const ok = await verifyPassword(args.password, actor.password_hash);
   if (!ok || !actor.active) return null;
 
-  const token = newToken();
-  const expiresAt = new Date(Date.now() + SESSION_DAYS * 86_400_000);
-  await pool.query(
-    `insert into session (token_hash, actor_id, tenant_id, user_agent, expires_at)
-     values ($1, $2, $3, $4, $5)`,
-    [sha256(token), actor.id, actor.tenant_id, args.userAgent?.slice(0, 200) ?? null, expiresAt],
-  );
+  /*
+   * The password was right, and on an account with a second factor that is
+   * not enough to produce anything that works. A challenge token comes back
+   * instead of a session — the point of the factor is that there is no
+   * session yet to steal, forget to flag, or accidentally accept.
+   */
+  if (await isEnabled(pool, actor.id)) {
+    return {
+      mfaRequired: true,
+      challengeToken: await openChallenge(pool, { actorId: actor.id, userAgent: args.userAgent }),
+    };
+  }
 
-  return {
-    token,
-    expiresAt,
-    actor: {
-      id: actor.id,
-      tenantId: actor.tenant_id,
-      displayName: actor.display_name,
-      email: actor.email,
-      workspaceRole: actor.workspace_role,
-    },
-  };
+  return startSession(pool, { actorId: actor.id, userAgent: args.userAgent });
 }
 
 export interface SessionActor {
