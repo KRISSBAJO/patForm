@@ -1,5 +1,5 @@
 {
-  "ranAt": "2026-09-22T02:59:06.730Z",
+  "ranAt": "2026-09-22T03:14:05.863Z",
   "target": "127.0.0.1:55801/patform",
   "server": "PostgreSQL 17.11 on x86_64-pc-linux-musl",
   "tooling": "pg_dump inside the \"patform-pg\" container",
@@ -8,9 +8,9 @@
     "rtoHours": 4
   },
   "measured": {
-    "backupSeconds": 0.688,
-    "restoreSeconds": 1.095,
-    "backupBytes": 85008,
+    "backupSeconds": 0.729,
+    "restoreSeconds": 1.027,
+    "backupBytes": 88312,
     "rows": 195
   },
   "steps": [
@@ -22,24 +22,24 @@
     {
       "name": "The backup completes inside the recovery point objective",
       "passed": true,
-      "detail": "83 KB covering 195 rows across 23 tables. A backup taking longer than the 15-minute RPO cannot be run often enough to meet it.",
-      "seconds": 0.688
+      "detail": "86 KB covering 195 rows across 24 tables. A backup taking longer than the 15-minute RPO cannot be run often enough to meet it.",
+      "seconds": 0.729
     },
     {
       "name": "The restore completes inside the recovery time objective",
       "passed": true,
       "detail": "Restored into a scratch database. The RTO is 4 hours end to end, which has to cover noticing, deciding, provisioning and cutover — not just this.",
-      "seconds": 1.095
+      "seconds": 1.027
     },
     {
       "name": "The restored database is the same database",
       "passed": true,
-      "detail": "Every one of 23 tables matched on row count and on a content hash of its rows — not just counts, which would miss a dropped column or a lost timezone."
+      "detail": "Every one of 24 tables matched on row count and on a content hash of its rows — not just counts, which would miss a dropped column or a lost timezone."
     },
     {
       "name": "The safeguards survive the restore",
       "passed": true,
-      "detail": "published versions still immutable: held. event history still append-only: held. 30 foreign keys present: held. A restored database that accepts an edit to a published version or to an event is an audit hole no row count would show."
+      "detail": "published versions still immutable: held. event history still append-only: held. 31 foreign keys present: held. A restored database that accepts an edit to a published version or to an event is an audit hole no row count would show."
     },
     {
       "name": "Replaying jobs after a restore finishes the unfinished and repeats nothing else",

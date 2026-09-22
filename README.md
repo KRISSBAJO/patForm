@@ -77,7 +77,7 @@ is specific to either.
 
 Section 23 week 3 asks for a spike of workflow state, timers, idempotent email,
 versioning, and migration, producing architecture decision records and
-performance evidence. `npm run spike` is that, and it proves eighteen things:
+performance evidence. `npm run spike` is that, and it proves nineteen things:
 
 | Proof | Result |
 |---|---|
@@ -90,6 +90,7 @@ performance evidence. `npm run spike` is that, and it proves eighteen things:
 | The operator asks what is overdue and sends a reminder matching what they confirmed | §20.1 step 9: a typed plan, a bound digest, 3 sent and a replay sending 0 |
 | An administrator exports the record with its history, and only then is it deleted | §20.1 step 11: same checksum twice, fields withheld and named, then retention |
 | Every action traces back to the request that caused it | §20.2 observability: the link survives the worker boundary and a restart |
+| A privacy request erases one person without destroying anybody else | §20.2 privacy: the manager named on somebody else's form is redacted, not deleted |
 | A worker fires deadlines with nobody watching | 49 hours passed, 1 reminder, 0 timers left unfired |
 | Retention deletes, only for an administrator, and says what it removed | preview first, then 1 instance and 1 event, against an append-only history |
 | Idempotent email under replay | 3 deliveries, 1 email |
@@ -307,6 +308,49 @@ Not met, and named rather than implied: no screen-reader testing, no zoom or
 reflow testing, no Windows High Contrast, and the landing page is outside the
 gate's four flows.
 
+## Privacy
+
+```bash
+npm run data-map -- --as <actor-id>
+npm run erase -- someone@example.com --as <actor-id> [--apply] --reason "..."
+```
+
+§20.2's privacy gate. The review is in [docs/privacy.md](docs/privacy.md) —
+data map, retention, subprocessors, terms, deletion workflow.
+
+**The data map is derived, not written.** A hand-maintained one is right on the
+day it is written and wrong by the next publish. Everything it needs is already
+declared, so it is a query: purpose, subjects, retention, and per field its
+classification, who supplies it, why it is collected, who it is hidden from,
+and **every route by which a value can leave the record** — an email
+placeholder, a document, a webhook, a CSV export, an approval's context panel.
+That last column is the one a written data map always gets wrong.
+
+On its first run it found six confidential fields with no stated reason for
+being collected, and a restricted workplace-adjustment field **hidden from
+nobody** — readable by the IT operator setting up a laptop. Nobody had decided
+that. It is now a compiler warning (`SEC010`).
+
+**Erasure is not retention.** Retention deletes by age; a privacy request
+deletes by person, and a person can appear in a record that is not about them.
+The hiring manager named on a new hire's form is a data subject in somebody
+else's record:
+
+- **subject** — the record is about them, so it is deleted with its history.
+- **mentioned** — they are named in somebody else's record, so only the fields
+  naming them are redacted to `[erased]`. The record still shows a manager was
+  asked and approved; removing the key would make the audit read as though
+  nobody ever was.
+
+Previews by default, `--reason` required to apply, a record still running is
+left alone, and `erasure_run` is written before the deletion so the account
+outlives the data.
+
+**It does not reach backups.** The recovery drill proves those restore
+faithfully, so an erased person is in every backup taken before the request.
+That is a retention schedule, not a delete, and the CLI says so after every run
+rather than leaving somebody to remember.
+
 ## The respondent side
 
 ```bash
@@ -356,6 +400,10 @@ Named here rather than implied by silence:
   states, approvals, tasks and roles; everything else goes through its JSON
   tab. There is also no draft locking, so two people editing one process will
   overwrite each other.
+- **Privacy terms, a DPIA, consent capture, and a subject access export.**
+  The privacy gate's code half is built and its documentation half is in
+  [docs/privacy.md](docs/privacy.md); the terms are a document for a lawyer and
+  a named controller, and a placeholder here would be mistaken for advice.
 - **Screen-reader testing, zoom and reflow at 400%, Windows High Contrast.**
   The accessibility gate is automated checks plus code review; a gate claimed
   without hearing the thing read aloud is a claim about markup, not about use.

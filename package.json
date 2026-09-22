@@ -23,7 +23,9 @@
     "send-test": "node --env-file=.env node_modules/tsx/dist/cli.mjs src/send-test.ts",
     "drill": "node --env-file=.env node_modules/tsx/dist/cli.mjs src/drill.ts",
     "support": "node --env-file=.env node_modules/tsx/dist/cli.mjs src/support-cli.ts",
-    "a11y": "node scripts/a11y.mjs"
+    "a11y": "node scripts/a11y.mjs",
+    "data-map": "node --env-file=.env node_modules/tsx/dist/cli.mjs src/privacy-cli.ts map",
+    "erase": "node --env-file=.env node_modules/tsx/dist/cli.mjs src/privacy-cli.ts erase"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.127.0",

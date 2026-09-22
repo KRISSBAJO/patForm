@@ -251,6 +251,22 @@ One proof failed once and passed on every rerun. `resetSchema` drops tables betw
 
 Not fixed, recorded: the harnesses assume they own the database. The drill solved its own version of this with an exported snapshot, which is the right shape of answer, and the spike would need the same treatment or a database of its own.
 
+### 20. A restricted field readable by everybody
+
+The data map's first run reported that `accessibility_notes` — a workplace-adjustment disclosure, correctly classified restricted and correctly justified — was hidden from **none** of the four internal roles. The IT operator setting up a laptop could read it.
+
+Nobody had decided that. `hiddenFields` was set on the payroll fields and never on this one, and no rule asked. SEC007 checks *why* a restricted field is collected; nothing checked *who can see it*, which is the other half and the half a data map exposes.
+
+**Fixed** in the reference blueprint, and now `SEC010`. A warning rather than an error, because a process whose only internal role is HR has nobody to hide anything from — it should be answered, not obeyed.
+
+Six confidential fields also recorded no reason for being collected. The map flagged those too; the compiler already warned about restricted ones (SEC007) and the threshold turned out to be set one class too high.
+
+### 21. An audit row that recorded the wrong number
+
+`erasure_run` is written before the deletion, so the account of what was removed outlives the data — the same ordering retention uses, and right for the same reason. It passed `0` for the event count, because the deletion that produces the number had not happened yet. The operator was told "2 events"; the audit row said zero.
+
+**An account with the wrong number in it is worse than none, because it looks authoritative.** Fixed by counting before writing.
+
 ---
 
 ## What the compiler structurally cannot catch

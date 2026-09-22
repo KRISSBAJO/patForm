@@ -269,6 +269,33 @@ export function validate(bp: Blueprint): Diagnostics {
       }
     }
   }
+  /*
+   * A restricted field every role can read.
+   *
+   * SEC007 asks why a restricted field is collected; this asks who can see it,
+   * which is the other half and the one a data map exposes. The finding that
+   * prompted it: a workplace-adjustment field, correctly classified
+   * restricted, correctly justified, and visible to the IT operator setting up
+   * a laptop — nobody had decided that, it was simply never narrowed.
+   *
+   * A warning rather than an error, because sometimes it is right: a process
+   * whose only internal role is HR has nobody to hide it from. Warnings do
+   * not block a publish, and this one should be answered rather than obeyed.
+   */
+  for (const { path, field } of allFields) {
+    if (field.classification !== 'restricted') continue;
+    const internal = bp.roles.filter((r) => r.kind === 'internal');
+    const hides = internal.filter((r) => (r.hiddenFields ?? []).includes(field.key));
+    if (internal.length > 1 && hides.length === 0) {
+      d.warn(
+        'SEC010',
+        path,
+        `Restricted field "${field.key}" is hidden from none of the ${internal.length} internal roles.`,
+        'Decide who needs it. A restricted field readable by everyone is restricted in name only.',
+      );
+    }
+  }
+
   if (bp.workflow.approvals.length && !bp.roles.some((r) => r.capabilities.includes('approve'))) {
     d.error('SEC005', 'roles', 'The process has approvals but no role may approve.');
   }

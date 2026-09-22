@@ -489,3 +489,32 @@ create table copilot_run (
 );
 
 create index copilot_run_recent on copilot_run (tenant_id, created_at desc);
+
+-- --------------------------------------------------------------- erasure
+--
+-- §12.1's privacy request workflow, and the same principle as retention_run:
+-- the account of what was removed is written before the removal, in the same
+-- transaction, so it outlives the data. A deletion with no record of having
+-- happened is indistinguishable from data loss.
+--
+-- It is deliberately not erasable by the procedure that writes it. A subject
+-- can be told what was done without the telling itself holding their details:
+-- the address is here because an auditor needs to match a request to an
+-- action, and this table is subject to the same retention as any other record
+-- of a decision.
+create table erasure_run (
+  id                 bigserial primary key,
+  tenant_id          uuid not null references tenant(id),
+  subject_email      text not null,
+  reason             text not null,
+  instances_deleted  int not null,
+  events_deleted     int not null,
+  instances_redacted int not null,
+  fields_redacted    int not null,
+  -- Appearances that could not be erased yet, and why.
+  blocked            jsonb not null default '[]'::jsonb,
+  run_by             text not null,
+  ran_at             timestamptz not null
+);
+
+create index erasure_run_recent on erasure_run (tenant_id, ran_at desc);

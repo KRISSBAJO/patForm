@@ -37,6 +37,7 @@
         "approve"
       ],
       "hiddenFields": [
+        "accessibility_notes",
         "bank_account"
       ]
     },
@@ -49,9 +50,10 @@
         "approve"
       ],
       "hiddenFields": [
-        "national_id",
+        "accessibility_notes",
         "bank_account",
-        "id_document"
+        "id_document",
+        "national_id"
       ]
     },
     {
@@ -63,10 +65,11 @@
         "operate"
       ],
       "hiddenFields": [
-        "national_id",
+        "accessibility_notes",
         "bank_account",
+        "emergency_contact_phone",
         "id_document",
-        "emergency_contact_phone"
+        "national_id"
       ]
     },
     {
@@ -97,27 +100,31 @@
         "type": "short_text",
         "label": "Full legal name",
         "required": true,
-        "classification": "confidential"
+        "classification": "confidential",
+        "collectionReason": "Identifies the employee on the contract, payroll and right-to-work record."
       },
       {
         "key": "preferred_name",
         "type": "short_text",
         "label": "Preferred name",
-        "classification": "confidential"
+        "classification": "confidential",
+        "collectionReason": "How the person is addressed in messages and on their welcome packet."
       },
       {
         "key": "personal_email",
         "type": "email",
         "label": "Personal email address",
         "required": true,
-        "classification": "confidential"
+        "classification": "confidential",
+        "collectionReason": "The only way to reach a new hire before they have a work account."
       },
       {
         "key": "phone",
         "type": "phone",
         "label": "Mobile number",
         "required": true,
-        "classification": "confidential"
+        "classification": "confidential",
+        "collectionReason": "Contact before the start date, and on the first day if they cannot get in."
       },
       {
         "key": "address",
@@ -195,14 +202,16 @@
         "type": "short_text",
         "label": "Emergency contact name",
         "required": true,
-        "classification": "confidential"
+        "classification": "confidential",
+        "collectionReason": "Required for workplace safety; used only in an emergency."
       },
       {
         "key": "emergency_contact_phone",
         "type": "phone",
         "label": "Emergency contact number",
         "required": true,
-        "classification": "confidential"
+        "classification": "confidential",
+        "collectionReason": "Required for workplace safety; used only in an emergency."
       },
       {
         "key": "national_id",

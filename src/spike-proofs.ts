@@ -7,6 +7,7 @@ import { runRetention } from './runtime/retention.js';
 import { checkAnswers, loadDraft, publicForm, respondentStatus, respondentUpdate, saveDraft, submitForm } from './runtime/intake.js';
 import { confirm, runPlan } from './runtime/copilot.js';
 import { traceByRequest, traceForInstance } from './runtime/support.js';
+import { dataMap, eraseSubject, findSubject } from './runtime/privacy.js';
 import { withTrace } from './runtime/trace.js';
 import { ActionPlan, QueryPlan } from './copilot/plan.js';
 import { bundleToCsv, exportRecord } from './runtime/export.js';
@@ -1059,5 +1060,189 @@ export async function proveTraceability({ pool, bp, T0, record, completeFor }: P
       `A timer firing got an id of its own (${timerEvents[0]?.request_id.slice(0, 16)}…) rather than inheriting one, because a deadline is its own cause. ` +
       `The support view joined them into ${trace.steps.length} step(s) with every attempt count present, and answered in a sentence: "${trace.diagnosis.slice(0, 80)}". ` +
       `Asking by request id found ${byRequest.records.length} record; an admin of another workspace asking the same id found ${strangerSees.records.length}.`,
+  );
+}
+
+/**
+ * §20.2's privacy gate, the half that is code: the data map and the deletion
+ * workflow.
+ *
+ * Retention deletes by age. A privacy request deletes by person, and the
+ * difference is not scheduling — it is that a person can appear in somebody
+ * else's record. The hiring manager named on a new hire's form is a data
+ * subject in a record that is not theirs, and an erasure that deleted every
+ * record their address appears in would destroy other people's data to satisfy
+ * one request.
+ */
+export async function provePrivacy({ pool, bp, T0, record, completeFor }: ProofCtx): Promise<void> {
+  const engine = new Engine(pool);
+  const tenantId = await engine.createTenant('proof:privacy');
+  const version = await engine.publish(tenantId, bp, 'proof');
+
+  const admin = await engine.createActor(tenantId, 'admin@proof.test', 'An Admin', 'admin');
+  const manager = await engine.createActor(tenantId, 'mgr@proof.test', 'A Manager', 'approver');
+  const operator = await engine.createActor(tenantId, 'ops@proof.test', 'An Operator', 'operator');
+  await engine.grant({ tenantId, actorId: admin, processKey: bp.key, roleKey: 'hr_admin' });
+  await engine.grant({ tenantId, actorId: manager, processKey: bp.key, roleKey: 'hiring_manager' });
+  await engine.grant({ tenantId, actorId: operator, processKey: bp.key, roleKey: 'it_operator' });
+  const as = (actorId: string): Principal => ({ kind: 'actor', tenantId, actorId });
+
+  // Two records, both naming the same manager. One will be finished, one will
+  // still be running.
+  const finished = await engine.submit({
+    version,
+    answers: completeFor(bp, {
+      personal_email: 'leaving@example.test',
+      manager_email: 'mgr@proof.test',
+      equipment_needs: ['laptop'],
+    }),
+    now: T0,
+  });
+  const running = await engine.submit({
+    version,
+    answers: completeFor(bp, { personal_email: 'staying@example.test', manager_email: 'mgr@proof.test' }),
+    now: T0,
+  });
+  await engine.drain(T0);
+
+  // Drive the first to completion.
+  const hr = await engine.createActor(tenantId, 'hr@proof.test', 'HR', 'approver');
+  await engine.grant({ tenantId, actorId: hr, processKey: bp.key, roleKey: 'hr_approver' });
+  for (const [key, who] of [
+    ['manager_approval', manager],
+    ['hr_approval', hr],
+  ] as const) {
+    await engine.decide({
+      instanceId: finished.instanceId,
+      approvalKey: key,
+      decision: 'approved',
+      principal: as(who),
+      reason: 'Fine.',
+      now: T0,
+    });
+    await engine.drain(T0);
+  }
+  for (const [taskKey, who] of [
+    ['issue_equipment', operator],
+    ['create_accounts', operator],
+    ['book_orientation', admin],
+  ] as const) {
+    await engine.completeTask({ instanceId: finished.instanceId, taskKey, principal: as(who), now: T0 });
+    await engine.drain(T0);
+  }
+
+  // ---- the data map, derived rather than written
+  const maps = await dataMap(pool, as(admin));
+  const map = maps.find((m) => m.processKey === bp.key)!;
+  const restricted = map.fields.filter((f) => f.classification === 'restricted');
+  const everyRestrictedIsJustified = restricted.every((f) => f.collectionReason);
+  const everyRestrictedIsNarrowed = restricted.every((f) => f.hiddenFrom.length > 0);
+  const bankAccount = map.fields.find((f) => f.key === 'bank_account')!;
+  const startDate = map.fields.find((f) => f.key === 'start_date')!;
+
+  // An operator may read a data map; erasing needs `administer`.
+  let mapRefused: string | null = null;
+  try {
+    await dataMap(pool, { kind: 'actor', tenantId, actorId: (await engine.createActor(tenantId, 'nobody@proof.test', 'Nobody', 'read_only')) });
+  } catch (err) {
+    mapRefused = err instanceof AuthorizationError ? err.reason : `unexpected: ${String(err)}`;
+  }
+
+  // ---- who is where
+  const managerAppearances = await findSubject(pool, { principal: as(admin), email: 'mgr@proof.test' });
+  const subjectAppearances = await findSubject(pool, { principal: as(admin), email: 'leaving@example.test' });
+  const stayingAppearances = await findSubject(pool, { principal: as(admin), email: 'staying@example.test' });
+
+  // ---- an operator may not erase
+  let eraseRefused: string | null = null;
+  try {
+    await eraseSubject(pool, { principal: as(operator), email: 'leaving@example.test', reason: 'test' });
+  } catch (err) {
+    eraseRefused = err instanceof AuthorizationError ? err.reason : `unexpected: ${String(err)}`;
+  }
+
+  // ---- preview changes nothing
+  const preview = await eraseSubject(pool, { principal: as(admin), email: 'leaving@example.test', reason: 'preview' });
+  const { rows: afterPreview } = await pool.query<{ count: number }>(
+    'select count(*)::int as count from instance where id = $1',
+    [finished.instanceId],
+  );
+
+  // ---- erasing the manager redacts, and deletes nothing
+  const managerErasure = await eraseSubject(pool, {
+    principal: as(admin),
+    email: 'mgr@proof.test',
+    preview: false,
+    reason: 'PRV-manager',
+  });
+  const { rows: bothSurvive } = await pool.query<{ count: number }>(
+    'select count(*)::int as count from instance where id = any($1::uuid[])',
+    [[finished.instanceId, running.instanceId]],
+  );
+  const { rows: redactedValue } = await pool.query<{ v: string | null }>(
+    "select data ->> 'manager_email' as v from instance where id = $1",
+    [running.instanceId],
+  );
+
+  // ---- erasing the subject of the finished record deletes it
+  const subjectErasure = await eraseSubject(pool, {
+    principal: as(admin),
+    email: 'leaving@example.test',
+    preview: false,
+    reason: 'PRV-subject',
+  });
+  const { rows: gone } = await pool.query<{ count: number }>(
+    'select count(*)::int as count from instance where id = $1',
+    [finished.instanceId],
+  );
+  const { rows: eventsGone } = await pool.query<{ count: number }>(
+    'select count(*)::int as count from event where instance_id = $1',
+    [finished.instanceId],
+  );
+
+  // ---- the account of it outlives the data
+  const { rows: audit } = await pool.query<{
+    subject_email: string;
+    reason: string;
+    instances_deleted: number;
+    events_deleted: number;
+    run_by: string;
+  }>('select subject_email, reason, instances_deleted, events_deleted, run_by from erasure_run where tenant_id = $1 order by id', [
+    tenantId,
+  ]);
+  const subjectAudit = audit.find((a) => a.reason === 'PRV-subject');
+
+  record(
+    'A privacy request erases one person without destroying anybody else',
+    'Section 20.2 privacy: data map, deletion workflow. Section 12.1: privacy request workflow.',
+    map.fields.length > 10 &&
+      everyRestrictedIsJustified &&
+      everyRestrictedIsNarrowed &&
+      bankAccount.hiddenFrom.length > 0 &&
+      startDate.leaves.some((l) => l.includes('webhook')) &&
+      mapRefused !== null &&
+      managerAppearances.length === 2 &&
+      managerAppearances.every((a) => a.role === 'mentioned') &&
+      subjectAppearances.some((a) => a.role === 'subject') &&
+      stayingAppearances.every((a) => a.blocked !== null) &&
+      eraseRefused !== null &&
+      preview.deleted.instances === 1 &&
+      afterPreview[0]!.count === 1 &&
+      managerErasure.deleted.instances === 0 &&
+      managerErasure.redacted.fields === 2 &&
+      bothSurvive[0]!.count === 2 &&
+      redactedValue[0]!.v === '[erased]' &&
+      subjectErasure.deleted.instances === 1 &&
+      gone[0]!.count === 0 &&
+      eventsGone[0]!.count === 0 &&
+      subjectAudit?.events_deleted === subjectErasure.deleted.events &&
+      subjectAudit.events_deleted > 0,
+    `The data map is derived from the published version: ${map.fields.length} fields, every restricted one carrying a reason and hidden from somebody, ` +
+      `and it traces where a value goes — start_date reaches ${startDate.leaves.length} destinations including a webhook that leaves the platform. ` +
+      `A read_only member was refused it ("${mapRefused}"). ` +
+      `The manager appears in ${managerAppearances.length} records and is the subject of none, so erasing them redacted ${managerErasure.redacted.fields} field(s) and deleted ${managerErasure.deleted.instances} records — both records survived and the address now reads "${redactedValue[0]!.v}", so the audit still shows a manager was asked. ` +
+      `A subject whose record is still running was left alone. An operator was refused ("${eraseRefused}"). ` +
+      `The preview reported ${preview.deleted.instances} deletion and performed none. ` +
+      `Erasing the finished record's subject removed it and all ${subjectErasure.deleted.events} of its events, and the erasure_run row records the same number — the account is written before the deletion and had to be counted first, or it would say zero.`,
   );
 }
