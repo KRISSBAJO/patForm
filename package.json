@@ -32,7 +32,8 @@
     "redis:down": "docker rm -f patform-redis",
     "packs": "node --env-file=.env node_modules/tsx/dist/cli.mjs src/packs-cli.ts",
     "a11y:fixtures": "node --env-file=.env node_modules/tsx/dist/cli.mjs scripts/account-fixtures.ts",
-    "reachable": "node scripts/reachable.mjs"
+    "reachable": "node scripts/reachable.mjs",
+    "packs:check": "tsx src/packs/check.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.127.0",

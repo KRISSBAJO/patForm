@@ -504,6 +504,21 @@ The console's restyle was scoped to `.cs`, so the builder kept the old dark rail
 **Generalisable:** scoping a theme to one route is right for keeping marketing and application apart, and wrong the moment the application has more than one route. The check is not "does this page look right" but "do the pages a person moves between look like the same thing".
 
 
+### 47. A modal that stopped scaling at six
+
+The "New process" dialog held the pack catalogue. With three packs that was fine; with fifty-eight it was unusable — a modal cannot be linked to, cannot be filtered without feeling cramped, has no room for a description, and closes if you look away.
+
+**Generalisable:** a container is a bet on how much will go in it. The bet here was made when the catalogue was empty, which is when it is easiest to get wrong and hardest to notice.
+
+### 48. The builder checked the session once
+
+It verified the session at load and never again, so a session that ended while somebody was working — expired, revoked from another device, or dropped by a schema reset — surfaced as the words *"sign in first"* next to a disabled button. The editor looked fine and refused every save.
+
+**Fixed** by announcing the 401 once, from inside `call()`, and letting the top-level component put the whole builder back on the sign-in screen. Every call site would otherwise need the same branch, which means one of them would not have it.
+
+**Generalisable:** authentication is not a condition to check at startup, it is a condition that can stop being true at any moment. Anything that checks it once is describing the past.
+
+
 ---
 
 ## What the compiler structurally cannot catch

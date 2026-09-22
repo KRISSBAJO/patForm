@@ -1,0 +1,337 @@
+/*
+ * The pack gallery.
+ *
+ * A grid of cards with room to read them, which is the whole reason this
+ * stopped being a dialog. Two controls per card and no more: see what is
+ * inside, or take it.
+ */
+
+.gl {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background: var(--canvas, #f4f3f0);
+  font-family: var(--ui, system-ui), sans-serif;
+  --ui: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --card-line: #e4e2dd;
+}
+
+.gl__main {
+  width: 100%;
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 36px 24px 72px;
+}
+
+.gl__head h1 {
+  font-family: var(--ui);
+  font-size: clamp(26px, 3.4vw, 34px);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+
+.gl__head p {
+  margin-top: 12px;
+  max-width: 62ch;
+  font-size: 15.5px;
+  line-height: 1.6;
+  color: var(--ink-soft);
+}
+
+.gl__controls {
+  margin: 28px 0 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.gl__search .cs__input {
+  width: 100%;
+  max-width: 460px;
+  height: 42px;
+  padding: 0 14px;
+  border: 1px solid var(--card-line);
+  border-radius: 7px;
+  background: #fff;
+  font-family: var(--ui);
+  font-size: 14.5px;
+  color: var(--ink);
+}
+
+.gl__cats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.gl__cat {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--card-line);
+  border-radius: 999px;
+  background: #fff;
+  font-family: var(--ui);
+  font-size: 13px;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+.gl__cat:hover { background: var(--paper-2); }
+
+/* A border and a weight as well as a tint: 1.4.1. */
+.gl__cat--on {
+  background: var(--green-tint);
+  border-color: var(--green);
+  color: var(--green-deep);
+  font-weight: 600;
+}
+
+.gl__count {
+  font-family: var(--font-mono), monospace;
+  font-size: 11.5px;
+  opacity: 0.8;
+}
+
+.gl__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(288px, 1fr));
+  gap: 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.gl__card {
+  display: flex;
+  flex-direction: column;
+  padding: 18px;
+  background: #fff;
+  border: 1px solid var(--card-line);
+  border-radius: 9px;
+  box-shadow: 0 1px 2px rgba(20, 24, 22, 0.05);
+}
+
+.gl__cardCat {
+  font-family: var(--font-mono), monospace;
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.gl__cardName {
+  margin: 8px 0 0;
+  font-family: var(--ui);
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.012em;
+  color: var(--ink);
+}
+
+.gl__cardSummary {
+  margin: 8px 0 0;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--ink-soft);
+}
+
+.gl__cardFoot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: auto;
+  padding-top: 16px;
+}
+
+.gl__view {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--card-line);
+  border-radius: 6px;
+  background: #fff;
+  font-family: var(--ui);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.gl__view:hover { background: var(--paper-2); }
+
+.gl .cs__btn {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 14px;
+  border: 1px solid var(--card-line);
+  border-radius: 6px;
+  background: #fff;
+  font-family: var(--ui);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.gl .cs__btn--primary {
+  background: var(--green);
+  border-color: var(--green);
+  color: #fff;
+}
+
+.gl .cs__btn--primary:hover { background: var(--green-deep); border-color: var(--green-deep); }
+.gl .cs__btn:disabled { opacity: 0.55; cursor: default; }
+
+.gl__use { margin-left: auto; }
+
+.gl__empty, .gl__other {
+  margin-top: 28px;
+  font-size: 14.5px;
+  line-height: 1.6;
+  color: var(--ink-soft);
+}
+
+.gl__empty a, .gl__other a { color: var(--green-deep); text-decoration: underline; }
+
+.gl__error {
+  margin: 16px 0;
+  padding: 11px 14px;
+  border: 1px solid #edcdc9;
+  background: #fdf4f3;
+  border-radius: 6px;
+  font-size: 13.5px;
+  color: var(--ink);
+}
+
+/* ------------------------------------------------------------ the sheet */
+
+.gl__sheet {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(20, 24, 22, 0.42);
+  z-index: 50;
+}
+
+.gl__sheetBox {
+  width: 100%;
+  max-width: 520px;
+  max-height: 86vh;
+  overflow: auto;
+  padding: 24px;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 18px 50px rgba(20, 24, 22, 0.24);
+}
+
+.gl__sheetBox h2 {
+  margin: 8px 0 0;
+  font-family: var(--ui);
+  font-size: 21px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  color: var(--ink);
+}
+
+.gl__sheetSummary {
+  margin-top: 10px;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--ink-soft);
+}
+
+.gl__sheetAudience {
+  margin-top: 8px;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--green-deep);
+}
+
+.gl__specs {
+  margin: 18px 0 0;
+  border-top: 1px solid var(--card-line);
+}
+
+.gl__specs > div {
+  display: grid;
+  grid-template-columns: 130px 1fr;
+  gap: 14px;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--card-line);
+}
+
+.gl__specs dt {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.gl__specs dd {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--ink-soft);
+}
+
+.gl__sheetNote {
+  margin-top: 14px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+.gl__sheetActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.gl .cs__input {
+  width: 100%;
+  height: 40px;
+  padding: 0 12px;
+  margin-top: 6px;
+  border: 1px solid var(--card-line);
+  border-radius: 6px;
+  font-family: var(--ui);
+  font-size: 14px;
+  color: var(--ink);
+}
+
+.gl .cs__label {
+  display: block;
+  margin-top: 14px;
+  font-family: var(--ui);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.vw__srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+@media (min-width: 720px) {
+  .gl__controls {
+    flex-direction: row;
+    align-items: flex-start;
+    justify-content: space-between;
+  }
+  .gl__cats { justify-content: flex-end; max-width: 60%; }
+}

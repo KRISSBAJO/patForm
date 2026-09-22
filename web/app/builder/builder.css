@@ -1038,3 +1038,92 @@
   color: var(--muted);
   max-width: 320px;
 }
+
+/*
+ * The builder's product bar.
+ *
+ * Written here rather than reusing the console's `.cs__top`: the two are
+ * separate routes with separate stylesheets, and referencing a class the page
+ * never loads produces exactly what it produced — an unstyled strip of text
+ * lying on top of the page.
+ */
+.bd {
+  flex-direction: column;
+}
+
+.bd__shell {
+  display: flex;
+  flex-grow: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.bd__top {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  height: 48px;
+  flex-shrink: 0;
+  padding: 0 16px;
+  background: var(--green-deep);
+  color: #ffffff;
+  /* Mint, because this is the one dark surface left in the builder. */
+  --focus-ring: var(--green-mint);
+}
+
+.bd__topBrand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-family: var(--ui);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: #ffffff;
+}
+
+.bd__topDivider {
+  width: 1px;
+  height: 20px;
+  background: rgba(255, 255, 255, 0.28);
+}
+
+.bd__topWhere {
+  font-family: var(--ui);
+  font-size: 14px;
+  /* #dff0e6 on #0f4e30 is 10.4:1. */
+  color: #dff0e6;
+}
+
+.bd__topLink {
+  font-family: var(--ui);
+  font-size: 13.5px;
+  color: #dff0e6;
+  text-decoration: underline;
+}
+
+.bd__side {
+  padding-top: 14px;
+}
+
+/* The rail's new-process control is a link now, so it needs the button's box. */
+a.bd__newBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+
+.bd__welcomeActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.bd__welcomeActions a.bd__btn {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}

@@ -208,7 +208,21 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
     headers: { 'content-type': 'application/json', ...(init?.headers ?? {}) },
   });
   const body = await res.json().catch(() => ({}));
-  if (res.status === 401) throw new Unauthenticated(body.error ?? 'sign in first');
+  if (res.status === 401) {
+    /*
+     * Announced, not just thrown.
+     *
+     * The builder checked the session once at load and never again, so a
+     * session that ended while somebody was working — expired, revoked from
+     * another device, or dropped by a schema reset in development — surfaced
+     * as the words "sign in first" beside a disabled button. Every call site
+     * would otherwise need the same branch; one event means none of them do.
+     */
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('patform:signed-out'));
+    }
+    throw new Unauthenticated(body.error ?? 'sign in first');
+  }
   if (!res.ok) throw new Error(body.reason ?? body.error ?? `HTTP ${res.status}`);
   return body as T;
 }
@@ -290,6 +304,15 @@ export function Builder() {
 
   const refreshList = useCallback(async () => {
     setProcesses(await call<ProcessRow[]>('/api/builder/processes'));
+  }, []);
+
+  // A session that ends at any point puts the whole builder back on the
+  // sign-in screen, rather than leaving a working-looking editor that refuses
+  // every save.
+  useEffect(() => {
+    const onSignedOut = () => setSignedIn(false);
+    window.addEventListener('patform:signed-out', onSignedOut);
+    return () => window.removeEventListener('patform:signed-out', onSignedOut);
   }, []);
 
   useEffect(() => {
@@ -434,7 +457,14 @@ export function Builder() {
   if (signedIn === false) {
     return (
       <div className="bd__boot">
-        <p>The builder needs a signed-in workspace member.</p>
+        <svg width="34" height="34" viewBox="0 0 26 26" fill="none" aria-hidden="true">
+          <rect x="1.5" y="1.5" width="23" height="23" rx="6" stroke="var(--green)" strokeWidth="1.8" />
+          <path d="M7 13.2L11 17L19 9" stroke="var(--green)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        <p style={{ maxWidth: 340, textAlign: 'center' }}>
+          The builder needs a signed-in workspace member. If you were working, your session ended —
+          nothing you saved is lost, because drafts are stored on the server as you type.
+        </p>
         <a className="bd__btn bd__btn--primary" href="/console">
           Sign in
         </a>
@@ -447,15 +477,28 @@ export function Builder() {
       <a className="skip-link" href="#builder-main">
         Skip to the editor
       </a>
-      <aside className="bd__side">
-        <div className="bd__brand">
-          <svg width="22" height="22" viewBox="0 0 26 26" fill="none" aria-hidden="true">
+
+      {/* The same product bar the console carries. Without it the two halves
+          of one product have two different tops. */}
+      <header className="bd__top">
+        <span className="bd__topBrand">
+          <svg width="20" height="20" viewBox="0 0 26 26" fill="none" aria-hidden="true">
             <rect x="1.5" y="1.5" width="23" height="23" rx="6" stroke="var(--green-mint)" strokeWidth="1.8" />
             <path d="M7 13.2L11 17L19 9" stroke="var(--green-mint)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
           Patform
-        </div>
-        <div className="bd__sideLabel">Builder</div>
+        </span>
+        <span className="bd__topDivider" aria-hidden="true" />
+        <span className="bd__topWhere">Builder</span>
+        <span style={{ flexGrow: 1 }} />
+        <a className="bd__topLink" href="/console">
+          Back to the console
+        </a>
+      </header>
+
+      <div className="bd__shell">
+      <aside className="bd__side">
+        <div className="bd__sideLabel">YOUR PROCESSES</div>
 
         <nav className="bd__list">
           {processes.map((p) => (
@@ -476,12 +519,10 @@ export function Builder() {
           {!processes.length && <p className="bd__empty">Nothing here yet.</p>}
         </nav>
 
-        <button className="bd__newBtn" onClick={() => setCreating(true)} disabled={busy !== null}>
+        {/* A page, not a dialog: fifty starting points need room, a search
+            and a link somebody can send to a colleague. */}
+        <a className="bd__newBtn" href="/builder/new">
           + New process
-        </button>
-
-        <a className="bd__sideLink" href="/console">
-          Open the console →
         </a>
       </aside>
 
@@ -622,6 +663,7 @@ export function Builder() {
           />
         )}
       </main>
+      </div>
     </div>
   );
 
@@ -733,9 +775,14 @@ function Welcome({ onNew }: { onNew: () => void }) {
         Every edit is compiled as you make it. Errors stop a publish; warnings do not. Nothing you type is
         lost while it is invalid — a draft that does not compile is still a draft.
       </p>
-      <button className="bd__btn bd__btn--primary" onClick={onNew}>
-        Describe a new process
-      </button>
+      <div className="bd__welcomeActions">
+        <a className="bd__btn bd__btn--primary" href="/builder/new">
+          Browse the catalogue
+        </a>
+        <button className="bd__btn" onClick={onNew}>
+          Describe a new one
+        </button>
+      </div>
     </div>
   );
 }

@@ -579,6 +579,41 @@ missing check away from being a session that counts.
 A phone whose clock is a minute out still works. Rejecting drift is how a
 second factor becomes a support queue.
 
+### The catalogue
+
+```bash
+npm run packs:check
+```
+
+Fifty-eight process packs, across People, Finance, IT, Facilities, Customer,
+Compliance, Health & safety, Education, Community, Healthcare, Property,
+Operations, Legal, Procurement, Sales and Communications. Every one compiles,
+and the build fails if one stops — a template that does not compile teaches
+somebody that the compiler is an obstacle rather than a check.
+
+They are **generated, not hand-written**. Fifty hand-authored blueprints would
+be fifty chances to get the compiler's fifty rules wrong and fifty places to
+fix anything the schema learns next. Each pack declares only what makes it
+different — its fields, who approves, how long it is kept — and
+[`src/packs/generate.ts`](src/packs/generate.ts) produces the shape they all
+share:
+
+```
+submitted ─▶ in review ─▶ (second review) ─▶ done
+     │            │                │
+     │            └─▶ rejected ◀───┘
+     └─▶ withdrawn                └─▶ expired (SLA)
+```
+
+Everything the compiler insists on — a reachable terminal state, a way out of
+every state, an SLA with something that fires when it passes, six kinds of
+test scenario, a reason for every restricted field — is produced once,
+correctly, for all of them.
+
+What a generator cannot do is know somebody's process. These compile and run
+on day one, which is what a template is. The builder is where they stop being
+generic.
+
 ### What is reachable
 
 ```bash

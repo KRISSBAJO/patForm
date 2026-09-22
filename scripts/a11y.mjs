@@ -238,6 +238,20 @@ async function main() {
     all.push(...(await audit(page, 'Ask')));
   }
 
+  // ---- the pack catalogue, as a page. Fifty-eight cards, a search and a
+  //      filter: exactly the kind of screen where a control loses its label.
+  await page.goto(`${BASE}/builder/new`, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(2500);
+  all.push(...(await audit(page, 'The pack catalogue')));
+
+  const view = page.locator('button', { hasText: /^View$/ }).first();
+  if (await view.count()) {
+    await view.click();
+    await page.waitForTimeout(800);
+    all.push(...(await audit(page, 'What is inside a pack')));
+    await page.keyboard.press('Escape');
+  }
+
   // ---- builder, and one of its dialogs
   await page.goto(`${BASE}/builder`, { waitUntil: 'networkidle' });
   await page.waitForTimeout(2000);
