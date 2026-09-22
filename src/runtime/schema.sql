@@ -304,7 +304,14 @@ create table email_log (
   recipients    text[] not null,
   subject       text not null,
   body          text not null,
-  status        text not null default 'sent',
+  -- §6.6: the log distinguishes queued, sent, delivered where supported,
+  -- bounced, complained and failed. Anything past `sent` arrives by webhook
+  -- from the provider and is not wired yet.
+  status        text not null default 'queued'
+    check (status in ('queued','sent','delivered','bounced','complained','failed','skipped')),
+  provider      text,
+  provider_message_id text,
+  failure       text,
   sent_at       timestamptz not null
 );
 
@@ -356,6 +363,10 @@ create table document (
   process_version_id uuid not null references process_version(id),
   checksum           text not null,
   filename           text not null,
+  -- The bytes themselves. Small, controlled documents; object storage is the
+  -- eventual home (§10.1) and is named as not-built in the README.
+  content            bytea,
+  byte_size          int,
   created_by         text not null,
   created_at         timestamptz not null
 );

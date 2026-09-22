@@ -324,3 +324,143 @@ export async function proveIntake({ pool, bp, record, completeFor }: ProofCtx): 
       `("${forbidden.refused?.join(', ')}") — which the blueprint declares and nothing until now enforced.`,
   );
 }
+
+export async function proveDocumentsAndDelivery({ pool, bp, T0, record, completeFor }: ProofCtx): Promise<void> {
+  // A provider that counts calls and can be told to fail, so both the happy
+  // path and a permanent rejection are exercised.
+  const sent: { to: string[]; subject: string; idempotencyKey: string; attachments: number }[] = [];
+  let refuseNext = false;
+
+  const provider = {
+    name: 'test',
+    async send(email: {
+      to: string[];
+      subject: string;
+      idempotencyKey: string;
+      attachments?: { filename: string; content: Buffer }[];
+    }) {
+      if (refuseNext) return { providerMessageId: null, status: 'failed' as const, detail: '550 rejected' };
+      sent.push({
+        to: email.to,
+        subject: email.subject,
+        idempotencyKey: email.idempotencyKey,
+        attachments: email.attachments?.length ?? 0,
+      });
+      return { providerMessageId: `test-${sent.length}`, status: 'sent' as const };
+    },
+  };
+
+  const engine = new Engine(pool, provider);
+  const tenantId = await engine.createTenant('proof:documents');
+  const version = await engine.publish(tenantId, bp, 'proof');
+
+  const { instanceId } = await engine.submit({
+    version,
+    // equipment_needs is optional, so completeFor leaves it out — and the
+    // transition that creates the accounts task is guarded on it. Without it
+    // the process stops at provisioning and the welcome email never fires.
+    answers: completeFor(bp, {
+      personal_email: 'packet@example.test',
+      full_name: 'Remi Adeyinka',
+      equipment_needs: ['laptop'],
+    }),
+    now: T0,
+  });
+  await engine.drain(T0);
+
+  const manager = await engine.createActor(tenantId, 'manager_email@example.test', 'Manager', 'approver');
+  await engine.grant({ tenantId, actorId: manager, processKey: bp.key, roleKey: 'hiring_manager' });
+  const hr = await engine.createActor(tenantId, 'hr@example.test', 'HR', 'approver');
+  await engine.grant({ tenantId, actorId: hr, processKey: bp.key, roleKey: 'hr_approver' });
+
+  await engine.decide({
+    instanceId,
+    approvalKey: 'manager_approval',
+    decision: 'approved',
+    principal: { kind: 'actor', tenantId, actorId: manager },
+    now: T0,
+  });
+  await engine.drain(T0);
+  await engine.decide({
+    instanceId,
+    approvalKey: 'hr_approval',
+    decision: 'approved',
+    principal: { kind: 'actor', tenantId, actorId: hr },
+    now: T0,
+  });
+  await engine.drain(T0);
+
+  // The packet is generated at HR approval; the welcome email that attaches
+  // it only goes out when provisioning finishes, so the process has to reach
+  // the end for the attachment to be exercised at all.
+  const it = await engine.createActor(tenantId, 'it@example.test', 'IT', 'operator');
+  await engine.grant({ tenantId, actorId: it, processKey: bp.key, roleKey: 'it_operator' });
+  const itPrincipal: Principal = { kind: 'actor', tenantId, actorId: it };
+  await engine.completeTask({ instanceId, taskKey: 'issue_equipment', principal: itPrincipal, now: T0 });
+  await engine.drain(T0);
+  await engine.completeTask({ instanceId, taskKey: 'create_accounts', principal: itPrincipal, now: T0 });
+  await engine.drain(T0);
+
+  const { rows: docs } = await pool.query<{
+    filename: string;
+    checksum: string;
+    byte_size: number;
+    content: Buffer;
+  }>('select filename, checksum, byte_size, content from document where instance_id = $1', [instanceId]);
+
+  const doc = docs[0];
+  const isPdf = doc ? doc.content.subarray(0, 8).toString() === '%PDF-1.4' : false;
+  const text = doc ? doc.content.toString('latin1') : '';
+  // The packet's mapping never included payroll fields, so they must not be in
+  // the bytes either — this is the check that a template cannot quietly widen.
+  const leaksPayroll = /QQ123456|12-34-56|87654321/.test(text);
+  const hasName = text.includes('Remi Adeyinka');
+
+  // Replay the whole delivery. The ledger short-circuits, so no second file
+  // and no second send — and the provider would have deduplicated anyway on
+  // the key it was handed.
+  await pool.query('update outbox set done_at = null, available_at = $1 where instance_id = $2', [T0, instanceId]);
+  await engine.drain(T0);
+  const { rows: afterReplay } = await pool.query<{ count: number }>(
+    'select count(*)::int as count from document where instance_id = $1',
+    [instanceId],
+  );
+
+  const welcome = sent.filter((e) => e.subject.startsWith('You are all set'));
+  const keysAreUnique = new Set(sent.map((e) => e.idempotencyKey)).size === sent.length;
+
+  // A permanent provider rejection must surface rather than log green.
+  refuseNext = true;
+  const { instanceId: doomed } = await engine.submit({
+    version,
+    answers: completeFor(bp, { personal_email: 'refused@example.test' }),
+    now: T0,
+  });
+  await engine.drain(T0);
+  const { rows: failures } = await pool.query<{ status: string; failure: string | null }>(
+    "select status, failure from email_log where instance_id = $1 and status = 'failed'",
+    [doomed],
+  );
+  refuseNext = false;
+
+  record(
+    'Documents are real files, and email actually leaves',
+    'Section 6.6: generated output stored with its checksum; a delivery log that distinguishes sent from failed.',
+    isPdf &&
+      hasName &&
+      !leaksPayroll &&
+      docs.length === 1 &&
+      afterReplay[0]!.count === 1 &&
+      welcome.length === 1 &&
+      welcome[0]!.attachments === 1 &&
+      keysAreUnique &&
+      failures.length === 1 &&
+      Boolean(failures[0]!.failure),
+    `The packet is a ${doc?.byte_size}-byte PDF checksummed over its own bytes, carrying the employee's name and ` +
+      `none of their payroll or identification data — the mapping never named those, and the renderer cannot widen it. ` +
+      `Replaying every action produced ${afterReplay[0]!.count} document and ${welcome.length} welcome email, with ` +
+      `the packet attached. Each send carried a distinct idempotency key, which is the same key the ledger uses, so a ` +
+      `retry that reaches the provider is deduplicated there too. A permanent rejection was recorded as failed with ` +
+      `its reason ("${failures[0]?.failure}") rather than logged as delivered.`,
+  );
+}

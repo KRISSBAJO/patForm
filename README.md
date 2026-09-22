@@ -17,6 +17,9 @@ src/runtime/       the workflow engine: outbox, idempotency, timers, policy, sce
 src/ai/            generation: two providers, a versioned prompt, three gates
 src/api/           the API: public form, console, session cookies
 src/runtime/intake.ts   the respondent side: form, draft, submit, status
+src/runtime/pdf.ts      a PDF writer; no browser, no dependencies
+src/runtime/email.ts    delivery, through RelyKit or the console
+templates/         document templates, in the HTML subset pdf.ts accepts
 src/worker.ts      the durable worker — without it, no deadline ever fires
 src/seed.ts        a workspace that looks like a Tuesday, for the console
 web/               the landing page, and the operator console at /console
@@ -80,6 +83,7 @@ performance evidence. `npm run spike` is that, and it proves eight things:
 |---|---|
 | Every blueprint's own scenarios run against the real engine | 21/21 across three processes |
 | A form can be filled in, saved, submitted and amended when asked | §20.1 steps 4 and 6, end to end |
+| Documents are real files, and email actually leaves | §20.1 step 8: one PDF, one send, refusals recorded |
 | Authorization is enforced by the runtime, not the caller | cross-tenant, wrong capability, and un-named approver all refused |
 | Idempotent email under replay | 3 deliveries, 1 email |
 | Concurrent workers never double-process | 8 workers, 40 instances, 40 emails, 0 duplicates |
@@ -137,8 +141,16 @@ Named here rather than implied by silence:
   password and a session cookie; §12.1's other authentication rows are not done.
 - **Rate limiting and spam control on public submission** (§12.3).
 - **Malware scanning and upload quarantine** (§12.1). Files are metadata only.
-- **A real email provider.** `email_log` records what would be sent. Wiring SES
-  means passing `action_run.id` as the provider's idempotency key (ADR-0002).
+- **A verified sending domain.** Delivery is wired to RelyKit and needs two
+  switches to leave the machine: `RELYKIT_API_KEY` and `EMAIL_PROVIDER=relykit`.
+  Without them everything is logged and nothing is sent, which is the right
+  default for a local database.
+- **DOCX rendering.** HTML templates become PDFs; a blueprint asking for DOCX
+  gets a document that says so rather than a silently incomplete one.
+- **Object storage for documents.** The bytes live in Postgres, which is fine
+  at a packet's size and wrong at scale (§10.1).
+- **Bounce and complaint handling.** `email_log` has the statuses; nothing
+  consumes the provider's webhooks yet, so nothing moves past `sent`.
 - **Parallel task joins, approval quorums, date-relative timers, separation of
   duties** — the v0.2 list in [docs/failure-cases.md](docs/failure-cases.md).
 

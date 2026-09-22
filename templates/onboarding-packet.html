@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<!--
+  An onboarding packet.
+
+  Placeholders are the keys of the document's `mapping` in the blueprint, not
+  field keys, so the template and the process can be changed independently.
+  The renderer accepts h1/h2, p, hr, ul, dl and table. See runtime/pdf.ts.
+-->
+<body>
+  <h1>Onboarding packet</h1>
+  <p>Everything agreed before your first day, in one place. Keep this; payroll and IT both refer to it.</p>
+  <hr>
+
+  <h2>You</h2>
+  <dl>
+    <dt>Name</dt><dd>{{EMPLOYEE_NAME}}</dd>
+    <dt>Known as</dt><dd>{{PREFERRED_NAME}}</dd>
+    <dt>Employee reference</dt><dd>{{EMPLOYEE_REF}}</dd>
+  </dl>
+
+  <h2>Your role</h2>
+  <dl>
+    <dt>Job title</dt><dd>{{JOB_TITLE}}</dd>
+    <dt>Department</dt><dd>{{DEPARTMENT}}</dd>
+    <dt>Employment type</dt><dd>{{EMPLOYMENT_TYPE}}</dd>
+    <dt>Start date</dt><dd>{{START_DATE}}</dd>
+  </dl>
+
+  <h2>What happens next</h2>
+  <ul>
+    <li>Your equipment is on its way to the address you gave us.</li>
+    <li>Your accounts are created the working day before you start.</li>
+    <li>Orientation is booked separately; the People Team will be in touch.</li>
+  </ul>
+
+  <hr>
+  <p>No payroll or identification details appear on this document. They are held by HR and are not printed, emailed or attached anywhere.</p>
+</body>
+</html>

@@ -406,7 +406,9 @@ export async function automationHealth(
          (select coalesce(sum(r.attempts - 1), 0)::int from action_run r join instance i on i.id = r.instance_id
            where r.tenant_id = $1 and i.process_key = $2 and r.status = 'done' and r.attempts > 1) as suppressed,
          (select count(*)::int from outbox o join instance i on i.id = o.instance_id
-           where o.tenant_id = $1 and i.process_key = $2 and o.done_at is null and o.last_error is not null) as failing`,
+           where o.tenant_id = $1 and i.process_key = $2 and o.done_at is null and o.last_error is not null)
+         + (select count(*)::int from email_log e join instance i on i.id = e.instance_id
+             where e.tenant_id = $1 and i.process_key = $2 and e.status = 'failed') as failing`,
       [tenantId, args.processKey],
     );
 
@@ -422,7 +424,13 @@ export async function automationHealth(
          from outbox o join instance i on i.id = o.instance_id
         where o.tenant_id = $1 and i.process_key = $2
           and o.done_at is null and o.last_error is not null
-        order by o.id desc limit 20`,
+        union all
+        -- A send the provider refused outright never reaches the outbox's
+        -- error column, because retrying it would fail the same way forever.
+        select -e.id, e.instance_id, 'email:' || e.template_key, 1, e.failure, e.sent_at
+          from email_log e join instance i on i.id = e.instance_id
+         where e.tenant_id = $1 and i.process_key = $2 and e.status = 'failed'
+        order by 1 desc limit 20`,
       [tenantId, args.processKey],
     );
 

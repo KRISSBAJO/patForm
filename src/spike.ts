@@ -4,7 +4,7 @@ import { Blueprint } from './blueprint/index.js';
 import { createPool, describeTarget, resetSchema, type Pool } from './runtime/db.js';
 import { Engine, newWorkerId } from './runtime/engine.js';
 import { AuthorizationError } from './runtime/policy.js';
-import { proveIntake, proveRespondentScope, proveRetention, proveWorkerFiresTimers } from './spike-proofs.js';
+import { proveDocumentsAndDelivery, proveIntake, proveRespondentScope, proveRetention, proveWorkerFiresTimers } from './spike-proofs.js';
 import { runScenarios } from './runtime/scenarios.js';
 
 const GREEN = '\x1b[32m';
@@ -482,6 +482,7 @@ async function main(): Promise<void> {
     ['scenarios', () => proveScenarios(pool, blueprints)],
     ['authorization', () => proveAuthorization(pool, onboarding)],
     ['intake', () => proveIntake(ctx)],
+    ['documents and delivery', () => proveDocumentsAndDelivery(ctx)],
     ['respondent scope', () => proveRespondentScope(ctx)],
     ['worker', () => proveWorkerFiresTimers(ctx)],
     ['retention', () => proveRetention(ctx)],

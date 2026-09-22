@@ -1,5 +1,5 @@
 {
-  "ranAt": "2026-09-21T23:40:43.386Z",
+  "ranAt": "2026-09-22T00:02:25.676Z",
   "postgres": "PostgreSQL 17.11 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit",
   "proofs": [
     {
@@ -19,6 +19,12 @@
       "claim": "Section 21 P0: value cannot exist without trustworthy intake. Section 20.1 steps 4 and 6.",
       "passed": true,
       "detail": "The published form served no classifications, roles or workflow. A hidden section appeared only once its condition was met. A half-finished draft reopened with its answers and created 0 records, because a draft is not a case. An incomplete submission was refused with 14 named fields; a complete one started a process and returned a resume link, and the draft could not be used again. Asked for changes (\"Your phone number has a digit missing.\"), the respondent updated their phone number and was refused their bank account (\"bank_account\") — which the blueprint declares and nothing until now enforced."
+    },
+    {
+      "name": "Documents are real files, and email actually leaves",
+      "claim": "Section 6.6: generated output stored with its checksum; a delivery log that distinguishes sent from failed.",
+      "passed": true,
+      "detail": "The packet is a 2633-byte PDF checksummed over its own bytes, carrying the employee's name and none of their payroll or identification data — the mapping never named those, and the renderer cannot widen it. Replaying every action produced 1 document and 1 welcome email, with the packet attached. Each send carried a distinct idempotency key, which is the same key the ledger uses, so a retry that reaches the provider is deduplicated there too. A permanent rejection was recorded as failed with its reason (\"550 rejected\") rather than logged as delivered."
     },
     {
       "name": "A resume link opens one record and no others",
@@ -78,7 +84,7 @@
       "name": "Submission and workflow start are far inside the section 10.4 budget",
       "claim": "Beta targets: acknowledgment p95 under 1.5s, workflow start p95 under 30s.",
       "passed": true,
-      "detail": "Over 100 submissions: acknowledgment p95 15.6ms (budget 1500ms), first action p95 33.0ms (budget 30000ms). Database round trips only, local container."
+      "detail": "Over 100 submissions: acknowledgment p95 18.1ms (budget 1500ms), first action p95 37.4ms (budget 30000ms). Database round trips only, local container."
     }
   ]
 }

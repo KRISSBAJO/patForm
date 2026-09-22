@@ -923,8 +923,8 @@
       {
         "key": "onboarding_packet",
         "name": "Onboarding packet",
-        "source": "docx",
-        "templateRef": "templates/onboarding-packet.docx",
+        "source": "html",
+        "templateRef": "templates/onboarding-packet.html",
         "filename": "onboarding-packet-{{start_date}}.pdf",
         "deliver": [
           "attach_to_record",
