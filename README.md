@@ -925,9 +925,6 @@ Everything below is a deliberate deferral:
   live session is not re-challenged.
 - **Bounce-rate alerting.** Individual bounces are handled (below); nothing
   watches the *rate*, which is what a provider suspends an account over.
-- **Re-sending after an address is reinstated.** Lifting a suppression lets
-  future mail through; the messages skipped while it was in force are not
-  retried, and the operator has to trigger the work again.
 - **Rate limiting and spam control on public submission** (§12.3).
 - **Malware scanning and upload quarantine** (§12.1). Files are metadata only.
 - **A verified sending domain.** Delivery needs two switches to leave the
@@ -940,7 +937,9 @@ Everything below is a deliberate deferral:
   gets a document that says so rather than a silently incomplete one.
 - **Object storage for documents.** The bytes live in Postgres, which is fine
   at a packet's size and wrong at scale (§10.1).
-- **Re-sending after an address is reinstated** (above). Bounce and complaint
+- **Re-sending after an address is reinstated.** Lifting a suppression lets
+  future mail through; the messages skipped while it was in force are not
+  retried, and an operator has to trigger the work again. Bounce and complaint
   handling itself is built: RelyKit's Standard Webhooks are verified and
   ingested, a hard bounce or a complaint suppresses the address, and a send to
   a suppressed address is skipped with that reason on the record. What is not
