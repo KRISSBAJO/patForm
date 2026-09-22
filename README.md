@@ -400,6 +400,43 @@ door with a weaker lock. One bad row refuses the whole file by default: a
 hundred-row spreadsheet with four bad rows should not become ninety-six records
 and a puzzle.
 
+## The public form has a budget
+
+§12.3. The form is the one door with no credential on it — that is the point of
+it — so the budget is the whole defence between a published process and an
+unbounded write loop.
+
+| Route | Per minute | Per hour |
+| --- | --- | --- |
+| `GET /api/forms/:key` | 60 | — |
+| `POST /api/forms/:key/check` | 120 | — |
+| `POST /api/forms/:key/draft` | 30 | — |
+| `GET /api/forms/:key/draft` | 60 | — |
+| `POST /api/forms/:key/submit` | **5** | **20** |
+
+Reading and checking happen on most edits of a conditional form, so a limit a
+careful respondent can reach breaks the product rather than protecting it.
+Submitting writes a record, sends mail and starts a workflow, which is the one
+worth being mean about.
+
+**`x-forwarded-for` is counted, not trusted.** The header is written by whoever
+is calling. Believe it and per-caller limiting is free to defeat — a random
+address per request is a new caller every time. Refuse to read it and every
+request behind a load balancer looks like it came from the balancer, so one
+person's budget is everybody's. `TRUST_PROXY` says how many proxies are in
+front; the caller is that many entries from the right, which is the first
+address this process did not observe itself. The default is `0`: no proxies,
+use the socket, believe nothing in the headers.
+
+It shares the counter the API keys use, so `REDIS_URL` makes the limit real
+across processes and its absence makes it per-process. **It fails open**, for
+the reason below: a limiter that refuses everything when its counter is
+unreachable has turned a cache outage into an outage.
+
+A refused request is a `429` carrying `Retry-After` and the `x-ratelimit-*`
+headers, all of which are in `access-control-expose-headers` — a respondent's
+browser that cannot read why it was refused shows a form that looks broken.
+
 ## Webhooks, OAuth and shared rate limits
 
 ```bash
@@ -925,7 +962,11 @@ Everything below is a deliberate deferral:
   live session is not re-challenged.
 - **Bounce-rate alerting.** Individual bounces are handled (below); nothing
   watches the *rate*, which is what a provider suspends an account over.
-- **Rate limiting and spam control on public submission** (§12.3).
+- **Spam control on public submission.** Rate limiting is built (below);
+  what is not is anything that tells a real submission from a plausible
+  fabricated one. A budget stops one caller making a thousand records. It
+  does not stop a thousand callers making one each, and nothing here
+  challenges, scores or reputation-checks a submission.
 - **Malware scanning and upload quarantine** (§12.1). Files are metadata only.
 - **A verified sending domain.** Delivery needs two switches to leave the
   machine: `EMAIL_PROVIDER` naming a provider *and* that provider's

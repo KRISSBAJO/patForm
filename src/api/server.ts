@@ -14,6 +14,7 @@ import {
 } from '../runtime/auth.js';
 import { runRetention } from '../runtime/retention.js';
 import { logIfEnabled, requestIdFrom, withTrace } from '../runtime/trace.js';
+import { callerFor, limitFor, processKeyFrom, takeIntakeToken } from './intake-limits.js';
 import { traceByRequest, traceForInstance } from '../runtime/support.js';
 import { dashboard } from '../runtime/metrics.js';
 import {
@@ -821,7 +822,13 @@ function readCookie(req: IncomingMessage, name: string): string | null {
   return null;
 }
 
-function send(res: ServerResponse, status: number, payload: unknown, cookies: string[] = []): void {
+function send(
+  res: ServerResponse,
+  status: number,
+  payload: unknown,
+  cookies: string[] = [],
+  extra: Record<string, string> = {},
+): void {
   const body = JSON.stringify(payload);
   res.writeHead(status, {
     'content-type': 'application/json; charset=utf-8',
@@ -831,10 +838,13 @@ function send(res: ServerResponse, status: number, payload: unknown, cookies: st
     // x-request-id so a caller can supply their own correlation id, and read
     // it back off the response.
     'access-control-allow-headers': 'content-type, x-request-id',
-    'access-control-expose-headers': 'x-request-id',
+    // A respondent's browser has to be able to read the limit it is being
+    // held to, or a 429 is indistinguishable from the form being broken.
+    'access-control-expose-headers': 'x-request-id, retry-after, x-ratelimit-limit, x-ratelimit-remaining, x-ratelimit-reset, x-ratelimit-window, x-ratelimit-scope',
     'access-control-allow-methods': 'GET, POST, OPTIONS',
     'access-control-allow-credentials': 'true',
     ...(cookies.length ? { 'set-cookie': cookies } : {}),
+    ...extra,
   });
   res.end(body);
 }
@@ -1091,9 +1101,50 @@ async function main(): Promise<void> {
         if (url.pathname.startsWith('/api/forms/')) {
           const match = routes.find((r) => r.method === req.method && r.pattern.test(url.pathname));
           if (!match) throw new HttpError(404, `no route for ${req.method} ${url.pathname}`);
+
+          /*
+           * §12.3. This is the only door with no credential on it, so it is
+           * the only one where the budget is the whole defence. Taken before
+           * the handler runs and before the body is read: a limiter that
+           * parses the request first is a limiter that can be made to do work.
+           */
+          const limit = limitFor(req.method!, url.pathname);
+          let rateHeaders: Record<string, string> = {};
+          if (limit) {
+            const verdict = await takeIntakeToken(
+              callerFor(req),
+              processKeyFrom(url.pathname),
+              limit,
+            );
+            rateHeaders = verdict.headers;
+            if (!verdict.ok) {
+              logIfEnabled('warn', 'intake.rate_limited', {
+                path: url.pathname,
+                scope: limit.scope,
+                retryAfter: verdict.retryAfterSeconds,
+              });
+              return send(
+                res,
+                429,
+                {
+                  error: 'too many requests',
+                  reason: `Wait ${verdict.retryAfterSeconds}s and try again.`,
+                },
+                [],
+                rateHeaders,
+              );
+            }
+          }
+
           const body = req.method === 'POST' ? await readBody(req) : {};
           const anonymous: Principal = { kind: 'respondent', tenantId: '' };
-          return send(res, 200, await match.handler({ engine, pool, principal: anonymous, actorId: '', url }, body));
+          return send(
+            res,
+            200,
+            await match.handler({ engine, pool, principal: anonymous, actorId: '', url }, body),
+            [],
+            rateHeaders,
+          );
         }
 
         const session = await resolveSession(pool, readCookie(req, SESSION_COOKIE) ?? '');

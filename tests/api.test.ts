@@ -10,6 +10,7 @@ import { DEFINITIONS, MIN_COHORT } from '../src/runtime/metrics.js';
 import { redact, visibleFields, WORKSPACE_GRANTS } from '../src/runtime/policy.js';
 import { appUrl, invitationMail, resetMail, verificationMail } from '../src/runtime/platform-mail.js';
 import { verifyRelyKit } from '../src/runtime/delivery.js';
+import { callerFor, limitFor } from '../src/api/intake-limits.js';
 import { createHmac } from 'node:crypto';
 
 /** Builds the headers exactly as RelyKit's `signPayload` does. */
@@ -263,4 +264,52 @@ test('an order is one of a fixed set, because a cursor means nothing under anoth
   // column would let them page through a sequence the cursor was not issued
   // against, which silently skips and repeats rows.
   assert.deepEqual([...RECORD_ORDERS], ['newest', 'oldest', 'reference']);
+});
+
+/*
+ * Rate limiting on the public form (§12.3).
+ *
+ * The form is the one door with no credential on it, so the budget is the
+ * whole defence. These check the two decisions that make it real rather than
+ * decorative: which requests are limited, and who counts as "the caller".
+ */
+
+test('the public form has a budget, and submitting is the tight one', () => {
+  // Reading and checking happen on most keystrokes of a conditional form; a
+  // limit a careful respondent can hit breaks the product rather than
+  // protecting it. Submitting writes a record, sends mail and starts a
+  // workflow, so that is the one worth being mean about.
+  const submit = limitFor('POST', '/api/forms/employee_onboarding/submit');
+  const read = limitFor('GET', '/api/forms/employee_onboarding');
+  const check = limitFor('POST', '/api/forms/employee_onboarding/check');
+
+  assert.ok(submit && read && check, 'every public route carries a budget');
+  assert.ok(submit!.perMinute < read!.perMinute, 'submitting is tighter than reading');
+  assert.ok(submit!.perMinute < check!.perMinute, 'submitting is tighter than checking');
+  assert.ok(submit!.perHour, 'submitting also has a slower window, so a minute-by-minute drip is bounded');
+
+  // A route nobody published is not silently exempt.
+  assert.equal(limitFor('POST', '/api/builder/drafts/x/save'), null, 'only the public form is limited here');
+});
+
+test('x-forwarded-for is counted, not trusted', () => {
+  /*
+   * The header is written by whoever is calling. Believing it makes per-caller
+   * limiting free to defeat — a random address per request is a new caller
+   * every time. Refusing to read it is just as wrong behind a load balancer,
+   * where every request then looks like it came from the balancer.
+   *
+   * TRUST_PROXY says how many hops are in front. The default is none, and this
+   * test runs under the default, so the socket address wins whatever the
+   * header claims.
+   */
+  const spoofed = {
+    socket: { remoteAddress: '203.0.113.9' },
+    headers: { 'x-forwarded-for': '198.51.100.1, 198.51.100.2' },
+  } as unknown as Parameters<typeof callerFor>[0];
+
+  assert.equal(callerFor(spoofed), '203.0.113.9', 'the header did not become the caller');
+
+  const bare = { socket: { remoteAddress: '203.0.113.9' }, headers: {} } as unknown as Parameters<typeof callerFor>[0];
+  assert.equal(callerFor(bare), '203.0.113.9');
 });
