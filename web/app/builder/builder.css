@@ -918,3 +918,123 @@
 }
 
 .bd__packPolicy { color: var(--ochre-text); }
+
+/* ==========================================================================
+   The builder's surface
+   ==========================================================================
+
+   The console was relit and the builder was not, because the restyle was
+   scoped to `.cs`. That left two halves of one product with two different
+   navigations, which reads as two products.
+
+   Same tokens, same reasoning: a light rail, the system UI face rather than
+   the marketing serif, one card treatment. Declared here rather than shared
+   with the console's file because the two are separate routes with separate
+   stylesheets — and the values live on `:root` in globals.css, so this is
+   assignment, not duplication.
+*/
+
+.bd {
+  --ui:
+    system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+    'Noto Sans', sans-serif;
+  --rail: #ffffff;
+  --rail-line: #e6e4df;
+  --rail-ink: #1c1f1d;
+  --rail-ink-soft: #5c635e;
+  --canvas: #f4f3f0;
+  --card-line: #e4e2dd;
+
+  background: var(--canvas);
+  font-family: var(--ui);
+}
+
+/* The rail is no longer dark, so the mint focus ring written for it is the
+   wrong colour. Green is 6.4:1 here. */
+.bd .bd__side {
+  --focus-ring: var(--green);
+  background: var(--rail);
+  border-right: 1px solid var(--rail-line);
+}
+
+.bd h1,
+.bd h2,
+.bd h3 {
+  font-family: var(--ui);
+  letter-spacing: -0.011em;
+}
+
+.bd__brand {
+  font-family: var(--ui);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--rail-ink);
+}
+
+.bd__sideLabel {
+  color: var(--muted);
+  font-family: var(--ui);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+
+.bd__listItem {
+  color: var(--rail-ink-soft);
+  font-family: var(--ui);
+  border-radius: 6px;
+}
+
+.bd__listItem:hover {
+  background: var(--paper-2);
+  color: var(--rail-ink);
+}
+
+/* A bar as well as a tint: 1.4.1, colour must not do the work alone. */
+.bd__listItem[aria-current='page'] {
+  background: var(--green-tint);
+  color: var(--green-deep);
+  box-shadow: inset 2px 0 0 var(--green);
+}
+
+.bd__listName {
+  font-weight: 600;
+}
+
+.bd__listMeta,
+.bd__empty {
+  color: var(--muted);
+}
+
+.bd__newBtn {
+  border: 1px dashed var(--card-line);
+  color: var(--green-deep);
+  font-family: var(--ui);
+  font-weight: 600;
+  border-radius: 6px;
+}
+
+.bd__newBtn:hover:not(:disabled) {
+  border-color: var(--green);
+  background: var(--green-tint);
+  color: var(--green-deep);
+}
+
+.bd__sideLink {
+  color: var(--rail-ink-soft);
+  font-family: var(--ui);
+}
+
+.bd__sideLink:hover {
+  color: var(--green-deep);
+}
+
+/* Why a button is disabled, beside the button. */
+.bd__blocker {
+  margin-right: auto;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--muted);
+  max-width: 320px;
+}

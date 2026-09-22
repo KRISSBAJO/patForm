@@ -35,6 +35,81 @@ async function post<T>(path: string, body?: unknown): Promise<T> {
   return parsed as T;
 }
 
+/**
+ * Icons for the actions.
+ *
+ * A row of five text buttons reads as a wall; an icon gives each one a shape
+ * to recognise before the label is read. They sit *beside* the labels rather
+ * than replacing them — an icon-only button is a guessing game, and `aria-
+ * hidden` keeps the icon out of the accessible name so nothing is announced
+ * twice.
+ */
+function Icon({ name }: { name: 'copy' | 'form' | 'list' | 'edit' | 'check' | 'link' | 'people' }) {
+  const p = {
+    width: 15,
+    height: 15,
+    viewBox: '0 0 20 20',
+    fill: 'none',
+    stroke: 'currentColor',
+    strokeWidth: 1.7,
+    strokeLinecap: 'round' as const,
+    strokeLinejoin: 'round' as const,
+    'aria-hidden': true,
+    className: 'mg__icon',
+  };
+  switch (name) {
+    case 'copy':
+      return (
+        <svg {...p}>
+          <rect x="7" y="7" width="10" height="10" rx="1.8" />
+          <path d="M13 7V4.8A1.8 1.8 0 0 0 11.2 3H4.8A1.8 1.8 0 0 0 3 4.8v6.4A1.8 1.8 0 0 0 4.8 13H7" />
+        </svg>
+      );
+    case 'check':
+      return (
+        <svg {...p}>
+          <path d="M4 10.6 8.2 15 16 5.6" />
+        </svg>
+      );
+    case 'form':
+      return (
+        <svg {...p}>
+          <rect x="3.6" y="2.6" width="12.8" height="14.8" rx="1.8" />
+          <path d="M6.8 7h6.4M6.8 10.2h6.4M6.8 13.4h3.6" />
+        </svg>
+      );
+    case 'list':
+      return (
+        <svg {...p}>
+          <path d="M6.6 5.4h10M6.6 10h10M6.6 14.6h10" />
+          <path d="M3.4 5.4h.01M3.4 10h.01M3.4 14.6h.01" />
+        </svg>
+      );
+    case 'edit':
+      return (
+        <svg {...p}>
+          <path d="M12.6 3.4a2.4 2.4 0 0 1 3.4 3.4l-8.2 8.2-4.2 1 1-4.2 8-8.4Z" />
+        </svg>
+      );
+    case 'link':
+      return (
+        <svg {...p}>
+          <path d="M8.6 11.4 6.4 13.6a2.8 2.8 0 0 0 4 4l2.2-2.2" />
+          <path d="M11.4 8.6l2.2-2.2a2.8 2.8 0 0 0-4-4L7.4 4.6" />
+          <path d="M7.8 12.2l4.4-4.4" />
+        </svg>
+      );
+    case 'people':
+      return (
+        <svg {...p}>
+          <circle cx="7.6" cy="7" r="2.7" />
+          <path d="M2.8 16.2c0-2.5 2.1-4.2 4.8-4.2s4.8 1.7 4.8 4.2" />
+          <path d="M13.2 5.1a2.7 2.7 0 0 1 0 5.2" />
+        </svg>
+      );
+  }
+}
+
 function Refused({ error }: { error: string }) {
   return (
     <div className="cs__panel">
@@ -489,14 +564,26 @@ export function ProcessesView({
             </div>
 
             <div className="mg__processBody">
-              <p className="mg__hint" style={{ marginTop: 0 }}>
-                {p.roles.length
-                  ? `Your roles here: ${p.roles.join(', ')}.`
-                  : 'You hold no role in this process, so you will not be assigned its work.'}
-              </p>
+              {/* Facts as chips rather than a sentence: they are scanned, not
+                  read, and a sentence makes somebody parse to find one. */}
+              <div className="mg__chips">
+                <span className="mg__chip">
+                  <Icon name="people" />
+                  {p.roles.length ? p.roles.join(', ') : 'no role here'}
+                </span>
+                <span className="mg__chip">
+                  <Icon name="list" />
+                  {p.open_records} open
+                </span>
+                <span className="mg__chip">
+                  <Icon name="check" />
+                  published v{p.version}
+                </span>
+              </div>
 
-              <label className="cs__label" htmlFor={`link-${p.process_key}`}>
-                The form link
+              <label className="cs__label mg__linkLabel" htmlFor={`link-${p.process_key}`}>
+                <Icon name="link" />
+                Send this link to whoever fills the form in
               </label>
               <div className="mg__linkRow">
                 <input
@@ -508,19 +595,20 @@ export function ProcessesView({
                 />
                 <button
                   type="button"
-                  className="cs__btn"
+                  className={`cs__btn${copied === p.process_key ? ' cs__btn--done' : ''}`}
                   onClick={() => {
                     void navigator.clipboard?.writeText(url);
                     setCopied(p.process_key);
                   }}
                 >
-                  Copy
+                  <Icon name={copied === p.process_key ? 'check' : 'copy'} />
+                  {copied === p.process_key ? 'Copied' : 'Copy'}
                 </button>
               </div>
               {/* A live region, so the copy is announced rather than only
                   appearing next to a button somebody cannot see. */}
               <p className="mg__hint" role="status">
-                {copied === p.process_key ? 'Copied. Anyone with this link can submit.' : ' '}
+                {copied === p.process_key ? 'Anyone with this link can submit. No account needed.' : ' '}
               </p>
 
               {from && (
@@ -534,6 +622,7 @@ export function ProcessesView({
 
               <div className="mg__rowActions">
                 <a className="cs__btn cs__btn--primary" href={url} target="_blank" rel="noreferrer">
+                  <Icon name="form" />
                   Open the form
                 </a>
                 <button
@@ -542,9 +631,11 @@ export function ProcessesView({
                   aria-expanded={open === p.process_key}
                   onClick={() => void showRecords(p.process_key)}
                 >
-                  {open === p.process_key ? 'Hide records' : `Show the ${p.open_records} open`}
+                  <Icon name="list" />
+                  {open === p.process_key ? 'Hide records' : 'Show the records'}
                 </button>
                 <a className="cs__btn" href="/builder">
+                  <Icon name="edit" />
                   Edit in the builder
                 </a>
               </div>

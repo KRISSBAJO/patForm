@@ -1919,3 +1919,57 @@ a.cs__navItem {
   height: 44px;
   justify-content: center;
 }
+
+/* ------------------------------------------------ icons on the actions */
+/*
+ * Icons beside labels, never instead of them. An icon gives a button a shape
+ * to recognise before the label is read; an icon-only button is a guessing
+ * game, and the icons carry aria-hidden so nothing is announced twice.
+ */
+
+.cs .cs__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.mg__icon {
+  flex-shrink: 0;
+  opacity: 0.75;
+}
+
+.cs__btn--primary .mg__icon { opacity: 0.9; }
+
+.cs__btn--done {
+  border-color: var(--green);
+  color: var(--green-deep);
+}
+
+.cs__btn--done .mg__icon { opacity: 1; }
+
+/* Facts as chips: scanned, not read. */
+.mg__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.mg__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--card-line);
+  border-radius: 999px;
+  background: var(--paper-3);
+  font-size: 12.5px;
+  color: var(--ink-soft);
+}
+
+.mg__linkLabel {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 7px;
+}

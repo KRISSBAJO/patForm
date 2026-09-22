@@ -483,6 +483,27 @@ A third was subtler: a hole was widened to `[^/]+`, requiring at least one chara
 **Generalisable:** a tool that measures whether work was done is itself work that can be wrong, and its failure mode is the quietest one available — it reports a number, and a number always looks like a measurement. The three bugs here all produced *over*-reporting, which is the safe direction; the same code one character different would have reported everything fine.
 
 
+### 45. A first screen whose default tab was empty
+
+The builder's "New process" dialog opens on **From a pack**, said *"No packs available"*, and left Install disabled with no explanation. Nothing had ever published a pack: the catalogue table, the publish function, the install flow and the pack browser were all built and the seed never called any of it.
+
+So the first thing anybody does in the builder was a dead end with a greyed-out button, and the only way to discover the other two routes was to notice the tabs.
+
+Three fixes, and the third is the general one:
+
+- The seed publishes three built-in packs, each from a blueprint that compiles rather than from a written description of one.
+- The dialog moves off an empty tab instead of sitting on it, and distinguishes *not asked yet* from *asked, and there are none* — they were the same empty array.
+- **The disabled button says what is missing.** A disabled control with no reason is a dead end with a cursor on it, and the person cannot tell whether they have done something wrong or the feature is broken.
+
+**Generalisable:** a default is a claim that this is the common case. A default that is empty on a fresh install is the worst possible first impression, and it is invisible to everybody whose database already has data.
+
+### 46. Half the product was relit and half was not
+
+The console's restyle was scoped to `.cs`, so the builder kept the old dark rail and the display serif. Two halves of one product with two navigations read as two products — and it was reported the same way, as "this still carries the old layout".
+
+**Generalisable:** scoping a theme to one route is right for keeping marketing and application apart, and wrong the moment the application has more than one route. The check is not "does this page look right" but "do the pages a person moves between look like the same thing".
+
+
 ---
 
 ## What the compiler structurally cannot catch

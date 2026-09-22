@@ -4,6 +4,7 @@ import { createPool, describeTarget, resetSchema } from './runtime/db.js';
 import { Engine } from './runtime/engine.js';
 import type { Principal } from './runtime/policy.js';
 import { setPassword } from './runtime/auth.js';
+import { publishPack } from './runtime/packs.js';
 import { suppressDelivery } from './runtime/email.js';
 
 /** Every seeded account gets this. It only ever exists in a local database. */
@@ -18,6 +19,44 @@ const DEV_PASSWORD = 'patform-dev-password';
  * is not committed, and it keeps its own password because the shared dev one
  * should not open a mailbox that exists.
  */
+/**
+ * What the catalogue opens with.
+ *
+ * Summary and audience are the two lines somebody decides on, so they say what
+ * the process is *for* rather than what it contains — the contents are counted
+ * from the blueprint and shown separately, which is the part a card cannot
+ * exaggerate.
+ */
+const PACKS = [
+  {
+    key: 'employee_onboarding',
+    file: 'employee-onboarding.blueprint.json',
+    name: 'Employee onboarding',
+    category: 'People',
+    summary:
+      'From an accepted offer to a first day that works: manager and HR approval, equipment and accounts, and a welcome packet.',
+    audience: 'For an HR or operations team hiring more than a handful of people a year.',
+  },
+  {
+    key: 'expense_approval',
+    file: 'expense-approval.blueprint.json',
+    name: 'Expense approval',
+    category: 'Finance',
+    summary:
+      'A claim checked against its receipts, approved at the right level for its size, and sent to payroll.',
+    audience: 'For a finance team still approving expenses over email.',
+  },
+  {
+    key: 'church_worker_onboarding',
+    file: 'church-worker-onboarding.blueprint.json',
+    name: 'Volunteer onboarding and safeguarding',
+    category: 'Community',
+    summary:
+      'Vetting, training and departmental approval for a volunteer, with the safeguarding check recorded as a reference rather than a stored document.',
+    audience: 'For an organization whose volunteers work with children or vulnerable adults.',
+  },
+];
+
 const OWNER_EMAIL = process.env.SEED_OWNER_EMAIL;
 const OWNER_PASSWORD = process.env.SEED_OWNER_PASSWORD;
 
@@ -98,6 +137,29 @@ async function main(): Promise<void> {
     JSON.parse(readFileSync('processes/employee-onboarding.blueprint.json', 'utf8')),
   );
   const version = await engine.publish(tenantId, bp, 'seed');
+
+  /*
+   * The pack catalogue.
+   *
+   * The builder's "New process" dialog opens on "From a pack" and said "No
+   * packs available", because nothing ever published one — a first screen
+   * whose default tab is empty. These are built-in, so every workspace sees
+   * them, and each is published from a blueprint that compiles rather than
+   * from a hand-written description of one.
+   */
+  for (const pack of PACKS) {
+    const blueprint = JSON.parse(readFileSync(`processes/${pack.file}`, 'utf8'));
+    await publishPack(pool, {
+      principal: 'system',
+      packKey: pack.key,
+      name: pack.name,
+      summary: pack.summary,
+      category: pack.category,
+      audience: pack.audience,
+      blueprint,
+      builtIn: true,
+    });
+  }
 
   /*
    * Seeded accounts are verified.

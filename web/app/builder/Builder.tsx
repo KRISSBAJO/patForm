@@ -1836,9 +1836,28 @@ function NewProcessDialog({
   onCreated: (detail: DraftDetail) => void;
 }) {
   const [mode, setMode] = useState<'pack' | 'describe' | 'copy'>('pack');
-  const [packs, setPacks] = useState<Pack[]>([]);
+  // null until the catalogue answers. An empty array is a real answer
+  // (there are none) and must not be confused with not having asked.
+  const [packs, setPacks] = useState<Pack[] | null>(null);
   const [chosen, setChosen] = useState<Pack | null>(null);
   const [detail, setDetail] = useState<PackDetail | null>(null);
+
+  /*
+   * If the catalogue turns out to be empty, do not sit on a tab that offers
+   * nothing. The dialog opened on "From a pack" and said "No packs
+   * available", which is a first screen that answers its own question with
+   * a dead end.
+   */
+  const [movedOff, setMovedOff] = useState(false);
+
+
+  useEffect(() => {
+    if (!movedOff && mode === 'pack' && packs !== null && packs.length === 0) {
+      setMode('describe');
+      setMovedOff(true);
+    }
+  }, [packs, mode, movedOff]);
+
 
   // Read when one is chosen rather than for the whole catalogue: a list of
   // twenty packs does not need twenty blueprints parsed to draw a card.
@@ -1860,6 +1879,7 @@ function NewProcessDialog({
       } catch {
         // A catalogue that will not load is not a reason to block the other
         // two routes into a new process.
+        setPacks([]);
       }
     })();
   }, []);
@@ -1867,6 +1887,24 @@ function NewProcessDialog({
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [copyFrom, setCopyFrom] = useState(processes.find((p) => p.version !== null)?.process_key ?? '');
+
+  /** What is still missing, or null when the form is ready. */
+  const blocker =
+    key.length < 3
+      ? 'A key of at least three characters, please.'
+      : mode === 'pack'
+        ? chosen
+          ? null
+          : packs !== null && packs.length === 0
+            ? 'No packs are published yet — use "Describe it" instead.'
+            : 'Choose a pack above.'
+        : mode === 'describe'
+          ? description.trim().length < 20
+            ? 'Describe the process in a sentence or two.'
+            : null
+          : copyFrom
+            ? null
+            : 'Choose a process to copy.';
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const box = useDialog(onClose);
@@ -1939,7 +1977,7 @@ function NewProcessDialog({
         {mode === 'pack' ? (
           <>
             <div className="bd__packs">
-              {packs.map((p) => (
+              {(packs ?? []).map((p) => (
                 <button
                   key={p.id}
                   className={`bd__pack${chosen?.id === p.id ? ' bd__pack--on' : ''}`}
@@ -1968,7 +2006,12 @@ function NewProcessDialog({
                   </span>
                 </button>
               ))}
-              {!packs.length && <p className="bd__note">No packs available.</p>}
+              {packs !== null && packs.length === 0 && (
+                <p className="bd__note">
+                  No packs are published yet. Describe what you need instead — that tab is open.
+                </p>
+              )}
+              {packs === null && <p className="bd__note">Loading the catalogue…</p>}
             </div>
             {chosen && (
               <p className="bd__note">
@@ -2051,17 +2094,23 @@ function NewProcessDialog({
         {err && <p className="bd__jsonBad">{err}</p>}
 
         <div className="bd__drawerActions">
+          {/*
+            * A disabled button that does not say why is a dead end with a
+            * cursor on it. This says what is still needed, in the same place
+            * somebody is looking when they wonder.
+            */}
+          {blocker && (
+            <span className="bd__blocker" role="status">
+              {blocker}
+            </span>
+          )}
           <button className="bd__btn" onClick={onClose} disabled={busy}>
             Cancel
           </button>
           <button
             className="bd__btn bd__btn--primary"
             onClick={submit}
-            disabled={
-              busy ||
-              key.length < 3 ||
-              (mode === 'pack' ? !chosen : mode === 'describe' ? description.trim().length < 20 : !copyFrom)
-            }
+            disabled={busy || blocker !== null}
           >
             {busy ? 'Working…' : mode === 'pack' ? 'Install as a draft' : 'Create draft'}
           </button>

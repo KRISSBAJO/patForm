@@ -2,7 +2,10 @@
  * One screenshot of the console, for showing a change rather than describing
  * it. Uses the same seeded dev account as the accessibility scan.
  *
- *   node scripts/shot.mjs <out.png> [nav item]
+ *   node scripts/shot.mjs <out.png> [nav item] [path]
+ *
+ * The third argument navigates somewhere else after signing in, which is how
+ * the builder — a separate route sharing the session cookie — gets captured.
  */
 import { chromium } from 'playwright';
 
@@ -20,9 +23,15 @@ await page.click('button[type=submit]');
 await page.waitForTimeout(4500);
 
 const nav = process.argv[3];
-if (nav) {
+if (nav && nav.trim()) {
   await page.locator('button', { hasText: new RegExp(`^${nav}`, 'i') }).first().click();
   await page.waitForTimeout(2500);
+}
+
+const path = process.argv[4];
+if (path) {
+  await page.goto(`${BASE}${path}`, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(3500);
 }
 
 await page.screenshot({ path: out });
