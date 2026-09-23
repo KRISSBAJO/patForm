@@ -2655,3 +2655,109 @@ a.cs__navItem {
     display: none;
   }
 }
+
+/* ------------------------------------------------------------ held intake */
+
+.vw__note--done {
+  color: var(--green-deep);
+}
+
+.hd__list {
+  list-style: none;
+  margin: 0;
+  padding: 0 18px 18px;
+  display: grid;
+  gap: 12px;
+}
+
+.hd__item {
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--white);
+}
+
+.hd__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 12px;
+}
+
+.hd__ref {
+  font-family: var(--font-mono), monospace;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.hd__process {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.hd__when {
+  margin-left: auto;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.hd__why {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.hd__why li {
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--ochre-pale);
+  color: var(--ochre-text);
+  font-size: 12px;
+}
+
+.hd__why .hd__whyQuiet {
+  background: var(--line-soft);
+  color: var(--muted);
+}
+
+.hd__answers {
+  margin: 12px 0 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 8px 16px;
+}
+
+.hd__answer dt {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.hd__answer dd {
+  margin: 1px 0 0;
+  font-size: 13.5px;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.hd__more {
+  margin-top: 8px;
+  padding: 0;
+  min-height: 24px;
+  border: 0;
+  background: none;
+  color: var(--green);
+  font: inherit;
+  font-size: 12.5px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.hd__actions {
+  margin-top: 12px;
+  display: flex;
+  gap: 8px;
+}

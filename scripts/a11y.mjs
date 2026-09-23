@@ -179,6 +179,32 @@ async function main() {
     all.push(...(await audit(page, 'Automation health and the suppression list')));
   }
 
+  /*
+   * The held queue, with something in it — an empty state proves nothing
+   * about the cards. One submission without a ticket is held on purpose,
+   * audited, and discarded again so the gate leaves no trace.
+   */
+  const onboarding = JSON.parse(readFileSync('processes/employee-onboarding.blueprint.json', 'utf8'));
+  const happy = onboarding.tests.find((t) => t.kind === 'happy_path');
+  const heldAnswers = { ...happy.steps.find((st) => st.step === 'submit').answers, personal_email: 'a11y.held@example.test' };
+  await fetch(`${BASE}/api/forms/employee_onboarding/submit`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ answers: heldAnswers }),
+  });
+  const heldNav = page.locator('button', { hasText: /^Held submissions/ }).first();
+  if (await heldNav.count()) {
+    await heldNav.click();
+    await page.waitForTimeout(1500);
+    const cards = await page.locator('.hd__item').count();
+    all.push(...(await audit(page, `Held submissions (${cards} held)`)));
+    if (cards) {
+      page.once('dialog', (d) => d.accept());
+      await page.locator('.hd__item', { hasText: 'a11y.held@example.test' }).locator('button', { hasText: 'Discard' }).click();
+      await page.waitForTimeout(1200);
+    }
+  }
+
   // The two views that answer "how do records arrive" and "how do people get
   // in". Both existed as endpoints with nothing calling them.
   for (const [name, label] of [

@@ -32,6 +32,8 @@ import {
 } from '../runtime/workspace.js';
 import { requestPasswordReset, resetPassword, sendVerification, verifyEmail } from '../runtime/account.js';
 import { DraftConflict } from '../runtime/errors.js';
+import { assertScreeningConfigured, issueTicket, screen, TRAP_FIELD } from '../runtime/screening.js';
+import { discardHeld, listHeld, releaseHeld } from '../runtime/held.js';
 import {
   answerChallenge,
   beginEnrolment,
@@ -142,7 +144,8 @@ route('GET', /^\/api\/forms\/([a-z0-9_]+)$/, async ({ pool, url }) => {
   const key = url.pathname.split('/').pop()!;
   const form = await publicForm(pool, key);
   if (!form) throw new HttpError(404, 'no such form');
-  return form;
+  // The ticket that says this form was loaded, and when. See screening.ts.
+  return { ...form, ticket: issueTicket(key), trap: TRAP_FIELD };
 });
 
 route('POST', /^\/api\/forms\/([a-z0-9_]+)\/check$/, async ({ pool, url }, body) => {
@@ -167,13 +170,38 @@ route('GET', /^\/api\/forms\/([a-z0-9_]+)\/draft$/, async ({ pool, url }) => {
 
 route('POST', /^\/api\/forms\/([a-z0-9_]+)\/submit$/, async ({ pool, engine, url }, body) => {
   const key = url.pathname.split('/')[3]!;
-  const { token, answers } = body as { token?: string; answers?: Answers };
-  const result = await submitForm(pool, { processKey: key, token, answers: answers ?? {} });
+  const { token, answers, ticket, trap } = body as { token?: string; answers?: Answers; ticket?: unknown; trap?: unknown };
+  const screening = screen({ processKey: key, ticket, trap });
+  const { held, ...result } = await submitForm(pool, { processKey: key, token, answers: answers ?? {}, screening });
+  if (held) {
+    // The reasons, never the answers: a log line is not where unvetted
+    // personal data should end up.
+    logIfEnabled('warn', 'intake.held', { process: key, reasons: screening.reasons, elapsedMs: screening.elapsedMs });
+    return result;
+  }
   // Deliver the receipt before answering, so the confirmation page is not the
   // only evidence the submission worked.
   if (result.ok) await engine.drain(new Date(), 'intake');
   return result;
 });
+
+// ------------------------------------------------------------ held intake
+//
+// What screening kept back. Listing, releasing and discarding each check
+// `operate` on the process inside runtime/held.ts.
+
+route('GET', /^\/api\/held$/, async ({ pool, principal }) => ({ held: await listHeld(pool, principal) }));
+
+route('POST', /^\/api\/held\/([0-9a-f-]{36})\/release$/, async ({ pool, engine, principal, url }) => {
+  const released = await releaseHeld(pool, { principal, heldId: url.pathname.split('/')[3]! });
+  // Its receipt and its first approval request go now, as they would have.
+  await engine.drain(new Date(), 'intake');
+  return released;
+});
+
+route('POST', /^\/api\/held\/([0-9a-f-]{36})\/discard$/, async ({ pool, principal, url }) =>
+  discardHeld(pool, { principal, heldId: url.pathname.split('/')[3]! }),
+);
 
 // ------------------------------------------------------------------ builder
 
@@ -869,6 +897,9 @@ function send(
 }
 
 async function main(): Promise<void> {
+  // Refuse to start in production without a ticket key, rather than hold
+  // every submission made across the next deploy. See screening.ts.
+  assertScreeningConfigured();
   const pool = createPool(12);
   const engine = new Engine(pool);
 

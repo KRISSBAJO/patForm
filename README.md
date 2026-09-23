@@ -454,6 +454,46 @@ A refused request is a `429` carrying `Retry-After` and the `x-ratelimit-*`
 headers, all of which are in `access-control-expose-headers` — a respondent's
 browser that cannot read why it was refused shows a form that looks broken.
 
+### Telling a person from a script
+
+A budget stops one caller making a thousand records. It does nothing about a
+thousand callers making one each — and each of those used to *act* on arrival.
+The onboarding form emails whatever address is typed as the manager's, so a
+fabricated submission was an email from this platform to an address a
+stranger chose. That is a spam relay, and it is the harm this section exists
+for.
+
+Two signals, both invisible to someone using the form:
+
+- **A ticket.** Serving the form hands out a signed timestamp. A submission
+  without one never loaded the form; one that arrives within three seconds of
+  it was not typed.
+- **A trap.** One extra input, off-screen, hidden from assistive tech and out
+  of the tab order. A person never reaches it; a script that fills every input
+  it finds fills that one too.
+
+Neither rejects anything. A submission that fails either is **held**: kept
+whole in its own table, never made into a record, so it sends nothing, starts
+nothing, counts in no metric, and cannot absorb a real person's later
+submission as a duplicate of itself. The response looks the same as any other,
+so a script learns nothing. Operators see the queue under **Held
+submissions** in the console, with why each one was held and its answers
+through their usual field-level redaction. **Release** makes it a record by the
+ordinary submit path, under the reference the person was shown, and its
+receipt and first request go out then. **Discard** deletes the answers.
+Anything left is deleted after thirty days.
+
+Holding rather than discarding is deliberate: password managers do fill hidden
+inputs, and somebody submitting a finished draft can be fast. A check that
+silently threw those away would lose a real application with nobody knowing
+it had arrived.
+
+Production refuses to start without `FORM_TICKET_SECRET`, because a key that
+changes on every restart invalidates every form open during a deploy and
+quietly routes those people to the queue. The public API (`/v1/records`) is
+not screened — its callers hold a key, which is the proof screening
+approximates.
+
 ## Webhooks, OAuth and shared rate limits
 
 ```bash
@@ -979,11 +1019,13 @@ Everything below is a deliberate deferral:
   live session is not re-challenged.
 - **Bounce-rate alerting.** Individual bounces are handled (below); nothing
   watches the *rate*, which is what a provider suspends an account over.
-- **Spam control on public submission.** Rate limiting is built (below);
-  what is not is anything that tells a real submission from a plausible
-  fabricated one. A budget stops one caller making a thousand records. It
-  does not stop a thousand callers making one each, and nothing here
-  challenges, scores or reputation-checks a submission.
+- **CAPTCHA, IP reputation, and scoring what a submission says.** Public
+  forms are screened with a signed ticket and a trap field, and a suspicious
+  submission is held rather than acted on (above). Nothing challenges the
+  person, checks where they are connecting from, or reads the answers for
+  signs of spam. Each catches more and costs real people more, and is a
+  choice to make with real traffic in front of it. Held submissions are not
+  searched by a privacy request; they are deleted within thirty days.
 - **Uploads at all** (§12.1), and therefore malware scanning and quarantine.
   The `file` field type looked like an upload and was not: the browser sent
   the file's *name* and the bytes never left the machine, so a record that

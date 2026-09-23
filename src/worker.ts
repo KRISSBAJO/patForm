@@ -2,6 +2,7 @@ import { createPool, describeTarget } from './runtime/db.js';
 import { deliverBatch } from './runtime/webhooks.js';
 import { Engine, newWorkerId } from './runtime/engine.js';
 import { sweepExpiredTokens } from './runtime/retention.js';
+import { sweepHeld } from './runtime/held.js';
 
 /**
  * The durable worker §10.1 asks for: "Queue-backed workers for email,
@@ -71,8 +72,10 @@ async function main(): Promise<void> {
 
       if (now.getTime() - lastSweep > SWEEP_EVERY_MS) {
         const swept = await sweepExpiredTokens(pool);
+        const held = await sweepHeld(pool);
         lastSweep = now.getTime();
         if (swept) console.log(`  ${now.toISOString()}  swept ${swept} expired token(s)`);
+        if (held) console.log(`  ${now.toISOString()}  deleted ${held} held submission(s) past thirty days`);
       }
     } catch (err) {
       // A worker that dies on one bad row stops every process in the

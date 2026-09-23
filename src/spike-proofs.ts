@@ -72,6 +72,8 @@ import {
   saveDraft as saveBuilderDraft,
 } from './runtime/builder.js';
 import { DraftConflict } from './runtime/errors.js';
+import { issueTicket, screen } from './runtime/screening.js';
+import { discardHeld, listHeld, releaseHeld } from './runtime/held.js';
 
 /**
  * Proofs for the gaps closed after the first spike: respondent scoping, a
@@ -792,6 +794,137 @@ export async function proveDraftLocking({ pool, bp, record }: ProofCtx): Promise
       `Publishing an older revision: ${publishOld}. Discarding under someone else's lease: ${joyDiscard}. ` +
       `A read-only member on load, save, claim and publish: ${[dana1, dana2, dana3, dana4].join(', ')}. ` +
       `Published as v${published.version}; a save afterwards: ${afterPublish}. Releasing someone else's lease: ${samRelease.released}.`,
+  );
+}
+
+/**
+ * A public form tells a person from a script, and a script's submission does nothing.
+ *
+ * Rate limiting stopped one caller making a thousand records and did nothing
+ * about a thousand callers making one each. Worse than the records was what
+ * each one did on arrival: the onboarding form emails whatever "manager"
+ * address it is given, so every fabricated submission was an email from this
+ * platform to an address a stranger chose. This proof submits the way scripts
+ * do and checks that none of it becomes a record or sends a thing — and that
+ * a real person is never the one who pays for it.
+ */
+export async function proveScreening({ pool, bp, T0, record, completeFor }: ProofCtx): Promise<void> {
+  const engine = new Engine(pool);
+  const tenantId = await engine.createTenant('proof:screening');
+  await engine.publish(tenantId, bp, 'proof');
+  const operator = await engine.createActor(tenantId, 'op@proof.test', 'An Operator', 'operator');
+  const reader = await engine.createActor(tenantId, 'reader@proof.test', 'A Reader', 'read_only');
+  const as = (actorId: string): Principal => ({ kind: 'actor', tenantId, actorId });
+
+  const at = T0.getTime();
+  const answers = (email: string, manager = 'manager@example.test') =>
+    completeFor(bp, { personal_email: email, manager_email: manager }) as never;
+  const count = async (table: 'instance' | 'outbox') =>
+    (await pool.query<{ n: number }>(`select count(*)::int as n from ${table} where tenant_id = $1`, [tenantId])).rows[0]!.n;
+  const submit = (email: string, screening: ReturnType<typeof screen>, manager?: string) =>
+    submitForm(pool, { processKey: bp.key, answers: answers(email, manager), now: T0, screening });
+
+  // 1. A person: loaded the form, spent a while on it, left the trap empty.
+  const person = screen({ processKey: bp.key, ticket: issueTicket(bp.key, at - 95_000), trap: '', now: at });
+  const real = await submit('real.person@example.test', person);
+
+  const before = { instances: await count('instance'), outbox: await count('outbox') };
+
+  // 2. Four kinds of script. Each one names a "manager" it wants emailed.
+  const victim = 'someone-else@example.test';
+  const noTicket = screen({ processKey: bp.key, now: at });
+  const tooFast = screen({ processKey: bp.key, ticket: issueTicket(bp.key, at - 800), trap: '', now: at });
+  const forged = screen({ processKey: bp.key, ticket: issueTicket('some_other_process', at - 95_000), now: at });
+  const trapped = screen({ processKey: bp.key, ticket: issueTicket(bp.key, at - 95_000), trap: 'https://spam.example', now: at });
+  const held = [
+    await submit('bot.one@example.test', noTicket, victim),
+    await submit('bot.two@example.test', tooFast, victim),
+    await submit('bot.three@example.test', forged, victim),
+    // The script got a real person's address and used it.
+    await submit('taken.identity@example.test', trapped, victim),
+  ];
+  await engine.drain(T0, 'proof', tenantId);
+  const after = { instances: await count('instance'), outbox: await count('outbox') };
+
+  // 3. The real owner of that address submits afterwards. Their submission
+  //    must not be swallowed as a duplicate of the script's.
+  const owner = await submit('taken.identity@example.test', person);
+
+  // 4. What an operator sees, and what a read-only member sees.
+  const queue = await listHeld(pool, as(operator));
+  const readerQueue = await listHeld(pool, as(reader));
+  let readerRelease = 'allowed';
+  try {
+    await releaseHeld(pool, { principal: as(reader), heldId: held[0]!.instanceId! });
+  } catch (err) {
+    readerRelease = err instanceof AuthorizationError ? 'refused' : String(err);
+  }
+
+  // 5. Released: it becomes a record under the reference the person was shown,
+  //    and does on release what it would have done on arrival.
+  const outboxBeforeRelease = await count('outbox');
+  const released = await releaseHeld(pool, { principal: as(operator), heldId: held[1]!.instanceId!, now: T0 });
+  await engine.drain(T0, 'proof', tenantId);
+  const outboxAfterRelease = await count('outbox');
+  const again = await releaseHeld(pool, { principal: as(operator), heldId: held[1]!.instanceId!, now: T0 });
+  const { rows: trail } = await pool.query<{ type: string }>(
+    'select type from event where instance_id = $1 order by seq',
+    [released.instanceId],
+  );
+
+  // 6. Released, but the same person already has a record: it joins that one.
+  const dup = await releaseHeld(pool, { principal: as(operator), heldId: held[3]!.instanceId!, now: T0 });
+
+  // 7. Discarded: the answers go, and it cannot be released afterwards.
+  await discardHeld(pool, { principal: as(operator), heldId: held[2]!.instanceId! });
+  const { rows: gone } = await pool.query<{ answers: Record<string, unknown> }>(
+    'select answers from held_submission where id = $1',
+    [held[2]!.instanceId],
+  );
+  let releaseDiscarded = 'allowed';
+  try {
+    await releaseHeld(pool, { principal: as(operator), heldId: held[2]!.instanceId! });
+  } catch (err) {
+    releaseDiscarded = err instanceof Error ? err.message : String(err);
+  }
+
+  const reasons = [noTicket, tooFast, forged, trapped].map((x) => x.reasons.join('+'));
+
+  record(
+    'A script\'s submission is held, sends nothing, and a person is never the one who loses',
+    'Spam control on public forms: a signed ticket and a trap field, and a held queue instead of a silent discard.',
+    real.ok &&
+      !person.hold &&
+      reasons.join(',') === 'no_ticket,too_fast,bad_ticket,trap_filled' &&
+      held.every((h) => h.ok && h.held) &&
+      after.instances === before.instances &&
+      after.outbox === before.outbox &&
+      owner.ok &&
+      !owner.held &&
+      !owner.duplicate &&
+      queue.length === 4 &&
+      queue.every((q) => q.reasons.length > 0) &&
+      readerQueue.length === 0 &&
+      readerRelease === 'refused' &&
+      released.instanceId === held[1]!.instanceId &&
+      !released.duplicate &&
+      outboxAfterRelease > outboxBeforeRelease &&
+      again.instanceId === released.instanceId &&
+      trail.some((e) => e.type === 'submitted') &&
+      trail.some((e) => e.type === 'released_from_hold') &&
+      dup.duplicate &&
+      dup.instanceId === owner.instanceId &&
+      Object.keys(gone[0]!.answers).length === 0 &&
+      releaseDiscarded.includes('discarded'),
+    `A person with a ticket issued ${person.elapsedMs! / 1000}s earlier went straight through. ` +
+      `Four scripts were held for ${reasons.join(', ')}; between them they made ${after.instances - before.instances} records ` +
+      `and queued ${after.outbox - before.outbox} actions, so the address they each named as manager was sent nothing. ` +
+      `The real owner of an address a script had used submitted afterwards and got their own record rather than being ` +
+      `folded into the script's. An operator saw ${queue.length} held; a read-only member saw ${readerQueue.length} and ` +
+      `was ${readerRelease} when releasing. Releasing one made a record under the held id and queued ` +
+      `${outboxAfterRelease - outboxBeforeRelease} action(s); releasing it again returned the same record. Releasing the ` +
+      `one that shared an address joined the existing record (duplicate: ${dup.duplicate}). Discarding cleared ` +
+      `${Object.keys(gone[0]!.answers).length === 0 ? 'every' : 'not every'} answer, and a release afterwards was refused.`,
   );
 }
 

@@ -1,3 +1,4 @@
+import type { Screening } from './screening.js';
 import { createHash, randomBytes } from 'node:crypto';
 import type { Blueprint } from '../blueprint/index.js';
 import { validateAnswers, visibleFields, type Answers, type FieldError } from '../blueprint/answers.js';
@@ -267,6 +268,12 @@ export interface SubmitResult {
   duplicate?: boolean;
   resumeToken?: string;
   confirmation?: { message: string; showStatusLink: boolean };
+  /**
+   * Screening held it rather than making a record. Never sent to the
+   * respondent: the route strips it, so the answer a script gets back is the
+   * same shape as a person's.
+   */
+  held?: boolean;
 }
 
 /**
@@ -276,7 +283,18 @@ export interface SubmitResult {
  */
 export async function submitForm(
   pool: Pool,
-  args: { processKey: string; token?: string; answers: Answers; now?: Date },
+  args: {
+    processKey: string;
+    token?: string;
+    answers: Answers;
+    now?: Date;
+    /**
+     * Set only by the anonymous form route. The public API's callers hold a
+     * key, and a key is already the proof of who is calling that screening
+     * approximates.
+     */
+    screening?: Screening;
+  },
 ): Promise<SubmitResult> {
   const now = args.now ?? new Date();
   const engine = new Engine(pool);
@@ -294,6 +312,32 @@ export async function submitForm(
 
   const errors = validateAnswers(bp, answers, { now });
   if (errors.length) return { ok: false, errors };
+
+  /*
+   * Held after validation, not before. Telling a script its answers are
+   * invalid tells it nothing the form does not already publish; holding a
+   * submission that could never have become a record would put noise in the
+   * queue an operator has to read.
+   */
+  if (args.screening?.hold) {
+    const { rows } = await pool.query<{ id: string }>(
+      `insert into held_submission
+         (tenant_id, process_key, process_version_id, answers, reasons, elapsed_ms, draft_token_hash, received_at)
+       values ($1, $2, $3, $4, $5, $6, $7, $8)
+       returning id`,
+      [
+        version.tenant_id,
+        bp.key,
+        version.id,
+        JSON.stringify(answers),
+        args.screening.reasons,
+        args.screening.elapsedMs,
+        args.token ? sha256(args.token) : null,
+        now,
+      ],
+    );
+    return { ok: true, instanceId: rows[0]!.id, duplicate: false, confirmation: bp.experience.confirmation, held: true };
+  }
 
   const result = await engine.submit({
     version: { id: version.id, tenant_id: version.tenant_id, process_key: bp.key, version: 0, blueprint: bp },

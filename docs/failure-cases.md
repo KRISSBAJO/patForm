@@ -807,6 +807,18 @@ It had been there since the approval editor was built. The accessibility gate ne
 
 **Generalisable:** an automated gate covers the screens it visits and says nothing about the rest, and "no violations" reads the same either way. When something new is built, the first job is to point the gate at it — which is how this was found, and how any editor still not in the gate would be.
 
+### 75. A public form that emailed whatever address it was given
+
+The README listed spam control as "not built" and described the risk as records: a budget stops one caller making a thousand, not a thousand callers making one each. That undersold it. The onboarding form asks for the hiring manager's email and, on submission, the workflow emails that address. So every fabricated submission was a message from this platform's sending domain to an address a stranger typed — a relay, with our domain's reputation attached to it.
+
+It was found by asking what a spam submission *does*, not what it *is*. The record is the visible part; the outbox is where the harm was.
+
+**Fixed** by holding instead of acting. Public submissions carry a signed ticket from when the form was served, and the form carries a trap input no person reaches. One that fails either is held in its own table — not a record, so no transition runs and nothing is queued — until an operator releases or discards it. Nothing is discarded automatically, because password managers fill hidden inputs and a person resuming a finished draft can be quick; a filter that silently dropped them would lose a real application with nobody knowing it arrived.
+
+Two details decided the shape. A held submission is not an `instance` with a flag, because every query that reads instances — the queue, metrics, exports, the copilot, duplicate detection — would each need to remember the flag, and the one that forgot would leak. And it does not occupy an identity slot: a script that used a real person's email would otherwise make that person's own submission a "duplicate" of the script's.
+
+**Generalisable:** for anything a stranger can trigger, trace it to its side effects before deciding what the control is. The control belongs in front of the first effect that reaches someone outside, and here that was an email, not a row.
+
 ---
 
 ## What the compiler structurally cannot catch

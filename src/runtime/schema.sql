@@ -243,6 +243,35 @@ create table process_draft (
 
 create index draft_open on process_draft (tenant_id, process_key) where published_as is null;
 
+-- ------------------------------------------------------------ held intake
+
+-- Spam control (runtime/screening.ts). A public submission that fails
+-- screening is kept here whole and is NOT a record: it sends nothing, starts
+-- nothing, counts in no metric, and cannot absorb a real person's later
+-- submission as a duplicate of itself. Releasing it runs the ordinary submit
+-- path with these answers, under this id, so the reference the person was
+-- shown is the reference the record gets.
+--
+-- Resolved rows keep who decided and when, with the answers cleared on
+-- discard. Everything here is deleted after thirty days by the worker's sweep.
+create table held_submission (
+  id                 uuid primary key default gen_random_uuid(),
+  tenant_id          uuid not null references tenant(id),
+  process_key        text not null,
+  process_version_id uuid not null references process_version(id),
+  answers            jsonb not null,
+  reasons            text[] not null,
+  elapsed_ms         int,
+  draft_token_hash   text,
+  received_at        timestamptz not null default now(),
+  resolved_at        timestamptz,
+  resolved_by        uuid references actor(id),
+  resolution         text check (resolution in ('released', 'discarded')),
+  released_as        uuid
+);
+
+create index held_open on held_submission (tenant_id, process_key) where resolved_at is null;
+
 -- ------------------------------------------------------------------ intake
 
 -- §6.3: "Autosave and secure resume link." A draft is a form somebody has

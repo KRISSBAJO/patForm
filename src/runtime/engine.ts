@@ -189,6 +189,12 @@ export class Engine {
     now: Date;
     principal?: Principal;
     actor?: string;
+    /**
+     * The id the record must have. Only releasing a held submission sets it:
+     * the person was shown a reference when they submitted, and the record
+     * that eventually exists should answer to it.
+     */
+    id?: string;
   }): Promise<{ instanceId: string; duplicate: boolean; rejected?: string[]; resumeToken?: string }> {
     const bp = args.version.blueprint;
     const principal: Principal =
@@ -214,8 +220,8 @@ export class Engine {
 
       const { rows } = await client.query<{ id: string }>(
         `insert into instance
-           (tenant_id, process_key, process_version_id, state, data, identity_key, created_at, state_entered_at)
-         values ($1, $2, $3, $4, $5, $6, $7, $7)
+           (id, tenant_id, process_key, process_version_id, state, data, identity_key, created_at, state_entered_at)
+         values (coalesce($8::uuid, gen_random_uuid()), $1, $2, $3, $4, $5, $6, $7, $7)
          on conflict (tenant_id, process_key, identity_key) where identity_key is not null
          do nothing
          returning id`,
@@ -227,6 +233,7 @@ export class Engine {
           JSON.stringify(answers),
           identityKey,
           args.now,
+          args.id ?? null,
         ],
       );
 
@@ -1089,7 +1096,7 @@ async function loadBlueprint(client: Client, versionId: string): Promise<Bluepri
   return rows[0]!.blueprint;
 }
 
-async function appendEvent(
+export async function appendEvent(
   client: Client,
   args: { tenantId: string; instanceId: string; type: string; payload: unknown; actor: string; now: Date },
 ): Promise<number> {

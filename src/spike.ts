@@ -7,6 +7,7 @@ import { AuthorizationError, type Principal } from './runtime/policy.js';
 import {
   proveBuilderRoundTrip,
   proveDraftLocking,
+  proveScreening,
   proveCopilot,
   proveDeliveryOutcomes,
   proveDocumentsAndDelivery,
@@ -922,6 +923,7 @@ async function main(): Promise<void> {
     ['respondent scope', () => proveRespondentScope(ctx)],
     ['builder round trip', () => proveBuilderRoundTrip(ctx)],
     ['draft locking', () => proveDraftLocking(ctx)],
+    ['spam screening', () => proveScreening(ctx)],
     ['copilot', () => proveCopilot(ctx)],
     ['traceability', () => proveTraceability(ctx)],
     ['export then retain', () => proveExportThenRetain(ctx)],

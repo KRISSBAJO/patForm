@@ -1,5 +1,5 @@
 {
-  "ranAt": "2026-09-23T04:33:12.763Z",
+  "ranAt": "2026-09-23T05:22:36.508Z",
   "postgres": "PostgreSQL 17.11 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit",
   "proofs": [
     {
@@ -45,6 +45,12 @@
       "detail": "Sam opening Joy's draft was told \"Joy Builder\" had it, and his save was refused (conflict:held:Joy Builder). He took over from Joy Builder; her next save was refused (conflict:held:Sam Builder), and his save from a copy older than hers was refused as stale (conflict:stale:Joy Builder). Reloaded, it landed at revision 2. Publishing an older revision: conflict:stale:you. Discarding under someone else's lease: conflict:held:Sam Builder. A read-only member on load, save, claim and publish: refused, refused, refused, refused. Published as v2; a save afterwards: conflict:published:. Releasing someone else's lease: false."
     },
     {
+      "name": "A script's submission is held, sends nothing, and a person is never the one who loses",
+      "claim": "Spam control on public forms: a signed ticket and a trap field, and a held queue instead of a silent discard.",
+      "passed": true,
+      "detail": "A person with a ticket issued 95s earlier went straight through. Four scripts were held for no_ticket, too_fast, bad_ticket, trap_filled; between them they made 0 records and queued 0 actions, so the address they each named as manager was sent nothing. The real owner of an address a script had used submitted afterwards and got their own record rather than being folded into the script's. An operator saw 4 held; a read-only member saw 0 and was refused when releasing. Releasing one made a record under the held id and queued 1 action(s); releasing it again returned the same record. Releasing the one that shared an address joined the existing record (duplicate: true). Discarding cleared every answer, and a release afterwards was refused."
+    },
+    {
       "name": "The operator asks what is overdue and sends a reminder that matches what they confirmed",
       "claim": "Section 20.1 step 9, and 7.1: a permission-filtered query service with no raw model database access.",
       "passed": true,
@@ -54,13 +60,13 @@
       "name": "Every action traces back to the request that caused it, across the worker boundary",
       "claim": "Section 20.2 observability: traceable request, event, job, attempt and result identifiers.",
       "passed": true,
-      "detail": "One submission produced 1 event(s), 1 job(s) and 3 action run(s), every one carrying \"proof-request-0001\" and 0 unattributed. The actions ran in a later drain that knew nothing about the submission — the link survived because the request id is stamped on the outbox row and read back when the job runs. A timer firing got an id of its own (req_7bc040b73d35…) rather than inheriting one, because a deadline is its own cause. The support view joined them into 2 step(s) with every attempt count present, and answered in a sentence: \"Queued: 1 job scheduled and not yet run. If this does not clear, no worker is ru\". Asking by request id found 1 record; an admin of another workspace asking the same id found 0."
+      "detail": "One submission produced 1 event(s), 1 job(s) and 3 action run(s), every one carrying \"proof-request-0001\" and 0 unattributed. The actions ran in a later drain that knew nothing about the submission — the link survived because the request id is stamped on the outbox row and read back when the job runs. A timer firing got an id of its own (req_47d413888f67…) rather than inheriting one, because a deadline is its own cause. The support view joined them into 2 step(s) with every attempt count present, and answered in a sentence: \"Queued: 1 job scheduled and not yet run. If this does not clear, no worker is ru\". Asking by request id found 1 record; an admin of another workspace asking the same id found 0."
     },
     {
       "name": "An administrator exports the record with its history, and only then is it deleted",
       "claim": "Section 20.1 step 11, and 6.4: corrections append history; destructive overwriting of audit evidence is prohibited.",
       "passed": true,
-      "detail": "The bundle carried 4 history entries for a finished record — submission, both decisions with the reasons given, and every task completion — plus 2 approval(s), 2 message(s) and 1 document(s). An approver could not export at all (\"neither the roles held (hiring_manager) nor workspace role \"approver\" grant \"administer\"\"). An administrator holding no process role saw every field; one who is also a hiring manager had 3 withheld (national_id, bank_account, right_to_work_reference) — named in the bundle rather than quietly absent, and not left in the answers as the literal string \"[redacted]\". The export is itself on the record's history, and a second export of an unchanged record produced the same checksum (324681d5bdb2), so a file can be verified later. Retention then deleted 1 instance and 7 event(s) — in that order, because afterwards there is nothing left to export."
+      "detail": "The bundle carried 4 history entries for a finished record — submission, both decisions with the reasons given, and every task completion — plus 2 approval(s), 2 message(s) and 1 document(s). An approver could not export at all (\"neither the roles held (hiring_manager) nor workspace role \"approver\" grant \"administer\"\"). An administrator holding no process role saw every field; one who is also a hiring manager had 3 withheld (national_id, bank_account, right_to_work_reference) — named in the bundle rather than quietly absent, and not left in the answers as the literal string \"[redacted]\". The export is itself on the record's history, and a second export of an unchanged record produced the same checksum (acf19a12e39c), so a file can be verified later. Retention then deleted 1 instance and 7 event(s) — in that order, because afterwards there is nothing left to export."
     },
     {
       "name": "A workspace can be created and joined, and nobody can grant more than they hold",
@@ -174,7 +180,7 @@
       "name": "Submission and workflow start are far inside the section 10.4 budget",
       "claim": "Beta targets: acknowledgment p95 under 1.5s, workflow start p95 under 30s.",
       "passed": true,
-      "detail": "Over 100 submissions: acknowledgment p95 17.1ms (budget 1500ms), first action p95 40.7ms (budget 30000ms). Database round trips only, local container."
+      "detail": "Over 100 submissions: acknowledgment p95 11.9ms (budget 1500ms), first action p95 28.4ms (budget 30000ms). Database round trips only, local container."
     }
   ]
 }

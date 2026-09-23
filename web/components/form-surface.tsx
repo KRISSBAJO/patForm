@@ -64,6 +64,10 @@ export interface PublicForm {
   confirmation: { message: string; showStatusLink: boolean };
   branding?: Branding;
   pages: Page[];
+  /** Signed when the form was served; sent back on submit. See runtime/screening.ts. */
+  ticket?: string;
+  /** The name of the input no person should ever fill in. */
+  trap?: string;
 }
 
 const n = (v: unknown): number | undefined => (typeof v === 'number' ? v : undefined);

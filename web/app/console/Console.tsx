@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import './console.css';
 import { Ask } from './Ask';
-import { DashboardView, HealthView, RecordsView, SecurityView } from './Views';
+import { DashboardView, HealthView, HeldView, RecordsView, SecurityView } from './Views';
 import { PeopleView, ProcessesView } from './Manage';
 import { DataView, IntegrationsView } from './Settings';
 import { RecordTrail } from './Trail';
@@ -105,7 +105,14 @@ export function Console() {
     | 'processes'
     | 'integrations'
     | 'data'
+    | 'held'
   >('work');
+  /*
+   * How many public submissions are waiting on a person. Fetched on its own:
+   * it spans every process, where the work counts are per process, and a
+   * member who cannot operate any of them simply gets zero.
+   */
+  const [heldCount, setHeldCount] = useState(0);
   /*
    * Whether this sign-in screen is a first visit or an ejection.
    *
@@ -175,6 +182,11 @@ export function Console() {
       setWork(null);
       if (err instanceof Unauthenticated) return endSession();
       setError(err instanceof Error ? err.message : String(err));
+    }
+    try {
+      setHeldCount((await call<{ held: unknown[] }>('/api/held')).held.length);
+    } catch {
+      setHeldCount(0);
     }
     try {
       setHealth(await call<Health>(`/api/automation?process=${processKey}`));
@@ -391,6 +403,20 @@ export function Console() {
           <button
             type="button"
             className="cs__navItem"
+            aria-current={view === 'held' ? 'page' : undefined}
+            onClick={() => setView('held')}
+          >
+            <NavIcon name="held" />
+            Held submissions
+            {heldCount > 0 && (
+              <span className="cs__navCount" aria-label={`${heldCount} waiting`}>
+                {heldCount}
+              </span>
+            )}
+          </button>
+          <button
+            type="button"
+            className="cs__navItem"
             aria-current={view === 'processes' ? 'page' : undefined}
             onClick={() => setView('processes')}
           >
@@ -527,6 +553,8 @@ export function Console() {
                   ? 'Dashboard'
                   : view === 'health'
                     ? 'Automation health'
+                  : view === 'held'
+                    ? 'Held submissions'
                     : view === 'security'
                       ? 'Your account'
                       : view === 'people'
@@ -580,6 +608,8 @@ export function Console() {
               />
             ) : view === 'security' ? (
               <SecurityView />
+            ) : view === 'held' ? (
+              <HeldView onChanged={setHeldCount} />
             ) : view === 'health' ? (
               // `administer` is what the lift endpoint requires, so the button
               // is only offered to somebody the server will accept it from.
@@ -828,6 +858,7 @@ function NavIcon({
     | 'records'
     | 'dashboard'
     | 'health'
+    | 'held'
     | 'processes'
     | 'people'
     | 'builder'
@@ -877,6 +908,14 @@ function NavIcon({
       return (
         <svg {...common}>
           <path d="M2.8 10.4h3.3l1.7-4.6 2.6 8.6 1.9-5.3 1.1 1.3h3.8" />
+        </svg>
+      );
+    case 'held':
+      // A tray with something waiting in it.
+      return (
+        <svg {...common}>
+          <path d="M2.8 11.4 4.6 4.4a1.2 1.2 0 0 1 1.2-.9h8.4a1.2 1.2 0 0 1 1.2.9l1.8 7" />
+          <path d="M2.8 11.4v3.8a1.2 1.2 0 0 0 1.2 1.2h12a1.2 1.2 0 0 0 1.2-1.2v-3.8h-4.1l-1 1.8H7.9l-1-1.8Z" />
         </svg>
       );
     case 'processes':

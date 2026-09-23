@@ -51,6 +51,7 @@ export function Form({ processKey }: { processKey: string }) {
   const [token, setToken] = useState<string | null>(null);
   const [saving, setSaving] = useState<'idle' | 'saving' | 'saved'>('idle');
   const [submitting, setSubmitting] = useState(false);
+  const trapRef = useRef<HTMLInputElement>(null);
   const [done, setDone] = useState<{ reference: string; statusUrl: string | null } | null>(null);
 
   const dirty = useRef(false);
@@ -184,7 +185,10 @@ export function Form({ processKey }: { processKey: string }) {
         errors?: { field: string; message: string }[];
         instanceId?: string;
         resumeToken?: string;
-      }>(`/api/forms/${processKey}/submit`, { method: 'POST', body: JSON.stringify({ token, answers }) });
+      }>(`/api/forms/${processKey}/submit`, {
+        method: 'POST',
+        body: JSON.stringify({ token, answers, ticket: form?.ticket, trap: trapRef.current?.value ?? '' }),
+      });
 
       if (!result.ok) {
         const map: Errors = {};
@@ -304,6 +308,29 @@ export function Form({ processKey }: { processKey: string }) {
               </section>
             );
           })}
+
+          {/*
+            * The trap. Off-screen, out of the tab order, hidden from assistive
+            * tech and from autofill as far as a page can ask — so a person
+            * never reaches it, and a script that fills every input it finds
+            * does. Its label says what to do for anyone who somehow lands on
+            * it. Filling it holds the submission for a person to look at; it
+            * never discards one.
+            */}
+          {form.trap && (
+            <div className="fm__trap" aria-hidden="true">
+              <label htmlFor={`fm-${form.trap}`}>Leave this empty</label>
+              <input
+                ref={trapRef}
+                id={`fm-${form.trap}`}
+                name={form.trap}
+                type="text"
+                tabIndex={-1}
+                autoComplete="off"
+                defaultValue=""
+              />
+            </div>
+          )}
 
           <div className="fm__actions">
             {pageIndex > 0 && (

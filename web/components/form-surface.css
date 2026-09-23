@@ -692,3 +692,17 @@ textarea.fm__input {
   line-height: 1.5;
   color: #7a5a17;
 }
+
+/*
+ * The spam trap. Positioned off-screen rather than `display: none`, because
+ * some scripts skip inputs the browser reports as not displayed — and a trap
+ * that only catches the careless ones catches fewer.
+ */
+.fm__trap {
+  position: absolute;
+  left: -10000px;
+  top: auto;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}

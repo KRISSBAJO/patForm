@@ -830,3 +830,184 @@ export function SecurityView() {
     </div>
   );
 }
+
+// ------------------------------------------------------------ held intake
+
+interface Held {
+  id: string;
+  reference: string;
+  processKey: string;
+  processName: string;
+  receivedAt: string;
+  reasons: string[];
+  seconds: number | null;
+  answers: { label: string; value: string }[];
+}
+
+/**
+ * What screening kept back from the public forms.
+ *
+ * The words matter more than the buttons here. Somebody opening this has
+ * to understand that nothing on it has happened yet — no record, no receipt,
+ * no email to the manager address it names — and that releasing one makes
+ * all of that happen now. Why each one was held is said in plain terms,
+ * because "looks automated" with nothing behind it is a verdict nobody can
+ * check.
+ */
+export function HeldView({ onChanged }: { onChanged: (count: number) => void }) {
+  const [rows, setRows] = useState<Held[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+  const [open, setOpen] = useState<Set<string>>(new Set());
+
+  const load = useCallback(async () => {
+    setError(null);
+    try {
+      const body = await call<{ held: Held[] }>('/api/held');
+      setRows(body.held);
+      onChanged(body.held.length);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }, [onChanged]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const release = async (row: Held) => {
+    setBusy(row.id);
+    setNote(null);
+    try {
+      const res = await post<{ reference: string; duplicate: boolean }>(`/api/held/${row.id}/release`, {});
+      setNote(
+        res.duplicate
+          ? `${row.reference} matched a record that already exists (${res.reference}), so it was added to that record's history instead of making a second one.`
+          : `${row.reference} is now a record. Its receipt and its first request have gone out, as they would have when it arrived.`,
+      );
+      await load();
+    } catch (err) {
+      setNote(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const discard = async (row: Held) => {
+    if (!confirm(`Discard ${row.reference}? Its answers are deleted now and cannot be recovered.`)) return;
+    setBusy(row.id);
+    setNote(null);
+    try {
+      await post(`/api/held/${row.id}/discard`, {});
+      setNote(`${row.reference} was discarded and its answers deleted.`);
+      await load();
+    } catch (err) {
+      setNote(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  if (error) {
+    return (
+      <div className="cs__panel">
+        <div className="cs__empty" role="alert">
+          <strong>Refused.</strong>
+          <div style={{ marginTop: 6, fontSize: 13 }}>{error}</div>
+        </div>
+      </div>
+    );
+  }
+  if (!rows) {
+    return (
+      <div className="cs__panel">
+        <div className="cs__empty">Loading…</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="cs__panel">
+      <div className="cs__panelHead">
+        <h2 className="cs__tab">Held for a person to check</h2>
+        <span className="cs__sort">{rows.length} waiting</span>
+      </div>
+      <p className="vw__note">
+        These came in through a public form and looked automated. <strong>None of them has done anything yet</strong> —
+        no record, no receipt, no email to anyone they name. Release one and it becomes a record as if it had just
+        arrived. Anything left here is deleted after thirty days.
+      </p>
+
+      {note && (
+        <p className="vw__note vw__note--done" role="status">
+          {note}
+        </p>
+      )}
+
+      {!rows.length ? (
+        <div className="cs__empty">Nothing is held. Every public submission so far looked like a person filled it in.</div>
+      ) : (
+        <ul className="hd__list">
+          {rows.map((row) => {
+            const expanded = open.has(row.id);
+            const answers = expanded ? row.answers : row.answers.slice(0, 4);
+            return (
+              <li key={row.id} className="hd__item">
+                <div className="hd__head">
+                  <span className="hd__ref">{row.reference}</span>
+                  <span className="hd__process">{row.processName}</span>
+                  <span className="hd__when">{new Date(row.receivedAt).toLocaleString()}</span>
+                </div>
+                <ul className="hd__why" aria-label="Why it was held">
+                  {row.reasons.map((r) => (
+                    <li key={r}>{r}</li>
+                  ))}
+                  {row.seconds !== null && <li className="hd__whyQuiet">took {row.seconds}s</li>}
+                </ul>
+                <dl className="hd__answers">
+                  {answers.map((a) => (
+                    <div key={a.label} className="hd__answer">
+                      <dt>{a.label}</dt>
+                      <dd>{a.value}</dd>
+                    </div>
+                  ))}
+                </dl>
+                {row.answers.length > 4 && (
+                  <button
+                    type="button"
+                    className="hd__more"
+                    aria-expanded={expanded}
+                    onClick={() =>
+                      setOpen((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(row.id)) next.delete(row.id);
+                        else next.add(row.id);
+                        return next;
+                      })
+                    }
+                  >
+                    {expanded ? 'Show fewer answers' : `Show all ${row.answers.length} answers`}
+                  </button>
+                )}
+                <div className="hd__actions">
+                  <button
+                    type="button"
+                    className="cs__btn cs__btn--primary"
+                    disabled={busy !== null}
+                    onClick={() => void release(row)}
+                  >
+                    {busy === row.id ? 'Working…' : 'Release as a record'}
+                  </button>
+                  <button type="button" className="cs__btn" disabled={busy !== null} onClick={() => void discard(row)}>
+                    Discard
+                  </button>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
