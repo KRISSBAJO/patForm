@@ -182,7 +182,7 @@ export const RULES: Record<string, CategoryRules> = {
     retentionFloorDays: 2555,
     requires: ['restricted_hidden', 'kept_long_enough', 'escalates'],
     monitors: [...WATCH_BASICS, ...WATCH_DECISIONS, ...WATCH_COMPLETION],
-    says: 'Two days for a manager, then HR, and employment records kept at least seven years.',
+    says: 'First decision due within two days; overdue work escalates to the HR director. Records are kept at least seven years by default.',
   },
 
   IT: {
@@ -217,7 +217,7 @@ export const RULES: Record<string, CategoryRules> = {
     retentionFloorDays: 1825,
     requires: ['restricted_hidden', 'escalates'],
     monitors: [...WATCH_BASICS, ...WATCH_COMPLETION, ...WATCH_ABANDONMENT],
-    says: 'A week with the minister, then the senior minister, and pastoral records kept at least five years.',
+    says: 'First decision due within a week at most; overdue work escalates to the senior minister. Records are kept at least five years by default.',
   },
 
   Projects: {
@@ -247,7 +247,7 @@ export const RULES: Record<string, CategoryRules> = {
     retentionFloorDays: 1095,
     requires: ['restricted_hidden', 'escalates'],
     monitors: [...WATCH_BASICS, ...WATCH_COMPLETION],
-    says: 'Two days with the office, then the head, and kept at least three years.',
+    says: 'First decision due within two days; overdue work escalates to the head of school. Records are kept at least three years by default.',
   },
 
   Community: {
@@ -267,7 +267,7 @@ export const RULES: Record<string, CategoryRules> = {
     retentionFloorDays: 1825,
     requires: ['decided_quickly', 'escalates'],
     monitors: [...WATCH_BASICS, ...WATCH_DECISIONS, ...WATCH_COMPLETION],
-    says: 'A day to triage — a safety fault and a broken kettle should not wait the same length of time.',
+    says: 'First decision due within a day; overdue work escalates to the facilities director. Set shorter routes for urgent safety faults.',
   },
 
   Property: {
