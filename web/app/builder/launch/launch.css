@@ -17,17 +17,19 @@
 .la__panel { padding: clamp(20px, 4vw, 36px); border: 1px solid #deded6; border-radius: 12px; background: white; box-shadow: 0 2px 10px #23352d0b; }
 .la__panel h2 { margin: 0 0 10px; font: 700 26px/1.2 Georgia, serif; }
 .la__panel > p { color: #53645a; line-height: 1.55; }
-.la__panel button:not(.la__textButton), .la__actionLink { border: 1px solid #104632; border-radius: 7px; background: #104632; color: white; padding: 10px 15px; font: inherit; font-size: 14px; cursor: pointer; text-decoration: none; }
+.la__panel button:not(.la__textButton, .fm__btn), .la__actionLink { border: 1px solid #104632; border-radius: 7px; background: #104632; color: white; padding: 10px 15px; font: inherit; font-size: 14px; cursor: pointer; text-decoration: none; }
 .la__panel button:disabled { opacity: .5; cursor: default; }
 .la__panel .la__secondary { background: white !important; color: #104632 !important; }
 .la__actions { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; margin-top: 26px; }
 .la__actions a { color: #19583e; }
 .la__actions .la__actionLink { color: #fff; }
 .la__actions button:first-of-type:last-child { margin-left: auto; }
-.la__preview { max-height: 520px; overflow: auto; border: 1px solid #e5e5df; border-radius: 9px; }
+.la__preview { max-height: 620px; overflow: auto; border: 1px solid #e5e5df; border-radius: 9px; }
 .la__preview .sp__body { padding: 0; }
 .la__preview .sp__note { display: none; }
-.la__preview .sp__frame { max-width: 720px; margin: 0 auto; }
+.la__preview .sp__frame { width: 100%; max-width: none; margin: 0; border: 0; border-radius: 0; }
+.la__preview .sp__frame .fm { width: 100%; min-height: 0; padding: 16px 0 28px; transform: none; margin-bottom: 0; }
+.la__preview .sp__frame .fm__shell { max-width: 640px; margin: 0 auto; }
 .la__role { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(230px, 1.5fr); gap: 16px 28px; padding: 20px 0; border-top: 1px solid #e5e5df; }
 .la__role h3 { margin: 0 0 4px; font-size: 17px; }
 .la__role p { margin: 0; color: #53645a; font-size: 13px; line-height: 1.5; }

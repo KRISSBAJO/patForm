@@ -194,12 +194,12 @@ export function Field({
           {field.required && <span className="fm__req" aria-hidden="true"> *</span>}
         </span>
       )}
+      {control}
       {field.help && (
-        <p className="fm__help" id={`${id}-help`}>
+        <p className="fm__help fm__help--after" id={`${id}-help`}>
           {field.help}
         </p>
       )}
-      {control}
       {error && (
         <p className="fm__error" id={`${id}-error`} role="alert">
           {error}

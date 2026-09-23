@@ -147,7 +147,7 @@ export function Launch() {
 
           {phase === 'review' && <section className="la__panel" aria-labelledby="la-form-title">
             <h2 id="la-form-title">This is what someone will fill in</h2>
-            <p>The preview uses the live form controls. Typing here does not submit anything.</p>
+            <p>Use Next page to see every part of the form. Typing here does not submit anything.</p>
             <div className="la__preview"><FormPreview blueprint={setup.draft.blueprint} /></div>
             <div className="la__actions"><a href={`/builder?draft=${draftId}`}>Change the form in the builder</a><button type="button" onClick={() => setPhase('people')}>Looks right — choose people →</button></div>
           </section>}

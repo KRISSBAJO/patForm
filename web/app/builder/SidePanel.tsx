@@ -13,7 +13,7 @@
  * blueprint changes, which is why none of this can drift from it.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Field,
   FieldCell,
@@ -59,6 +59,7 @@ interface PreviewField {
   constraints?: Record<string, unknown>;
   fields?: PreviewField[];
   default?: unknown;
+  setBy?: string;
 }
 
 function asPublic(field: PreviewField): PublicField {
@@ -93,10 +94,19 @@ export function FormPreview({
 }) {
   const [answers, setAnswers] = useState<Record<string, unknown>>({});
   const [editing, setEditing] = useState(false);
+  const [pageIndex, setPageIndex] = useState(0);
+  const previewRef = useRef<HTMLDivElement>(null);
   const byKey = new Map(blueprint.data.fields.map((f) => [f.key, f]));
   const pages = blueprint.experience?.pages ?? [];
+  const currentIndex = Math.min(pageIndex, Math.max(0, pages.length - 1));
+  const currentPage = pages[currentIndex];
   const placed = new Set(pages.flatMap((p) => (p.sections ?? []).flatMap((s) => s.fields ?? [])));
-  const unplaced = blueprint.data.fields.filter((f) => !placed.has(f.key));
+  const unplaced = blueprint.data.fields.filter((f) => (f.setBy ?? 'respondent') === 'respondent' && !placed.has(f.key));
+  const teamFields = blueprint.data.fields.filter((f) => f.setBy === 'operator');
+  const showPage = (index: number) => {
+    setPageIndex(index);
+    previewRef.current?.closest('.la__preview, .sp__scroll')?.scrollTo({ top: 0 });
+  };
 
   return (
     <div className="sp__body">
@@ -115,18 +125,25 @@ export function FormPreview({
         <BrandingEditor branding={blueprint.experience?.branding} onChange={onBranding} />
       )}
 
-      {/* The respondent's own stylesheet, scaled down to fit the panel. */}
-      <div className="sp__frame">
+      {/* The respondent's own controls; only the narrow builder side panel scales them. */}
+      <div className="sp__frame" ref={previewRef}>
         <div className="fm" style={accentStyle(blueprint.experience?.branding?.accent)}>
           <div className="fm__shell">
             <FormHeader branding={blueprint.experience?.branding} fallbackName={blueprint.name} />
 
-            {pages.map((page) => (
-              <div className="fm__card" key={page.key}>
-                <h1 className="fm__title">{page.title}</h1>
-                {page.description && <p className="fm__lede">{page.description}</p>}
+            {pages.length > 1 && (
+              <div className="fm__progress" aria-label={`Step ${currentIndex + 1} of ${pages.length}`}>
+                <div className="fm__progressBar"><span style={{ width: `${((currentIndex + 1) / pages.length) * 100}%` }} /></div>
+                <span className="fm__progressText">Step {currentIndex + 1} of {pages.length}</span>
+              </div>
+            )}
 
-                {(page.sections ?? []).map((section) => {
+            {currentPage && (
+              <div className="fm__card" key={currentPage.key}>
+                <h1 className="fm__title">{currentPage.title}</h1>
+                {currentPage.description && <p className="fm__lede">{currentPage.description}</p>}
+
+                {(currentPage.sections ?? []).map((section) => {
                   const fields = (section.fields ?? []).map((k) => byKey.get(k)).filter(Boolean) as PreviewField[];
                   if (!fields.length) return null;
                   return (
@@ -159,7 +176,16 @@ export function FormPreview({
                   );
                 })}
               </div>
-            ))}
+            )}
+
+            {pages.length > 1 && (
+              <div className="fm__actions sp__pageActions">
+                {currentIndex > 0 && <button type="button" className="fm__btn" onClick={() => showPage(currentIndex - 1)}>← Back</button>}
+                {currentIndex < pages.length - 1
+                  ? <button type="button" className="fm__btn fm__btn--primary" onClick={() => showPage(currentIndex + 1)}>Next page →</button>
+                  : <span className="sp__previewEnd">End of preview · nothing is submitted here</span>}
+              </div>
+            )}
 
             {blueprint.experience?.branding?.footer && (
               <p className="fm__foot">{blueprint.experience.branding.footer}</p>
@@ -178,6 +204,12 @@ export function FormPreview({
           {unplaced.length} {unplaced.length === 1 ? 'question is' : 'questions are'} not on any page:{' '}
           {unplaced.map((f) => f.label).join(', ')}. Nobody filling this in will see{' '}
           {unplaced.length === 1 ? 'it' : 'them'}.
+        </p>
+      )}
+
+      {teamFields.length > 0 && (
+        <p className="sp__operatorNote">
+          After submission, your team fills in: {teamFields.map((f) => f.label).join(', ')}.
         </p>
       )}
 

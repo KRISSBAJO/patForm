@@ -92,6 +92,22 @@
   color: #8a352f;
 }
 
+.sp__operatorNote {
+  margin: 12px 0 0;
+  padding: 9px 11px;
+  border: 1px solid #d8e5db;
+  background: #f5faf6;
+  border-radius: 6px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: #315743;
+}
+
+.sp__previewEnd {
+  font-size: 13px;
+  color: var(--muted);
+}
+
 /* ------------------------------------------------------------- preview */
 
 /*

@@ -508,6 +508,10 @@ textarea.fm__input {
   line-height: 1.45;
 }
 
+.fm__help--after {
+  margin: 6px 0 0;
+}
+
 .fm__input {
   min-height: 42px;
   padding: 9px 12px;
