@@ -1,4 +1,6 @@
 import type { Blueprint } from './blueprint/index.js';
+import { Blueprint as BlueprintSchema } from './blueprint/index.js';
+import { readFileSync } from 'node:fs';
 import type { Pool } from './runtime/db.js';
 import { Engine, newWorkerId } from './runtime/engine.js';
 import { AuthorizationError, type Principal } from './runtime/policy.js';
@@ -1224,26 +1226,26 @@ export async function proveBulkActions({ pool, bp, T0, record, completeFor }: Pr
   const e2 = await submitted('bulk.e2@example.test');
   const e3 = await submitted('bulk.e3@example.test');
   await engine.updateRecord({ instanceId: e3, patch: { department: 'finance' } as never, principal: as(admin), now: T0 });
-  const toFinance = { kind: 'set_answer' as const, field: 'department', value: 'finance' };
+  const toFinance = { kind: 'set_answer' as const, mode: 'set' as const, field: 'department', value: 'finance' };
   const editRun = await runDirect(pool, { principal: as(admin), plan: plan([e1, e2, e3]), action: toFinance, now: T0 });
   const editByOperator = await runDirect(pool, { principal: as(it), plan: plan([e1]), action: toFinance, now: T0 });
   const notAChoice = await runDirect(pool, {
     principal: as(admin),
     plan: plan([e1]),
-    action: { kind: 'set_answer', field: 'department', value: 'marketing' },
+    action: { kind: 'set_answer', mode: 'set', field: 'department', value: 'marketing' },
     now: T0,
   });
   const notBulk = await runDirect(pool, {
     principal: as(admin),
     plan: plan([e1]),
-    action: { kind: 'set_answer', field: 'equipment_needs', value: 'laptop' },
+    action: { kind: 'set_answer', mode: 'set', field: 'policy_ack', value: true },
     now: T0,
   });
   // HR can edit records, but not a new starter's own phone number.
   const notTheirField = await runDirect(pool, {
     principal: as(admin),
     plan: plan([e1]),
-    action: { kind: 'set_answer', field: 'phone', value: '+44 7700 900555' },
+    action: { kind: 'set_answer', mode: 'set', field: 'phone', value: '+44 7700 900555' },
     now: T0,
   });
   const edited = await confirm(pool, { principal: as(admin), runId: editRun.runId!, digest: editRun.preview!.digest, now: T0 });
@@ -1312,7 +1314,7 @@ export async function proveBulkActions({ pool, bp, T0, record, completeFor }: Pr
       `The new assignee got ${told.length} email for both tasks ("${told[0]?.subject}"), not one each. ` +
       `Setting department to finance changed ${edited.sent.length} records, left the one already in finance alone, ` +
       `refused an IT operator ("${editByOperator.preview!.refused[0]?.reason}") and HR on a field that is not theirs ("${notTheirField.preview!.refused[0]?.reason}"), and refused to compile a value that is ` +
-      `not one of the choices (ACT010) and a multi-choice field (ACT009). The change kept what it replaced: the ` +
+      `not one of the choices (ACT010) and a signature field (ACT009). The change kept what it replaced: the ` +
       `record's history says the department was "${history[0]?.payload.previous?.department}".`,
   );
 }
@@ -1802,6 +1804,130 @@ export async function proveStepUp({ pool, record }: ProofCtx): Promise<void> {
       `"${passwordOnly}", password and code confirmed, and the same code a second time was "${sameCodeAgain}". ` +
       `Five wrong guesses inside another session ended it ("${guesses[4]}").`,
   );
+}
+
+/**
+ * Lists in bulk: one option in or out of a multi-select, an address, a row onto a repeating group.
+ *
+ * Setting a whole list across records is rarely what anybody means. "Give
+ * everybody a monitor" means add Monitor to what each record already has,
+ * not replace it — and it has to add to what is there when the write
+ * happens, not to what the preview saw. A repeating group can only have a
+ * row added: rows have no identity across records.
+ */
+export async function proveBulkLists({ pool, bp, T0, record, completeFor }: ProofCtx): Promise<void> {
+  const engine = new Engine(pool);
+  const tenantId = await engine.createTenant('proof:bulk-lists');
+  const as = (actorId: string): Principal => ({ kind: 'actor', tenantId, actorId });
+
+  // HR may edit the address and equipment here, which the shipped process does not allow.
+  const onboarding = {
+    ...bp,
+    roles: bp.roles.map((r) =>
+      r.key === 'hr_admin' ? { ...r, editableFields: [...(r.editableFields ?? []), 'address', 'equipment_needs'] } : r,
+    ),
+  } as Blueprint;
+  const version = await engine.publish(tenantId, onboarding, 'proof');
+  const admin = await engine.createActor(tenantId, 'hr@proof-lists.test', 'Hana HR', 'admin');
+  await engine.grant({ tenantId, actorId: admin, processKey: bp.key, roleKey: 'hr_admin' });
+
+  const submit = async (email: string, extra: Record<string, unknown> = {}) => {
+    const { instanceId } = await engine.submit({ version, answers: completeFor(onboarding, { personal_email: email, ...extra }) as never, now: T0 });
+    return instanceId;
+  };
+  const a = await submit('lists.a@example.test', { equipment_needs: ['laptop'] });
+  const b = await submit('lists.b@example.test', { equipment_needs: ['laptop', 'monitor'] });
+  const c = await submit('lists.c@example.test');
+  const plan = (ids: string[], key = bp.key) => QueryPlan.parse({ processKey: key, filters: [{ kind: 'records', ids }], limit: 50 });
+  const run = (ids: string[], action: unknown, key?: string) =>
+    runDirect(pool, { principal: as(admin), plan: plan(ids, key), action: action as never, now: T0 });
+  const go = async (r: Awaited<ReturnType<typeof run>>) =>
+    confirm(pool, { principal: as(admin), runId: r.runId!, digest: r.preview!.digest, now: T0 });
+  const equipment = async (id: string) => (await engine.instance(id)).data.equipment_needs;
+
+  // ---- 1. Add Monitor: a gets it, b already has it, c gets a list of one
+  const addMonitor = await run([a, b, c], { kind: 'set_answer', field: 'equipment_needs', value: 'monitor', mode: 'add' });
+  // Somebody changes a between preview and confirm; the add lands on what is there then.
+  await engine.updateRecord({ instanceId: a, patch: { equipment_needs: ['laptop', 'phone'] } as never, principal: as(admin), now: T0 });
+  const added = await go(addMonitor);
+  const afterAdd = await Promise.all([a, b, c].map(equipment));
+
+  // ---- 2. Remove Laptop
+  const removeLaptop = await run([a, b, c], { kind: 'set_answer', field: 'equipment_needs', value: 'laptop', mode: 'remove' });
+  await go(removeLaptop);
+  const afterRemove = await Promise.all([a, b, c].map(equipment));
+
+  // ---- 3. The wrong modes, and an option that is not one
+  const notAnOption = await run([a], { kind: 'set_answer', field: 'equipment_needs', value: 'jetpack', mode: 'add' });
+  const addToText = await run([a], { kind: 'set_answer', field: 'job_title', value: 'x', mode: 'add' });
+
+  // ---- 4. An address, which is text
+  const moved = await run([a, b], { kind: 'set_answer', field: 'address', value: '2 New Street, Leeds', mode: 'set' });
+  await go(moved);
+  const addresses = await Promise.all([a, b].map(async (id) => (await engine.instance(id)).data.address));
+
+  // ---- 5. A row onto an expense claim, and the total that follows it
+  const expenseFile = BlueprintSchema.parse(JSON.parse(readFileSync('processes/expense-approval.blueprint.json', 'utf8')));
+  const expense = {
+    ...expenseFile,
+    roles: expenseFile.roles.map((r) =>
+      r.key === 'finance_ops' ? { ...r, editableFields: [...(r.editableFields ?? []), 'line_items'] } : r,
+    ),
+  } as Blueprint;
+  const ev = await engine.publish(tenantId, expense, 'proof');
+  await engine.grant({ tenantId, actorId: admin, processKey: expense.key, roleKey: 'finance_ops' });
+  const { instanceId: claim } = await engine.submit({
+    version: ev,
+    answers: completeFor(expense, {
+      // Over the auto-approval line, so the claim is still open and waiting for a decision.
+      line_items: [{ line_description: 'Train to Leeds', line_amount: 450 }],
+    }) as never,
+    now: T0,
+  });
+  const totalBefore = (await engine.instance(claim)).data.expense_total;
+  const addRow = await run([claim], { kind: 'set_answer', field: 'line_items', value: { line_description: 'Taxi', line_amount: 12.5 }, mode: 'add' }, expense.key);
+  await go(addRow);
+  const claimAfter = (await engine.instance(claim)).data;
+  const badRow = await run([claim], { kind: 'set_answer', field: 'line_items', value: { line_description: 'No amount' }, mode: 'add' }, expense.key);
+  const replaceRows = await run([claim], { kind: 'set_answer', field: 'line_items', value: [], mode: 'set' }, expense.key);
+
+  const same = (x: unknown, y: unknown) => JSON.stringify(x) === JSON.stringify(y);
+  record(
+    'Lists change in bulk by adding or removing one thing, and a claim gains a row and a new total',
+    'Bulk edits of multi-select answers (add, remove, replace), addresses, and a row onto a repeating group.',
+    addMonitor.preview!.eligible.length === 2 &&
+      addMonitor.preview!.skipped[0]?.reason === 'already includes External monitor' &&
+      added.sent.length === 2 &&
+      same(afterAdd[0], ['laptop', 'phone', 'monitor']) &&
+      same(afterAdd[1], ['laptop', 'monitor']) &&
+      same(afterAdd[2], ['monitor']) &&
+      same(afterRemove[0], ['phone', 'monitor']) &&
+      same(afterRemove[1], ['monitor']) &&
+      same(afterRemove[2], ['monitor']) &&
+      removeLaptop.preview!.skipped.some((x) => x.reason === 'does not include Laptop') &&
+      notAnOption.diagnostics.some((d) => d.code === 'ACT010') &&
+      addToText.diagnostics.some((d) => d.code === 'ACT011') &&
+      addresses.every((x) => x === '2 New Street, Leeds') &&
+      totalBefore === 450 &&
+      Array.isArray(claimAfter.line_items) &&
+      (claimAfter.line_items as unknown[]).length === 2 &&
+      claimAfter.expense_total === 462.5 &&
+      addRow.preview!.eligible[0]?.from === '1 item' &&
+      addRow.preview!.eligible[0]?.to[0] === '2 items' &&
+      badRow.diagnostics.some((d) => d.code === 'ACT010') &&
+      replaceRows.diagnostics.some((d) => d.code === 'ACT011'),
+    `Adding Monitor previewed ${addMonitor.preview!.eligible.length} records and left alone the one that already had it. ` +
+      `One record changed between preview and confirm, and the add landed on what it had then: ` +
+      `${JSON.stringify(afterAdd[0])}. Removing Laptop left the others' choices alone and skipped the record without it. ` +
+      `An option that is not one was ACT010; "add" on a text field was ACT011. An address set on two records. ` +
+      `A Taxi row on an expense claim took it from ${answerCount(totalBefore)} to ${answerCount(claimAfter.expense_total)} — ` +
+      `the total that decides where it is routed moved with it. A row missing its amount was refused, and ` +
+      `replacing a claim's rows in bulk was refused outright (ACT011).`,
+  );
+}
+
+function answerCount(v: unknown): string {
+  return typeof v === 'number' ? `£${v.toFixed(2)}` : String(v);
 }
 
 /**

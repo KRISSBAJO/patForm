@@ -239,10 +239,23 @@ confirm the exact set, report.
 - **Change an answer** — one field to one value, through the same edit path a
   single change takes: the role must list the field in its `editableFields`,
   calculated fields are recomputed, deadlines hung off a changed date move,
-  and a "record updated" step can fire. Only single-value fields are offered
-  (text, numbers, dates, choices, yes/no), the value is checked by the form's
-  own validator before anything is previewed (`ACT009`, `ACT010`), and the
-  preview shows each record's current value, where the member may see it.
+  and a "record updated" step can fire. The value is checked by the form's own
+  validator before anything is previewed (`ACT009`, `ACT010`), and the preview
+  shows each record's current value, where the member may see it.
+
+  **Lists change by one item.** A multi-select can have one option **added**
+  or **removed** — "give everybody a monitor" adds it to what each record
+  already has, and leaves alone the ones that have it — or be **replaced**
+  outright. The add or remove is worked out again inside the record's lock at
+  write time, so it lands on what the record holds then, not on what the
+  preview saw. A **repeating group** can only have a row **added**, checked
+  column by column; rows have no identity across records, so replacing or
+  removing one would be a guess (`ACT011`). Adding a row recalculates totals
+  built from it — an expense claim's total, and so where it is routed — just
+  as a single edit would. Addresses are text and are set like text. Which of
+  these a person is offered still comes from their role's `editableFields`:
+  in the shipped processes no staff role may edit line items, so that option
+  appears only where a process grants it.
   Every edit, single or bulk, now keeps what it replaced in the record's
   history; before, the event named the fields and not their old values.
 
@@ -1201,9 +1214,10 @@ Everything below is a deliberate deferral:
   nothing goes by itself, because a reminder from a fortnight ago may no longer
   be true. Messages to other workspaces' recipients, and the platform's own
   invitations and resets, are not offered for re-sending.
-- **Bulk edits of lists and structured answers.** A bulk change sets one
-  single-value field. Multi-choice, addresses, repeating groups and the like
-  are changed a record at a time.
+- **Changing or removing a particular row in bulk.** A repeating group can
+  have a row added to many records; editing or deleting an existing row is a
+  record-at-a-time change, because rows are not the same thing across
+  records. Signatures, ratings, files and matrices are not bulk-editable.
 - **Form editors for the rest of the blueprint.** The builder edits fields,
   states, rules, approvals, tasks, messages, roles and the form's header and
   field widths, and draws the flow as a read-only map. Intent, the rest of the

@@ -1307,6 +1307,26 @@ interface BulkField {
   type: string;
   choices?: { value: string; label: string }[];
   required: boolean;
+  /** For a repeating group: what one row is made of. */
+  fields?: BulkField[];
+}
+
+type ListMode = 'add' | 'remove' | 'set';
+
+/** One row for a repeating group, typed per column; undefined while a required column is empty or wrong. */
+function rowValue(group: BulkField, row: Record<string, string>): Record<string, string | number | boolean> | undefined {
+  const out: Record<string, string | number | boolean> = {};
+  for (const col of group.fields ?? []) {
+    const raw = (row[col.key] ?? '').trim();
+    if (raw === '') {
+      if (col.required) return undefined;
+      continue;
+    }
+    const v = answerValue(col, raw);
+    if (v === undefined || v === null) return undefined;
+    out[col.key] = v;
+  }
+  return out;
 }
 
 interface BulkOptions {
@@ -1383,6 +1403,9 @@ function BulkBar({
   const [choice, setChoice] = useState('');
   const [task, setTask] = useState('');
   const [answer, setAnswer] = useState('');
+  const [listMode, setListMode] = useState<ListMode>('add');
+  const [picks, setPicks] = useState<Set<string>>(new Set());
+  const [row, setRow] = useState<Record<string, string>>({});
   const [preview, setPreview] = useState<{ runId: string; preview: BulkPreview } | null>(null);
   const [report, setReport] = useState<BulkReport | null>(null);
   const [busy, setBusy] = useState(false);
@@ -1397,10 +1420,22 @@ function BulkBar({
   // A different selection is a different set; any preview of the old one is void.
   useEffect(() => {
     setPreview(null);
-  }, [selected, kind, choice, task, answer]);
+  }, [selected, kind, choice, task, answer, listMode, picks, row]);
 
   const editing = kind === 'set_answer' ? options?.fields.find((f) => f.key === choice) : undefined;
-  const value = answerValue(editing, answer);
+  const mode: ListMode =
+    editing?.type === 'repeating_group' ? 'add' : editing?.type === 'multi_choice' ? listMode : 'set';
+  const value = !editing
+    ? undefined
+    : editing.type === 'multi_choice'
+      ? mode === 'set'
+        ? picks.size || !editing.required
+          ? [...picks]
+          : undefined
+        : answer || undefined
+      : editing.type === 'repeating_group'
+        ? rowValue(editing, row)
+        : answerValue(editing, answer);
 
   const action =
     kind === 'send_reminder' && choice
@@ -1410,7 +1445,7 @@ function BulkBar({
         : kind === 'change_state' && choice
           ? { kind, to: choice }
           : kind === 'set_answer' && choice && value !== undefined
-            ? { kind, field: choice, value }
+            ? { kind, field: choice, value, mode }
             : null;
 
   const runPreview = async () => {
@@ -1506,6 +1541,9 @@ function BulkBar({
                 onChange={(e) => {
                   setChoice(e.target.value);
                   setAnswer('');
+                  setListMode('add');
+                  setPicks(new Set());
+                  setRow({});
                 }}
               >
                 <option value="">Which answer…</option>
@@ -1516,7 +1554,69 @@ function BulkBar({
                 ))}
               </select>
             </label>
-            {editing && <AnswerInput field={editing} value={answer} onChange={setAnswer} />}
+            {editing?.type === 'multi_choice' && (
+              <>
+                <label className="bk__field">
+                  <span className="cs__srOnly">How to change {editing.label}</span>
+                  <select className="wk__select" value={listMode} onChange={(e) => setListMode(e.target.value as ListMode)}>
+                    <option value="add">Add an option</option>
+                    <option value="remove">Remove an option</option>
+                    <option value="set">Replace the whole list</option>
+                  </select>
+                </label>
+                {listMode === 'set' ? (
+                  <fieldset className="bk__picks">
+                    <legend className="cs__srOnly">New {editing.label.toLowerCase()}</legend>
+                    {editing.choices?.map((c) => (
+                      <label key={c.value} className="bk__pick">
+                        <input
+                          type="checkbox"
+                          checked={picks.has(c.value)}
+                          onChange={(e) =>
+                            setPicks((prev) => {
+                              const next = new Set(prev);
+                              if (e.target.checked) next.add(c.value);
+                              else next.delete(c.value);
+                              return next;
+                            })
+                          }
+                        />
+                        {c.label}
+                      </label>
+                    ))}
+                  </fieldset>
+                ) : (
+                  <label className="bk__field">
+                    <span className="cs__srOnly">Which option</span>
+                    <select className="wk__select" value={answer} onChange={(e) => setAnswer(e.target.value)}>
+                      <option value="">Which option…</option>
+                      {editing.choices?.map((c) => (
+                        <option key={c.value} value={c.value}>
+                          {c.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+              </>
+            )}
+            {editing?.type === 'repeating_group' && (
+              <fieldset className="bk__row">
+                <legend className="bk__rowLegend">Add a row to {editing.label.toLowerCase()}</legend>
+                {editing.fields?.map((col) => (
+                  <AnswerInput
+                    key={col.key}
+                    field={col}
+                    value={row[col.key] ?? ''}
+                    onChange={(v) => setRow((prev) => ({ ...prev, [col.key]: v }))}
+                    visibleLabel
+                  />
+                ))}
+              </fieldset>
+            )}
+            {editing && editing.type !== 'multi_choice' && editing.type !== 'repeating_group' && (
+              <AnswerInput field={editing} value={answer} onChange={setAnswer} />
+            )}
           </>
         )}
 
@@ -1702,8 +1802,20 @@ function BulkList({
  * typo in a department dropdown is refused by the compiler, but it is better
  * never offered.
  */
-function AnswerInput({ field, value, onChange }: { field: BulkField; value: string; onChange: (v: string) => void }) {
-  const label = `New ${field.label.toLowerCase()}`;
+function AnswerInput({
+  field,
+  value,
+  onChange,
+  visibleLabel = false,
+}: {
+  field: BulkField;
+  value: string;
+  onChange: (v: string) => void;
+  /** Shown above the box rather than only to screen readers — for a row's columns, where there are several. */
+  visibleLabel?: boolean;
+}) {
+  const label = visibleLabel ? field.label : `New ${field.label.toLowerCase()}`;
+  const labelClass = visibleLabel ? 'bk__colLabel' : 'cs__srOnly';
   if (field.choices?.length || field.type === 'yes_no') {
     const choices = field.choices?.length
       ? field.choices
@@ -1713,7 +1825,7 @@ function AnswerInput({ field, value, onChange }: { field: BulkField; value: stri
         ];
     return (
       <label className="bk__field">
-        <span className="cs__srOnly">{label}</span>
+        <span className={labelClass}>{label}</span>
         <select className="wk__select" value={value} onChange={(e) => onChange(e.target.value)}>
           <option value="">{field.required ? 'Set it to…' : 'Clear it, or set it to…'}</option>
           {choices.map((c) => (
@@ -1735,14 +1847,29 @@ function AnswerInput({ field, value, onChange }: { field: BulkField; value: stri
           : ['number', 'currency'].includes(field.type)
             ? 'number'
             : 'text';
+  if (field.type === 'address' || field.type === 'long_text') {
+    return (
+      <label className="bk__field">
+        <span className={labelClass}>{label}</span>
+        <textarea
+          className="cs__input bk__value bk__text"
+          rows={2}
+          value={value}
+          placeholder={field.required ? label : `${label} (empty clears it)`}
+          onChange={(e) => onChange(e.target.value)}
+        />
+      </label>
+    );
+  }
   return (
     <label className="bk__field">
-      <span className="cs__srOnly">{label}</span>
+      <span className={labelClass}>{label}</span>
       <input
         className="cs__input bk__value"
         type={type}
+        step={type === 'number' ? 'any' : undefined}
         value={value}
-        placeholder={field.required ? label : `${label} (empty clears it)`}
+        placeholder={visibleLabel ? undefined : field.required ? label : `${label} (empty clears it)`}
         onChange={(e) => onChange(e.target.value)}
       />
     </label>

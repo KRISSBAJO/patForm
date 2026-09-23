@@ -284,6 +284,22 @@ function typeMatches(kind: string, value: unknown): boolean {
   return typeof value === 'string' || typeof value === 'number';
 }
 
+/** One row for a repeating group, checked field by field against the group's own fields. */
+function checkRow(
+  group: { label: string; fields?: { key: string; label: string }[] },
+  row: unknown,
+): string | null {
+  if (typeof row !== 'object' || row === null || Array.isArray(row)) return `A row of ${group.label} is a set of answers.`;
+  const fields = group.fields ?? [];
+  const unknown = Object.keys(row).filter((k) => !fields.some((f) => f.key === k));
+  if (unknown.length) return `${group.label} has no "${unknown[0]}".`;
+  for (const child of fields) {
+    const problem = checkField(child as never, (row as Record<string, unknown>)[child.key]);
+    if (problem) return `${child.label}: ${problem}`;
+  }
+  return null;
+}
+
 function describe(value: unknown): string {
   if (value === null) return 'null';
   if (Array.isArray(value)) return 'a list';
@@ -374,14 +390,40 @@ export function compileAction(bp: Blueprint, action: ActionPlan): Diagnostic[] {
      * by the same function the form uses. A value the form would refuse from
      * a respondent is not a value to write into two hundred records.
      */
-    const kindOk =
-      action.value === null ||
-      (['number', 'currency'].includes(field.type)
-        ? typeof action.value === 'number'
-        : field.type === 'yes_no'
-          ? typeof action.value === 'boolean'
-          : typeof action.value === 'string');
-    const problem = kindOk ? checkField(field as never, action.value) : `${field.label} needs a ${field.type.replace(/_/g, ' ')} value.`;
+    const mode = action.mode ?? 'set';
+    const isList = field.type === 'multi_choice' || field.type === 'repeating_group';
+    if (mode !== 'set' && !isList) {
+      d.error('ACT011', 'action.mode', `"${mode}" is for lists; ${field.label} holds one value.`);
+      return d.items;
+    }
+    if (field.type === 'repeating_group' && mode !== 'add') {
+      d.error(
+        'ACT011',
+        'action.mode',
+        `${field.label} can only have a row added in bulk.`,
+        'Rows have no identity across records, so replacing or removing one would be a guess.',
+      );
+      return d.items;
+    }
+
+    let problem: string | null;
+    if (field.type === 'multi_choice' && mode !== 'set') {
+      const allowed = (field.choices ?? []).map((ch) => ch.value);
+      problem = typeof action.value === 'string' && allowed.includes(action.value) ? null : 'Choose one of the options.';
+    } else if (field.type === 'repeating_group') {
+      problem = checkRow(field as never, action.value);
+    } else {
+      const kindOk =
+        action.value === null ||
+        (['number', 'currency'].includes(field.type)
+          ? typeof action.value === 'number'
+          : field.type === 'yes_no'
+            ? typeof action.value === 'boolean'
+            : field.type === 'multi_choice'
+              ? Array.isArray(action.value)
+              : typeof action.value === 'string');
+      problem = kindOk ? checkField(field as never, action.value) : `${field.label} needs a ${field.type.replace(/_/g, ' ')} value.`;
+    }
     if (problem) d.error('ACT010', 'action.value', problem);
   }
 

@@ -313,10 +313,9 @@ async function previewAction(
         continue;
       }
       const now = currentValues.get(record.instanceId) ?? null;
-      // A choice is shown by its label — "Finance", not "finance".
-      const label = (v: unknown) => field?.choices?.find((c) => c.value === v)?.label ?? shown(v);
-      if (JSON.stringify(now) === JSON.stringify(action.value)) {
-        skipped.push({ instanceId: record.instanceId, reference: record.reference, reason: `already ${label(action.value)}` });
+      const outcome = nextAnswer(field!, action, now);
+      if ('skip' in outcome) {
+        skipped.push({ instanceId: record.instanceId, reference: record.reference, reason: outcome.skip });
         continue;
       }
       // The current value is shown only if this member may see the field.
@@ -324,8 +323,8 @@ async function previewAction(
       eligible.push({
         instanceId: record.instanceId,
         reference: record.reference,
-        from: action.field in visible ? label(now) : 'hidden from your roles',
-        to: [label(action.value)],
+        from: action.field in visible ? answerWords(field!, now) : 'hidden from your roles',
+        to: [answerWords(field!, outcome.value)],
       });
       continue;
     }
@@ -379,10 +378,61 @@ async function previewAction(
       : action.kind === 'assign'
         ? `Give the "${taskName}" task to ${action.to.trim()} on ${eligible.length} of ${matched.length} record(s).`
         : action.kind === 'set_answer'
-          ? `Set ${field?.label ?? action.field} to ${field?.choices?.find((c) => c.value === action.value)?.label ?? shown(action.value)} on ${eligible.length} of ${matched.length} record(s).`
+          ? `${
+              action.mode === 'add' && field?.type === 'repeating_group'
+                ? `Add a row to ${field.label}`
+                : action.mode === 'add'
+                  ? `Add ${answerWords(field!, [action.value])} to ${field?.label}`
+                  : action.mode === 'remove'
+                    ? `Remove ${answerWords(field!, [action.value])} from ${field?.label}`
+                    : `Set ${field?.label ?? action.field} to ${answerWords(field!, action.value)}`
+            } on ${eligible.length} of ${matched.length} record(s).`
           : `Move ${eligible.length} of ${matched.length} record(s) to ${target?.name ?? action.to}.`;
 
   return { kind: action.kind, summary, digest, eligible, refused, skipped };
+}
+
+type SetAnswer = Extract<ActionPlan, { kind: 'set_answer' }>;
+type FieldDef = Blueprint['data']['fields'][number];
+
+/**
+ * What one record's answer becomes, or why it is left alone.
+ *
+ * One function for the preview and for the write, so the two cannot
+ * disagree. The write calls it again inside the record's lock, against the
+ * answer as it is then — "add Monitor" adds to whatever each record has at
+ * that moment, not to what the preview saw.
+ */
+export function nextAnswer(field: FieldDef, action: SetAnswer, current: unknown): { value: unknown } | { skip: string } {
+  const mode = action.mode ?? 'set';
+  if (mode === 'set') {
+    return JSON.stringify(current ?? null) === JSON.stringify(action.value)
+      ? { skip: `already ${answerWords(field, action.value)}` }
+      : { value: action.value };
+  }
+  const list = Array.isArray(current) ? current : [];
+  if (field.type === 'repeating_group') return { value: [...list, action.value] };
+  const option = action.value as string;
+  if (mode === 'add') {
+    return list.includes(option)
+      ? { skip: `already includes ${answerWords(field, [option])}` }
+      : { value: [...list, option] };
+  }
+  if (!list.includes(option)) return { skip: `does not include ${answerWords(field, [option])}` };
+  const next = list.filter((o) => o !== option);
+  if (!next.length && field.required) return { skip: `it would leave ${field.label} empty, and it is required` };
+  return { value: next };
+}
+
+/** An answer in words: choice labels, "3 items" for a list of rows, "empty" for nothing. */
+function answerWords(field: FieldDef, value: unknown): string {
+  const labelOf = (v: unknown) => field.choices?.find((c) => c.value === v)?.label ?? shown(v);
+  if (field.type === 'repeating_group') {
+    const n = Array.isArray(value) ? value.length : 0;
+    return n === 1 ? '1 item' : `${n} items`;
+  }
+  if (Array.isArray(value)) return value.length ? value.map(labelOf).join(', ') : 'none';
+  return labelOf(value);
 }
 
 /** One answer on each record, as stored. */
@@ -741,16 +791,30 @@ export async function confirm(
     failed: [],
   };
   const why = `bulk action ${run.id.slice(0, 8)}`;
+  let loaded: Blueprint | null = null;
+  const latestBlueprint = async () =>
+    (loaded ??= await inTransaction(pool, (c) => blueprintFor(c, tenantId, run.process_key)));
   /** Reassigned tasks, by record, for the one email each new assignee gets. */
   const handedOver: { instanceId: string; reference: string }[] = [];
 
   for (const target of eligible) {
     if (action.kind === 'set_answer') {
       try {
+        const field = (await latestBlueprint()).data.fields.find((f) => f.key === action.field)!;
+        let stale: string | null = null;
         const outcome = await engine.updateRecord({
           principal: args.principal,
           instanceId: target.instanceId,
-          patch: { [action.field]: action.value } as never,
+          patch: {},
+          // Worked out again inside the lock, from the record as it is now.
+          patchFrom: (data) => {
+            const next = nextAnswer(field, action, data[action.field]);
+            if ('skip' in next) {
+              stale = next.skip;
+              return null;
+            }
+            return { [action.field]: next.value } as never;
+          },
           now,
         });
         if (outcome.saved) report.sent.push({ instanceId: target.instanceId, reference: target.reference, to: target.to ?? [] });
@@ -758,7 +822,7 @@ export async function confirm(
           report.skipped.push({
             instanceId: target.instanceId,
             reference: target.reference,
-            reason: outcome.refused?.length ? 'your roles can no longer change it' : 'not saved',
+            reason: stale ?? (outcome.refused?.length ? 'your roles can no longer change it' : 'not saved'),
           });
         }
       } catch (err) {
@@ -890,7 +954,28 @@ export interface BulkOptions {
   /** Who a task could go to: members who can operate this process, and its operating roles. */
   assignees: { value: string; label: string }[];
   /** Answers this member's roles may change, and can be set in bulk. */
-  fields: { key: string; label: string; type: string; choices?: { value: string; label: string }[]; required: boolean }[];
+  fields: BulkField[];
+}
+
+interface BulkField {
+  key: string;
+  label: string;
+  type: string;
+  choices?: { value: string; label: string }[];
+  required: boolean;
+  /** For a repeating group: the answers one row is made of. */
+  fields?: BulkField[];
+}
+
+function bulkField(f: FieldDef): BulkField {
+  return {
+    key: f.key,
+    label: f.label,
+    type: f.type,
+    choices: f.choices?.map((ch) => ({ value: ch.value, label: ch.label })),
+    required: Boolean(f.required),
+    fields: f.type === 'repeating_group' ? (f.fields ?? []).map((child) => bulkField(child as FieldDef)) : undefined,
+  };
 }
 
 /**
@@ -938,13 +1023,7 @@ export async function bulkOptions(pool: Pool, principal: Principal, processKey: 
       assignees,
       fields: bp.data.fields
         .filter((f) => mayEdit.has(f.key) && BULK_EDITABLE_TYPES.has(f.type) && f.setBy !== 'system')
-        .map((f) => ({
-          key: f.key,
-          label: f.label,
-          type: f.type,
-          choices: f.choices?.map((ch) => ({ value: ch.value, label: ch.label })),
-          required: Boolean(f.required),
-        })),
+        .map(bulkField),
     };
   });
 }

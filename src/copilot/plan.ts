@@ -168,7 +168,23 @@ export const ActionPlan = z.union([
     .object({
       kind: z.literal('set_answer'),
       field: Key,
-      value: z.union([z.string().max(2000), z.number(), z.boolean(), z.null()]),
+      value: z.union([
+        z.string().max(2000),
+        z.number(),
+        z.boolean(),
+        z.null(),
+        /** A multi-select's whole list, with `mode: set`. */
+        z.array(z.string().max(200)).max(50),
+        /** One row for a repeating group, with `mode: add`. */
+        z.record(z.string(), z.union([z.string().max(2000), z.number(), z.boolean(), z.null()])),
+      ]),
+      /**
+       * `set` replaces the answer. `add` and `remove` are for lists: one
+       * option into or out of a multi-select, leaving the rest of each
+       * record's list alone — or one row onto the end of a repeating group.
+       * Rows have no identity across records, so there is no "change row 2".
+       */
+      mode: z.enum(['set', 'add', 'remove']).default('set'),
     })
     .strict(),
 ]);
@@ -190,6 +206,11 @@ export const BULK_EDITABLE_TYPES = new Set([
   'single_choice',
   'dropdown',
   'yes_no',
+  // Stored as text, so set like any text.
+  'address',
+  // Lists: see `mode` on set_answer.
+  'multi_choice',
+  'repeating_group',
 ]);
 
 /** What the model returns: a plan, and its own account of what it understood. */

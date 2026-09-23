@@ -46,7 +46,9 @@ Rules:
   records, and only with a state key given to you.
 - "set_answer" sets one field to one value. Use it only when the operator
   gave the exact value; never infer or invent one. Dates are YYYY-MM-DD,
-  numbers are numbers, yes/no is true or false.
+  numbers are numbers, yes/no is true or false. For a multi-choice field,
+  "mode": "add" or "remove" with one option's value adds or removes just that
+  option; "mode": "set" with a list replaces the whole answer.
 - "reading" is one sentence, in plain words, telling the operator what you
   understood. It is shown to them before anything runs, so it should name the
   filters in their language, not yours.`;

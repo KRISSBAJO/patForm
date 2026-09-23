@@ -481,6 +481,13 @@ export class Engine {
     principal: Principal;
     now: Date;
     /**
+     * Builds the patch from the record as it is once locked. For changes
+     * relative to what is there — add an option to a list, add a row — so two
+     * people doing it at once both land, instead of the second writing back a
+     * list it read before the first had finished.
+     */
+    patchFrom?: (data: Answers) => Answers | null;
+    /**
      * `saved` says the answers were written; `advanced` says the record also
      * moved. They are different questions and were one boolean, so a
      * respondent whose clarification was stored in a state with nowhere to go
@@ -490,6 +497,11 @@ export class Engine {
     return inTransaction(this.pool, async (client) => {
       const instance = await loadInstance(client, args.instanceId, { lock: true });
       const bp = await loadBlueprint(client, instance.process_version_id);
+      if (args.patchFrom) {
+        const derived = args.patchFrom(instance.data);
+        if (!derived) return { saved: false, advanced: false };
+        args = { ...args, patch: derived };
+      }
 
       const decision = await require_(client, {
         principal: args.principal,
