@@ -656,19 +656,33 @@ html {
   flex-shrink: 0;
 }
 
+/*
+ * The complaint, tinted like one.
+ *
+ * It was a white card with a grey border, indistinguishable from every other
+ * card on the page. In the design it sits in the red family — it is the
+ * sentence the tangle beside it causes, and colour is what says so.
+ */
 .pullquote {
-  margin-top: 22px;
-  padding: 18px;
-  border-radius: 10px;
-  background: var(--white);
-  border: 1px solid var(--line);
+  margin-top: 0;
+  padding: 16px 18px;
+  border-radius: 12px;
+  background: var(--red-wash);
+  border: 1px solid var(--red-border);
 }
 
+/*
+ * Smaller than the body copy, not larger.
+ *
+ * It was 18px display serif in a narrow column, which set four or five words
+ * a line and made a single sentence look like a paragraph. In the design it
+ * is a quiet aside beside the picture, not a headline.
+ */
 .pullquote p {
   margin: 0;
   font-family: var(--font-display), Georgia, serif;
-  font-size: 18px;
-  line-height: 1.45;
+  font-size: 15.5px;
+  line-height: 1.5;
   color: var(--ink);
 }
 
@@ -1999,12 +2013,29 @@ html {
     flex: 1 1 660px;
   }
 
+  /*
+   * The artwork leads here.
+   *
+   * The copy had 468px and an 88px gutter, leaving the two pictures about
+   * 316px and 380px — and their words are baked into them, so at that size
+   * "Outcome Platform" and each "Signed" were a few pixels tall. Text inside
+   * artwork cannot reflow; the only way to make it readable is to make the
+   * artwork bigger, which is the standing cost of baking it in.
+   *
+   * 460px, not less: below it the headline breaks after "a" and strands
+   * "form." on its own line. That is the floor this column has.
+   */
   .band__grid {
-    gap: 88px;
+    gap: 48px;
   }
 
   .band__copy {
-    flex: 0 0 468px;
+    flex: 0 0 460px;
+  }
+
+  .band__art {
+    flex: 1 1 auto;
+    min-width: 0;
   }
 
   .console__grid {

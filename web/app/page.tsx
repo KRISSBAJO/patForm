@@ -3,7 +3,6 @@ import { Footer } from '@/components/Footer';
 import { Nav } from '@/components/Nav';
 import {
   ArrowRight,
-  BrokenLink,
   Clock,
   DownArrow,
   FlowArrow,
@@ -21,24 +20,6 @@ import {
 } from '@/components/icons';
 
 const TOOLCHAIN = ['Form tool', 'Spreadsheet', 'Email threads', 'Shared drive', 'E-signature', 'Calendar'];
-
-/*
- * Where each label sits on the tangle, as a percentage of the artwork.
- *
- * Percentages of the plate, which carries the image's own aspect ratio — so
- * they hold at every width rather than only at the one this was placed at.
- */
-const TOOLS = [
-  { label: 'Form tool', x: '26%', y: '5%' },
-  { label: 'Spreadsheet', x: '68%', y: '5%' },
-  { label: 'Email threads', x: '15%', y: '38%' },
-  { label: 'Shared drive', x: '14%', y: '55%' },
-  { label: 'E-signature', x: '17%', y: '88%' },
-  { label: 'Calendar', x: '62%', y: '88%' },
-];
-
-/* The other end of the same picture: what comes out when one process runs it. */
-const OUTCOMES = ['Employee onboarded', 'Expense approved', 'Member registered'];
 
 const BUILT = [
   { Icon: IconData, title: 'Data model', copy: 'Typed fields, constraints, and a sensitivity class on every one of them.' },
@@ -162,92 +143,64 @@ export default function Home() {
             {/*
               * The tangle, and what replaces it.
               *
-              * Tailwind, wired to this project's tokens — so `bg-paper` is the
-              * page's own paper and there is no `blue-500` to reach for.
+              * The words are inside the artwork now — the tool names, "Chasing
+              * it all", "Outcome Platform", the three signed outcomes. That
+              * makes these pictures of text, not decoration, so each one
+              * carries alt text that says what it says. Without it a screen
+              * reader gets a section whose entire right half is silence, and
+              * the six tools the copy mentions are named nowhere it can reach.
               *
-              * Both plates carry `aspect-[…]` matching their image's own ratio.
-              * The labels are placed as percentages of the plate, and without a
-              * fixed ratio `object-contain` letterboxes: a percentage of the
-              * box stops being a percentage of the picture and the labels slide
-              * off the lines at some widths and not others.
-              *
-              * The images are decorative. Every word in them is in the copy or
-              * in the labels on top.
+              * Served at half width below 900px: a phone pulling a 2043px
+              * render to show it at 350 is most of the page's weight for none
+              * of its meaning.
               */}
-            <div className="band__art grid items-center gap-8 xl:grid-cols-[1.15fr_1fr]">
-              <div className="relative mx-auto aspect-[1464/1074] w-full max-w-[560px]">
+            {/*
+              * The green half gets the wider column.
+              *
+              * Its words are inside the picture, so they do not reflow — at the
+              * narrower share "Outcome Platform" and each "Signed" rendered at
+              * about seven pixels. Text in artwork can only be made readable by
+              * making the artwork bigger, which is the cost of baking it in.
+              */}
+            <div className="band__art grid items-start gap-7 xl:grid-cols-[1fr_1.2fr]">
+              <div className="mx-auto w-full max-w-[520px]">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src="/images/form-chaos-red.webp"
-                  alt=""
-                  width={1464}
-                  height={1074}
+                  srcSet="/images/form-chaos-red@half.webp 709w, /images/form-chaos-red.webp 1418w"
+                  sizes="(max-width: 900px) 92vw, 560px"
+                  width={1418}
+                  height={1109}
                   loading="lazy"
-                  className="absolute inset-0 h-full w-full object-contain"
+                  className="block h-auto w-full"
+                  alt="Six tools — a form tool, a spreadsheet, email threads, a shared drive, e-signature and a calendar — joined by tangled red arrows that cross and double back, ending at one person chasing it all."
                 />
-                {TOOLS.map((t) => (
-                  <span
-                    key={t.label}
-                    style={{ left: t.x, top: t.y }}
-                    className="absolute -translate-x-1/2 -translate-y-1/2 whitespace-nowrap rounded-lg border border-line bg-white px-3 py-1.5 text-[12.5px] text-ink-soft shadow-[0_3px_10px_rgba(20,24,22,0.08)]"
-                  >
-                    {t.label}
-                  </span>
-                ))}
-                <span className="absolute left-[89%] top-[52%] flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-1.5">
-                  <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-red-pale text-red-text">
-                    <Warn />
-                  </span>
-                  <span className="whitespace-nowrap text-[12.5px] font-medium text-ink">Chasing it all</span>
-                </span>
               </div>
 
               <div>
-              <blockquote className="pullquote">
-                <p>“Where is this one, and who has it?” should not be a question that takes forty minutes to answer.</p>
-              </blockquote>
+                <blockquote className="pullquote">
+                  <p>
+                    “Where is this one, and who has it?” should not be a question that takes forty minutes to answer.
+                  </p>
+                </blockquote>
 
-              <p className="mt-6 text-[15.5px] font-medium leading-snug text-ink">
-                Get answers instantly, not in forty minutes.
-              </p>
+                <p className="mt-5 max-w-[210px] text-[14px] font-medium leading-[1.3] text-ink">
+                  Get answers instantly, not in forty minutes.
+                </p>
 
-              {/* Stacked, not side by side. Sharing the column with the cards
-                  squeezed the flow to a width where nothing in it read. */}
-              <div className="mt-4">
-                <div className="relative aspect-[2000/667] w-full">
+                <div className="mt-4">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src="/images/outcome-flow-green.webp"
-                    alt=""
-                    width={2000}
-                    height={667}
+                    srcSet="/images/outcome-flow-green@half.webp 1021w, /images/outcome-flow-green.webp 2043w"
+                    sizes="(max-width: 900px) 92vw, 46vw"
+                    width={2043}
+                    height={770}
                     loading="lazy"
-                    className="absolute inset-0 h-full w-full object-contain"
+                    className="block h-auto w-full"
+                    alt="Three inputs converging on one outcome platform and leaving as three finished, signed results: employee onboarded, expense approved, member registered."
                   />
-                  {/* The label sits under the mark, not on it — over the block
-                      it was dark text on a dark square. */}
-                  <span className="absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center justify-center">
-                    <span className="h-8 w-8 rounded-lg bg-green shadow-[0_2px_8px_rgba(20,102,63,0.35)]" />
-                  </span>
-                  <span className="absolute left-1/2 top-[calc(50%+26px)] -translate-x-1/2 whitespace-nowrap text-[11.5px] font-medium text-ink">
-                    One process
-                  </span>
                 </div>
-
-                <ul className="mt-4 grid gap-2 sm:grid-cols-3">
-                  {OUTCOMES.map((o) => (
-                    <li
-                      key={o}
-                      className="flex items-start gap-2 rounded-lg border border-line bg-white px-3 py-2 text-[11.5px] leading-tight text-ink-soft shadow-[0_3px_10px_rgba(20,24,22,0.07)]"
-                    >
-                      <span className="mt-px flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full bg-green text-white">
-                        <Tick />
-                      </span>
-                      {o}
-                    </li>
-                  ))}
-                </ul>
-              </div>
               </div>
             </div>
           </div>
