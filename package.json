@@ -20,6 +20,8 @@
     "seed": "node --env-file=.env node_modules/tsx/dist/cli.mjs src/seed.ts",
     "api": "node --env-file=.env node_modules/tsx/dist/cli.mjs src/api/server.ts",
     "worker": "node --env-file=.env node_modules/tsx/dist/cli.mjs src/worker.ts",
+    "staging": "tsx src/staging.ts",
+    "db:init-empty": "tsx src/init-empty-db.ts",
     "retention": "node --env-file=.env node_modules/tsx/dist/cli.mjs src/retention-cli.ts",
     "send-test": "node --env-file=.env node_modules/tsx/dist/cli.mjs src/send-test.ts",
     "drill": "node --env-file=.env node_modules/tsx/dist/cli.mjs src/drill.ts",

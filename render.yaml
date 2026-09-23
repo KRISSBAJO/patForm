@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: patform-staging-api
+    runtime: node
+    plan: free
+    region: ohio
+    buildCommand: npm ci --include=dev && npm run typecheck
+    startCommand: npm run staging
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: STAGING_COMBINED_SERVICE
+        value: 'true'
+      - key: DATABASE_URL
+        sync: false
+      - key: APP_URL
+        sync: false
+      - key: CONSOLE_ORIGIN
+        sync: false
+      - key: FORM_TICKET_SECRET
+        generateValue: true
+      - key: MFA_ENCRYPTION_KEY
+        generateValue: true

@@ -127,7 +127,7 @@ import {
  * verification, MFA, OAuth/OIDC, and password reset.
  */
 
-const PORT = Number(process.env.API_PORT ?? 3310);
+const PORT = Number(process.env.API_PORT ?? process.env.PORT ?? 3310);
 
 interface Ctx {
   engine: Engine;
