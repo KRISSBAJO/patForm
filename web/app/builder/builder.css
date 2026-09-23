@@ -257,6 +257,47 @@
   border-bottom: 1px solid var(--green-border);
 }
 
+/* Somebody else has the draft. The "waiting" signal, not the "failed" one. */
+.bd__banner--hold {
+  background: var(--ochre-pale);
+  color: var(--ochre-text);
+  border-bottom: 1px solid var(--ochre-border);
+}
+
+.bd__banner--hold strong {
+  font-weight: 600;
+}
+
+.bd__bannerIcon {
+  flex-shrink: 0;
+}
+
+.bd__bannerActions {
+  margin-left: auto;
+  display: flex;
+  flex-shrink: 0;
+  gap: 14px;
+}
+
+.bd__bannerActions button {
+  margin-left: 0;
+  font-weight: 600;
+  /* WCAG 2.5.8: the text is small; the target is not. */
+  min-height: 24px;
+}
+
+/* The fieldset that turns the editor off is a switch, not a box. */
+.bd__freeze {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.bd__freeze:disabled {
+  opacity: 0.62;
+}
+
 .bd__head {
   flex-shrink: 0;
   display: flex;
@@ -1691,4 +1732,9 @@ a.bd__newBtn {
 @media (max-width: 960px) {
   .bd__body[data-side='preview'] { grid-template-columns: minmax(0, 1fr); }
   .sp { border-left: none; border-top: 1px solid var(--line); }
+}
+
+.bd__add:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }

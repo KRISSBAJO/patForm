@@ -220,6 +220,24 @@ create table process_draft (
   created_at      timestamptz not null default now(),
   updated_at      timestamptz not null default now(),
   published_as    int,
+  /*
+   * Draft locking. Two layers, because each one alone leaves a gap.
+   *
+   * `revision` is the guarantee: every save names the revision it was made
+   * against and is refused if the draft moved on, so nothing is overwritten
+   * without somebody being told. It cannot be bypassed and needs no clock.
+   *
+   * The lease is the warning: opening a draft claims it for two minutes,
+   * renewed while the tab is open, so the second person learns someone is
+   * editing *before* they start rather than when their first save bounces.
+   * A lease that is not renewed simply expires — a closed laptop does not
+   * lock a process for the rest of the week.
+   */
+  revision        int not null default 0,
+  updated_by      uuid references actor(id),
+  locked_by       uuid references actor(id),
+  locked_at       timestamptz,
+  locked_until    timestamptz,
   unique (tenant_id, process_key, id)
 );
 

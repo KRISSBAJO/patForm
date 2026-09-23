@@ -152,8 +152,16 @@ publish until they are gone.
 
 Fields, states, approvals, tasks and roles have form editors. Intent, the form
 experience, transitions, messages, documents and tests are edited through the
-JSON tab — a stated gap, not a hidden one. There is no draft locking yet, so
-two people editing the same process will overwrite each other.
+JSON tab — a stated gap, not a hidden one.
+
+Two people cannot overwrite each other. Opening a draft claims it for two
+minutes, renewed while the tab is open; anyone else who opens it sees who has
+it and a read-only editor, with **Take over** for when that person has walked
+away. Underneath the lease, every save and publish names the revision it was
+made against, and one that has fallen behind is refused with the name of who
+saved since — the unsaved change stays in the tab, and can be copied out as
+JSON. Every draft route checks `administer`, not only the one that opens it.
+See entries 71 and 72 in [docs/failure-cases.md](docs/failure-cases.md).
 
 ## Asking the process
 
@@ -1010,8 +1018,7 @@ Everything below is a deliberate deferral:
   states, rules, approvals, tasks, roles and the form's header and field
   widths, and draws the flow as a read-only map. Intent, the rest of the form
   experience, message templates, documents and scenario tests still go through
-  its JSON tab. There is also no draft locking, so two people editing one
-  process will overwrite each other.
+  its JSON tab.
 - **SMS.** §6.6 is explicit: *"SMS is not required for MVP; messaging consent
   and jurisdictional rules must be designed before launch."* Building the
   channel without consent capture would be building the thing that sentence

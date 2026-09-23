@@ -3,6 +3,7 @@ import { validate } from '../compiler/validate.js';
 import type { Diagnostic } from '../compiler/diagnostics.js';
 import { inTransaction, type Pool } from './db.js';
 import { require_, requireWorkspaceCapability, type Principal } from './policy.js';
+import { DraftConflict } from './errors.js';
 import { runScenarios, type ScenarioResult } from './scenarios.js';
 import { Engine } from './engine.js';
 import {
@@ -42,6 +43,139 @@ export interface DraftDetail extends DraftSummary {
   blueprint: Blueprint;
   diagnostics: Diagnostic[];
   publishable: boolean;
+  /** What a save or a publish must name, so it cannot land on work it has not seen. */
+  revision: number;
+  /** Who saved it last, by name. Null until somebody saves. */
+  updatedBy: string | null;
+  lock: DraftLock;
+}
+
+/** How long opening a draft holds it. The builder renews at a third of this. */
+export const LEASE_SECONDS = 120;
+
+export interface DraftLock {
+  /** Whoever holds the lease, by name — null when nobody does or it has expired. */
+  by: string | null;
+  mine: boolean;
+  since: string | null;
+  until: string | null;
+}
+
+type Actor = Extract<Principal, { kind: 'actor' }>;
+
+function actorOf(principal: Principal): Actor {
+  if (principal.kind !== 'actor') throw new Error('the builder is for signed-in members');
+  return principal;
+}
+
+/**
+ * The permission every draft operation needs, checked on every one of them.
+ *
+ * Opening, creating and discarding a draft checked `administer`. Loading,
+ * saving, testing, the impact summary and publishing checked only that the
+ * caller was in the same workspace — so a read-only member who had a draft's
+ * id, which the builder's own process list hands to anybody signed in, could
+ * rewrite a process and publish it. The gate was on the door and not on the
+ * rooms.
+ *
+ * Same rule as `openDraft`: `administer` from the process's roles or from the
+ * workspace role. A process that has never been published has no roles yet,
+ * so only the workspace role can grant it.
+ */
+async function requireDraftAdmin(pool: Pool, principal: Actor, processKey: string): Promise<void> {
+  const published = await currentBlueprint(pool, principal.tenantId, processKey);
+  if (!published) {
+    await requireWorkspaceCapability(pool, principal, 'administer', processKey);
+    return;
+  }
+  const client = await pool.connect();
+  try {
+    await require_(
+      client,
+      { principal, action: 'administer', tenantId: principal.tenantId, processKey, blueprint: published.blueprint },
+      pool,
+    );
+  } finally {
+    client.release();
+  }
+}
+
+interface LockRow {
+  revision: number;
+  published_as: number | null;
+  updated_at: Date;
+  updated_by: string | null;
+  updated_by_name: string | null;
+  locked_by: string | null;
+  locked_by_name: string | null;
+  locked_at: Date | null;
+  locked_until: Date | null;
+  live: boolean;
+}
+
+async function lockRow(pool: Pool, principal: Actor, draftId: string): Promise<LockRow | null> {
+  const { rows } = await pool.query<LockRow>(
+    `select d.revision, d.published_as, d.updated_at, d.updated_by, d.locked_by, d.locked_at, d.locked_until,
+            coalesce(d.locked_until > now(), false) as live,
+            u.display_name as updated_by_name, l.display_name as locked_by_name
+       from process_draft d
+       left join actor u on u.id = d.updated_by
+       left join actor l on l.id = d.locked_by
+      where d.id = $1 and d.tenant_id = $2`,
+    [draftId, principal.tenantId],
+  );
+  return rows[0] ?? null;
+}
+
+function lockOf(row: LockRow, principal: Actor): DraftLock {
+  if (!row.locked_by || !row.live) return { by: null, mine: false, since: null, until: null };
+  return {
+    by: row.locked_by_name,
+    mine: row.locked_by === principal.actorId,
+    since: row.locked_at?.toISOString() ?? null,
+    until: row.locked_until?.toISOString() ?? null,
+  };
+}
+
+/**
+ * Why a conditional write matched nothing, in words.
+ *
+ * Every write below is a single `update ... where revision = $n and <lease is
+ * free or mine>`, so the database decides atomically and there is no window
+ * between checking and writing. When it refuses, this reads the row once more
+ * to say which condition failed — the order matters: a published draft is
+ * not "stale", and a draft somebody is holding is better explained by who
+ * holds it than by a revision number.
+ */
+async function conflictFor(pool: Pool, principal: Actor, draftId: string, base: number): Promise<Error> {
+  const row = await lockRow(pool, principal, draftId);
+  if (!row) return new Error('no such draft');
+  if (row.published_as !== null) {
+    return new DraftConflict(
+      'published',
+      `this draft was published as version ${row.published_as} — open the process again to keep editing`,
+      { version: row.published_as },
+    );
+  }
+  if (row.locked_by && row.live && row.locked_by !== principal.actorId) {
+    return new DraftConflict('held', `${row.locked_by_name ?? 'another member'} is editing this draft`, {
+      by: row.locked_by_name ?? undefined,
+      at: row.locked_at?.toISOString(),
+    });
+  }
+  if (row.revision !== base) {
+    // The same person in two tabs is the commonest way to get here, and
+    // "Joy saved this after you opened it", said to Joy, reads as a fault.
+    const self = row.updated_by === principal.actorId;
+    return new DraftConflict(
+      'stale',
+      self
+        ? 'you saved this draft from another tab after this one loaded it'
+        : `${row.updated_by_name ?? 'someone'} saved this draft after you opened it`,
+      { by: self ? 'you' : (row.updated_by_name ?? undefined), at: row.updated_at.toISOString(), revision: row.revision },
+    );
+  }
+  return new Error('the draft could not be saved');
 }
 
 async function currentBlueprint(pool: Pool, tenantId: string, processKey: string) {
@@ -139,7 +273,7 @@ export async function openDraft(
 }
 
 export async function loadDraft(pool: Pool, principal: Principal, draftId: string): Promise<DraftDetail> {
-  if (principal.kind !== 'actor') throw new Error('the builder is for signed-in members');
+  const actor = actorOf(principal);
 
   const { rows } = await pool.query<{
     id: string;
@@ -151,10 +285,12 @@ export async function loadDraft(pool: Pool, principal: Principal, draftId: strin
   }>(
     `select id, process_key, based_on_version, blueprint, created_by, updated_at
        from process_draft where id = $1 and tenant_id = $2`,
-    [draftId, principal.tenantId],
+    [draftId, actor.tenantId],
   );
   const row = rows[0];
   if (!row) throw new Error('no such draft');
+  await requireDraftAdmin(pool, actor, row.process_key);
+  const lock = (await lockRow(pool, actor, draftId))!;
 
   // saveDraft stores work that does not parse, on purpose. Reopening one of
   // those used to reach `validate` with something that is not a blueprint and
@@ -174,6 +310,9 @@ export async function loadDraft(pool: Pool, principal: Principal, draftId: strin
     blueprint: row.blueprint,
     diagnostics,
     publishable: compiled ? compiled.publishable : false,
+    revision: lock.revision,
+    updatedBy: lock.updated_by_name,
+    lock: lockOf(lock, actor),
   };
 }
 
@@ -196,27 +335,117 @@ function shapeDiagnostics(error: { issues: { path: PropertyKey[]; message: strin
  */
 export async function saveDraft(
   pool: Pool,
-  args: { principal: Principal; draftId: string; blueprint: unknown },
-): Promise<{ diagnostics: Diagnostic[]; publishable: boolean; parsed: boolean }> {
-  if (args.principal.kind !== 'actor') throw new Error('the builder is for signed-in members');
+  args: { principal: Principal; draftId: string; blueprint: unknown; baseRevision: number },
+): Promise<{ diagnostics: Diagnostic[]; publishable: boolean; parsed: boolean; revision: number }> {
+  const actor = actorOf(args.principal);
+  const draft = await draftKey(pool, actor, args.draftId);
+  await requireDraftAdmin(pool, actor, draft);
 
   const parsed = Blueprint.safeParse(args.blueprint);
 
-  await pool.query(
-    'update process_draft set blueprint = $1, updated_at = now() where id = $2 and tenant_id = $3 and published_as is null',
-    [JSON.stringify(args.blueprint), args.draftId, args.principal.tenantId],
+  /*
+   * One statement decides. The revision must be the one this edit was made
+   * against, and the lease must be free, expired, or already this member's.
+   *
+   * This used to be an unconditional update that also matched nothing, and
+   * said nothing, when the draft had already been published — so a save
+   * after somebody else published returned fresh diagnostics and a green
+   * "saved", and the work went nowhere. A write that did not happen now says
+   * so, and says why.
+   *
+   * Saving renews the lease: someone typing is plainly still editing.
+   */
+  const { rows } = await pool.query<{ revision: number }>(
+    `update process_draft
+        set blueprint = $1, updated_at = now(), updated_by = $4, revision = revision + 1,
+            locked_by = $4,
+            locked_at = case when locked_by = $4 and locked_until > now() then locked_at else now() end,
+            locked_until = now() + make_interval(secs => $6)
+      where id = $2 and tenant_id = $3 and published_as is null and revision = $5
+        and (locked_by is null or locked_by = $4 or locked_until < now())
+      returning revision`,
+    [JSON.stringify(args.blueprint), args.draftId, actor.tenantId, actor.actorId, args.baseRevision, LEASE_SECONDS],
   );
+  if (!rows.length) throw await conflictFor(pool, actor, args.draftId, args.baseRevision);
+  const revision = rows[0]!.revision;
 
   if (!parsed.success) {
     return {
       parsed: false,
       publishable: false,
       diagnostics: shapeDiagnostics(parsed.error),
+      revision,
     };
   }
 
   const compiled = validate(parsed.data);
-  return { parsed: true, diagnostics: compiled.items, publishable: compiled.publishable };
+  return { parsed: true, diagnostics: compiled.items, publishable: compiled.publishable, revision };
+}
+
+async function draftKey(pool: Pool, actor: Actor, draftId: string): Promise<string> {
+  const { rows } = await pool.query<{ process_key: string }>(
+    'select process_key from process_draft where id = $1 and tenant_id = $2',
+    [draftId, actor.tenantId],
+  );
+  if (!rows[0]) throw new Error('no such draft');
+  return rows[0].process_key;
+}
+
+// ---------------------------------------------------------------- the lease
+
+/**
+ * Claims a draft for editing, or renews the claim.
+ *
+ * Returns the lock either way rather than throwing when somebody else holds
+ * it: being told "Sam is editing this" is the ordinary outcome of opening a
+ * busy draft, not an error, and the builder turns it into a read-only view
+ * with a way to take over.
+ *
+ * `takeOver` is for the case the lease exists for — Sam opened it, went to a
+ * meeting, and the tab is still renewing. It moves the lease. It does not
+ * touch Sam's unsaved work, which is in Sam's tab; Sam's next save is refused
+ * with this member's name on it, and nothing is lost on either side.
+ */
+export async function claimDraft(
+  pool: Pool,
+  args: { principal: Principal; draftId: string; takeOver?: boolean },
+): Promise<DraftLock & { revision: number; tookOverFrom?: string }> {
+  const actor = actorOf(args.principal);
+  await requireDraftAdmin(pool, actor, await draftKey(pool, actor, args.draftId));
+
+  const before = await lockRow(pool, actor, args.draftId);
+  if (!before) throw new Error('no such draft');
+  if (before.published_as !== null) {
+    throw await conflictFor(pool, actor, args.draftId, before.revision);
+  }
+
+  const { rowCount } = await pool.query(
+    `update process_draft
+        set locked_by = $3,
+            locked_at = case when locked_by = $3 and locked_until > now() then locked_at else now() end,
+            locked_until = now() + make_interval(secs => $4)
+      where id = $1 and tenant_id = $2 and published_as is null
+        and (locked_by is null or locked_by = $3 or locked_until < now() or $5)`,
+    [args.draftId, actor.tenantId, actor.actorId, LEASE_SECONDS, args.takeOver === true],
+  );
+
+  const after = (await lockRow(pool, actor, args.draftId))!;
+  const displaced =
+    rowCount && args.takeOver && before.live && before.locked_by && before.locked_by !== actor.actorId
+      ? (before.locked_by_name ?? 'another member')
+      : undefined;
+  return { ...lockOf(after, actor), revision: after.revision, ...(displaced ? { tookOverFrom: displaced } : {}) };
+}
+
+/** Lets go of a draft, if this member holds it. Anybody else's lease is left alone. */
+export async function releaseDraft(pool: Pool, args: { principal: Principal; draftId: string }): Promise<{ released: boolean }> {
+  const actor = actorOf(args.principal);
+  const { rowCount } = await pool.query(
+    `update process_draft set locked_by = null, locked_at = null, locked_until = null
+      where id = $1 and tenant_id = $2 and locked_by = $3`,
+    [args.draftId, actor.tenantId, actor.actorId],
+  );
+  return { released: (rowCount ?? 0) > 0 };
 }
 
 /** BLD-05: run the draft's own scenarios against the real engine, in a scratch tenant. */
@@ -316,9 +545,29 @@ export async function publishImpact(
  */
 export async function publishDraft(
   pool: Pool,
-  args: { principal: Principal; draftId: string },
+  args: { principal: Principal; draftId: string; revision: number },
 ): Promise<{ version: number; impact: PublishImpact }> {
-  if (args.principal.kind !== 'actor') throw new Error('the builder is for signed-in members');
+  const actor = actorOf(args.principal);
+  await requireDraftAdmin(pool, actor, await draftKey(pool, actor, args.draftId));
+
+  /*
+   * Publish exactly what the publisher reviewed.
+   *
+   * The impact dialog is computed from one revision; a save landing between
+   * that and the confirm would publish something nobody looked at. So the
+   * publish names its revision and takes the lease in the same statement —
+   * after this matches, nobody else can save until the version exists.
+   */
+  const { rowCount } = await pool.query(
+    `update process_draft
+        set locked_by = $3,
+            locked_at = case when locked_by = $3 and locked_until > now() then locked_at else now() end,
+            locked_until = now() + make_interval(secs => $5)
+      where id = $1 and tenant_id = $2 and published_as is null and revision = $4
+        and (locked_by is null or locked_by = $3 or locked_until < now())`,
+    [args.draftId, actor.tenantId, actor.actorId, args.revision, LEASE_SECONDS],
+  );
+  if (!rowCount) throw await conflictFor(pool, actor, args.draftId, args.revision);
 
   const draft = await loadDraft(pool, args.principal, args.draftId);
   const compiled = validate(draft.blueprint);
@@ -331,12 +580,14 @@ export async function publishDraft(
 
   const impact = await publishImpact(pool, args);
   const engine = new Engine(pool);
-  const version = await engine.publish(args.principal.tenantId, draft.blueprint, describe(args.principal));
+  const version = await engine.publish(actor.tenantId, draft.blueprint, describe(args.principal));
 
-  await pool.query('update process_draft set published_as = $1, updated_at = now() where id = $2', [
-    version.version,
-    draft.id,
-  ]);
+  await pool.query(
+    `update process_draft
+        set published_as = $1, updated_at = now(), locked_by = null, locked_at = null, locked_until = null
+      where id = $2`,
+    [version.version, draft.id],
+  );
 
   return { version: version.version, impact };
 }
@@ -449,10 +700,17 @@ export async function discardDraft(
   await requireWorkspaceCapability(pool, principal, 'administer', args.draftId);
   if (principal.kind !== 'actor') throw new Error('unreachable');
 
+  // Not out from under somebody who is editing it.
   const { rowCount } = await pool.query(
-    'delete from process_draft where id = $1 and tenant_id = $2 and published_as is null',
-    [args.draftId, principal.tenantId],
+    `delete from process_draft
+      where id = $1 and tenant_id = $2 and published_as is null
+        and (locked_by is null or locked_by = $3 or locked_until < now())`,
+    [args.draftId, principal.tenantId, principal.actorId],
   );
+  if (!rowCount) {
+    const row = await lockRow(pool, principal, args.draftId);
+    if (row && row.published_as === null) throw await conflictFor(pool, principal, args.draftId, row.revision);
+  }
   return { discarded: (rowCount ?? 0) > 0 };
 }
 

@@ -13,3 +13,27 @@
  * to the top level.
  */
 export class InvalidInput extends Error {}
+
+/**
+ * Somebody else got there first.
+ *
+ * Two people editing one draft used to be last-write-wins: the second save
+ * replaced the whole blueprint, and the first person's work disappeared
+ * without either of them being told. This is what the save path throws
+ * instead, and it carries enough to say *who* and *when* — "someone else
+ * changed this" sends a person to find out who, which is the question the
+ * refusal could have answered.
+ *
+ * `held` — another member is editing it right now and their lease is live.
+ * `stale` — it was saved after you last loaded it, so your copy is behind.
+ * `published` — it has already become a version and is no longer a draft.
+ */
+export class DraftConflict extends Error {
+  constructor(
+    readonly kind: 'held' | 'stale' | 'published',
+    message: string,
+    readonly detail: { by?: string; at?: string; revision?: number; version?: number } = {},
+  ) {
+    super(message);
+  }
+}

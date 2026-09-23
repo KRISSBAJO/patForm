@@ -151,6 +151,22 @@ interface Blueprint {
   [k: string]: unknown;
 }
 
+interface DraftLock {
+  by: string | null;
+  mine: boolean;
+  since: string | null;
+  until: string | null;
+}
+
+/** What the server says when a save, publish or discard found somebody else there first. */
+interface ConflictInfo {
+  kind: 'held' | 'stale' | 'published';
+  reason: string;
+  by?: string;
+  at?: string;
+  version?: number;
+}
+
 interface DraftDetail {
   id: string;
   processKey: string;
@@ -161,6 +177,9 @@ interface DraftDetail {
   blueprint: Blueprint;
   diagnostics: Diagnostic[];
   publishable: boolean;
+  revision: number;
+  updatedBy: string | null;
+  lock: DraftLock;
   decision?: string;
   audit?: { provider: string; model: string; durationMs: number; repairs: number };
 }
@@ -262,6 +281,12 @@ const CAPABILITIES = ['submit', 'view', 'edit', 'approve', 'operate', 'report', 
 
 class Unauthenticated extends Error {}
 
+class Conflict extends Error {
+  constructor(readonly info: ConflictInfo) {
+    super(info.reason);
+  }
+}
+
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
     ...init,
@@ -284,9 +309,34 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
     }
     throw new Unauthenticated(body.error ?? 'sign in first');
   }
+  if (res.status === 409 && body.kind) throw new Conflict(body as ConflictInfo);
   if (!res.ok) throw new Error(body.reason ?? body.error ?? `HTTP ${res.status}`);
   return body as T;
 }
+
+/** "14:02" today, "Tue 14:02" otherwise — when somebody did something, at a glance. */
+function when(iso: string | undefined | null): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  const time = d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+  return d.toDateString() === new Date().toDateString()
+    ? time
+    : `${d.toLocaleDateString(undefined, { weekday: 'short' })} ${time}`;
+}
+
+/** Lets go of a draft even while the page is being torn down. */
+function release(draftId: string): void {
+  void fetch(`/api/builder/drafts/${draftId}/release`, {
+    method: 'POST',
+    keepalive: true,
+    credentials: 'same-origin',
+    headers: { 'content-type': 'application/json' },
+    body: '{}',
+  }).catch(() => {});
+}
+
+/** How often an open draft renews its lease. A third of the server's two minutes. */
+const HEARTBEAT_MS = 40_000;
 
 /**
  * Turns a diagnostic's dotted path into something selectable.
@@ -361,9 +411,35 @@ export function Builder() {
   const [impact, setImpact] = useState<PublishImpact | null>(null);
   const [published, setPublished] = useState<number | null>(null);
   const [creating, setCreating] = useState(false);
+  const [lock, setLock] = useState<DraftLock | null>(null);
+  const [conflict, setConflict] = useState<ConflictInfo | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pending = useRef<Blueprint | null>(null);
+  /*
+   * The revision this tab's copy was made against. A ref, not state: the
+   * save timer closes over it, and it must read the value at send time.
+   */
+  const revision = useRef(0);
+  /*
+   * Saves run one after another. The debounce alone did not guarantee it: a
+   * save slower than 600ms let the next one leave carrying the old revision,
+   * and the server — correctly — refused this tab's own second save as stale.
+   */
+  const chain = useRef<Promise<void>>(Promise.resolve());
+  const lockRef = useRef<DraftLock | null>(null);
+  lockRef.current = lock;
+  const conflictRef = useRef<ConflictInfo | null>(null);
+  conflictRef.current = conflict;
+
+  /*
+   * Editing is off while somebody else holds the draft, and while a refused
+   * save is waiting for a decision — typing on after "your change was not
+   * saved" would pile more unsaved work on top of it.
+   */
+  const heldElsewhere = lock !== null && lock.by !== null && !lock.mine;
+  const frozen = heldElsewhere || conflict !== null;
 
   const refreshList = useCallback(async () => {
     setProcesses(await call<ProcessRow[]>('/api/builder/processes'));
@@ -403,7 +479,85 @@ export function Builder() {
     setImpact(null);
     setPublished(null);
     setStatus('idle');
+    revision.current = detail.revision;
+    setLock(detail.lock);
+    setConflict(null);
+    setNotice(null);
   }, []);
+
+  /** Takes the server's current copy without moving the editor off what it was showing. */
+  const refresh = useCallback(async (draftId: string) => {
+    const detail = await call<DraftDetail>(`/api/builder/drafts/${draftId}`);
+    pending.current = null;
+    setDraft(detail);
+    setBlueprint(detail.blueprint);
+    setDiagnostics(detail.diagnostics);
+    setPublishable(detail.publishable);
+    revision.current = detail.revision;
+    setLock(detail.lock);
+    setConflict(null);
+    setStatus('idle');
+    return detail;
+  }, []);
+
+  /**
+   * Claims the open draft, and keeps claiming it.
+   *
+   * The same call does three jobs. While this tab holds the draft it renews
+   * the lease. While somebody else holds it, it asks again — and the moment
+   * they finish, this tab gets it, reloads their saved work, and says so,
+   * instead of leaving somebody staring at a read-only screen that will
+   * never unlock by itself. And if somebody takes it over, the next beat
+   * finds out and turns editing off.
+   */
+  const claim = useCallback(
+    async (draftId: string, takeOver = false) => {
+      const before = lockRef.current;
+      const res = await call<DraftLock & { revision: number; tookOverFrom?: string }>(
+        `/api/builder/drafts/${draftId}/claim`,
+        { method: 'POST', body: JSON.stringify({ takeOver }) },
+      );
+      const wasElsewhere = before !== null && before.by !== null && !before.mine;
+      // Never over the top of a refused save: that change is still waiting
+      // for somebody to choose what happens to it, and reloading would drop
+      // it without asking.
+      if (res.mine && (wasElsewhere || takeOver) && res.revision !== revision.current && !conflictRef.current) {
+        await refresh(draftId);
+      }
+      if (res.mine && wasElsewhere && !takeOver) {
+        setNotice(`${before!.by} has finished with this draft. It is yours now, with their changes.`);
+      }
+      if (res.tookOverFrom) {
+        setNotice(`You took this draft over from ${res.tookOverFrom}. Anything they had not saved is still in their tab.`);
+      }
+      setLock({ by: res.by, mine: res.mine, since: res.since, until: res.until });
+      return res;
+    },
+    [refresh],
+  );
+
+  useEffect(() => {
+    const draftId = draft?.id;
+    if (!draftId) return;
+    const beat = () => void claim(draftId).catch((err) => {
+      if (err instanceof Conflict) setConflict(err.info);
+    });
+    beat();
+    const interval = setInterval(beat, HEARTBEAT_MS);
+    // A background tab's timers are throttled; renew the moment it is looked at again.
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') beat();
+    };
+    const onHide = () => release(draftId);
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('pagehide', onHide);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('pagehide', onHide);
+      release(draftId);
+    };
+  }, [draft?.id, claim]);
 
   /**
    * Saves on a delay, and saves whatever the latest edit was rather than
@@ -415,34 +569,45 @@ export function Builder() {
     pending.current = next;
     if (timer.current) clearTimeout(timer.current);
     setStatus('saving');
-    timer.current = setTimeout(async () => {
-      const body = pending.current;
-      if (!body) return;
-      try {
-        const res = await call<{ diagnostics: Diagnostic[]; publishable: boolean }>(
-          `/api/builder/drafts/${draftId}/save`,
-          { method: 'POST', body: JSON.stringify({ blueprint: body }) },
-        );
-        setDiagnostics(res.diagnostics);
-        setPublishable(res.publishable);
-        setStatus('saved');
-        setError(null);
-      } catch (err) {
-        setStatus('error');
-        setError(err instanceof Error ? err.message : String(err));
-      }
+    timer.current = setTimeout(() => {
+      chain.current = chain.current.then(async () => {
+        const body = pending.current;
+        if (!body) return;
+        pending.current = null;
+        try {
+          const res = await call<{ diagnostics: Diagnostic[]; publishable: boolean; revision: number }>(
+            `/api/builder/drafts/${draftId}/save`,
+            { method: 'POST', body: JSON.stringify({ blueprint: body, baseRevision: revision.current }) },
+          );
+          revision.current = res.revision;
+          setDiagnostics(res.diagnostics);
+          setPublishable(res.publishable);
+          setStatus(pending.current ? 'saving' : 'saved');
+          setError(null);
+        } catch (err) {
+          setStatus('error');
+          if (err instanceof Conflict) {
+            // Kept, not sent: the unsaved copy is what "Copy my version" hands back.
+            pending.current = body;
+            setConflict(err.info);
+            if (err.info.kind === 'held') setLock({ by: err.info.by ?? null, mine: false, since: err.info.at ?? null, until: null });
+          } else {
+            setError(err instanceof Error ? err.message : String(err));
+          }
+        }
+      });
     }, 600);
   }, []);
 
   const mutate = useCallback(
     (fn: (bp: Blueprint) => void) => {
-      if (!blueprint || !draft) return;
+      if (!blueprint || !draft || frozen) return;
       const next = structuredClone(blueprint);
       fn(next);
       setBlueprint(next);
       scheduleSave(next, draft.id);
     },
-    [blueprint, draft, scheduleSave],
+    [blueprint, draft, frozen, scheduleSave],
   );
 
   const open = async (processKey: string) => {
@@ -488,12 +653,20 @@ export function Builder() {
     if (!draft) return;
     setBusy('publish');
     try {
-      const res = await call<{ version: number }>(`/api/builder/drafts/${draft.id}/publish`, { method: 'POST' });
+      const res = await call<{ version: number }>(`/api/builder/drafts/${draft.id}/publish`, {
+        method: 'POST',
+        body: JSON.stringify({ revision: revision.current }),
+      });
       setPublished(res.version);
       setImpact(null);
       await refreshList();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      if (err instanceof Conflict) {
+        setImpact(null);
+        setConflict(err.info);
+      } else {
+        setError(err instanceof Error ? err.message : String(err));
+      }
     } finally {
       setBusy(null);
     }
@@ -509,7 +682,8 @@ export function Builder() {
       setBlueprint(null);
       await refreshList();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      if (err instanceof Conflict) setConflict(err.info);
+      else setError(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(null);
     }
@@ -694,6 +868,65 @@ export function Builder() {
             <button onClick={() => setPublished(null)}>dismiss</button>
           </div>
         )}
+        {notice && (
+          <div className="bd__banner bd__banner--good" role="status">
+            {notice}
+            <button onClick={() => setNotice(null)}>dismiss</button>
+          </div>
+        )}
+        {draft && (conflict || heldElsewhere) && (
+          <LockBanner
+            conflict={conflict}
+            lock={lock}
+            onTakeOver={async () => {
+              const who = conflict?.by ?? lock?.by ?? 'them';
+              if (
+                !confirm(
+                  `Take this draft over from ${who}? Anything they have not saved stays in their tab, ` +
+                    'and their next save will be refused with your name on it.',
+                )
+              ) {
+                return;
+              }
+              try {
+                const keep = conflict?.kind === 'held' ? pending.current : null;
+                await claim(draft.id, true);
+                setConflict(null);
+                // Taking it back after being taken over: resend what was refused.
+                if (keep && blueprint) {
+                  setBlueprint(keep);
+                  scheduleSave(keep, draft.id);
+                }
+              } catch (err) {
+                if (err instanceof Conflict) setConflict(err.info);
+                else setError(err instanceof Error ? err.message : String(err));
+              }
+            }}
+            onLoadLatest={async () => {
+              if (
+                conflict &&
+                !confirm('Load the saved version? The change of yours that was not saved will be dropped from this tab.')
+              ) {
+                return;
+              }
+              try {
+                await refresh(draft.id);
+                setNotice('Loaded the latest saved version.');
+              } catch (err) {
+                setError(err instanceof Error ? err.message : String(err));
+              }
+            }}
+            onCopyMine={async () => {
+              const mine = pending.current ?? blueprint;
+              await navigator.clipboard.writeText(JSON.stringify(mine, null, 2));
+              setNotice('Your version is on the clipboard as JSON. Paste it into the JSON tab once you have the latest.');
+            }}
+            onReopen={async () => {
+              setConflict(null);
+              await open(draft.processKey);
+            }}
+          />
+        )}
 
         {!draft || !blueprint ? (
           <Welcome
@@ -724,7 +957,7 @@ export function Builder() {
                 <FormLink processKey={draft.processKey} live={draft.basedOnVersion !== null} />
               </div>
               <div className="bd__actions">
-                <button className="bd__btn" onClick={discard} disabled={busy !== null}>
+                <button className="bd__btn" onClick={discard} disabled={busy !== null || frozen}>
                   Discard
                 </button>
                 <button className="bd__btn" onClick={runTests} disabled={busy !== null || !publishable}>
@@ -733,8 +966,16 @@ export function Builder() {
                 <button
                   className="bd__btn bd__btn--primary"
                   onClick={reviewPublish}
-                  disabled={busy !== null || !publishable}
-                  title={publishable ? undefined : 'resolve the errors first'}
+                  disabled={busy !== null || !publishable || frozen || status === 'saving'}
+                  title={
+                    frozen
+                      ? 'someone else has this draft'
+                      : status === 'saving'
+                        ? 'wait for the save to finish'
+                        : publishable
+                          ? undefined
+                          : 'resolve the errors first'
+                  }
                 >
                   Publish…
                 </button>
@@ -751,9 +992,16 @@ export function Builder() {
                   setIndex(i);
                 }}
                 onAdd={(t) => addItem(t)}
+                readOnly={frozen}
               />
 
               <section className="bd__editor">
+                {/*
+                  * A disabled fieldset turns every control inside it off at
+                  * once, natively — keyboard, screen reader and pointer alike —
+                  * rather than a transparent overlay that only stops a mouse.
+                  */}
+                <fieldset className="bd__freeze" disabled={frozen}>
                 {tab === 'fields' && (
                   <FieldEditor
                     field={blueprint.data.fields[index]}
@@ -853,6 +1101,7 @@ export function Builder() {
                   />
                 )}
                 {tab === 'json' && <JsonEditor blueprint={blueprint} onReplace={(bp) => replaceAll(bp)} />}
+                </fieldset>
               </section>
 
               {/*
@@ -960,7 +1209,7 @@ export function Builder() {
   }
 
   function replaceAll(next: Blueprint) {
-    if (!draft) return;
+    if (!draft || frozen) return;
     setBlueprint(next);
     scheduleSave(next, draft.id);
   }
@@ -1051,6 +1300,95 @@ export function Builder() {
  * 4.1.3 Status Messages. This changes without focus moving, so a screen
  * reader is told about it politely rather than never.
  */
+/**
+ * Who has this draft, and what to do about it.
+ *
+ * Ochre, not red: somebody else editing is not a fault, it is the thing the
+ * lock is for. Every variant says the name, because "someone else changed
+ * this" sends a person to go and find out who.
+ */
+function LockBanner({
+  conflict,
+  lock,
+  onTakeOver,
+  onLoadLatest,
+  onCopyMine,
+  onReopen,
+}: {
+  conflict: ConflictInfo | null;
+  lock: DraftLock | null;
+  onTakeOver: () => void;
+  onLoadLatest: () => void;
+  onCopyMine: () => void;
+  onReopen: () => void;
+}) {
+  let message: React.ReactNode;
+  let actions: React.ReactNode;
+
+  if (conflict?.kind === 'published') {
+    message = (
+      <>
+        This draft was published as <strong>version {conflict.version}</strong> while you had it open. Your last change
+        is not saved.
+      </>
+    );
+    actions = (
+      <>
+        <button onClick={onCopyMine}>Copy my version</button>
+        <button onClick={onReopen}>Open the process again</button>
+      </>
+    );
+  } else if (conflict?.kind === 'stale') {
+    message =
+      conflict.by === 'you' ? (
+        <>You saved this draft from another tab. This tab is behind, and your last change here is not saved.</>
+      ) : (
+        <>
+          <strong>{conflict.by ?? 'Someone'}</strong> saved this draft at {when(conflict.at)}, after you opened it. Your
+          last change is not saved.
+        </>
+      );
+    actions = (
+      <>
+        <button onClick={onLoadLatest}>Load the latest</button>
+        <button onClick={onCopyMine}>Copy my version</button>
+      </>
+    );
+  } else if (conflict?.kind === 'held') {
+    message = (
+      <>
+        <strong>{conflict.by ?? 'Someone'}</strong> has taken this draft over. Your last change is not saved.
+      </>
+    );
+    actions = (
+      <>
+        <button onClick={onLoadLatest}>Load the latest</button>
+        <button onClick={onCopyMine}>Copy my version</button>
+        <button onClick={onTakeOver}>Take it back</button>
+      </>
+    );
+  } else {
+    message = (
+      <>
+        <strong>{lock?.by}</strong> is editing this draft{lock?.since ? ` — since ${when(lock.since)}` : ''}. You can look
+        around; editing switches on by itself when they finish.
+      </>
+    );
+    actions = <button onClick={onTakeOver}>Take over</button>;
+  }
+
+  return (
+    <div className="bd__banner bd__banner--hold" role={conflict ? 'alert' : 'status'}>
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true" className="bd__bannerIcon">
+        <rect x="3" y="7" width="10" height="7" rx="1.6" stroke="currentColor" strokeWidth="1.5" />
+        <path d="M5.5 7V5a2.5 2.5 0 015 0v2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      </svg>
+      <span>{message}</span>
+      <span className="bd__bannerActions">{actions}</span>
+    </div>
+  );
+}
+
 function SaveState({ status }: { status: string }) {
   const text =
     status === 'saving' ? 'saving…' : status === 'saved' ? 'saved' : status === 'error' ? 'not saved' : 'up to date';
@@ -1477,12 +1815,15 @@ function Outline({
   index,
   onSelect,
   onAdd,
+  readOnly = false,
 }: {
   blueprint: Blueprint;
   tab: Tab;
   index: number;
   onSelect: (t: Tab, i: number) => void;
   onAdd: (t: Tab) => void;
+  /** Somebody else has the draft: the list still navigates, it just cannot add. */
+  readOnly?: boolean;
 }) {
   const groups: { tab: Tab; label: string; items: { key: string; name: string; note?: string }[] }[] = [
     {
@@ -1535,7 +1876,12 @@ function Outline({
           <header className="bd__groupHead">
             <span>{g.label}</span>
             <span className="bd__count">{g.items.length}</span>
-            <button className="bd__add" onClick={() => onAdd(g.tab)} title={`Add a ${g.label.slice(0, -1).toLowerCase()}`}>
+            <button
+              className="bd__add"
+              onClick={() => onAdd(g.tab)}
+              disabled={readOnly}
+              title={readOnly ? 'someone else has this draft' : `Add a ${g.label.slice(0, -1).toLowerCase()}`}
+            >
               +
             </button>
           </header>

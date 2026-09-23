@@ -6,6 +6,7 @@ import { Engine, newWorkerId } from './runtime/engine.js';
 import { AuthorizationError, type Principal } from './runtime/policy.js';
 import {
   proveBuilderRoundTrip,
+  proveDraftLocking,
   proveCopilot,
   proveDeliveryOutcomes,
   proveDocumentsAndDelivery,
@@ -920,6 +921,7 @@ async function main(): Promise<void> {
     ['documents and delivery', () => proveDocumentsAndDelivery(ctx)],
     ['respondent scope', () => proveRespondentScope(ctx)],
     ['builder round trip', () => proveBuilderRoundTrip(ctx)],
+    ['draft locking', () => proveDraftLocking(ctx)],
     ['copilot', () => proveCopilot(ctx)],
     ['traceability', () => proveTraceability(ctx)],
     ['export then retain', () => proveExportThenRetain(ctx)],

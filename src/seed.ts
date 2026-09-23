@@ -76,7 +76,7 @@ function answersFor(hire: (typeof HIRES)[number], index: number) {
     emergency_contact_phone: '+44 7700 900999',
     national_id: 'QQ123456C',
     bank_account: '12-34-56 / 12345678',
-    id_document: 'right-to-work.pdf',
+    right_to_work_reference: 'W1234 5678 9012',
     equipment_needs: ['laptop', 'monitor'],
     policy_ack: true,
   };
@@ -159,11 +159,20 @@ async function main(): Promise<void> {
 
   for (const [index, hire] of HIRES.entries()) {
     const submittedAt = new Date(now - hire.daysAgo * DAY);
-    const { instanceId } = await engine.submit({
+    const { instanceId, rejected } = await engine.submit({
       version,
       answers: answersFor(hire, index),
       now: submittedAt,
     });
+    /*
+     * Stop here, by name. A refused submission returns an empty id, and the
+     * seed used to carry on with it until Postgres rejected "" as a uuid three
+     * calls later — which is how renaming one field in the blueprint surfaced
+     * as a uuid parse error with nothing pointing at the field.
+     */
+    if (rejected?.length) {
+      throw new Error(`the seed's answers no longer satisfy the form — missing: ${rejected.join(', ')}`);
+    }
     await engine.drain(submittedAt, 'seed', tenantId);
 
     if (hire.reach === 'manager') {

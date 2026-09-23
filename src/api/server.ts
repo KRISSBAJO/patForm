@@ -31,6 +31,7 @@ import {
   InvalidInput,
 } from '../runtime/workspace.js';
 import { requestPasswordReset, resetPassword, sendVerification, verifyEmail } from '../runtime/account.js';
+import { DraftConflict } from '../runtime/errors.js';
 import {
   answerChallenge,
   beginEnrolment,
@@ -81,9 +82,11 @@ import { Blueprint } from '../blueprint/index.js';
 import { QueryPlan, ActionPlan } from '../copilot/plan.js';
 import { bundleToCsv, exportRecord } from '../runtime/export.js';
 import {
+  claimDraft,
   createDraft,
   discardDraft,
   listForBuilder,
+  releaseDraft,
   loadDraft as loadProcessDraft,
   openDraft as openProcessDraft,
   publishDraft,
@@ -208,10 +211,24 @@ route('GET', /^\/api\/builder\/drafts\/([0-9a-f-]{36})$/, async ({ pool, princip
 
 route('POST', /^\/api\/builder\/drafts\/([0-9a-f-]{36})\/save$/, async ({ pool, principal, url }, body) => {
   const draftId = url.pathname.split('/')[4]!;
-  const { blueprint } = body as { blueprint?: unknown };
+  const { blueprint, baseRevision } = body as { blueprint?: unknown; baseRevision?: unknown };
   if (!blueprint) throw new HttpError(400, 'blueprint is required');
-  return saveProcessDraft(pool, { principal, draftId, blueprint });
+  // Required, not defaulted. A save that does not say what it was made
+  // against is exactly the last-write-wins this exists to stop.
+  if (!Number.isInteger(baseRevision)) throw new HttpError(400, 'baseRevision is required');
+  return saveProcessDraft(pool, { principal, draftId, blueprint, baseRevision: baseRevision as number });
 });
+
+// The editing lease. `claim` also renews; the builder calls it every forty
+// seconds while the draft is open, and `release` when the tab goes away.
+route('POST', /^\/api\/builder\/drafts\/([0-9a-f-]{36})\/claim$/, async ({ pool, principal, url }, body) => {
+  const { takeOver } = (body ?? {}) as { takeOver?: boolean };
+  return claimDraft(pool, { principal, draftId: url.pathname.split('/')[4]!, takeOver: takeOver === true });
+});
+
+route('POST', /^\/api\/builder\/drafts\/([0-9a-f-]{36})\/release$/, async ({ pool, principal, url }) =>
+  releaseDraft(pool, { principal, draftId: url.pathname.split('/')[4]! }),
+);
 
 /**
  * A sentence becomes one automation rule.
@@ -249,9 +266,11 @@ route('GET', /^\/api\/builder\/drafts\/([0-9a-f-]{36})\/impact$/, async ({ pool,
   publishImpact(pool, { principal, draftId: url.pathname.split('/')[4]! }),
 );
 
-route('POST', /^\/api\/builder\/drafts\/([0-9a-f-]{36})\/publish$/, async ({ pool, principal, url }) =>
-  publishDraft(pool, { principal, draftId: url.pathname.split('/')[4]! }),
-);
+route('POST', /^\/api\/builder\/drafts\/([0-9a-f-]{36})\/publish$/, async ({ pool, principal, url }, body) => {
+  const { revision } = (body ?? {}) as { revision?: unknown };
+  if (!Number.isInteger(revision)) throw new HttpError(400, 'revision is required — publish what you reviewed');
+  return publishDraft(pool, { principal, draftId: url.pathname.split('/')[4]!, revision: revision as number });
+});
 
 
 // ------------------------------------------------------------------ copilot
@@ -1180,9 +1199,11 @@ async function main(): Promise<void> {
             ? 403
             : err instanceof HttpError
               ? err.status
-              : err instanceof InvalidInput
-                ? 400
-                : 500;
+              : err instanceof DraftConflict
+                ? 409
+                : err instanceof InvalidInput
+                  ? 400
+                  : 500;
         logIfEnabled(status >= 500 ? 'error' : 'warn', 'api.request', {
           method: req.method,
           path: url.pathname,
@@ -1200,6 +1221,9 @@ async function main(): Promise<void> {
           return send(res, 403, { error: 'refused', action: err.action, reason: err.reason });
         }
         if (err instanceof HttpError) return send(res, err.status, { error: err.message });
+        if (err instanceof DraftConflict) {
+          return send(res, 409, { error: 'conflict', kind: err.kind, reason: err.message, ...err.detail });
+        }
         // Something the caller can fix. Reporting it as 500 would say "we
         // broke" when the truth is "that password is too short".
         if (err instanceof InvalidInput) return send(res, 400, { error: err.message });

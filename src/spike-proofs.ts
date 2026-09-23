@@ -62,12 +62,16 @@ import {
 import { ActionPlan, QueryPlan } from './copilot/plan.js';
 import { bundleToCsv, exportRecord } from './runtime/export.js';
 import {
+  claimDraft,
+  discardDraft,
   loadDraft as loadBuilderDraft,
   openDraft,
   publishDraft,
   publishImpact,
+  releaseDraft,
   saveDraft as saveBuilderDraft,
 } from './runtime/builder.js';
+import { DraftConflict } from './runtime/errors.js';
 
 /**
  * Proofs for the gaps closed after the first spike: respondent scoping, a
@@ -578,19 +582,25 @@ export async function proveBuilderRoundTrip({ pool, bp, T0, record, completeFor 
     principal: as(builder),
     draftId: opened.id,
     blueprint: broken,
+    baseRevision: opened.revision,
   });
 
   // 4. A publish attempt while broken must be refused by the server, not just
   //    by a disabled button.
   let publishRefused: string | null = null;
   try {
-    await publishDraft(pool, { principal: as(builder), draftId: opened.id });
+    await publishDraft(pool, { principal: as(builder), draftId: opened.id, revision: afterBreak.revision });
   } catch (err) {
     publishRefused = err instanceof Error ? err.message : String(err);
   }
 
   // 5. Work that does not even parse is still kept.
-  await saveBuilderDraft(pool, { principal: as(builder), draftId: opened.id, blueprint: { half: 'typed' } });
+  const halfTyped = await saveBuilderDraft(pool, {
+    principal: as(builder),
+    draftId: opened.id,
+    blueprint: { half: 'typed' },
+    baseRevision: afterBreak.revision,
+  });
   const survived = await loadBuilderDraft(pool, as(builder), opened.id);
 
   // 6. Fix it, and change something that shows up in the impact summary.
@@ -604,10 +614,15 @@ export async function proveBuilderRoundTrip({ pool, bp, T0, record, completeFor 
     classification: 'internal',
     setBy: 'operator',
   });
-  const afterFix = await saveBuilderDraft(pool, { principal: as(builder), draftId: opened.id, blueprint: fixed });
+  const afterFix = await saveBuilderDraft(pool, {
+    principal: as(builder),
+    draftId: opened.id,
+    blueprint: fixed,
+    baseRevision: halfTyped.revision,
+  });
 
   const impact = await publishImpact(pool, { principal: as(builder), draftId: opened.id });
-  const published = await publishDraft(pool, { principal: as(builder), draftId: opened.id });
+  const published = await publishDraft(pool, { principal: as(builder), draftId: opened.id, revision: afterFix.revision });
 
   // 7. The running record stays on the version it started under (§9.2).
   const { rows: stillOnV1 } = await pool.query<{ version: number }>(
@@ -638,6 +653,145 @@ export async function proveBuilderRoundTrip({ pool, bp, T0, record, completeFor 
       `A draft saved as ${JSON.stringify({ half: 'typed' })} was kept and reopened as ${survived.diagnostics.length} shape diagnostic(s) rather than throwing. ` +
       `After the fix the impact summary counted ${impact.inFlight} record still running and named "proof_note" as added; ` +
       `version ${published.version} published and the running record stayed on v${stillOnV1[0]?.version}.`,
+  );
+}
+
+/**
+ * Two people, one draft.
+ *
+ * Saving used to be last-write-wins: the second person's save replaced the
+ * whole blueprint and the first person's work was gone, with a green "saved"
+ * on both screens. And the permission check stopped at opening a draft —
+ * loading, saving and publishing one asked only whether you were in the same
+ * workspace, so a read-only member holding a draft's id could publish a
+ * process. Both are closed here, and this proof tries each way through.
+ */
+export async function proveDraftLocking({ pool, bp, record }: ProofCtx): Promise<void> {
+  const engine = new Engine(pool);
+  const tenantId = await engine.createTenant('proof:locking');
+  await engine.publish(tenantId, bp, 'proof');
+
+  const joy = await engine.createActor(tenantId, 'joy@proof.test', 'Joy Builder', 'builder');
+  const sam = await engine.createActor(tenantId, 'sam@proof.test', 'Sam Builder', 'builder');
+  const dana = await engine.createActor(tenantId, 'dana@proof.test', 'Dana Reader', 'read_only');
+  const as = (actorId: string): Principal => ({ kind: 'actor', tenantId, actorId });
+
+  const refusal = async (fn: () => Promise<unknown>): Promise<string> => {
+    try {
+      await fn();
+      return 'allowed';
+    } catch (err) {
+      if (err instanceof DraftConflict) return `conflict:${err.kind}:${err.detail.by ?? ''}`;
+      if (err instanceof AuthorizationError) return 'refused';
+      return `error:${err instanceof Error ? err.message : String(err)}`;
+    }
+  };
+
+  // 1. Joy opens and claims it. Sam opens the same draft and is told who has it.
+  const opened = await openDraft(pool, { principal: as(joy), processKey: bp.key });
+  const joyClaim = await claimDraft(pool, { principal: as(joy), draftId: opened.id });
+  const samClaim = await claimDraft(pool, { principal: as(sam), draftId: opened.id });
+
+  // 2. Sam saves anyway — refused, with Joy's name, while her lease is live.
+  const edit = (label: string) => {
+    const next = structuredClone(opened.blueprint);
+    next.name = label;
+    return next;
+  };
+  const samWhileHeld = await refusal(() =>
+    saveBuilderDraft(pool, { principal: as(sam), draftId: opened.id, blueprint: edit('Sam'), baseRevision: opened.revision }),
+  );
+
+  // 3. Joy saves; the revision moves on.
+  const joySaved = await saveBuilderDraft(pool, {
+    principal: as(joy),
+    draftId: opened.id,
+    blueprint: edit('Joy'),
+    baseRevision: opened.revision,
+  });
+
+  // 4. Joy goes to a meeting. Sam takes over. Joy's next save, from her
+  //    still-open tab, is refused with Sam's name — her work is not written
+  //    over his, and his is not written over hers.
+  const takeOver = await claimDraft(pool, { principal: as(sam), draftId: opened.id, takeOver: true });
+  const joyAfterTakeover = await refusal(() =>
+    saveBuilderDraft(pool, { principal: as(joy), draftId: opened.id, blueprint: edit('Joy again'), baseRevision: joySaved.revision }),
+  );
+
+  // 5. Sam saves from a copy he loaded *before* Joy's save — stale, refused,
+  //    naming Joy as the one who saved since.
+  const samStale = await refusal(() =>
+    saveBuilderDraft(pool, { principal: as(sam), draftId: opened.id, blueprint: edit('Sam stale'), baseRevision: opened.revision }),
+  );
+
+  // 6. Sam reloads, saves on the current revision, and it lands.
+  const samFresh = await loadBuilderDraft(pool, as(sam), opened.id);
+  const samSaved = await saveBuilderDraft(pool, {
+    principal: as(sam),
+    draftId: opened.id,
+    blueprint: edit('Sam'),
+    baseRevision: samFresh.revision,
+  });
+
+  // 7. Publishing names the revision reviewed. An old one is refused — and
+  //    since the save that moved it on was Sam's own, it says "you", not
+  //    his name back to him, which is how two tabs of one person read.
+  const publishOld = await refusal(() =>
+    publishDraft(pool, { principal: as(sam), draftId: opened.id, revision: joySaved.revision }),
+  );
+
+  // 8. Joy cannot throw the draft away while Sam holds it.
+  const joyDiscard = await refusal(() => discardDraft(pool, { principal: as(joy), draftId: opened.id }));
+
+  // 9. A read-only member is refused at every door, not just the first one.
+  const dana1 = await refusal(() => loadBuilderDraft(pool, as(dana), opened.id));
+  const dana2 = await refusal(() =>
+    saveBuilderDraft(pool, { principal: as(dana), draftId: opened.id, blueprint: edit('Dana'), baseRevision: samSaved.revision }),
+  );
+  const dana3 = await refusal(() => claimDraft(pool, { principal: as(dana), draftId: opened.id }));
+  const dana4 = await refusal(() => publishDraft(pool, { principal: as(dana), draftId: opened.id, revision: samSaved.revision }));
+
+  // 10. Sam publishes what he reviewed; the lease goes with the draft, and a
+  //     save after publishing says so instead of quietly doing nothing.
+  const published = await publishDraft(pool, { principal: as(sam), draftId: opened.id, revision: samSaved.revision });
+  const afterPublish = await refusal(() =>
+    saveBuilderDraft(pool, { principal: as(sam), draftId: opened.id, blueprint: edit('late'), baseRevision: samSaved.revision }),
+  );
+
+  // 11. Releasing only lets go of your own lease.
+  const other = await openDraft(pool, { principal: as(joy), processKey: bp.key });
+  await claimDraft(pool, { principal: as(joy), draftId: other.id });
+  const samRelease = await releaseDraft(pool, { principal: as(sam), draftId: other.id });
+  const joyRelease = await releaseDraft(pool, { principal: as(joy), draftId: other.id });
+  const freed = await claimDraft(pool, { principal: as(sam), draftId: other.id });
+
+  record(
+    'Two people editing one draft are told about each other, and neither overwrites the other',
+    'Draft locking: a revision on every save and publish, and an editing lease that says who has it. A read-only member is refused on every draft route.',
+    joyClaim.mine &&
+      samClaim.by === 'Joy Builder' &&
+      !samClaim.mine &&
+      samWhileHeld === 'conflict:held:Joy Builder' &&
+      joySaved.revision === opened.revision + 1 &&
+      takeOver.mine &&
+      takeOver.tookOverFrom === 'Joy Builder' &&
+      joyAfterTakeover === 'conflict:held:Sam Builder' &&
+      samStale === 'conflict:stale:Joy Builder' &&
+      samSaved.revision === joySaved.revision + 1 &&
+      publishOld === 'conflict:stale:you' &&
+      joyDiscard === 'conflict:held:Sam Builder' &&
+      [dana1, dana2, dana3, dana4].every((r) => r === 'refused') &&
+      published.version === 2 &&
+      afterPublish.startsWith('conflict:published') &&
+      !samRelease.released &&
+      joyRelease.released &&
+      freed.mine,
+    `Sam opening Joy's draft was told "${samClaim.by}" had it, and his save was refused (${samWhileHeld}). ` +
+      `He took over from ${takeOver.tookOverFrom}; her next save was refused (${joyAfterTakeover}), and his save from a ` +
+      `copy older than hers was refused as stale (${samStale}). Reloaded, it landed at revision ${samSaved.revision}. ` +
+      `Publishing an older revision: ${publishOld}. Discarding under someone else's lease: ${joyDiscard}. ` +
+      `A read-only member on load, save, claim and publish: ${[dana1, dana2, dana3, dana4].join(', ')}. ` +
+      `Published as v${published.version}; a save afterwards: ${afterPublish}. Releasing someone else's lease: ${samRelease.released}.`,
   );
 }
 

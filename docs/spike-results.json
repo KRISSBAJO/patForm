@@ -1,5 +1,5 @@
 {
-  "ranAt": "2026-09-23T02:25:06.228Z",
+  "ranAt": "2026-09-23T04:13:57.956Z",
   "postgres": "PostgreSQL 17.11 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit",
   "proofs": [
     {
@@ -39,6 +39,12 @@
       "detail": "Opening twice returned one draft, not two. An operator was refused (\"actor holds no role in this process, and workspace role \"operator\" does not grant \"administer\"\"). Naming a role without the approve capability produced 2 SEC009 error(s), and publishing anyway was refused server-side (\"the draft has 2 error(s) and cannot be published — SEC009: Approval \"manager_app\"). A draft saved as {\"half\":\"typed\"} was kept and reopened as 11 shape diagnostic(s) rather than throwing. After the fix the impact summary counted 1 record still running and named \"proof_note\" as added; version 2 published and the running record stayed on v1."
     },
     {
+      "name": "Two people editing one draft are told about each other, and neither overwrites the other",
+      "claim": "Draft locking: a revision on every save and publish, and an editing lease that says who has it. A read-only member is refused on every draft route.",
+      "passed": true,
+      "detail": "Sam opening Joy's draft was told \"Joy Builder\" had it, and his save was refused (conflict:held:Joy Builder). He took over from Joy Builder; her next save was refused (conflict:held:Sam Builder), and his save from a copy older than hers was refused as stale (conflict:stale:Joy Builder). Reloaded, it landed at revision 2. Publishing an older revision: conflict:stale:you. Discarding under someone else's lease: conflict:held:Sam Builder. A read-only member on load, save, claim and publish: refused, refused, refused, refused. Published as v2; a save afterwards: conflict:published:. Releasing someone else's lease: false."
+    },
+    {
       "name": "The operator asks what is overdue and sends a reminder that matches what they confirmed",
       "claim": "Section 20.1 step 9, and 7.1: a permission-filtered query service with no raw model database access.",
       "passed": true,
@@ -48,13 +54,13 @@
       "name": "Every action traces back to the request that caused it, across the worker boundary",
       "claim": "Section 20.2 observability: traceable request, event, job, attempt and result identifiers.",
       "passed": true,
-      "detail": "One submission produced 1 event(s), 1 job(s) and 3 action run(s), every one carrying \"proof-request-0001\" and 0 unattributed. The actions ran in a later drain that knew nothing about the submission — the link survived because the request id is stamped on the outbox row and read back when the job runs. A timer firing got an id of its own (req_6daa2d7f4c36…) rather than inheriting one, because a deadline is its own cause. The support view joined them into 2 step(s) with every attempt count present, and answered in a sentence: \"Queued: 1 job scheduled and not yet run. If this does not clear, no worker is ru\". Asking by request id found 1 record; an admin of another workspace asking the same id found 0."
+      "detail": "One submission produced 1 event(s), 1 job(s) and 3 action run(s), every one carrying \"proof-request-0001\" and 0 unattributed. The actions ran in a later drain that knew nothing about the submission — the link survived because the request id is stamped on the outbox row and read back when the job runs. A timer firing got an id of its own (req_e1c212276aa9…) rather than inheriting one, because a deadline is its own cause. The support view joined them into 2 step(s) with every attempt count present, and answered in a sentence: \"Queued: 1 job scheduled and not yet run. If this does not clear, no worker is ru\". Asking by request id found 1 record; an admin of another workspace asking the same id found 0."
     },
     {
       "name": "An administrator exports the record with its history, and only then is it deleted",
       "claim": "Section 20.1 step 11, and 6.4: corrections append history; destructive overwriting of audit evidence is prohibited.",
       "passed": true,
-      "detail": "The bundle carried 4 history entries for a finished record — submission, both decisions with the reasons given, and every task completion — plus 2 approval(s), 2 message(s) and 1 document(s). An approver could not export at all (\"neither the roles held (hiring_manager) nor workspace role \"approver\" grant \"administer\"\"). An administrator holding no process role saw every field; one who is also a hiring manager had 3 withheld (national_id, bank_account, right_to_work_reference) — named in the bundle rather than quietly absent, and not left in the answers as the literal string \"[redacted]\". The export is itself on the record's history, and a second export of an unchanged record produced the same checksum (f937c0ce5332), so a file can be verified later. Retention then deleted 1 instance and 7 event(s) — in that order, because afterwards there is nothing left to export."
+      "detail": "The bundle carried 4 history entries for a finished record — submission, both decisions with the reasons given, and every task completion — plus 2 approval(s), 2 message(s) and 1 document(s). An approver could not export at all (\"neither the roles held (hiring_manager) nor workspace role \"approver\" grant \"administer\"\"). An administrator holding no process role saw every field; one who is also a hiring manager had 3 withheld (national_id, bank_account, right_to_work_reference) — named in the bundle rather than quietly absent, and not left in the answers as the literal string \"[redacted]\". The export is itself on the record's history, and a second export of an unchanged record produced the same checksum (02dd3c43958b), so a file can be verified later. Retention then deleted 1 instance and 7 event(s) — in that order, because afterwards there is nothing left to export."
     },
     {
       "name": "A workspace can be created and joined, and nobody can grant more than they hold",
@@ -168,7 +174,7 @@
       "name": "Submission and workflow start are far inside the section 10.4 budget",
       "claim": "Beta targets: acknowledgment p95 under 1.5s, workflow start p95 under 30s.",
       "passed": true,
-      "detail": "Over 100 submissions: acknowledgment p95 22.6ms (budget 1500ms), first action p95 64.7ms (budget 30000ms). Database round trips only, local container."
+      "detail": "Over 100 submissions: acknowledgment p95 14.1ms (budget 1500ms), first action p95 33.3ms (budget 30000ms). Database round trips only, local container."
     }
   ]
 }

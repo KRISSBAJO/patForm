@@ -765,6 +765,38 @@ Reported as written, that sends somebody to add records that are already there, 
 
 **Generalisable, and it is the third time in this document:** a check that collapses "no" and "no answer" into one value will always collapse them toward whichever is easier to return. The way to find it is to run the check against something whose answer you already know — which costs a minute and is the only test that would have caught this.
 
+### 71. A permission check on the door and not on the rooms
+
+Opening a draft in the builder checked `administer`. So did creating one and discarding one. Loading, saving, testing, the impact summary and publishing checked only that the caller belonged to the same workspace.
+
+The builder's own process list hands a draft's id to anybody signed in. A read-only member — Dana, in the seed — loaded the onboarding draft and saved it back, and got `200` both times. Publishing takes the same path, so she could have published a process she is not allowed to open.
+
+It was found while adding draft locking, by reading every function the lock would sit in. Nobody had tried the routes as the wrong person, because the interface never offers them to the wrong person — and the interface is not the gate.
+
+**Fixed** with one check, `requireDraftAdmin`, called by every draft operation, using the same rule `openDraft` already used: `administer` from the process's roles or the workspace role. The locking proof now calls load, save, claim and publish as a read-only member and expects four refusals.
+
+**Generalisable:** a check that runs once, at the first step of a flow, protects the flow only as long as nobody can start in the middle. An API can always be started in the middle.
+
+### 72. A save that did nothing and said "saved"
+
+`saveDraft` was an unconditional `update ... where published_as is null`. After somebody published the draft, that matched no rows — and the function went on to compile what it had been sent and return fresh diagnostics. The builder showed a green "saved". The work went nowhere.
+
+The same statement was also last-write-wins. Two people editing one draft each saved the whole blueprint, and whichever saved second erased the other's work, with "saved" on both screens.
+
+**Fixed** with two layers. Every save and publish names the revision it was made against, and one statement checks it together with the editing lease — `where revision = $n and <lease free, expired or mine>` — so there is no gap between checking and writing. When it matches nothing, the refusal says which of three things happened, with a name: someone else is editing (`held`), someone saved since you loaded (`stale`), or it was published (`published`). The lease tells the second person *before* they start: opening a draft someone else holds shows their name and a read-only editor, with a way to take over when they have walked away. A lease nobody renews expires in two minutes, so a closed laptop does not lock a process for a week.
+
+Two details came from testing it rather than designing it. The debounce alone did not stop a slow save and a fast one overlapping, so one tab's second save carried the old revision and was refused as stale against itself; saves are now queued. And the same person with the draft in two tabs was told their own name — "Joy saved this after you opened it", said to Joy — so that case now says "you saved this from another tab".
+
+**Generalisable:** a write that can match zero rows must check that it matched one. `rowCount` is free, and without it "saved" is a claim about the request, not about the database.
+
+### 73. Renaming a field, and the seed that carried on without it
+
+Entry 69 renamed `id_document` to `right_to_work_reference`. The seed still sent `id_document`. `engine.submit` refused the answers as incomplete and returned an empty id, the seed carried on with it, and Postgres rejected `""` as a uuid three calls later. The error named uuid parsing and nothing pointing at the field.
+
+It was mine, from entry 69, and it went unnoticed because the proofs build their own data and never run the seed.
+
+**Fixed** in the seed, which now stops at a refused submission and names the missing fields. **Generalisable:** a function that signals failure through an empty value needs every caller to check it, and the one that does not will fail somewhere else, later, in words about something else.
+
 ---
 
 ## What the compiler structurally cannot catch
