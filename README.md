@@ -150,9 +150,18 @@ publish until they are gone.
 - A draft that does not compile is still saved. Nothing you type is lost
   because it is currently invalid.
 
-Fields, states, approvals, tasks and roles have form editors. Intent, the form
-experience, transitions, messages, documents and tests are edited through the
-JSON tab — a stated gap, not a hidden one.
+Fields, states, automation rules, approvals, tasks, messages and roles have
+form editors. Intent, most of the form experience, documents and tests are
+edited through the JSON tab — a stated gap, not a hidden one.
+
+**Messages** are edited as the email they become: who it goes to and who is
+copied in, subject and body, a picker that puts a `{{field}}` at the cursor,
+and a preview that shows each placeholder as the field it will be filled
+from. Restricted fields are not offered; confidential ones say who they may go
+to. What the compiler says about a message appears on the message itself,
+and the editor lists which rules send it — or says that nothing does, so it
+will never leave. Renaming a message's key renames it in the automation and
+the tests that refer to it. A message's skip condition is still JSON.
 
 Two people cannot overwrite each other. Opening a draft claims it for two
 minutes, renewed while the tab is open; anyone else who opens it sees who has
@@ -1015,10 +1024,10 @@ Everything below is a deliberate deferral:
   `assign` and `change_state`; the compiler refuses both with `ACT001`.
   Reminders are the only bulk action the runtime performs.
 - **Form editors for the rest of the blueprint.** The builder edits fields,
-  states, rules, approvals, tasks, roles and the form's header and field
-  widths, and draws the flow as a read-only map. Intent, the rest of the form
-  experience, message templates, documents and scenario tests still go through
-  its JSON tab.
+  states, rules, approvals, tasks, messages, roles and the form's header and
+  field widths, and draws the flow as a read-only map. Intent, the rest of the
+  form experience, documents and scenario tests still go through its JSON
+  tab.
 - **SMS.** §6.6 is explicit: *"SMS is not required for MVP; messaging consent
   and jurisdictional rules must be designed before launch."* Building the
   channel without consent capture would be building the thing that sentence

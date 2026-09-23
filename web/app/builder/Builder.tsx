@@ -100,6 +100,21 @@ interface BpRole {
   editableFields?: string[];
 }
 
+type MessageClass = 'transactional' | 'reminder' | 'notification' | 'marketing';
+
+interface BpEmail {
+  key: string;
+  name: string;
+  class: MessageClass;
+  to: Party[];
+  cc?: Party[];
+  replyTo?: Party;
+  subject: string;
+  body: string;
+  attachments?: string[];
+  skipWhen?: unknown;
+}
+
 interface BpBranding {
   title?: string;
   tagline?: string;
@@ -146,7 +161,7 @@ interface Blueprint {
   experience?: BpExperience;
   /* Named rather than left in the index signature, because the automation
      editor offers these as choices and an untyped `{}` gives it nothing. */
-  communications?: { email?: { key: string; name: string }[]; [k: string]: unknown };
+  communications?: { email?: BpEmail[]; fromName?: string; [k: string]: unknown };
   outputs?: { documents?: { key: string; name: string }[]; [k: string]: unknown };
   [k: string]: unknown;
 }
@@ -209,7 +224,7 @@ interface ScenarioResult {
   failures: string[];
 }
 
-type Tab = 'fields' | 'states' | 'rules' | 'approvals' | 'tasks' | 'roles' | 'json';
+type Tab = 'fields' | 'states' | 'rules' | 'approvals' | 'tasks' | 'messages' | 'roles' | 'json';
 
 /*
  * The right-hand column. `checks` is what it always was; the other three are
@@ -365,6 +380,16 @@ function locate(d: Diagnostic, bp: Blueprint | null): { tab: Tab; index: number 
   // The path is therefore useless for navigation in exactly the cases that
   // matter most. The keys are in the message, so resolve by those instead.
   if (!bp) return null;
+
+  // "Template "x" puts restricted field "y" into an email body" is about the
+  // template, whatever else it names — the field is where it came from, the
+  // template is where it is fixed.
+  const template = d.message.match(/^Template "([a-z0-9_]+)"/);
+  if (template) {
+    const i = (bp.communications?.email ?? []).findIndex((e) => e.key === template[1]);
+    if (i >= 0) return { tab: 'messages', index: i };
+  }
+
   for (const quoted of d.message.match(/"([a-z0-9_]+)"/g) ?? []) {
     const key = quoted.slice(1, -1);
     const lists: [Tab, { key: string }[]][] = [
@@ -373,6 +398,7 @@ function locate(d: Diagnostic, bp: Blueprint | null): { tab: Tab; index: number 
       ['fields', bp.data.fields],
       ['states', bp.workflow.states],
       ['roles', bp.roles],
+      ['messages', bp.communications?.email ?? []],
     ];
     for (const [tab, items] of lists) {
       const i = items.findIndex((item) => item.key === key);
@@ -1060,6 +1086,25 @@ export function Builder() {
                     onRemove={() => removeAt('tasks', index)}
                   />
                 )}
+                {tab === 'messages' && (
+                  <MessageEditor
+                    message={(blueprint.communications?.email ?? [])[index]}
+                    blueprint={blueprint}
+                    diagnostics={diagnostics}
+                    onChange={(fn) => mutate((bp) => fn(bp.communications!.email![index]!))}
+                    onRename={(from, to) => mutate((bp) => renameMessage(bp, from, to))}
+                    onFromName={(next) =>
+                      mutate((bp) => {
+                        bp.communications = { ...(bp.communications ?? {}), fromName: next };
+                      })
+                    }
+                    onOpenRule={(i) => {
+                      setTab('rules');
+                      setIndex(i);
+                    }}
+                    onRemove={() => removeAt('messages', index)}
+                  />
+                )}
                 {tab === 'roles' && (
                   <RoleEditor
                     role={blueprint.roles[index]}
@@ -1221,6 +1266,7 @@ export function Builder() {
       if (which === 'approvals') bp.workflow.approvals?.splice(at, 1);
       if (which === 'tasks') bp.workflow.tasks?.splice(at, 1);
       if (which === 'roles') bp.roles.splice(at, 1);
+      if (which === 'messages') bp.communications?.email?.splice(at, 1);
     });
     setIndex(Math.max(0, at - 1));
   }
@@ -1281,6 +1327,22 @@ export function Builder() {
       if (which === 'roles') {
         bp.roles.push({ key: `new_role_${n}`, name: 'New role', kind: 'internal', capabilities: ['view'] });
       }
+      if (which === 'messages') {
+        bp.communications = bp.communications ?? {};
+        bp.communications.email = bp.communications.email ?? [];
+        // To the submitter and transactional: the one combination the
+        // compiler never objects to, so a new message starts clean.
+        bp.communications.email.push({
+          key: `new_message_${n}`,
+          name: 'New message',
+          class: 'transactional',
+          to: [{ submitter: true }],
+          cc: [],
+          subject: 'About your request',
+          body: 'Hello,\n\n',
+          attachments: [],
+        });
+      }
     });
     const counts: Record<string, number> = {
       fields: blueprint.data.fields.length,
@@ -1288,6 +1350,7 @@ export function Builder() {
       approvals: blueprint.workflow.approvals?.length ?? 0,
       tasks: blueprint.workflow.tasks?.length ?? 0,
       roles: blueprint.roles.length,
+      messages: blueprint.communications?.email?.length ?? 0,
     };
     setTab(which);
     setIndex(counts[which] ?? 0);
@@ -1863,6 +1926,15 @@ function Outline({
       })),
     },
     {
+      tab: 'messages',
+      label: 'Messages',
+      items: (blueprint.communications?.email ?? []).map((m) => ({
+        key: m.key,
+        name: m.name,
+        note: `${m.class} · to ${m.to.map(partyLabel).join(', ')}`,
+      })),
+    },
+    {
       tab: 'roles',
       label: 'Roles',
       items: blueprint.roles.map((r) => ({ key: r.key, name: r.name, note: r.kind })),
@@ -1909,7 +1981,7 @@ function Outline({
           onClick={() => onSelect('json', 0)}
         >
           <span className="bd__outlineName">Blueprint JSON</span>
-          <span className="bd__outlineNote">transitions, messages, outputs</span>
+          <span className="bd__outlineNote">intent, documents, tests</span>
         </button>
       </section>
     </nav>
@@ -2332,11 +2404,20 @@ function PartyPicker({
   roles,
   fields,
   onChange,
+  label = 'Who',
 }: {
   party: Party;
   roles: BpRole[];
   fields: BpField[];
   onChange: (next: Party) => void;
+  /**
+   * What this picker is choosing, for assistive tech — "Approver 2",
+   * "Recipient 1". These selects sit in a row with no visible label of their
+   * own, so without it a screen reader announced "combo box" and nothing
+   * else, three times in a row. Found by the gate, the first time it opened a
+   * screen with one of these on it.
+   */
+  label?: string;
 }) {
   const kind = 'role' in party ? 'role' : 'field' in party ? 'field' : 'user' in party ? 'user' : 'submitter' in party ? 'submitter' : 'assignee';
   const emailFields = fields.filter((f) => f.type === 'email');
@@ -2345,6 +2426,7 @@ function PartyPicker({
     <div className="bd__party">
       <select
         className="bd__input"
+        aria-label={`${label}: what kind of person`}
         value={kind}
         onChange={(e) => {
           const next = e.target.value;
@@ -2363,7 +2445,12 @@ function PartyPicker({
       </select>
 
       {'role' in party && (
-        <select className="bd__input" value={party.role} onChange={(e) => onChange({ role: e.target.value })}>
+        <select
+          className="bd__input"
+          aria-label={`${label}: which role`}
+          value={party.role}
+          onChange={(e) => onChange({ role: e.target.value })}
+        >
           {roles.map((r) => (
             <option key={r.key} value={r.key}>
               {r.name}
@@ -2372,7 +2459,12 @@ function PartyPicker({
         </select>
       )}
       {'field' in party && (
-        <select className="bd__input" value={party.field} onChange={(e) => onChange({ field: e.target.value })}>
+        <select
+          className="bd__input"
+          aria-label={`${label}: which address on the record`}
+          value={party.field}
+          onChange={(e) => onChange({ field: e.target.value })}
+        >
           {(emailFields.length ? emailFields : fields).map((f) => (
             <option key={f.key} value={f.key}>
               {f.label}
@@ -2384,6 +2476,7 @@ function PartyPicker({
         <input
           className="bd__input"
           type="email"
+          aria-label={`${label}: email address`}
           placeholder="someone@example.com"
           value={party.user}
           onChange={(e) => onChange({ user: e.target.value })}
@@ -2438,6 +2531,7 @@ function ApprovalEditor({
               roles={internal.length ? internal : roles}
               fields={fields}
               onChange={(next) => onChange((a) => void (a.approvers[i] = next))}
+              label={`Approver ${i + 1}`}
             />
             <button
               className="bd__iconBtn"
@@ -2572,6 +2666,7 @@ function TaskEditor({
           roles={roles}
           fields={fields}
           onChange={(next) => onChange((t) => void (t.assignee = next))}
+          label="Assigned to"
         />
       </Row>
 
@@ -2608,6 +2703,391 @@ function TaskEditor({
       </Row>
     </>
   );
+}
+
+// ---------------------------------------------------------- message editor
+
+const MESSAGE_CLASSES: { value: MessageClass; label: string }[] = [
+  { value: 'transactional', label: 'transactional — about something they did or asked for' },
+  { value: 'reminder', label: 'reminder — nudges somebody to act' },
+  { value: 'notification', label: 'notification — tells somebody something happened' },
+  { value: 'marketing', label: 'marketing — not supported yet' },
+];
+
+/**
+ * Changes a message's key everywhere it is used.
+ *
+ * Automation names a message by key, and so do the scenario tests. Renaming
+ * it in one place and leaving the others is a publish blocked on `REF006`
+ * for a change the person made in a text box two seconds earlier — the
+ * compiler would be right, and it would still be the builder's fault.
+ */
+function renameMessage(bp: Blueprint, from: string, to: string): void {
+  const message = bp.communications?.email?.find((m) => m.key === from);
+  if (!message) return;
+  message.key = to;
+  for (const t of bp.workflow.transitions ?? []) {
+    for (const action of (t.actions as { do: string; template?: string }[] | undefined) ?? []) {
+      if (action.do === 'send_email' && action.template === from) action.template = to;
+    }
+  }
+  for (const test of (bp.tests as { expect?: { emails?: string[] } }[] | undefined) ?? []) {
+    const emails = test.expect?.emails;
+    if (emails) test.expect!.emails = emails.map((k) => (k === from ? to : k));
+  }
+}
+
+/** The fields a message may name. Repeating groups are a list, not a value. */
+function placeable(fields: BpField[]): BpField[] {
+  return fields.filter((f) => f.type !== 'repeating_group');
+}
+
+/** Subject or body with each {{placeholder}} drawn as the field it stands for. */
+function Filled({ text, fields }: { text: string; fields: BpField[] }) {
+  const byKey = new Map(fields.map((f) => [f.key, f]));
+  const parts = text.split(/(\{\{\s*[a-z][a-z0-9_.]*\s*\}\})/g);
+  return (
+    <>
+      {parts.map((part, i) => {
+        const m = part.match(/^\{\{\s*([a-z][a-z0-9_.]*)\s*\}\}$/);
+        if (!m) return <span key={i}>{part}</span>;
+        const field = byKey.get(m[1]!);
+        return field ? (
+          <mark key={i} className="msg__ph" title={`{{${field.key}}}`}>
+            {field.label}
+          </mark>
+        ) : (
+          <mark key={i} className="msg__ph msg__ph--bad" title="not a field on this process">
+            {`{{${m[1]}}}`}
+          </mark>
+        );
+      })}
+    </>
+  );
+}
+
+/**
+ * An email, edited as an email.
+ *
+ * Messages were JSON-only, which put the part of a process a partner most
+ * wants to reword — what their people actually receive — behind a syntax
+ * they should never have to learn. The editor is laid out the way the thing
+ * arrives: who from, who to, subject, body, with a preview beside the source
+ * that shows each {{field}} as the field it will be filled from.
+ *
+ * What the compiler says about this message is shown here, in place, rather
+ * than only in the Checks column — a restricted field in a body is a thing
+ * to fix while looking at the body.
+ */
+function MessageEditor({
+  message,
+  blueprint,
+  diagnostics,
+  onChange,
+  onRename,
+  onFromName,
+  onOpenRule,
+  onRemove,
+}: {
+  message: BpEmail | undefined;
+  blueprint: Blueprint;
+  diagnostics: Diagnostic[];
+  onChange: (fn: (m: BpEmail) => void) => void;
+  onRename: (from: string, to: string) => void;
+  onFromName: (next: string) => void;
+  onOpenRule: (index: number) => void;
+  onRemove: () => void;
+}) {
+  const subjectRef = useRef<HTMLInputElement>(null);
+  const bodyRef = useRef<HTMLTextAreaElement>(null);
+  const [target, setTarget] = useState<'subject' | 'body'>('body');
+
+  if (!message) return <p className="bd__none">No message selected.</p>;
+
+  const fields = placeable(blueprint.data.fields);
+  const known = new Set(fields.map((f) => f.key));
+  const unknown = [...`${message.subject}\n${message.body}`.matchAll(/\{\{\s*([a-z][a-z0-9_.]*)\s*\}\}/g)]
+    .map((m) => m[1]!)
+    .filter((k, i, all) => !known.has(k) && all.indexOf(k) === i);
+  const documents = blueprint.outputs?.documents ?? [];
+  const cc = message.cc ?? [];
+  const attachments = message.attachments ?? [];
+
+  const sentBy = (blueprint.workflow.transitions ?? [])
+    .map((t, i) => ({ t, i }))
+    .filter(({ t }) =>
+      ((t.actions as { do: string; template?: string }[] | undefined) ?? []).some(
+        (a) => a.do === 'send_email' && a.template === message.key,
+      ),
+    );
+
+  const own = diagnostics.filter((d) => d.message.startsWith(`Template "${message.key}"`));
+  // Said once. When the compiler has checked this message it already names
+  // the unknown field; this line is for a message nothing sends yet, which
+  // the compiler does not look inside.
+  const unreported = unknown.filter((k) => !own.some((d) => d.message.includes(`"${k}"`)));
+
+  const insert = (key: string) => {
+    const el = target === 'subject' ? subjectRef.current : bodyRef.current;
+    const value = target === 'subject' ? message.subject : message.body;
+    const token = `{{${key}}}`;
+    const start = el?.selectionStart ?? value.length;
+    const end = el?.selectionEnd ?? value.length;
+    const next = value.slice(0, start) + token + value.slice(end);
+    onChange((m) => void (m[target] = next));
+    requestAnimationFrame(() => {
+      el?.focus();
+      el?.setSelectionRange(start + token.length, start + token.length);
+    });
+  };
+
+  const internal = blueprint.roles;
+
+  return (
+    <>
+      <EditorHead title={message.name || message.key} kind="Message" onRemove={onRemove} />
+
+      {own.length > 0 && (
+        <ul className="msg__issues">
+          {own.map((d, i) => (
+            <li key={i} className={d.severity === 'error' ? 'msg__issue msg__issue--bad' : 'msg__issue'}>
+              <code>{d.code}</code> {d.message.replace(`Template "${message.key}" `, '')}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <div className="bd__pair">
+        <Row label="Name" hint="what people building the process call it">
+          <input className="bd__input" value={message.name} onChange={(e) => onChange((m) => void (m.name = e.target.value))} />
+        </Row>
+        <Row label="Key" hint="renaming it updates the automation that sends it">
+          <input
+            className="bd__input bd__mono"
+            value={message.key}
+            onChange={(e) => onRename(message.key, e.target.value)}
+          />
+        </Row>
+      </div>
+
+      <Row label="Kind" hint="decides whether it needs an unsubscribe link">
+        <select
+          className="bd__input"
+          value={message.class}
+          onChange={(e) => onChange((m) => void (m.class = e.target.value as MessageClass))}
+        >
+          {MESSAGE_CLASSES.map((c) => (
+            <option key={c.value} value={c.value} disabled={c.value === 'marketing' && message.class !== 'marketing'}>
+              {c.label}
+            </option>
+          ))}
+        </select>
+      </Row>
+
+      <fieldset className="bd__fieldset">
+        <legend>To</legend>
+        {message.to.map((party, i) => (
+          <div className="bd__partyRow" key={i}>
+            <span className="bd__ordinal">·</span>
+            <PartyPicker
+              party={party}
+              roles={internal}
+              fields={blueprint.data.fields}
+              onChange={(next) => onChange((m) => void (m.to[i] = next))}
+              label={`Recipient ${i + 1}`}
+            />
+            <button
+              className="bd__iconBtn"
+              onClick={() => onChange((m) => void m.to.splice(i, 1))}
+              disabled={message.to.length === 1}
+              title={message.to.length === 1 ? 'a message needs somebody to go to' : 'Remove'}
+            >
+              ×
+            </button>
+          </div>
+        ))}
+        <button className="bd__btn bd__btn--small" onClick={() => onChange((m) => void m.to.push({ submitter: true }))}>
+          Add a recipient
+        </button>
+      </fieldset>
+
+      <fieldset className="bd__fieldset">
+        <legend>Copied in</legend>
+        {cc.length === 0 && <p className="msg__quiet">Nobody. Copying somebody in changes which fields the compiler lets you use.</p>}
+        {cc.map((party, i) => (
+          <div className="bd__partyRow" key={i}>
+            <span className="bd__ordinal">·</span>
+            <PartyPicker
+              party={party}
+              roles={internal}
+              fields={blueprint.data.fields}
+              onChange={(next) => onChange((m) => void ((m.cc = m.cc ?? [])[i] = next))}
+              label={`Copied in ${i + 1}`}
+            />
+            <button className="bd__iconBtn" onClick={() => onChange((m) => void m.cc?.splice(i, 1))} title="Remove">
+              ×
+            </button>
+          </div>
+        ))}
+        <button
+          className="bd__btn bd__btn--small"
+          onClick={() => onChange((m) => void (m.cc = [...(m.cc ?? []), { role: internal[0]?.key ?? '' }]))}
+        >
+          Copy somebody in
+        </button>
+      </fieldset>
+
+      <Row label="Subject">
+        <input
+          ref={subjectRef}
+          className="bd__input"
+          value={message.subject}
+          onFocus={() => setTarget('subject')}
+          onChange={(e) => onChange((m) => void (m.subject = e.target.value))}
+        />
+      </Row>
+
+      <Row label="Body" hint="plain text; a blank line starts a new paragraph">
+        <textarea
+          ref={bodyRef}
+          className="bd__input bd__textarea msg__body"
+          rows={9}
+          value={message.body}
+          onFocus={() => setTarget('body')}
+          onChange={(e) => onChange((m) => void (m.body = e.target.value))}
+        />
+      </Row>
+
+      <div className="msg__insert">
+        <label className="msg__insertLabel" htmlFor="msg-insert">
+          Put a field into the {target}
+        </label>
+        <select
+          id="msg-insert"
+          className="bd__input"
+          value=""
+          onChange={(e) => {
+            if (e.target.value) insert(e.target.value);
+          }}
+        >
+          <option value="">Choose a field…</option>
+          {fields.map((f) => (
+            <option key={f.key} value={f.key} disabled={f.classification === 'restricted'}>
+              {f.label}
+              {f.classification === 'restricted'
+                ? ' — restricted, cannot go in an email'
+                : f.classification === 'confidential'
+                  ? ' — confidential, only to the person it describes'
+                  : ''}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {unreported.length > 0 && (
+        <p className="msg__warn" role="status">
+          {unreported.map((k) => `{{${k}}}`).join(', ')} {unreported.length === 1 ? 'is not a field' : 'are not fields'} on
+          this process, so {unreported.length === 1 ? 'it' : 'they'} would arrive empty.
+        </p>
+      )}
+
+      <section className="msg__preview" aria-label="How it arrives">
+        <div className="msg__previewHead">
+          <span className="bd__kind">How it arrives</span>
+        </div>
+        <dl className="msg__meta">
+          <dt>From</dt>
+          <dd>{blueprint.communications?.fromName ?? '—'}</dd>
+          <dt>To</dt>
+          <dd>{message.to.map(partyWords).join(', ')}</dd>
+          {cc.length > 0 && (
+            <>
+              <dt>Cc</dt>
+              <dd>{cc.map(partyWords).join(', ')}</dd>
+            </>
+          )}
+          <dt>Subject</dt>
+          <dd className="msg__subject">
+            <Filled text={message.subject} fields={fields} />
+          </dd>
+        </dl>
+        <div className="msg__text">
+          <Filled text={message.body} fields={fields} />
+        </div>
+        {attachments.length > 0 && (
+          <p className="msg__attached">
+            Attached: {attachments.map((k) => documents.find((d) => d.key === k)?.name ?? k).join(', ')}
+          </p>
+        )}
+      </section>
+
+      {documents.length > 0 && (
+        <fieldset className="bd__fieldset">
+          <legend>Attach</legend>
+          {documents.map((doc) => (
+            <label key={doc.key} className="bd__check">
+              <input
+                type="checkbox"
+                checked={attachments.includes(doc.key)}
+                onChange={(e) =>
+                  onChange((m) => {
+                    const now = new Set(m.attachments ?? []);
+                    if (e.target.checked) now.add(doc.key);
+                    else now.delete(doc.key);
+                    m.attachments = [...now];
+                  })
+                }
+              />
+              <span>{doc.name}</span>
+            </label>
+          ))}
+        </fieldset>
+      )}
+
+      <fieldset className="bd__fieldset">
+        <legend>Sent when</legend>
+        {sentBy.length === 0 ? (
+          <p className="msg__quiet">
+            Nothing sends this yet. Add a <em>Send an email</em> step to a rule in Automation, or it will never leave.
+          </p>
+        ) : (
+          <ul className="msg__used">
+            {sentBy.map(({ t, i }) => (
+              <li key={t.key}>
+                <button type="button" className="msg__link" onClick={() => onOpenRule(i)}>
+                  {t.name ?? t.key.replace(/_/g, ' ')}
+                </button>
+                <span className="msg__quiet">
+                  {' '}
+                  {t.from} → {t.to}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+        {message.skipWhen !== undefined && (
+          <p className="msg__quiet">It has a condition that skips it in some cases; that is edited in the JSON tab.</p>
+        )}
+      </fieldset>
+
+      <Row label="Sender name" hint="shown as From on every message in this process">
+        <input
+          className="bd__input"
+          value={blueprint.communications?.fromName ?? ''}
+          onChange={(e) => onFromName(e.target.value)}
+        />
+      </Row>
+    </>
+  );
+}
+
+/** Who a message goes to, in words a recipient list would use. */
+function partyWords(p: Party): string {
+  if ('submitter' in p) return 'the person who submitted it';
+  if ('assignee' in p) return 'whoever it is assigned to';
+  if ('role' in p) return `everyone with the ${p.role.replace(/_/g, ' ')} role`;
+  if ('field' in p) return `the address in ${p.field.replace(/_/g, ' ')}`;
+  return p.user || 'a named person';
 }
 
 // ------------------------------------------------------------- role editor

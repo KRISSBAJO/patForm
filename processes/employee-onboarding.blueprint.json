@@ -876,7 +876,7 @@
         ],
         "cc": [],
         "subject": "Compliance review waiting: {{job_title}} starting {{start_date}}",
-        "body": "An onboarding record for a {{job_title}} in {{department}} has been waiting for compliance review for two days. The agreed start date is {{start_date}}.\n\nOpen the record to check the right-to-work document and approve.",
+        "body": "An onboarding record for a {{job_title}} in {{department}} has been waiting for compliance review for two days. The agreed start date is {{start_date}}.\n\nOpen the record to check the right-to-work share code and approve.",
         "attachments": []
       },
       {

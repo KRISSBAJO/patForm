@@ -309,6 +309,15 @@ async function main() {
     all.push(...(await audit(page, 'The form header editor')));
   }
 
+  // The message editor: recipients, the field inserter and the preview are
+  // all controls a keyboard and a screen reader have to reach.
+  const message = page.locator('.bd__outlineItem', { hasText: 'Manager reminder' }).first();
+  if (await message.count()) {
+    await message.click();
+    await page.waitForTimeout(900);
+    all.push(...(await audit(page, 'The message editor')));
+  }
+
   await page.locator('.sp__tab', { hasText: /^Checks$/ }).first().click();
   await page.waitForTimeout(500);
 

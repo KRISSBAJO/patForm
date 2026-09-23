@@ -1738,3 +1738,157 @@ a.bd__newBtn {
   opacity: 0.4;
   cursor: not-allowed;
 }
+
+/* ------------------------------------------------------------ message editor */
+
+.msg__issues {
+  list-style: none;
+  margin: 0 0 16px;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.msg__issue {
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--ochre-pale);
+  color: var(--ochre-text);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.msg__issue--bad {
+  background: var(--red-pale);
+  color: var(--red-text);
+}
+
+.msg__issue code {
+  font-family: var(--font-mono), monospace;
+  font-size: 11.5px;
+  margin-right: 4px;
+}
+
+.msg__body {
+  font-family: var(--font-body), system-ui, sans-serif;
+  line-height: 1.55;
+}
+
+.msg__insert {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: -4px 0 16px;
+}
+
+.msg__insertLabel {
+  flex-shrink: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.msg__insert .bd__input {
+  max-width: 360px;
+}
+
+.msg__warn {
+  margin: 0 0 16px;
+  font-size: 13px;
+  color: var(--red-text);
+}
+
+.msg__quiet {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* The email as it lands: a white card, a header block, the body in its own voice. */
+.msg__preview {
+  margin: 4px 0 22px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--white);
+  overflow: hidden;
+}
+
+.msg__previewHead {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--line-soft);
+  background: var(--paper-3);
+}
+
+.msg__meta {
+  margin: 0;
+  padding: 12px 16px;
+  display: grid;
+  grid-template-columns: 64px 1fr;
+  gap: 5px 12px;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 13px;
+}
+
+.msg__meta dt {
+  color: var(--muted);
+}
+
+.msg__meta dd {
+  margin: 0;
+  color: var(--ink-soft);
+}
+
+.msg__subject {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.msg__text {
+  padding: 16px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--ink);
+  white-space: pre-wrap;
+}
+
+.msg__ph {
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: var(--green-pale);
+  color: var(--green-deep);
+  font-size: 0.92em;
+  white-space: nowrap;
+}
+
+.msg__ph--bad {
+  background: var(--red-pale);
+  color: var(--red-text);
+  font-family: var(--font-mono), monospace;
+}
+
+.msg__attached {
+  margin: 0;
+  padding: 10px 16px;
+  border-top: 1px solid var(--line-soft);
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.msg__used {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+  font-size: 13.5px;
+}
+
+.msg__link {
+  padding: 0;
+  min-height: 24px;
+  border: 0;
+  background: none;
+  color: var(--green);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}

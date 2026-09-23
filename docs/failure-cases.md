@@ -797,6 +797,16 @@ It was mine, from entry 69, and it went unnoticed because the proofs build their
 
 **Fixed** in the seed, which now stops at a refused submission and names the missing fields. **Generalisable:** a function that signals failure through an empty value needs every caller to check it, and the one that does not will fail somewhere else, later, in words about something else.
 
+### 74. Three selects in a row, and none of them had a name
+
+The builder's "who" picker — used for approvers, task assignees and now message recipients — is a row of selects with no visible label of their own. None of them had an accessible name either. A screen reader reached the approver list and announced "combo box", "combo box", "combo box".
+
+It had been there since the approval editor was built. The accessibility gate never saw it, because the gate never opened a screen with one on it: it audited the form header editor and the publish dialog, and both of those happen to have none. Adding the message editor to the gate found it on the first run.
+
+**Fixed** with a `label` on the picker that each caller fills in — "Approver 2", "Recipient 1", "Assigned to" — so every control says both what it is choosing and which one it is.
+
+**Generalisable:** an automated gate covers the screens it visits and says nothing about the rest, and "no violations" reads the same either way. When something new is built, the first job is to point the gate at it — which is how this was found, and how any editor still not in the gate would be.
+
 ---
 
 ## What the compiler structurally cannot catch
