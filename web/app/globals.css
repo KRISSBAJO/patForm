@@ -1,4 +1,83 @@
 /*
+ * Tailwind, wired to this project's tokens.
+ *
+ * Added late, to an app with six and a half thousand lines of hand-written
+ * CSS and forty-seven design tokens that carry documented contrast decisions.
+ * Two things follow from that, and both are deliberate.
+ *
+ * **No preflight.** Tailwind's base reset strips margins, list markers and
+ * border styles, and the CSS below this was written against browser defaults.
+ * Importing the reset would silently restyle every page in the product to fix
+ * the class names on one section. The layers are imported individually so the
+ * utilities arrive and the reset does not.
+ *
+ * **No palette but ours.** `--color-*: initial` clears Tailwind's default
+ * palette before anything is added back, so `bg-blue-500` and `text-gray-600`
+ * do not exist and a component pasted in from elsewhere fails loudly rather
+ * than quietly introducing a colour this product does not use. That is the
+ * whole reason for wiring it this way: two components generated outside this
+ * repo arrived with `bg-[#FAF9F6]` against our `--paper` and a teal against
+ * our green, and neither would have been noticed by eye.
+ *
+ * Every value below points at the token underneath rather than repeating it.
+ * The tokens stay the one place a colour is decided.
+ */
+@layer theme, base, components, utilities;
+@import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/utilities.css' layer(utilities);
+
+/*
+ * Told where to look, rather than left to guess.
+ *
+ * v4 detects sources automatically from the project root, and with the app in
+ * a `web/` subdirectory of the repo it found nothing: the theme variables were
+ * emitted and not one utility class was. A stylesheet that compiles cleanly
+ * and produces no rules is the worst kind of working.
+ */
+@source '../app';
+@source '../components';
+
+@theme {
+  /* Nothing from Tailwind's defaults survives this line. */
+  --color-*: initial;
+
+  --color-transparent: transparent;
+  --color-current: currentColor;
+  --color-white: #ffffff;
+
+  --color-paper: var(--paper);
+  --color-paper-2: var(--paper-2);
+  --color-paper-3: var(--paper-3);
+
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-ink-raised: var(--ink-raised);
+
+  --color-green: var(--green);
+  --color-green-deep: var(--green-deep);
+  --color-green-mint: var(--green-mint);
+  --color-green-pale: var(--green-pale);
+  --color-green-tint: var(--green-tint);
+  --color-green-border: var(--green-border);
+
+  --color-ochre: var(--ochre);
+  --color-ochre-text: var(--ochre-text);
+  --color-ochre-pale: var(--ochre-pale);
+  --color-ochre-border: var(--ochre-border);
+
+  --color-red-text: var(--red-text);
+  --color-red-pale: var(--red-pale);
+  --color-red-wash: var(--red-wash);
+  --color-red-border: var(--red-border);
+
+  --color-muted: var(--muted);
+  --color-muted-2: var(--muted-2);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-line-soft: var(--line-soft);
+}
+
+/*
  * Patform landing page.
  *
  * Ported from the canvas artboards. The two artboards are the two breakpoints:

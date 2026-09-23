@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 3210",
-    "build": "next build",
+    "build": "node -e \"process.env.NEXT_DIST_DIR='.next-build';require('child_process').execSync('npx next build',{stdio:'inherit',env:process.env})\"",
     "start": "next start -p 3210",
     "typecheck": "tsc --noEmit"
   },
@@ -14,9 +14,11 @@
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^22.7.5",
     "@types/react": "^19.0.7",
     "@types/react-dom": "^19.0.3",
+    "tailwindcss": "^4.3.3",
     "typescript": "^5.6.3"
   }
 }

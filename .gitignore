@@ -8,3 +8,5 @@ dist/
 # Screenshots taken to show a change working. Evidence for a conversation,
 # not for the repository — output/ keeps the eval results and the drill's.
 output/shots/
+.next-build/
+.npm-cache/

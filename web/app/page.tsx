@@ -22,6 +22,24 @@ import {
 
 const TOOLCHAIN = ['Form tool', 'Spreadsheet', 'Email threads', 'Shared drive', 'E-signature', 'Calendar'];
 
+/*
+ * Where each label sits on the tangle, as a percentage of the artwork.
+ *
+ * Percentages of the plate, which carries the image's own aspect ratio — so
+ * they hold at every width rather than only at the one this was placed at.
+ */
+const TOOLS = [
+  { label: 'Form tool', x: '26%', y: '5%' },
+  { label: 'Spreadsheet', x: '68%', y: '5%' },
+  { label: 'Email threads', x: '15%', y: '38%' },
+  { label: 'Shared drive', x: '14%', y: '55%' },
+  { label: 'E-signature', x: '17%', y: '88%' },
+  { label: 'Calendar', x: '62%', y: '88%' },
+];
+
+/* The other end of the same picture: what comes out when one process runs it. */
+const OUTCOMES = ['Employee onboarded', 'Expense approved', 'Member registered'];
+
 const BUILT = [
   { Icon: IconData, title: 'Data model', copy: 'Typed fields, constraints, and a sensitivity class on every one of them.' },
   { Icon: IconForm, title: 'The form', copy: 'Pages, branching, save and resume, and an accessible respondent experience.' },
@@ -141,24 +159,96 @@ export default function Home() {
               </p>
             </div>
 
-            <div className="band__right">
-              <div className="toolchain">
-                {TOOLCHAIN.map((tool, i) => (
-                  <span key={tool} style={{ display: 'contents' }}>
-                    <span className="chip">{tool}</span>
-                    {i < TOOLCHAIN.length && (
-                      <span className="toolchain__arrow" aria-hidden="true">
-                        <BrokenLink />
-                      </span>
-                    )}
+            {/*
+              * The tangle, and what replaces it.
+              *
+              * Tailwind, wired to this project's tokens — so `bg-paper` is the
+              * page's own paper and there is no `blue-500` to reach for.
+              *
+              * Both plates carry `aspect-[…]` matching their image's own ratio.
+              * The labels are placed as percentages of the plate, and without a
+              * fixed ratio `object-contain` letterboxes: a percentage of the
+              * box stops being a percentage of the picture and the labels slide
+              * off the lines at some widths and not others.
+              *
+              * The images are decorative. Every word in them is in the copy or
+              * in the labels on top.
+              */}
+            <div className="band__art grid items-center gap-8 xl:grid-cols-[1.15fr_1fr]">
+              <div className="relative mx-auto aspect-[1464/1074] w-full max-w-[560px]">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src="/images/form-chaos-red.webp"
+                  alt=""
+                  width={1464}
+                  height={1074}
+                  loading="lazy"
+                  className="absolute inset-0 h-full w-full object-contain"
+                />
+                {TOOLS.map((t) => (
+                  <span
+                    key={t.label}
+                    style={{ left: t.x, top: t.y }}
+                    className="absolute -translate-x-1/2 -translate-y-1/2 whitespace-nowrap rounded-lg border border-line bg-white px-3 py-1.5 text-[12.5px] text-ink-soft shadow-[0_3px_10px_rgba(20,24,22,0.08)]"
+                  >
+                    {t.label}
                   </span>
                 ))}
-                <span className="chip chip--warn">Someone chasing it</span>
+                <span className="absolute left-[89%] top-[52%] flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-1.5">
+                  <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-red-pale text-red-text">
+                    <Warn />
+                  </span>
+                  <span className="whitespace-nowrap text-[12.5px] font-medium text-ink">Chasing it all</span>
+                </span>
               </div>
 
+              <div>
               <blockquote className="pullquote">
                 <p>“Where is this one, and who has it?” should not be a question that takes forty minutes to answer.</p>
               </blockquote>
+
+              <p className="mt-6 text-[15.5px] font-medium leading-snug text-ink">
+                Get answers instantly, not in forty minutes.
+              </p>
+
+              {/* Stacked, not side by side. Sharing the column with the cards
+                  squeezed the flow to a width where nothing in it read. */}
+              <div className="mt-4">
+                <div className="relative aspect-[2000/667] w-full">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src="/images/outcome-flow-green.webp"
+                    alt=""
+                    width={2000}
+                    height={667}
+                    loading="lazy"
+                    className="absolute inset-0 h-full w-full object-contain"
+                  />
+                  {/* The label sits under the mark, not on it — over the block
+                      it was dark text on a dark square. */}
+                  <span className="absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center justify-center">
+                    <span className="h-8 w-8 rounded-lg bg-green shadow-[0_2px_8px_rgba(20,102,63,0.35)]" />
+                  </span>
+                  <span className="absolute left-1/2 top-[calc(50%+26px)] -translate-x-1/2 whitespace-nowrap text-[11.5px] font-medium text-ink">
+                    One process
+                  </span>
+                </div>
+
+                <ul className="mt-4 grid gap-2 sm:grid-cols-3">
+                  {OUTCOMES.map((o) => (
+                    <li
+                      key={o}
+                      className="flex items-start gap-2 rounded-lg border border-line bg-white px-3 py-2 text-[11.5px] leading-tight text-ink-soft shadow-[0_3px_10px_rgba(20,24,22,0.07)]"
+                    >
+                      <span className="mt-px flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full bg-green text-white">
+                        <Tick />
+                      </span>
+                      {o}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              </div>
             </div>
           </div>
         </section>
