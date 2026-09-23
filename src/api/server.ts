@@ -924,9 +924,10 @@ route('POST', /^\/api\/records\/([0-9a-f-]{36})\/decide$/, async ({ engine, prin
 route(
   'POST',
   /^\/api\/records\/([0-9a-f-]{36})\/tasks\/([a-z0-9_]+)\/complete$/,
-  async ({ engine, principal, url }) => {
+  async ({ engine, principal, url }, body) => {
     const [, , , id, , taskKey] = url.pathname.split('/');
-    const result = await engine.completeTask({ instanceId: id!, taskKey: taskKey!, principal, now: new Date() });
+    const answers = (body as { answers?: Answers } | undefined)?.answers;
+    const result = await engine.completeTask({ instanceId: id!, taskKey: taskKey!, principal, answers, now: new Date() });
     await engine.drain(new Date(), 'api');
     return result;
   },

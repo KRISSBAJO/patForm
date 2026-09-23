@@ -425,7 +425,7 @@ export const CATALOGUE: PackSpec[] = [
       },
       { key: 'finance', name: 'Finance', byRole: 'finance_reviewer', dueInHours: 96 },
     ],
-    task: { key: 'post_journal', name: 'Posting the journal', byRole: 'process_owner' },
+    task: { key: 'post_journal', name: 'Posting the journal', byRole: 'process_owner', requiredFields: ['journal_reference'] },
     retentionDays: 2555,
     notes: [
       'Budget codes are typed in and checked only for shape (letters, numbers, dashes). If you have a fixed list of cost centres, change both code questions to a dropdown of your own codes in the builder.',

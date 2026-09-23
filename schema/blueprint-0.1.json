@@ -1397,6 +1397,13 @@
                       "any_operator"
                     ],
                     "default": "assignee"
+                  },
+                  "requiredFields": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/definitions/ProcessBlueprint/properties/key"
+                    },
+                    "default": []
                   }
                 },
                 "required": [
@@ -1727,6 +1734,13 @@
                         },
                         "as": {
                           "$ref": "#/definitions/ProcessBlueprint/properties/key"
+                        },
+                        "answers": {
+                          "type": "object",
+                          "additionalProperties": {}
+                        },
+                        "expectDenied": {
+                          "type": "boolean"
                         }
                       },
                       "required": [

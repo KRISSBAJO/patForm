@@ -962,6 +962,20 @@ export function validate(bp: Blueprint): Diagnostics {
   }
   for (const [i, task] of bp.workflow.tasks.entries()) {
     if (!used.tasks.has(task.key)) continue;
+    for (const key of task.requiredFields) {
+      const at = `workflow.tasks[${i}].requiredFields`;
+      const field = requireField(key, at, `Task "${task.key}" completion`);
+      if (!field) continue;
+      if (field.setBy !== 'operator' || !['short_text', 'long_text'].includes(field.type)) {
+        d.error('TASK001', at, `Task "${task.key}" requires "${key}", which must be an operator text field.`);
+      }
+      if ('role' in task.assignee) {
+        const role = roleByKey.get(task.assignee.role);
+        if (role && (!role.capabilities.includes('edit') || !role.editableFields?.includes(key))) {
+          d.error('TASK002', at, `Task "${task.key}" requires "${key}", but ${role.name} cannot edit it.`);
+        }
+      }
+    }
     if (task.blocking && !awaited.has(task.key)) {
       d.error(
         'BLOCK001',

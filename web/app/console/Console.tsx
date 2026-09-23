@@ -46,6 +46,7 @@ interface Work {
     reference: string;
     taskKey: string;
     taskName: string;
+    requiredFields?: { key: string; label: string; type: string }[];
     assignee: string | null;
     late: boolean;
     summary: string;
@@ -268,10 +269,12 @@ export function Console() {
       },
     );
 
-  const completeTask = (instanceId: string, taskKey: string) =>
+  const completeTask = (instanceId: string, taskKey: string, answers: Record<string, string> = {}) =>
     act(
       `${instanceId}:${taskKey}`,
-      () => call(`/api/records/${instanceId}/tasks/${taskKey}/complete`, { method: 'POST' }),
+      () => call(`/api/records/${instanceId}/tasks/${taskKey}/complete`, {
+        method: 'POST', body: JSON.stringify({ answers }),
+      }),
       'Task completed.',
     );
 
@@ -608,13 +611,14 @@ export function Console() {
           <div className="cs__left">
             {view === 'record' && record ? (
               <RecordPage
+                key={`${record.instanceId}:${work?.tasks.find((t) => t.instanceId === record.instanceId)?.taskKey ?? ''}`}
                 record={record}
                 approval={work?.approvals.find((a) => a.instanceId === record.instanceId)}
                 task={work?.tasks.find((t) => t.instanceId === record.instanceId)}
                 busy={busy}
                 onBack={closeRecord}
                 onDecide={(id, key, decision, reason) => void decide(id, key, decision, reason)}
-                onCompleteTask={(id, key) => void completeTask(id, key)}
+                onCompleteTask={(id, key, answers) => void completeTask(id, key, answers)}
                 onExport={(id, ref, format) => void exportRecord(id, ref, format)}
               />
             ) : view === 'integrations' ? (

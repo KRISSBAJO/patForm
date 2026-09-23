@@ -102,6 +102,8 @@ export const Task = z
      * process, for shared queues where whoever is free picks the next thing up.
      */
     completableBy: z.enum(['assignee', 'any_operator']).default('assignee'),
+    /** Operator fields that must be recorded before this task can be completed. */
+    requiredFields: z.array(Key).default([]),
   })
   .strict();
 export type Task = z.infer<typeof Task>;

@@ -93,6 +93,7 @@ interface BpTask {
   dueInHours?: number;
   blocking?: boolean;
   completableBy?: 'assignee' | 'any_operator';
+  requiredFields?: string[];
 }
 
 interface BpRole {
@@ -2777,6 +2778,31 @@ function TaskEditor({
           <span>the process waits for this</span>
         </label>
       </Row>
+      <fieldset className="bd__fieldset">
+        <legend>Required before marking done</legend>
+        <p className="bd__hint">The person completing this task records these operator fields first.</p>
+        <div className="bd__chips">
+          {fields.filter((f) => f.setBy === 'operator' && ['short_text', 'long_text'].includes(f.type)).map((field) => {
+            const selected = task.requiredFields?.includes(field.key) ?? false;
+            return (
+              <button
+                key={field.key}
+                type="button"
+                className={`bd__chip${selected ? ' bd__chip--on' : ''}`}
+                aria-pressed={selected}
+                onClick={() => onChange((t) => {
+                  const next = new Set(t.requiredFields ?? []);
+                  if (selected) next.delete(field.key);
+                  else next.add(field.key);
+                  t.requiredFields = [...next];
+                })}
+              >
+                {field.label}
+              </button>
+            );
+          })}
+        </div>
+      </fieldset>
     </>
   );
 }

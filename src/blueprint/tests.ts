@@ -28,7 +28,11 @@ export const Step = z.discriminatedUnion('step', [
       reason: z.string().optional(),
     })
     .strict(),
-  z.object({ step: z.literal('complete_task'), task: Key, as: Key }).strict(),
+  z.object({
+    step: z.literal('complete_task'), task: Key, as: Key,
+    answers: z.record(z.string(), z.unknown()).optional(),
+    expectDenied: z.boolean().optional(),
+  }).strict(),
   z.object({ step: z.literal('advance_hours'), hours: z.number().positive() }).strict(),
   z
     .object({

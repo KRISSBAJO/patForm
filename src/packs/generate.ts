@@ -78,7 +78,7 @@ export interface PackSpec {
   /** The first open question, when "who approves" is not the one that matters. */
   decision?: { question: string; provisionally: string };
   /** Work somebody does after the decision, before it is finished. */
-  task?: { key: string; name: string; byRole: string };
+  task?: { key: string; name: string; byRole: string; requiredFields?: string[] };
   fields: PackField[];
   /** Days after completion. Null keeps the record forever, and says so. */
   retentionDays: number | null;
@@ -800,6 +800,30 @@ function tests(spec: PackSpec, answers: Record<string, unknown>, rules: Category
       steps: approveAll,
       expect: { state: endState, instanceCount: 1 },
     },
+    ...(spec.key === 'budget_transfer' && spec.task
+      ? [
+          {
+            key: 'journal_reference_required',
+            kind: 'happy_path',
+            name: 'Finance cannot finish before recording the journal reference',
+            steps: [
+              ...approveAll,
+              { step: 'complete_task', task: spec.task.key, as: spec.task.byRole, expectDenied: true },
+            ],
+            expect: { state: 'doing', openTasks: [spec.task.key], instanceCount: 1 },
+          },
+          {
+            key: 'journal_posted',
+            kind: 'happy_path',
+            name: 'Finance records the journal reference and finishes the transfer',
+            steps: [
+              ...approveAll,
+              { step: 'complete_task', task: spec.task.key, as: spec.task.byRole, answers: { journal_reference: 'JR-2026-0412' } },
+            ],
+            expect: { state: 'done', openTasks: [], instanceCount: 1 },
+          },
+        ]
+      : []),
     // Both sides of the threshold, because a rule tested on one side only is
     // how every Finance pack came to send everything to the controller.
     ...(rules.threshold && moneyField(spec)
@@ -1066,6 +1090,7 @@ export function buildBlueprint(spec: PackSpec): unknown {
               assignee: { role: spec.task.byRole },
               blocking: true,
               dueInHours: 120,
+              requiredFields: spec.task.requiredFields ?? [],
             },
           ]
         : [],

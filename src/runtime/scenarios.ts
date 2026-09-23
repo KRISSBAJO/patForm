@@ -177,12 +177,20 @@ async function runOne(
             break;
           }
           const principal = member.principal;
+          let applied = false;
+          let denied: unknown;
           try {
-            const { applied } = await engine.completeTask({ instanceId, taskKey: step.task, principal, now });
-            if (!applied) fail(`task "${step.task}" was not open and could not be completed`);
+            const result = await engine.completeTask({
+              instanceId, taskKey: step.task, principal, now,
+              answers: step.answers as Answers | undefined,
+            });
+            applied = result.applied;
           } catch (err) {
-            fail(`"${step.as}" was refused the task: ${err instanceof Error ? err.message : String(err)}`);
+            denied = err;
           }
+          if (step.expectDenied && !denied) fail(`task "${step.task}" completed without the required answers`);
+          if (!step.expectDenied && denied) fail(`"${step.as}" was refused the task: ${denied instanceof Error ? denied.message : String(denied)}`);
+          if (!step.expectDenied && !applied) fail(`task "${step.task}" was not open and could not be completed`);
           await engine.drain(now, `scenario:${test.key}`, tenantId);
           break;
         }

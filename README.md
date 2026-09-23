@@ -77,6 +77,9 @@ is specific to either.
 from `src/packs/catalogue.ts`. After changing it, `npm run packs -- --catalogue`
 publishes a new version of each template that changed and leaves the rest
 alone, without a re-seed. Workspaces that installed the older version keep it.
+Budget transfer now requires Finance to record a journal reference when marking
+the posting task done. A new catalogue version carries that change; an existing
+draft or published process must be updated in the builder to use it.
 
 **Signatures.** A `signature` field lets the person type their name and adopt
 it in one of three handwriting styles, or draw it with a mouse, finger or pen

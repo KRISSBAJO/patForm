@@ -52,6 +52,7 @@ export interface PendingTask {
   instanceId: string;
   taskKey: string;
   taskName: string;
+  requiredFields?: { key: string; label: string; type: string }[];
   assignee: string | null;
   late: boolean;
   summary: string;
@@ -97,12 +98,13 @@ export function RecordPage({
   busy: string | null;
   onBack: () => void;
   onDecide: (instanceId: string, approvalKey: string, decision: 'approved' | 'rejected', reason: string) => void;
-  onCompleteTask: (instanceId: string, taskKey: string) => void;
+  onCompleteTask: (instanceId: string, taskKey: string, answers: Record<string, string>) => void;
   onExport: (instanceId: string, reference: string, format: 'json' | 'csv') => void;
 }) {
   const [showTrail, setShowTrail] = useState(false);
   const [reason, setReason] = useState('');
   const [rejecting, setRejecting] = useState(false);
+  const [completionAnswers, setCompletionAnswers] = useState<Record<string, string>>({});
   // A majority vote reads as a vote: "Vote for", "Vote against".
   const voting = approval?.progress?.of !== undefined;
 
@@ -223,13 +225,43 @@ export function RecordPage({
               Assigned to {who(task.assignee)}
               {task.late ? ' — overdue' : ''}. {task.summary}
             </p>
+            {task.requiredFields?.map((field) => {
+              const recorded = record.fields.find((f) => f.key === field.key)?.value;
+              const value = completionAnswers[field.key] ?? (typeof recorded === 'string' && recorded !== '[redacted]' ? recorded : '');
+              return (
+                <div key={field.key} style={{ marginTop: 12 }}>
+                  <label htmlFor={`task-${field.key}`}>{field.label} <span aria-hidden="true">*</span></label>
+                  {field.type === 'long_text' ? (
+                    <textarea
+                      id={`task-${field.key}`}
+                      className="rc__reasonBox"
+                      value={value}
+                      onChange={(e) => setCompletionAnswers((was) => ({ ...was, [field.key]: e.target.value }))}
+                      required
+                    />
+                  ) : (
+                    <input
+                      id={`task-${field.key}`}
+                      className="rc__reasonBox"
+                      value={value}
+                      onChange={(e) => setCompletionAnswers((was) => ({ ...was, [field.key]: e.target.value }))}
+                      required
+                    />
+                  )}
+                </div>
+              );
+            })}
           </div>
           <div className="rc__decisionActions">
             <button
               type="button"
               className="cs__btn cs__btn--primary"
-              disabled={working}
-              onClick={() => onCompleteTask(record.instanceId, task.taskKey)}
+              disabled={working || task.requiredFields?.some((field) => {
+                const recorded = record.fields.find((f) => f.key === field.key)?.value;
+                const value = completionAnswers[field.key] ?? (typeof recorded === 'string' && recorded !== '[redacted]' ? recorded : '');
+                return !value.trim();
+              })}
+              onClick={() => onCompleteTask(record.instanceId, task.taskKey, completionAnswers)}
             >
               <Icon name="done" />
               Mark done

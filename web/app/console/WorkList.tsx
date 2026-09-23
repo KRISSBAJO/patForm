@@ -35,6 +35,7 @@ export interface WorkTask {
   reference: string;
   taskKey: string;
   taskName: string;
+  requiredFields?: { key: string; label: string; type: string }[];
   assignee: string | null;
   late: boolean;
   summary: string;
@@ -265,15 +266,17 @@ export function WorkList({
                     <Icon name="open" />
                     Open
                   </button>
-                  <button
-                    type="button"
-                    className="cs__act cs__act--go"
-                    disabled={busy !== null}
-                    onClick={() => onCompleteTask(row.item.instanceId, row.item.taskKey)}
-                  >
-                    <Icon name="done" />
-                    Mark done
-                  </button>
+                  {!(row.item.requiredFields?.length) && (
+                    <button
+                      type="button"
+                      className="cs__act cs__act--go"
+                      disabled={busy !== null}
+                      onClick={() => onCompleteTask(row.item.instanceId, row.item.taskKey)}
+                    >
+                      <Icon name="done" />
+                      Mark done
+                    </button>
+                  )}
                 </div>
               </div>
             ),

@@ -13,6 +13,7 @@ import {
   type EmailProvider,
 } from './email.js';
 import type { Blueprint, Action, Party, Transition } from '../blueprint/index.js';
+import { checkField } from '../blueprint/answers.js';
 import { evaluate, render, withCalculatedFields, type Answers } from './expr.js';
 import { inTransaction, isUniqueViolation, type Client, type Pool } from './db.js';
 import { InvalidInput } from './errors.js';
@@ -469,6 +470,7 @@ export class Engine {
     taskKey: string;
     principal: Principal;
     now: Date;
+    answers?: Answers;
   }): Promise<{ applied: boolean }> {
     return inTransaction(this.pool, async (client) => {
       const instance = await loadInstance(client, args.instanceId, { lock: true });
@@ -495,6 +497,48 @@ export class Engine {
           completableBy: declared?.completableBy ?? 'assignee',
         },
       }, this.pool);
+
+      const answers = args.answers ?? {};
+      if (typeof answers !== 'object' || answers === null || Array.isArray(answers)) {
+        throw new InvalidInput('task answers must be an object');
+      }
+      const requiredFields = declared?.requiredFields ?? [];
+      const extra = Object.keys(answers).filter((key) => !requiredFields.includes(key));
+      if (extra.length) throw new InvalidInput(`this task does not collect ${extra.join(', ')}`);
+
+      if (Object.keys(answers).length) {
+        const edit = await require_(client, {
+          principal: args.principal,
+          action: 'edit',
+          tenantId: instance.tenant_id,
+          processKey: instance.process_key,
+          blueprint: bp,
+          instanceId: instance.id,
+        }, this.pool);
+        const refused = rejectUneditable(bp, edit.roles, answers);
+        if (refused.length) throw new InvalidInput(`you cannot edit ${refused.join(', ')}`);
+      }
+
+      const merged = { ...instance.data, ...answers };
+      for (const key of requiredFields) {
+        const field = bp.data.fields.find((f) => f.key === key);
+        if (!field) throw new InvalidInput(`task requirement ${key} is not a field`);
+        const problem = checkField({ ...field, required: true }, merged[key]);
+        if (problem) throw new InvalidInput(problem);
+      }
+      if (Object.keys(answers).length) {
+        const previous = Object.fromEntries(Object.keys(answers).map((key) => [key, instance.data[key] ?? null]));
+        await client.query('update instance set data = $1 where id = $2', [JSON.stringify(merged), instance.id]);
+        instance.data = merged;
+        await appendEvent(client, {
+          tenantId: instance.tenant_id,
+          instanceId: instance.id,
+          type: 'record_updated',
+          payload: { fields: Object.keys(answers), previous, task: args.taskKey },
+          actor: describePrincipal(args.principal),
+          now: args.now,
+        });
+      }
 
       const actor = describePrincipal(args.principal);
       const { rowCount } = await client.query(

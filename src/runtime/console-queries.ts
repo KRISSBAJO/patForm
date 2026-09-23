@@ -225,6 +225,10 @@ export async function myWork(
         reference: reference(row.instance_id),
         taskKey: row.task_key,
         taskName: declared?.name ?? row.task_key,
+        requiredFields: (declared?.requiredFields ?? []).map((key) => {
+          const field = bp.data.fields.find((f) => f.key === key);
+          return { key, label: field?.label ?? key, type: field?.type ?? 'short_text' };
+        }),
         assignee: row.assignee,
         dueAt: row.due_at?.toISOString() ?? null,
         late: Boolean(row.due_at && row.due_at.getTime() < now),
