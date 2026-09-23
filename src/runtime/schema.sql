@@ -908,7 +908,7 @@ create table platform_email (
   id           bigserial primary key,
   tenant_id    uuid references tenant(id),
   actor_id     uuid references actor(id),
-  kind         text not null check (kind in ('invitation', 'verify_email', 'password_reset', 'delivery_alert')),
+  kind         text not null check (kind in ('invitation', 'verify_email', 'password_reset', 'delivery_alert', 'task_assigned')),
   recipient    text not null,
   subject      text not null,
   status       text not null default 'queued'

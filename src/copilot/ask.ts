@@ -44,6 +44,9 @@ Rules:
 - "change_state" moves records to a state using the process's own manual
   steps. Use it only when the operator asked to move, close or advance
   records, and only with a state key given to you.
+- "set_answer" sets one field to one value. Use it only when the operator
+  gave the exact value; never infer or invent one. Dates are YYYY-MM-DD,
+  numbers are numbers, yes/no is true or false.
 - "reading" is one sentence, in plain words, telling the operator what you
   understood. It is shown to them before anything runs, so it should name the
   filters in their language, not yours.`;

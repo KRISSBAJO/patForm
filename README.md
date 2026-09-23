@@ -217,7 +217,7 @@ version, plan, targets, confirmation and result (§7.3).
 ### Bulk actions
 
 §6.4: *"Bulk actions require permission checks per record, an impact preview,
-rate limits, and result report."* Three actions, from two places — tick rows
+rate limits, and result report."* Four actions, from two places — tick rows
 on **Records**, or ask for it in **Ask** — through the one path above: preview,
 confirm the exact set, report.
 
@@ -228,11 +228,23 @@ confirm the exact set, report.
   membership: somebody deactivated, or holding nothing that can operate the
   process, is refused on every row rather than handed work they cannot open.
   The old assignee loses the ability to complete it; the record says who it
-  was taken from.
+  was taken from. Whoever now has the work gets **one** email per bulk
+  action listing every record — not forty for forty tasks — with a link to
+  each and no answers in it; a role is told through the members who hold it.
+  The report says who was emailed, and who could not be and why.
 - **Move to a state** — by the process's own manual steps only, never a raw
   state write, so the step's role list, condition, emails and tasks all
   apply. A record whose state has no manual step to the target is left alone
   and told why. A target nothing leads to by hand does not compile (`ACT007`).
+- **Change an answer** — one field to one value, through the same edit path a
+  single change takes: the role must list the field in its `editableFields`,
+  calculated fields are recomputed, deadlines hung off a changed date move,
+  and a "record updated" step can fire. Only single-value fields are offered
+  (text, numbers, dates, choices, yes/no), the value is checked by the form's
+  own validator before anything is previewed (`ACT009`, `ACT010`), and the
+  preview shows each record's current value, where the member may see it.
+  Every edit, single or bulk, now keeps what it replaced in the record's
+  history; before, the event named the fields and not their old values.
 
 The preview sorts every selected record into *will change*, *left alone* (and
 why) and *not allowed* (and why). The report does the same for what actually
@@ -1139,10 +1151,9 @@ Everything below is a deliberate deferral:
   nothing goes by itself, because a reminder from a fortnight ago may no longer
   be true. Messages to other workspaces' recipients, and the platform's own
   invitations and resets, are not offered for re-sending.
-- **Bulk edits of answers, and telling a new assignee.** Bulk actions send a
-  message, reassign a task or move records by a manual step (above). Nothing
-  changes a field on many records at once, and a reassigned task does not
-  email the person it now belongs to — it appears in their work queue.
+- **Bulk edits of lists and structured answers.** A bulk change sets one
+  single-value field. Multi-choice, addresses, repeating groups and the like
+  are changed a record at a time.
 - **Form editors for the rest of the blueprint.** The builder edits fields,
   states, rules, approvals, tasks, messages, roles and the form's header and
   field widths, and draws the flow as a read-only map. Intent, the rest of the

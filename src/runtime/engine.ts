@@ -523,6 +523,13 @@ export class Engine {
       }
 
       const actor = describePrincipal(args.principal);
+      /*
+       * What the answers were, kept with the change. Corrections are added
+       * to history rather than written over it (§6.4) — and this event used
+       * to record only *which* fields changed, so a second edit left no
+       * trace of what the first one replaced.
+       */
+      const previous = Object.fromEntries(Object.keys(args.patch).map((k) => [k, instance.data[k] ?? null]));
       const merged = withCalculatedFields(bp.data.fields, { ...instance.data, ...args.patch });
       await client.query('update instance set data = $1 where id = $2', [
         JSON.stringify(merged),
@@ -560,7 +567,7 @@ export class Engine {
           tenantId: instance.tenant_id,
           instanceId: instance.id,
           type: 'record_updated',
-          payload: { fields: Object.keys(args.patch) },
+          payload: { fields: Object.keys(args.patch), previous },
           actor,
           now: args.now,
         });
@@ -572,7 +579,7 @@ export class Engine {
         instance,
         transition,
         eventType: 'record_updated',
-        payload: { fields: Object.keys(args.patch) },
+        payload: { fields: Object.keys(args.patch), previous },
         actor,
         now: args.now,
       });

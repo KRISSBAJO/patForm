@@ -1,3 +1,4 @@
+import { BULK_EDITABLE_TYPES } from '../copilot/plan.js';
 import { createHash } from 'node:crypto';
 import type { Blueprint } from '../blueprint/index.js';
 import type { Diagnostic } from '../compiler/diagnostics.js';
@@ -5,7 +6,8 @@ import { compileAction, compileQuery } from '../copilot/compile.js';
 import { ActionPlan, Proposal, QueryPlan } from '../copilot/plan.js';
 import { inTransaction, type Client, type Pool } from './db.js';
 import { Engine } from './engine.js';
-import { AuthorizationError, authorize, redact, require_, type Principal } from './policy.js';
+import { AuthorizationError, authorize, editableFields, redact, require_, type Principal } from './policy.js';
+import { appUrl, sendPlatformMail } from './platform-mail.js';
 
 /**
  * The operational copilot.
@@ -82,6 +84,12 @@ export interface ExecutionReport {
   runId: string;
   kind: string;
   attempted: number;
+  /**
+   * For a reassignment: who was told about their new work. `sent` false with a
+   * reason when the email could not go — said, so a report never implies
+   * somebody knows about work they were never told of.
+   */
+  notified?: { to: string; tasks: number; sent: boolean; reason?: string }[];
   sent: { instanceId: string; reference: string; to: string[] }[];
   skipped: { instanceId: string; reference: string; reason: string }[];
   failed: { instanceId: string; reference: string; reason: string }[];
@@ -220,7 +228,12 @@ async function previewAction(
    * process. Asked per record, below, because a permission can be scoped to
    * a record and "you may do this to nine of the eleven" is an answer.
    */
-  const needs = action.kind === 'assign' ? 'administer' : 'operate';
+  const needs = action.kind === 'assign' ? 'administer' : action.kind === 'set_answer' ? 'edit' : 'operate';
+  const field = action.kind === 'set_answer' ? bp.data.fields.find((f) => f.key === action.field) : undefined;
+  const currentValues =
+    action.kind === 'set_answer'
+      ? await valuesOf(client, matched.map((m) => m.instanceId), action.field)
+      : new Map<string, unknown>();
 
   /*
    * For a reassignment, the new assignee is checked once, up front: somebody
@@ -288,6 +301,35 @@ async function previewAction(
       continue;
     }
 
+    if (action.kind === 'set_answer') {
+      // Holding `edit` is not permission to change every field — the same
+      // rule a single edit is held to, asked here so the preview says so.
+      if (!editableFields(bp, roles).has(action.field)) {
+        refused.push({
+          instanceId: record.instanceId,
+          reference: record.reference,
+          reason: `your roles cannot change ${field?.label ?? action.field}`,
+        });
+        continue;
+      }
+      const now = currentValues.get(record.instanceId) ?? null;
+      // A choice is shown by its label — "Finance", not "finance".
+      const label = (v: unknown) => field?.choices?.find((c) => c.value === v)?.label ?? shown(v);
+      if (JSON.stringify(now) === JSON.stringify(action.value)) {
+        skipped.push({ instanceId: record.instanceId, reference: record.reference, reason: `already ${label(action.value)}` });
+        continue;
+      }
+      // The current value is shown only if this member may see the field.
+      const visible = redact(bp, roles, { [action.field]: now } as never);
+      eligible.push({
+        instanceId: record.instanceId,
+        reference: record.reference,
+        from: action.field in visible ? label(now) : 'hidden from your roles',
+        to: [label(action.value)],
+      });
+      continue;
+    }
+
     if (action.kind === 'change_state') {
       if (record.state === action.to) {
         skipped.push({ instanceId: record.instanceId, reference: record.reference, reason: `already in ${target?.name}` });
@@ -336,9 +378,27 @@ async function previewAction(
       ? `Send "${template?.name ?? action.template}" to ${eligible.length} of ${matched.length} record(s).`
       : action.kind === 'assign'
         ? `Give the "${taskName}" task to ${action.to.trim()} on ${eligible.length} of ${matched.length} record(s).`
-        : `Move ${eligible.length} of ${matched.length} record(s) to ${target?.name ?? action.to}.`;
+        : action.kind === 'set_answer'
+          ? `Set ${field?.label ?? action.field} to ${field?.choices?.find((c) => c.value === action.value)?.label ?? shown(action.value)} on ${eligible.length} of ${matched.length} record(s).`
+          : `Move ${eligible.length} of ${matched.length} record(s) to ${target?.name ?? action.to}.`;
 
   return { kind: action.kind, summary, digest, eligible, refused, skipped };
+}
+
+/** One answer on each record, as stored. */
+async function valuesOf(client: Client, ids: string[], field: string): Promise<Map<string, unknown>> {
+  if (!ids.length) return new Map();
+  const { rows } = await client.query<{ id: string; value: unknown }>(
+    'select id, data -> $2 as value from instance where id = any($1::uuid[])',
+    [ids, field],
+  );
+  return new Map(rows.map((r) => [r.id, r.value]));
+}
+
+function shown(value: unknown): string {
+  if (value === null || value === undefined || value === '') return 'empty';
+  if (typeof value === 'boolean') return value ? 'yes' : 'no';
+  return String(value);
 }
 
 /** The open task of this kind on each record, and who has it. */
@@ -681,8 +741,36 @@ export async function confirm(
     failed: [],
   };
   const why = `bulk action ${run.id.slice(0, 8)}`;
+  /** Reassigned tasks, by record, for the one email each new assignee gets. */
+  const handedOver: { instanceId: string; reference: string }[] = [];
 
   for (const target of eligible) {
+    if (action.kind === 'set_answer') {
+      try {
+        const outcome = await engine.updateRecord({
+          principal: args.principal,
+          instanceId: target.instanceId,
+          patch: { [action.field]: action.value } as never,
+          now,
+        });
+        if (outcome.saved) report.sent.push({ instanceId: target.instanceId, reference: target.reference, to: target.to ?? [] });
+        else {
+          report.skipped.push({
+            instanceId: target.instanceId,
+            reference: target.reference,
+            reason: outcome.refused?.length ? 'your roles can no longer change it' : 'not saved',
+          });
+        }
+      } catch (err) {
+        report.failed.push({
+          instanceId: target.instanceId,
+          reference: target.reference,
+          reason: err instanceof AuthorizationError ? err.reason : err instanceof Error ? err.message : String(err),
+        });
+      }
+      continue;
+    }
+
     // Each is re-authorized inside the engine call, not trusted from the
     // preview: a role can be removed between the two, and the preview is
     // evidence of what was true then, not permission for now.
@@ -696,7 +784,10 @@ export async function confirm(
           reason: why,
           now,
         });
-        if (outcome.performed) report.sent.push({ instanceId: target.instanceId, reference: target.reference, to: [action.to.trim()] });
+        if (outcome.performed) {
+          report.sent.push({ instanceId: target.instanceId, reference: target.reference, to: [action.to.trim()] });
+          handedOver.push({ instanceId: target.instanceId, reference: target.reference });
+        }
         else report.skipped.push({ instanceId: target.instanceId, reference: target.reference, reason: outcome.reason ?? 'no effect' });
       } catch (err) {
         report.failed.push({
@@ -757,9 +848,23 @@ export async function confirm(
     }
   }
 
-  // A move queues the step's own actions — its emails, tasks, approvals.
-  // Delivered now, so the report is not the only thing that has happened.
-  if (action.kind === 'change_state' && report.sent.length) await engine.drain(now, 'bulk', tenantId);
+  // A move, or an edit that fires a "record updated" step, queues that step's
+  // own actions. Delivered now, so the report is not the only thing that happened.
+  if ((action.kind === 'change_state' || action.kind === 'set_answer') && report.sent.length) {
+    await engine.drain(now, 'bulk', tenantId);
+  }
+
+  if (action.kind === 'assign' && handedOver.length) {
+    report.notified = await tellNewAssignee(pool, {
+      tenantId,
+      actorId: args.principal.actorId,
+      runId: run.id,
+      processKey: run.process_key,
+      taskKey: action.task,
+      to: action.to.trim(),
+      records: handedOver,
+    });
+  }
 
   await pool.query(
     `update copilot_run
@@ -784,6 +889,8 @@ export interface BulkOptions {
   moveTargets: { key: string; name: string }[];
   /** Who a task could go to: members who can operate this process, and its operating roles. */
   assignees: { value: string; label: string }[];
+  /** Answers this member's roles may change, and can be set in bulk. */
+  fields: { key: string; label: string; type: string; choices?: { value: string; label: string }[]; required: boolean }[];
 }
 
 /**
@@ -799,7 +906,8 @@ export async function bulkOptions(pool: Pool, principal: Principal, processKey: 
   const tenantId = principal.tenantId;
   return inTransaction(pool, async (client) => {
     const bp = await blueprintFor(client, tenantId, processKey);
-    await require_(client, { principal, action: 'view', tenantId, processKey, blueprint: bp }, pool);
+    const viewer = await require_(client, { principal, action: 'view', tenantId, processKey, blueprint: bp }, pool);
+    const mayEdit = editableFields(bp, viewer.roles);
 
     const manualTargets = new Set(bp.workflow.transitions.filter((t) => t.trigger.on === 'manual').map((t) => t.to));
     const { rows: members } = await client.query<{ id: string; email: string; display_name: string }>(
@@ -828,8 +936,95 @@ export async function bulkOptions(pool: Pool, principal: Principal, processKey: 
       tasks: bp.workflow.tasks.map((t) => ({ key: t.key, name: t.name })),
       moveTargets: bp.workflow.states.filter((s) => manualTargets.has(s.key)).map((s) => ({ key: s.key, name: s.name })),
       assignees,
+      fields: bp.data.fields
+        .filter((f) => mayEdit.has(f.key) && BULK_EDITABLE_TYPES.has(f.type) && f.setBy !== 'system')
+        .map((f) => ({
+          key: f.key,
+          label: f.label,
+          type: f.type,
+          choices: f.choices?.map((ch) => ({ value: ch.value, label: ch.label })),
+          required: Boolean(f.required),
+        })),
     };
   });
+}
+
+/**
+ * Tells whoever now has the work.
+ *
+ * One email per person per bulk action, listing every record — not one per
+ * record, because reassigning forty tasks should not put forty messages in
+ * somebody's inbox. A role is told through the members who hold it on this
+ * process. The body names the task, the record references and who handed
+ * them over, with a link to each; it carries no answers, because an email is
+ * the one copy of a record this system cannot take back.
+ *
+ * Nobody is told about work they gave themselves.
+ */
+async function tellNewAssignee(
+  pool: Pool,
+  args: {
+    tenantId: string;
+    actorId: string;
+    runId: string;
+    processKey: string;
+    taskKey: string;
+    to: string;
+    records: { instanceId: string; reference: string }[];
+  },
+): Promise<{ to: string; tasks: number; sent: boolean; reason?: string }[]> {
+  const { rows: ctx } = await pool.query<{ blueprint: Blueprint; by: string; by_email: string }>(
+    `select pv.blueprint, a.display_name as by, a.email as by_email
+       from process_version pv, actor a
+      where pv.tenant_id = $1 and pv.process_key = $2 and a.id = $3
+      order by pv.version desc limit 1`,
+    [args.tenantId, args.processKey, args.actorId],
+  );
+  const c = ctx[0];
+  if (!c) return [];
+  const taskName = c.blueprint.workflow.tasks.find((t) => t.key === args.taskKey)?.name ?? args.taskKey;
+
+  let recipients: string[];
+  if (args.to.startsWith('role:')) {
+    const { rows } = await pool.query<{ email: string }>(
+      `select distinct a.email from membership m join actor a on a.id = m.actor_id
+        where m.tenant_id = $1 and m.process_key = $2 and m.role_key = $3 and a.active`,
+      [args.tenantId, args.processKey, args.to.slice(5)],
+    );
+    recipients = rows.map((r) => r.email);
+  } else {
+    recipients = [args.to];
+  }
+  recipients = recipients.filter((r) => r.toLowerCase() !== c.by_email.toLowerCase());
+
+  const n = args.records.length;
+  const subject = n === 1 ? `${c.by} gave you a task: ${taskName}` : `${c.by} gave you ${n} tasks: ${taskName}`;
+  const text = [
+    `${c.by} has given you the "${taskName}" task on ${n === 1 ? 'this record' : `these ${n} records`} in ${c.blueprint.name}:`,
+    '',
+    ...args.records.map((r) => `  ${r.reference}  ${appUrl()}/console?record=${r.instanceId}`),
+    '',
+    'They are in your work queue in the console.',
+  ].join('\n');
+
+  const told: { to: string; tasks: number; sent: boolean; reason?: string }[] = [];
+  for (const email of recipients) {
+    const result = await sendPlatformMail(pool, {
+      kind: 'task_assigned',
+      to: email,
+      subject,
+      text,
+      tenantId: args.tenantId,
+      actorId: args.actorId,
+      idempotencyKey: `task-assigned:${args.runId}:${email.toLowerCase()}`,
+    });
+    told.push(
+      result && result.status !== 'failed'
+        ? { to: email, tasks: n, sent: true }
+        : { to: email, tasks: n, sent: false, reason: result?.detail ?? 'the email provider refused it' },
+    );
+  }
+  return told;
 }
 
 /** What stands in for a model when the console builds the plan itself. */

@@ -369,8 +369,8 @@ function Preview({ preview, busy, onConfirm }: { preview: ActionPreview; busy: b
 }
 
 /* The copilot can do three things now; the words follow the thing done. */
-const VERB: Record<string, string> = { send_reminder: 'Send', assign: 'Reassign', change_state: 'Move' };
-const DONE: Record<string, string> = { send_reminder: 'sent', assign: 'reassigned', change_state: 'moved' };
+const VERB: Record<string, string> = { send_reminder: 'Send', assign: 'Reassign', change_state: 'Move', set_answer: 'Change' };
+const DONE: Record<string, string> = { send_reminder: 'sent', assign: 'reassigned', change_state: 'moved', set_answer: 'changed' };
 
 function Result({ report }: { report: Report }) {
   return (

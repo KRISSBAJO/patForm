@@ -1200,6 +1200,46 @@ export async function proveBulkActions({ pool, bp, T0, record, completeFor }: Pr
     [[m1, m2]],
   );
 
+  // ---- the reassignment told the new assignee, once, for both tasks
+  const { rows: told } = await pool.query<{ recipient: string; subject: string }>(
+    `select recipient, subject from platform_email where kind = 'task_assigned' and tenant_id = $1`,
+    [tenantId],
+  );
+
+  // ---- set an answer: department to finance on three records, one already there
+  const e1 = await submitted('bulk.e1@example.test');
+  const e2 = await submitted('bulk.e2@example.test');
+  const e3 = await submitted('bulk.e3@example.test');
+  await engine.updateRecord({ instanceId: e3, patch: { department: 'finance' } as never, principal: as(admin), now: T0 });
+  const toFinance = { kind: 'set_answer' as const, field: 'department', value: 'finance' };
+  const editRun = await runDirect(pool, { principal: as(admin), plan: plan([e1, e2, e3]), action: toFinance, now: T0 });
+  const editByOperator = await runDirect(pool, { principal: as(it), plan: plan([e1]), action: toFinance, now: T0 });
+  const notAChoice = await runDirect(pool, {
+    principal: as(admin),
+    plan: plan([e1]),
+    action: { kind: 'set_answer', field: 'department', value: 'marketing' },
+    now: T0,
+  });
+  const notBulk = await runDirect(pool, {
+    principal: as(admin),
+    plan: plan([e1]),
+    action: { kind: 'set_answer', field: 'equipment_needs', value: 'laptop' },
+    now: T0,
+  });
+  // HR can edit records, but not a new starter's own phone number.
+  const notTheirField = await runDirect(pool, {
+    principal: as(admin),
+    plan: plan([e1]),
+    action: { kind: 'set_answer', field: 'phone', value: '+44 7700 900555' },
+    now: T0,
+  });
+  const edited = await confirm(pool, { principal: as(admin), runId: editRun.runId!, digest: editRun.preview!.digest, now: T0 });
+  const departments = await Promise.all([e1, e2].map(async (id) => (await engine.instance(id)).data.department));
+  const { rows: history } = await pool.query<{ payload: { previous?: Record<string, unknown> } }>(
+    `select payload from event where instance_id = $1 and type = 'record_updated' order by seq desc limit 1`,
+    [e1],
+  );
+
   record(
     'Many records at once: previewed per record, confirmed as a set, and reported',
     '§6.4 bulk actions — assignment and status change — through the same preview, digest and per-record checks as reminders.',
@@ -1227,7 +1267,25 @@ export async function proveBulkActions({ pool, bp, T0, record, completeFor }: Pr
       states[0] === 'withdrawn' &&
       states[1] === 'withdrawn' &&
       states[2] === 'provisioning' &&
-      notices[0]!.n === 2,
+      notices[0]!.n === 2 &&
+      told.length === 1 &&
+      told[0]!.recipient === 'it2@proof-bulk.test' &&
+      told[0]!.subject.includes('2 tasks') &&
+      assigned.notified?.[0]?.tasks === 2 &&
+      assigned.notified?.[0]?.sent === true &&
+      names(editRun.preview!.eligible) === [ref(e1), ref(e2)].sort().join(',') &&
+      editRun.preview!.eligible.every((e) => e.from === 'Engineering' && e.to[0] === 'Finance') &&
+      editRun.preview!.skipped[0]?.reason === 'already Finance' &&
+      editByOperator.preview!.refused.length === 1 &&
+      notTheirField.preview!.refused[0]?.reason.startsWith('your roles cannot change') === true &&
+      editByOperator.preview!.eligible.length === 0 &&
+      !notAChoice.ok &&
+      notAChoice.diagnostics.some((d) => d.code === 'ACT010') &&
+      !notBulk.ok &&
+      notBulk.diagnostics.some((d) => d.code === 'ACT009') &&
+      edited.sent.length === 2 &&
+      departments.every((d) => d === 'finance') &&
+      history[0]?.payload.previous?.department === 'engineering',
     `Reassigning equipment to it2 previewed ${assignRun.preview!.eligible.length} records (from role:it_operator) and ` +
       `skipped ${assignRun.preview!.skipped.length} with no open task. An operator previewing the same was refused on ` +
       `${byOperator.preview!.refused.length} — reassignment is an administrator's call. A deactivated member was refused ` +
@@ -1237,7 +1295,12 @@ export async function proveBulkActions({ pool, bp, T0, record, completeFor }: Pr
       `Withdrawing three records moved the two in manager review and skipped the one in provisioning ` +
       `("${moveRun.preview!.skipped[0]?.reason}"); an IT operator was refused ("${moveByOperator.preview!.refused[0]?.reason}"); ` +
       `a move into provisioning did not compile (ACT007), because nothing moves a record there by hand. The two ` +
-      `withdrawn records each got the withdrawal notice the step sends — ${notices[0]!.n} in all.`,
+      `withdrawn records each got the withdrawal notice the step sends — ${notices[0]!.n} in all. ` +
+      `The new assignee got ${told.length} email for both tasks ("${told[0]?.subject}"), not one each. ` +
+      `Setting department to finance changed ${edited.sent.length} records, left the one already in finance alone, ` +
+      `refused an IT operator ("${editByOperator.preview!.refused[0]?.reason}") and HR on a field that is not theirs ("${notTheirField.preview!.refused[0]?.reason}"), and refused to compile a value that is ` +
+      `not one of the choices (ACT010) and a multi-choice field (ACT009). The change kept what it replaced: the ` +
+      `record's history says the department was "${history[0]?.payload.previous?.department}".`,
   );
 }
 

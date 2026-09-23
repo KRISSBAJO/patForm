@@ -2,7 +2,8 @@ import type { Blueprint } from '../blueprint/index.js';
 import { VALUE_KIND } from '../blueprint/data.js';
 import { Diagnostics, type Diagnostic } from '../compiler/diagnostics.js';
 import type { AnswerFilter, Filter, QueryPlan, ActionPlan } from './plan.js';
-import { IMPLEMENTED_ACTIONS } from './plan.js';
+import { BULK_EDITABLE_TYPES, IMPLEMENTED_ACTIONS } from './plan.js';
+import { checkField } from '../blueprint/answers.js';
 
 /**
  * Compiles a query plan into SQL.
@@ -351,6 +352,37 @@ export function compileAction(bp: Blueprint, action: ActionPlan): Diagnostic[] {
     } else if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)) {
       d.error('ACT005', 'action.to', `"${to}" is neither an email address nor a role.`, `Use a member's email or role:<key>.`);
     }
+  }
+
+  if (action.kind === 'set_answer') {
+    const field = bp.data.fields.find((f) => f.key === action.field);
+    if (!field) {
+      d.error('ACT008', 'action.field', `The process has no field "${action.field}".`);
+      return d.items;
+    }
+    if (!BULK_EDITABLE_TYPES.has(field.type) || field.setBy === 'system') {
+      d.error(
+        'ACT009',
+        'action.field',
+        `"${field.label}" cannot be set in bulk.`,
+        'Only single-value fields — text, numbers, dates, choices, yes or no — are.',
+      );
+      return d.items;
+    }
+    /*
+     * The value is checked against the field before anything is previewed,
+     * by the same function the form uses. A value the form would refuse from
+     * a respondent is not a value to write into two hundred records.
+     */
+    const kindOk =
+      action.value === null ||
+      (['number', 'currency'].includes(field.type)
+        ? typeof action.value === 'number'
+        : field.type === 'yes_no'
+          ? typeof action.value === 'boolean'
+          : typeof action.value === 'string');
+    const problem = kindOk ? checkField(field as never, action.value) : `${field.label} needs a ${field.type.replace(/_/g, ' ')} value.`;
+    if (problem) d.error('ACT010', 'action.value', problem);
   }
 
   if (action.kind === 'change_state') {

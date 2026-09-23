@@ -1309,11 +1309,20 @@ export function HeldView({ onChanged }: { onChanged: (count: number) => void }) 
 
 // ------------------------------------------------------------ bulk actions
 
+interface BulkField {
+  key: string;
+  label: string;
+  type: string;
+  choices?: { value: string; label: string }[];
+  required: boolean;
+}
+
 interface BulkOptions {
   templates: { key: string; name: string }[];
   tasks: { key: string; name: string }[];
   moveTargets: { key: string; name: string }[];
   assignees: { value: string; label: string }[];
+  fields: BulkField[];
 }
 
 interface BulkPreview {
@@ -1328,18 +1337,32 @@ interface BulkPreview {
 interface BulkReport {
   kind: string;
   attempted: number;
+  notified?: { to: string; tasks: number; sent: boolean; reason?: string }[];
   sent: { reference: string; to: string[] }[];
   skipped: { reference: string; reason: string }[];
   failed: { reference: string; reason: string }[];
 }
 
-type BulkKind = 'send_reminder' | 'assign' | 'change_state';
+type BulkKind = 'send_reminder' | 'assign' | 'change_state' | 'set_answer';
 
 const BULK_DONE: Record<BulkKind, string> = {
   send_reminder: 'Sent',
   assign: 'Reassigned',
   change_state: 'Moved',
+  set_answer: 'Changed',
 };
+
+/** What a typed answer becomes on the wire: a number for numbers, true/false for yes/no, null for "clear it". */
+function answerValue(field: BulkField | undefined, raw: string): string | number | boolean | null | undefined {
+  if (!field) return undefined;
+  if (raw === '') return field.required ? undefined : null;
+  if (field.type === 'number' || field.type === 'currency') {
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : undefined;
+  }
+  if (field.type === 'yes_no') return raw === 'yes';
+  return raw;
+}
 
 /**
  * Doing one thing to many records, in three steps that cannot be merged.
@@ -1367,6 +1390,7 @@ function BulkBar({
   const [kind, setKind] = useState<BulkKind | ''>('');
   const [choice, setChoice] = useState('');
   const [task, setTask] = useState('');
+  const [answer, setAnswer] = useState('');
   const [preview, setPreview] = useState<{ runId: string; preview: BulkPreview } | null>(null);
   const [report, setReport] = useState<BulkReport | null>(null);
   const [busy, setBusy] = useState(false);
@@ -1381,7 +1405,10 @@ function BulkBar({
   // A different selection is a different set; any preview of the old one is void.
   useEffect(() => {
     setPreview(null);
-  }, [selected, kind, choice, task]);
+  }, [selected, kind, choice, task, answer]);
+
+  const editing = kind === 'set_answer' ? options?.fields.find((f) => f.key === choice) : undefined;
+  const value = answerValue(editing, answer);
 
   const action =
     kind === 'send_reminder' && choice
@@ -1390,7 +1417,9 @@ function BulkBar({
         ? { kind, task, to: choice }
         : kind === 'change_state' && choice
           ? { kind, to: choice }
-          : null;
+          : kind === 'set_answer' && choice && value !== undefined
+            ? { kind, field: choice, value }
+            : null;
 
   const runPreview = async () => {
     if (!action) return;
@@ -1455,6 +1484,7 @@ function BulkBar({
               setKind(e.target.value as BulkKind | '');
               setChoice('');
               setTask('');
+              setAnswer('');
               setReport(null);
             }}
           >
@@ -1468,8 +1498,35 @@ function BulkBar({
             <option value="change_state" disabled={!options?.moveTargets.length}>
               Move them to a state
             </option>
+            <option value="set_answer" disabled={!options?.fields.length}>
+              Change an answer
+            </option>
           </select>
         </label>
+
+        {kind === 'set_answer' && (
+          <>
+            <label className="bk__field">
+              <span className="cs__srOnly">Which answer</span>
+              <select
+                className="wk__select"
+                value={choice}
+                onChange={(e) => {
+                  setChoice(e.target.value);
+                  setAnswer('');
+                }}
+              >
+                <option value="">Which answer…</option>
+                {options?.fields.map((f) => (
+                  <option key={f.key} value={f.key}>
+                    {f.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {editing && <AnswerInput field={editing} value={answer} onChange={setAnswer} />}
+          </>
+        )}
 
         {kind === 'send_reminder' && (
           <label className="bk__field">
@@ -1584,6 +1641,19 @@ function BulkBar({
             {report.skipped.length ? ` ${report.skipped.length} left alone.` : ''}
             {report.failed.length ? ` ${report.failed.length} failed.` : ''}
           </p>
+          {report.kind === 'assign' && report.sent.length > 0 && (
+            <p className="bk__note">
+              {!report.notified?.length
+                ? 'Nobody was emailed — the tasks went to you, or nobody holds that role.'
+                : [
+                    report.notified.some((n) => n.sent) &&
+                      `Emailed ${report.notified.filter((n) => n.sent).map((n) => n.to).join(', ')} about ${report.sent.length === 1 ? 'the task' : `the ${report.sent.length} tasks`}.`,
+                    ...report.notified.filter((n) => !n.sent).map((n) => `Could not email ${n.to}: ${n.reason}.`),
+                  ]
+                    .filter(Boolean)
+                    .join(' ')}
+            </p>
+          )}
           <BulkList
             title={`${BULK_DONE[report.kind as BulkKind] ?? 'Done'} (${report.sent.length})`}
             tone="go"
@@ -1631,5 +1701,58 @@ function BulkList({
         ))}
       </ul>
     </div>
+  );
+}
+
+/**
+ * The value box, shaped by the field: a list for a choice, yes/no for yes/no,
+ * a date picker for a date. Free text only where the field is free text — a
+ * typo in a department dropdown is refused by the compiler, but it is better
+ * never offered.
+ */
+function AnswerInput({ field, value, onChange }: { field: BulkField; value: string; onChange: (v: string) => void }) {
+  const label = `New ${field.label.toLowerCase()}`;
+  if (field.choices?.length || field.type === 'yes_no') {
+    const choices = field.choices?.length
+      ? field.choices
+      : [
+          { value: 'yes', label: 'Yes' },
+          { value: 'no', label: 'No' },
+        ];
+    return (
+      <label className="bk__field">
+        <span className="cs__srOnly">{label}</span>
+        <select className="wk__select" value={value} onChange={(e) => onChange(e.target.value)}>
+          <option value="">{field.required ? 'Set it to…' : 'Clear it, or set it to…'}</option>
+          {choices.map((c) => (
+            <option key={c.value} value={c.value}>
+              {c.label}
+            </option>
+          ))}
+        </select>
+      </label>
+    );
+  }
+  const type =
+    field.type === 'date'
+      ? 'date'
+      : field.type === 'time'
+        ? 'time'
+        : field.type === 'email'
+          ? 'email'
+          : ['number', 'currency'].includes(field.type)
+            ? 'number'
+            : 'text';
+  return (
+    <label className="bk__field">
+      <span className="cs__srOnly">{label}</span>
+      <input
+        className="cs__input bk__value"
+        type={type}
+        value={value}
+        placeholder={field.required ? label : `${label} (empty clears it)`}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    </label>
   );
 }

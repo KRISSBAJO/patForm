@@ -227,6 +227,13 @@ async function main() {
       await page.locator('.bk__bar button', { hasText: 'Preview' }).click();
       await page.waitForTimeout(1500);
       all.push(...(await audit(page, 'Records with a bulk preview open')));
+      // The answer editor: the field picker and the value box it shapes.
+      await page.selectOption('.bk__bar select >> nth=0', 'set_answer');
+      if ((await page.locator('.bk__bar select >> nth=1').locator('option').count()) > 1) {
+        await page.selectOption('.bk__bar select >> nth=1', { index: 1 });
+        await page.waitForTimeout(300);
+        all.push(...(await audit(page, 'Records, changing an answer in bulk')));
+      }
       await page.locator('.bk__clear').click();
     }
   }

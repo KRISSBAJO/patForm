@@ -154,10 +154,43 @@ export const ActionPlan = z.union([
    * target is skipped and told why.
    */
   z.object({ kind: z.literal('change_state'), to: Key }).strict(),
+
+  /**
+   * Sets one answer to one value on every record.
+   *
+   * Through the same edit path a single change takes: the role must hold
+   * `edit` and list the field in its editableFields, calculated fields are
+   * recomputed, deadlines hung off a changed date move, and a "record
+   * updated" step can fire. Only single-value fields — text, a number, a
+   * date, a choice, yes or no. `null` clears an optional answer.
+   */
+  z
+    .object({
+      kind: z.literal('set_answer'),
+      field: Key,
+      value: z.union([z.string().max(2000), z.number(), z.boolean(), z.null()]),
+    })
+    .strict(),
 ]);
 export type ActionPlan = z.infer<typeof ActionPlan>;
 
-export const IMPLEMENTED_ACTIONS = new Set(['send_reminder', 'assign', 'change_state']);
+export const IMPLEMENTED_ACTIONS = new Set(['send_reminder', 'assign', 'change_state', 'set_answer']);
+
+/** The field types a bulk edit may set: one value, typed simply. */
+export const BULK_EDITABLE_TYPES = new Set([
+  'short_text',
+  'long_text',
+  'email',
+  'phone',
+  'number',
+  'currency',
+  'url',
+  'date',
+  'time',
+  'single_choice',
+  'dropdown',
+  'yes_no',
+]);
 
 /** What the model returns: a plan, and its own account of what it understood. */
 export const Proposal = z

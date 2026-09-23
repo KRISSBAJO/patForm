@@ -3033,3 +3033,14 @@ a.cs__navItem {
   display: flex;
   gap: 8px;
 }
+
+.bk__value {
+  min-width: 200px;
+  height: 36px;
+}
+
+.bk__note {
+  margin: -4px 0 8px;
+  font-size: 13px;
+  color: var(--ink-soft);
+}
