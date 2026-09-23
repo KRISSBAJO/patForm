@@ -11,6 +11,13 @@ import { redact, visibleFields, WORKSPACE_GRANTS } from '../src/runtime/policy.j
 import { appUrl, invitationMail, resetMail, verificationMail } from '../src/runtime/platform-mail.js';
 import { verifyRelyKit } from '../src/runtime/delivery.js';
 import { callerFor, limitFor } from '../src/api/intake-limits.js';
+import {
+  addressOf,
+  assertCanSendAs,
+  checkSendingDomain,
+  domainOf,
+  usableFrom,
+} from '../src/runtime/sending-domain.js';
 import { createHmac } from 'node:crypto';
 
 /** Builds the headers exactly as RelyKit's `signPayload` does. */
@@ -312,4 +319,64 @@ test('x-forwarded-for is counted, not trusted', () => {
 
   const bare = { socket: { remoteAddress: '203.0.113.9' }, headers: {} } as unknown as Parameters<typeof callerFor>[0];
   assert.equal(callerFor(bare), '203.0.113.9');
+});
+
+/*
+ * The sending domain.
+ *
+ * "Verified" is mostly DNS, which this repository cannot add. What it can do
+ * is look — and the thing worth testing is that it knows the difference
+ * between a record that is absent and a resolver it could not reach.
+ */
+
+test('an address that could never deliver is refused before a provider is built', () => {
+  // MAIL_FROM falls back to no-reply@localhost. A deployment that names a
+  // provider and forgets the address sends every message from a domain that
+  // does not exist — rejected, or accepted and left to a spam filter, and
+  // "queued" in our own log either way.
+  for (const bad of ['no-reply@localhost', 'nobody', 'a@b', 'x@thing.test', '']) {
+    assert.equal(usableFrom(bad).ok, false, `${bad || '(empty)'} should be refused`);
+    assert.throws(() => assertCanSendAs('relykit', bad), /MAIL_FROM/);
+  }
+
+  assert.equal(usableFrom('Patform <hello@example.com>').ok, true);
+  assert.doesNotThrow(() => assertCanSendAs('relykit', 'Patform <hello@example.com>'));
+
+  // The console provider sends nothing, so it is exempt — that is how this
+  // runs locally, and failing to start there would help nobody.
+  assert.doesNotThrow(() => assertCanSendAs('console', 'no-reply@localhost'));
+});
+
+test('the address is read out of a display-name form', () => {
+  assert.equal(addressOf('Patform <noreply@example.com>'), 'noreply@example.com');
+  assert.equal(addressOf('noreply@example.com'), 'noreply@example.com');
+  assert.equal(domainOf('Patform <noreply@Example.COM>'), 'example.com');
+  assert.equal(domainOf('nonsense'), null);
+});
+
+test('a resolver it cannot reach is reported as unknown, never as missing', async () => {
+  /*
+   * The first version of this caught every DNS error and returned no records,
+   * so a refused connection looked exactly like a domain with no SPF. Asked
+   * about google.com from a machine whose resolver is 127.0.0.1 with nothing
+   * behind it, it reported that google.com has no SPF and no DMARC — which
+   * would send somebody to add records that already exist.
+   */
+  const findings = await checkSendingDomain('Patform <hello@example.com>');
+  assert.ok(findings.length > 0);
+
+  // Whatever the network does here, nothing may claim a *missing* record
+  // unless the resolver actually answered. In this environment there is no
+  // resolver, so no finding may be 'missing' except the address check itself.
+  const missingDnsClaims = findings.filter((f) => f.outcome === 'missing' && f.check !== 'MAIL_FROM is an address that could deliver');
+  for (const f of missingDnsClaims) {
+    assert.ok(
+      f.detail.includes('no ') || f.detail.includes('not '),
+      `a "missing" finding must say what was absent, got: ${f.detail}`,
+    );
+  }
+
+  // And the address check, which needs no network, is decided either way.
+  const address = findings.find((f) => f.check.startsWith('MAIL_FROM'));
+  assert.ok(address && address.outcome !== 'unknown', 'the address check never needs DNS');
 });

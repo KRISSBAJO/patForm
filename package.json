@@ -34,7 +34,8 @@
     "packs": "node --env-file=.env node_modules/tsx/dist/cli.mjs src/packs-cli.ts",
     "a11y:fixtures": "node --env-file=.env node_modules/tsx/dist/cli.mjs scripts/account-fixtures.ts",
     "reachable": "node scripts/reachable.mjs",
-    "packs:check": "tsx src/packs/check.ts"
+    "packs:check": "tsx src/packs/check.ts",
+    "mail:check": "node --env-file=.env node_modules/tsx/dist/cli.mjs src/mail-check.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.127.0",

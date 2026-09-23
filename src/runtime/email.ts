@@ -15,6 +15,7 @@
  */
 
 import { smtpFromEnv } from './smtp.js';
+import { assertCanSendAs } from './sending-domain.js';
 
 export interface Attachment {
   filename: string;
@@ -294,6 +295,20 @@ export function mailFrom(displayName: string): string {
  * worse than one that will not start.
  */
 export function emailProviderFromEnv(): EmailProvider {
+  const provider = pickProvider();
+  /*
+   * And a third switch, for the thing the other two do not cover: a provider
+   * that will really send, from an address that can never arrive. `MAIL_FROM`
+   * falls back to `no-reply@localhost`, so a deployment that configures a
+   * provider and forgets the address sends every message from a domain that
+   * does not exist — rejected by the provider, or accepted and left to the
+   * recipient's spam filter, and `queued` in our log either way.
+   */
+  assertCanSendAs(provider.name, mailFrom('Patform'));
+  return provider;
+}
+
+function pickProvider(): EmailProvider {
   switch (process.env.EMAIL_PROVIDER) {
     case 'relykit': {
       const key = process.env.RELYKIT_API_KEY;

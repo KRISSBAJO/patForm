@@ -753,6 +753,18 @@ The two fields became references — a right-to-work share code, and where the r
 
 **Generalisable:** a control that looks like it worked is worse than one that visibly failed, and the difference is invisible from the code that renders it. The test is not "does the field accept input" but "what is in the row afterwards" — which is one `select` away and nobody had run it.
 
+### 70. A checker that could not tell "absent" from "could not ask"
+
+`mail:check` resolves SPF and DMARC for the sending domain and reports what is missing. The first version caught every DNS error and returned no records — so a refused connection was indistinguishable from a domain with nothing published.
+
+It was tested by asking it about a domain whose answer was already known. Google's SPF and DMARC records certainly exist; the checker said they did not. This machine's resolver is `127.0.0.1` with nothing behind it, and every lookup was `ECONNREFUSED`.
+
+Reported as written, that sends somebody to add records that are already there, and teaches them the tool is wrong — after which it will be ignored on the day it is right.
+
+**Fixed** with three outcomes instead of two. `ENOTFOUND` and `ENODATA` are answers: the resolver was asked and said no. Anything else means the question never got a reply, and the honest report is *unknown*. The command exits `1` for missing and `2` for unreachable, so a pipeline cannot read "I could not find out" as a pass.
+
+**Generalisable, and it is the third time in this document:** a check that collapses "no" and "no answer" into one value will always collapse them toward whichever is easier to return. The way to find it is to run the check against something whose answer you already know — which costs a minute and is the only test that would have caught this.
+
 ---
 
 ## What the compiler structurally cannot catch

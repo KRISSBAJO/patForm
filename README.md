@@ -977,12 +977,21 @@ Everything below is a deliberate deferral:
   already using for safeguarding. Accepting real files means storage,
   size and type limits, a quarantine state and a scanner, none of which
   exists; until it does, nothing pretends otherwise.
-- **A verified sending domain.** Delivery needs two switches to leave the
-  machine: `EMAIL_PROVIDER` naming a provider *and* that provider's
-  credentials. Without both, everything is logged and nothing is sent.
-  `spike`, `seed` and `eval` ignore the setting entirely and say so on stdout —
-  a test harness reading the same `.env` as the server will otherwise mail real
-  people the day somebody configures a provider.
+- **The DNS records for a verified sending domain**, which no repository can
+  add for you. `npm run mail:check` looks: it resolves what a receiving server
+  resolves, says which of SPF and DMARC are missing, and prints the records to
+  add. It exits `1` when a record is absent and `2` when it could not reach a
+  resolver, because those are different answers. DKIM it cannot check — the
+  record is at `<selector>._domainkey.<domain>` and the selector comes from the
+  provider — and it says so rather than listing two of three and reading like
+  a pass.
+
+  Delivery still needs two switches to leave the machine: `EMAIL_PROVIDER`
+  naming a provider *and* that provider's credentials. There is now a third —
+  a real provider with a `MAIL_FROM` that could never deliver refuses to start,
+  because the default is `no-reply@localhost` and a deployment that believes it
+  is sending is worse than one that will not boot. `spike`, `seed` and `eval`
+  ignore the setting entirely and say so on stdout.
 - **DOCX rendering.** HTML templates become PDFs; a blueprint asking for DOCX
   gets a document that says so rather than a silently incomplete one.
 - **Object storage for documents.** The bytes live in Postgres, which is fine
