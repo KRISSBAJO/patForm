@@ -162,7 +162,7 @@ export default function Home() {
               * about seven pixels. Text in artwork can only be made readable by
               * making the artwork bigger, which is the cost of baking it in.
               */}
-            <div className="band__art grid items-start gap-7 xl:grid-cols-[1fr_1.2fr]">
+            <div className="band__art grid items-start gap-5 xl:grid-cols-[1fr_1.35fr]">
               <div className="mx-auto w-full max-w-[520px]">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
@@ -184,11 +184,11 @@ export default function Home() {
                   </p>
                 </blockquote>
 
-                <p className="mt-5 max-w-[210px] text-[14px] font-medium leading-[1.3] text-ink">
+                <p className="mt-4 max-w-[210px] text-[14px] font-medium leading-[1.3] text-ink">
                   Get answers instantly, not in forty minutes.
                 </p>
 
-                <div className="mt-4">
+                <div className="mt-1">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src="/images/outcome-flow-green.webp"
