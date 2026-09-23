@@ -162,13 +162,13 @@ export default function Home() {
               * about seven pixels. Text in artwork can only be made readable by
               * making the artwork bigger, which is the cost of baking it in.
               */}
-            <div className="band__art grid items-start gap-5 xl:grid-cols-[1fr_1.35fr]">
+            <div className="band__art grid items-start gap-3 xl:grid-cols-[1fr_1.1fr]">
               <div className="mx-auto w-full max-w-[520px]">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src="/images/form-chaos-red.webp"
                   srcSet="/images/form-chaos-red@half.webp 709w, /images/form-chaos-red.webp 1418w"
-                  sizes="(max-width: 900px) 92vw, 560px"
+                  sizes="(max-width: 900px) 92vw, 370px"
                   width={1418}
                   height={1109}
                   loading="lazy"
@@ -177,27 +177,31 @@ export default function Home() {
                 />
               </div>
 
-              <div>
+              {/*
+                * In the design the green flow starts under the tangle's
+                * figure, ninety pixels left of the quote, and its top arrow
+                * runs level with the lede — the lede sits in the flow's empty
+                * top-left corner, not above it. So the flow hangs out of its
+                * column to the left and the lede is placed over it.
+                */}
+              <div className="band__answer">
                 <blockquote className="pullquote">
                   <p>
                     “Where is this one, and who has it?” should not be a question that takes forty minutes to answer.
                   </p>
                 </blockquote>
 
-                <p className="mt-4 max-w-[210px] text-[14px] font-medium leading-[1.3] text-ink">
-                  Get answers instantly, not in forty minutes.
-                </p>
-
-                <div className="mt-1">
+                <div className="band__outcome">
+                  <p className="band__lede">Get answers instantly, not in forty minutes.</p>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src="/images/outcome-flow-green.webp"
                     srcSet="/images/outcome-flow-green@half.webp 1021w, /images/outcome-flow-green.webp 2043w"
-                    sizes="(max-width: 900px) 92vw, 46vw"
+                    sizes="(max-width: 900px) 92vw, 500px"
                     width={2043}
                     height={770}
                     loading="lazy"
-                    className="block h-auto w-full"
+                    className="band__flow block h-auto"
                     alt="Three inputs converging on one outcome platform and leaving as three finished, signed results: employee onboarded, expense approved, member registered."
                   />
                 </div>

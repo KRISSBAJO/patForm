@@ -664,11 +664,44 @@ html {
  * sentence the tangle beside it causes, and colour is what says so.
  */
 .pullquote {
-  margin-top: 0;
-  padding: 16px 18px;
+  /*
+   * All four sides, not just the top. There is no CSS reset in this app, so
+   * a blockquote keeps the browser's 40px side margins — which is where the
+   * gap between the tangle's arrow and this box was coming from.
+   */
+  margin: 0;
+  padding: 14px 18px;
   border-radius: 12px;
   background: var(--red-wash);
   border: 1px solid var(--red-border);
+}
+
+/*
+ * The lede sits on the flow, not above it.
+ *
+ * In the design the flow's top arrow runs level with "Get answers instantly"
+ * and the flow itself starts ninety pixels left of the quote, under the
+ * tangle's figure. Its top-left corner is empty — the three inputs enter
+ * lower down — so the lede is placed over that corner rather than stacked
+ * on top, which is what was making the column a hundred pixels taller than
+ * the design.
+ */
+.band__outcome {
+  position: relative;
+  margin-top: 20px;
+}
+
+.band .band__lede {
+  margin: 0 0 8px;
+  max-width: 200px;
+  font-size: 15px;
+  line-height: 1.35;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.band__flow {
+  width: 100%;
 }
 
 /*
@@ -1498,18 +1531,27 @@ html {
     align-items: flex-start;
   }
 
+  /*
+   * A fixed column, not a flexible one. The art beside it is a grid, whose
+   * automatic width is its content's, and against that a `1 1 380px` copy
+   * column lost: at 1280 it was 230px wide and the headline ran four lines.
+   * 340px sets "Nobody needs a form." on one line at 31px; the 1440 board
+   * widens both.
+   */
   .band__copy {
-    flex: 1 1 380px;
+    flex: 0 0 340px;
     min-width: 0;
   }
 
-  .band h2 {
-    font-size: 40px;
+  .band__art {
+    flex: 1 1 0;
+    min-width: 0;
   }
 
   .band p {
-    margin-top: 20px;
-    font-size: 17px;
+    margin-top: 16px;
+    font-size: 16px;
+    line-height: 1.55;
   }
 
   .band__right {
@@ -1547,13 +1589,37 @@ html {
     font-size: 13.5px;
   }
 
+  /*
+   * Measured off the design, scaled to this width: the box is a hundred
+   * pixels tall for three lines, and its top sits a little below the
+   * tangle's first tool. It was 20px text in a 150px box — a paragraph where
+   * the design has an aside.
+   */
   .pullquote {
-    margin-top: 30px;
-    padding: 20px 22px;
+    margin-top: 28px;
+    padding: 14px 18px;
   }
 
   .pullquote p {
-    font-size: 20px;
+    font-size: 16.5px;
+    line-height: 1.45;
+  }
+
+  .band__outcome {
+    margin-top: 44px;
+  }
+
+  .band .band__lede {
+    position: absolute;
+    top: 0;
+    left: 0;
+    margin: 0;
+    font-size: 16.5px;
+  }
+
+  .band__flow {
+    margin-left: -90px;
+    width: calc(100% + 90px);
   }
 
   .section {
@@ -1975,6 +2041,18 @@ html {
   }
 }
 
+/*
+ * The overhang is for the two-column layout only. Between 900 and 1280 the
+ * two pictures stack, and a flow hanging ninety pixels out of a full-width
+ * column just runs off the left of the section.
+ */
+@media (min-width: 900px) and (max-width: 1279px) {
+  .band__flow {
+    margin-left: 0;
+    width: 100%;
+  }
+}
+
 /* ================================================ the design width, exactly */
 
 @media (min-width: 1440px) {
@@ -2014,23 +2092,31 @@ html {
   }
 
   /*
-   * The artwork leads here.
+   * The design, measured and scaled.
    *
-   * The copy had 468px and an 88px gutter, leaving the two pictures about
-   * 316px and 380px — and their words are baked into them, so at that size
-   * "Outcome Platform" and each "Signed" were a few pixels tall. Text inside
-   * artwork cannot reflow; the only way to make it readable is to make the
-   * artwork bigger, which is the standing cost of baking it in.
+   * The reference is 1024 wide; this shell is 1280, a factor of 1.76. At
+   * that factor the copy is 432px, the tangle 360px, the quote column 400px,
+   * and the whole band about 430px tall. The copy had 460px and a 40px
+   * headline, which pushed the artwork down to 315px and made the band
+   * 580px tall — the same parts, the wrong proportions.
    *
-   * 460px, not less: below it the headline breaks after "a" and strands
-   * "form." on its own line. That is the floor this column has.
+   * 432px, not less: at 36px the headline needs 360px to keep "form." on
+   * its line, and the body needs the width to set three lines, not five.
    */
+  .band {
+    padding-block: 42px 44px;
+  }
+
   .band__grid {
-    gap: 48px;
+    gap: 56px;
   }
 
   .band__copy {
-    flex: 0 0 460px;
+    flex: 0 0 432px;
+  }
+
+  .band h2 {
+    font-size: 36px;
   }
 
   .band__art {
