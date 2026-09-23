@@ -80,7 +80,7 @@ export interface PackSpec {
   /** What a successful finish means in the message to the submitter. */
   completionMessage?: string;
   /** Work somebody does after the decision, before it is finished. */
-  task?: { key: string; name: string; byRole: string; description?: string; requiredFields?: string[] };
+  task?: { key: string; name: string; byRole: string; description?: string; requiredFields?: string[]; dueInHours?: number; expireInHours?: number };
   fields: PackField[];
   /** Days after completion. Null keeps the record forever, and says so. */
   retentionDays: number | null;
@@ -205,10 +205,10 @@ function roles(spec: PackSpec, rules: CategoryRules) {
       key,
       name: titleOf(key),
       kind: 'internal' as 'internal' | 'respondent',
-      // `approve` and nothing else that would let them edit what they are
-      // judging. SEC009 refuses an approver who cannot approve; this refuses
-      // an approver who could rewrite the answer first.
-      capabilities: ['view', 'approve'],
+      // A decider who also does the follow-up task may enter only that task's
+      // evidence fields, after the decision. They cannot rewrite the request.
+      capabilities: key === taskRole ? ['view', 'approve', 'operate', 'edit'] : ['view', 'approve'],
+      ...(key === taskRole ? { editableFields: spec.task?.requiredFields ?? [] } : {}),
     })),
   ];
 
@@ -217,7 +217,9 @@ function roles(spec: PackSpec, rules: CategoryRules) {
       key: taskRole,
       name: titleOf(taskRole),
       kind: 'internal' as 'internal' | 'respondent',
-      capabilities: ['view', 'operate'],
+      capabilities: ['view', 'operate', 'edit'],
+      editableFields: spec.task?.requiredFields ?? [],
+      ...(restricted.length ? { hiddenFields: restricted } : {}),
     });
   }
 
@@ -331,7 +333,7 @@ function states(spec: PackSpec, rules: CategoryRules) {
       key: 'doing',
       name: spec.task.name,
       type: 'active',
-      slaHours: 120,
+      slaHours: spec.task.dueInHours ?? 120,
       publicLabel: 'Being arranged',
     });
   }
@@ -619,7 +621,7 @@ function transitions(spec: PackSpec, rules: CategoryRules) {
         key: 'give_up_task',
         from: 'doing',
         to: 'withdrawn',
-        trigger: { on: 'timer', afterHoursInState: 720 },
+        trigger: { on: 'timer', afterHoursInState: spec.task.expireInHours ?? 720 },
         actions: [{ do: 'send_email', key: 'say_expired_task', template: 'expired' }],
       },
     );
@@ -810,12 +812,12 @@ function tests(spec: PackSpec, answers: Record<string, unknown>, rules: Category
       steps: approveAll,
       expect: { state: endState, instanceCount: 1 },
     },
-    ...(spec.category === 'Finance' && spec.task && spec.task.requiredFields?.length
+    ...(spec.task && spec.task.requiredFields?.length
       ? [
           {
             key: 'task_reference_required',
             kind: 'happy_path',
-            name: 'Finance cannot finish before recording the required reference',
+            name: 'Work cannot finish before recording its required evidence',
             steps: [
               ...approveAll,
               { step: 'complete_task', task: spec.task.key, as: spec.task.byRole, expectDenied: true },
@@ -825,7 +827,7 @@ function tests(spec: PackSpec, answers: Record<string, unknown>, rules: Category
           {
             key: 'task_completed_with_reference',
             kind: 'happy_path',
-            name: 'Finance records the reference and finishes the work',
+            name: 'The assigned person records the evidence and finishes the work',
             steps: [
               ...approveAll,
               { step: 'complete_task', task: spec.task.key, as: spec.task.byRole, answers: taskAnswers },
@@ -1109,7 +1111,7 @@ export function buildBlueprint(spec: PackSpec): unknown {
               ...(spec.task.description ? { description: spec.task.description } : {}),
               assignee: { role: spec.task.byRole },
               blocking: true,
-              dueInHours: 120,
+              dueInHours: spec.task.dueInHours ?? 120,
               requiredFields: spec.task.requiredFields ?? [],
             },
           ]
@@ -1123,11 +1125,18 @@ export function buildBlueprint(spec: PackSpec): unknown {
     },
     outputs: {
       webhookEvents: [`${spec.key}.approved`, `${spec.key}.rejected`],
-      exportFields: contextFields.slice(0, 8),
+      // A built-in export is a broad surface. Start with ordinary operational
+      // fields; an installer can explicitly add personal fields if needed.
+      exportFields: fields
+        .filter((f) => f.setBy !== 'operator' && (f.classification === 'internal' || f.classification === 'public'))
+        .map((f) => f.key)
+        .slice(0, 8),
       documents: [],
       dashboard: {
         // What this kind of work is worth watching for, from the category.
-        metrics: rules.monitors,
+        metrics: rules.monitors.some((metric) => metric.kind === 'completion_rate')
+          ? rules.monitors
+          : [...rules.monitors, { key: 'completion', name: 'Finished', kind: 'completion_rate' }],
       },
     },
     tests: tests(spec, answers, rules),

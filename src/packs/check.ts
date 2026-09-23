@@ -27,6 +27,14 @@ let warned = 0;
 console.log(`\n  Compiling ${CATALOGUE.length} packs\n`);
 
 for (const spec of CATALOGUE) {
+  // A pack may compile with only an approval, yet still promise work that
+  // never happens. Keep the catalogue's process-specific finish visible and
+  // testable as new packs are added.
+  if (!spec.task?.description || !spec.task.requiredFields?.length || !spec.completionMessage) {
+    failed++;
+    console.log(`  ${RED}INCOMPLETE${OFF}  ${spec.key}: follow-up task, evidence field and completion message are required`);
+    continue;
+  }
   const raw = buildBlueprint(spec);
 
   const parsed = Blueprint.safeParse(raw);

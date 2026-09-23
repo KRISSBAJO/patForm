@@ -83,6 +83,16 @@ or journal reference that finishes the work. Refunds remain a Finance task; the
 Stripe and Paystack settings do not issue money from these processes. An existing
 draft or published process keeps its own version until it is changed in the builder.
 
+**Other catalogue templates.** All 88 catalogue packs now have a process-specific
+follow-up task and a required record reference before they can finish. Their
+questions, decision chain and completion message are tailored to the activity.
+The catalogue check refuses a new pack that omits its task description, evidence
+field or completion message. Category rules still supply the common escalation,
+retention and threshold controls; installers can change fields, people and rules
+in the builder. The three separately authored reference processes remain
+separate. Existing installations do not change automatically when a built-in
+pack gets a new version.
+
 **Finance receipts.** Expense claims, petty cash and invoice approvals accept a
 PDF, PNG or JPEG up to 5 MB, or an external document reference. Uploads go to the
 private `finance/receipts/` prefix in `AWS_S3_BUCKET`. The GuardDuty malware plan
