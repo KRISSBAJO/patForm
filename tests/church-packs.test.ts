@@ -70,6 +70,11 @@ test('the connect card collects optional private prayer details without sharing 
   assert.deepEqual(bp.experience.pages.map((page) => page.title), [
     'About you', 'Your visit', 'Interests and prayer', 'How we may contact you',
   ]);
+  const escalation = bp.roles.find((role) => role.key === 'senior_minister');
+  assert.ok(escalation?.hiddenFields?.includes('prayer_request'));
+  assert.ok(escalation?.hiddenFields?.includes('other_information'));
+  assert.ok(!bp.outputs.exportFields.includes('prayer_request'));
+  assert.ok(!bp.communications.email.some((message) => message.body.includes('{{prayer_request}}')));
   const connect = describeContents(pack('church_connect_card'), 'Church');
   const pastoral = describeContents(pack('pastoral_care'), 'Church');
   assert.ok(connect.guarantees?.controls.some((control) => control.includes('restricted field')));
