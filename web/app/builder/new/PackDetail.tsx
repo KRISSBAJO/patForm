@@ -100,7 +100,7 @@ export function PackBody({ pack }: { pack: Pack }) {
             * The part that makes this a process rather than a form.
             *
             * The category enforces it — the escalation path, the retention
-            * floor, the threshold tier — and the build fails if a pack in
+            * policy, the threshold tier — and the build fails if a pack in
             * that category does not carry it. Worth saying on the page,
             * because it is the reason to take a pack rather than draw a form.
             */}

@@ -207,17 +207,18 @@ export const RULES: Record<string, CategoryRules> = {
 
   /*
    * Church. A week is right for most of it and wrong for a funeral, which is
-   * why the pack keeps its own shorter time where it sets one: the rule is a
-   * ceiling on how long something may wait, not a floor.
+   * why the pack keeps its own shorter time where it sets one. Church records
+   * also differ sharply: a visitor card should not inherit the retention of
+   * a wedding arrangement or a register. Each Church pack sets its own period.
    */
   Church: {
     decideWithinHours: 168,
     escalateTo: 'senior_minister',
     escalationHours: 336,
-    retentionFloorDays: 1825,
+    retentionFloorDays: 0,
     requires: ['restricted_hidden', 'escalates'],
     monitors: [...WATCH_BASICS, ...WATCH_COMPLETION, ...WATCH_ABANDONMENT],
-    says: 'First decision due within a week at most; overdue work escalates to the senior minister. Records are kept at least five years by default.',
+    says: 'First decision due within a week at most; overdue work escalates to the senior minister. Each process sets its own record retention period.',
   },
 
   Projects: {

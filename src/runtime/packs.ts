@@ -116,7 +116,9 @@ export function describeContents(bp: Blueprint, category?: string): PackContents
       ? {
           guarantees: {
             says: rulesFor(category).says,
-            controls: rulesFor(category).requires.map((c) => CONTROL_MEANS[c]),
+            controls: rulesFor(category).requires
+              .filter((c) => c !== 'restricted_hidden' || bp.data.fields.some((f) => f.classification === 'restricted'))
+              .map((c) => CONTROL_MEANS[c]),
           },
         }
       : {}),

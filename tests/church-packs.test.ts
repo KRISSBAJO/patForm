@@ -4,6 +4,7 @@ import { Blueprint } from '../src/blueprint/index.js';
 import { evaluate } from '../src/blueprint/common.js';
 import { CATALOGUE } from '../src/packs/catalogue.js';
 import { buildBlueprint } from '../src/packs/generate.js';
+import { describeContents } from '../src/runtime/packs.js';
 
 function pack(key: string) {
   const spec = CATALOGUE.find((item) => item.key === key);
@@ -46,4 +47,19 @@ test('church site report has independent review and excludes pastor family profi
   for (const needed of ['site_name', 'reporting_role', 'period_from', 'period_to', 'average_attendance', 'period_income']) {
     assert.ok(keys.includes(needed), `${needed} absent`);
   }
+});
+
+test('Church retention follows the process, not a blanket category minimum', () => {
+  assert.equal(pack('church_connect_card').intent.retentionDays, 365);
+  assert.equal(pack('prayer_request').intent.retentionDays, 365);
+  assert.equal(pack('pastoral_care').intent.retentionDays, 365);
+  assert.equal(pack('baptism_request').intent.retentionDays, 1825);
+  assert.equal(pack('church_site_report').intent.retentionDays, 2555);
+});
+
+test('the connect card preview does not claim to hide data it never collects', () => {
+  const connect = describeContents(pack('church_connect_card'), 'Church');
+  const pastoral = describeContents(pack('pastoral_care'), 'Church');
+  assert.ok(!connect.guarantees?.controls.some((control) => control.includes('restricted field')));
+  assert.ok(pastoral.guarantees?.controls.some((control) => control.includes('restricted field')));
 });
