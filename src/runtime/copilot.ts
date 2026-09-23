@@ -5,7 +5,7 @@ import { compileAction, compileQuery } from '../copilot/compile.js';
 import { ActionPlan, Proposal, QueryPlan } from '../copilot/plan.js';
 import { inTransaction, type Client, type Pool } from './db.js';
 import { Engine } from './engine.js';
-import { AuthorizationError, redact, require_, type Principal } from './policy.js';
+import { AuthorizationError, authorize, redact, require_, type Principal } from './policy.js';
 
 /**
  * The operational copilot.
@@ -67,13 +67,20 @@ export interface ActionPreview {
   kind: string;
   summary: string;
   digest: string;
-  eligible: { instanceId: string; reference: string; to: string[] }[];
+  /**
+   * `to` is who a reminder goes to, who a task goes to, or the state a record
+   * moves to. `from` is who has the task now; `via` is the manual step a move
+   * takes — stored with the target so execution takes the step the operator
+   * was shown, not whichever one it finds later.
+   */
+  eligible: { instanceId: string; reference: string; to: string[]; from?: string | null; via?: string }[];
   refused: { instanceId: string; reference: string; reason: string }[];
   skipped: { instanceId: string; reference: string; reason: string }[];
 }
 
 export interface ExecutionReport {
   runId: string;
+  kind: string;
   attempted: number;
   sent: { instanceId: string; reference: string; to: string[] }[];
   skipped: { instanceId: string; reference: string; reason: string }[];
@@ -206,23 +213,48 @@ async function previewAction(
 
   const template =
     action.kind === 'send_reminder' ? bp.communications.email.find((t) => t.key === action.template) : undefined;
+  const tenantId = args.principal.kind === 'actor' ? args.principal.tenantId : '';
+
+  /*
+   * Reassigning is an administrator's call; the other two are operating the
+   * process. Asked per record, below, because a permission can be scoped to
+   * a record and "you may do this to nine of the eleven" is an answer.
+   */
+  const needs = action.kind === 'assign' ? 'administer' : 'operate';
+
+  /*
+   * For a reassignment, the new assignee is checked once, up front: somebody
+   * who has left, or who holds nothing on this process, would receive work
+   * they cannot open. Better every record refused with that reason than
+   * eleven tasks handed to a dead end.
+   */
+  const assigneeProblem =
+    action.kind === 'assign' ? await problemWithAssignee(client, bp, tenantId, args.plan.processKey, action.to) : null;
+  const openTasks =
+    action.kind === 'assign'
+      ? await openTasksFor(client, matched.map((m) => m.instanceId), action.task)
+      : new Map<string, string | null>();
+  const taskName =
+    action.kind === 'assign' ? (bp.workflow.tasks.find((t) => t.key === action.task)?.name ?? action.task) : '';
+  const target = action.kind === 'change_state' ? bp.workflow.states.find((s) => s.key === action.to) : undefined;
 
   for (const record of matched) {
-    // §6.4: per record, not once for the process. `operate` rather than
-    // `view`, because sending mail on the workspace's behalf is an action.
+    // §6.4: per record, not once for the process.
+    let roles: string[] = [];
     try {
-      await require_(
+      const decision = await require_(
         client,
         {
           principal: args.principal,
-          action: 'operate',
-          tenantId: args.principal.kind === 'actor' ? args.principal.tenantId : '',
+          action: needs,
+          tenantId,
           processKey: args.plan.processKey,
           blueprint: bp,
           instanceId: record.instanceId,
         },
         audit,
       );
+      roles = decision.roles;
     } catch (err) {
       refused.push({
         instanceId: record.instanceId,
@@ -235,6 +267,53 @@ async function previewAction(
     const state = bp.workflow.states.find((s) => s.key === record.state);
     if (state?.type === 'terminal') {
       skipped.push({ instanceId: record.instanceId, reference: record.reference, reason: 'the record has finished' });
+      continue;
+    }
+
+    if (action.kind === 'assign') {
+      if (assigneeProblem) {
+        refused.push({ instanceId: record.instanceId, reference: record.reference, reason: assigneeProblem });
+        continue;
+      }
+      if (!openTasks.has(record.instanceId)) {
+        skipped.push({ instanceId: record.instanceId, reference: record.reference, reason: `no open "${taskName}" task` });
+        continue;
+      }
+      const from = openTasks.get(record.instanceId) ?? null;
+      if ((from ?? '').toLowerCase() === action.to.trim().toLowerCase()) {
+        skipped.push({ instanceId: record.instanceId, reference: record.reference, reason: `already assigned to ${action.to}` });
+        continue;
+      }
+      eligible.push({ instanceId: record.instanceId, reference: record.reference, to: [action.to.trim()], from });
+      continue;
+    }
+
+    if (action.kind === 'change_state') {
+      if (record.state === action.to) {
+        skipped.push({ instanceId: record.instanceId, reference: record.reference, reason: `already in ${target?.name}` });
+        continue;
+      }
+      const step = bp.workflow.transitions.find(
+        (t) => t.from === record.state && t.to === action.to && t.trigger.on === 'manual',
+      );
+      if (!step) {
+        skipped.push({
+          instanceId: record.instanceId,
+          reference: record.reference,
+          reason: `nothing in the process moves a record from ${record.stateName} to ${target?.name} by hand`,
+        });
+        continue;
+      }
+      const by = step.trigger.on === 'manual' ? step.trigger.by : [];
+      if (args.principal.kind === 'actor' && !roles.some((r) => by.includes(r))) {
+        refused.push({
+          instanceId: record.instanceId,
+          reference: record.reference,
+          reason: `only ${by.map((k) => bp.roles.find((r) => r.key === k)?.name ?? k).join(' or ')} may move it from ${record.stateName} to ${target?.name}`,
+        });
+        continue;
+      }
+      eligible.push({ instanceId: record.instanceId, reference: record.reference, to: [target?.name ?? action.to], via: step.key });
       continue;
     }
 
@@ -255,9 +334,56 @@ async function previewAction(
   const summary =
     action.kind === 'send_reminder'
       ? `Send "${template?.name ?? action.template}" to ${eligible.length} of ${matched.length} record(s).`
-      : `${action.kind} on ${eligible.length} record(s).`;
+      : action.kind === 'assign'
+        ? `Give the "${taskName}" task to ${action.to.trim()} on ${eligible.length} of ${matched.length} record(s).`
+        : `Move ${eligible.length} of ${matched.length} record(s) to ${target?.name ?? action.to}.`;
 
   return { kind: action.kind, summary, digest, eligible, refused, skipped };
+}
+
+/** The open task of this kind on each record, and who has it. */
+async function openTasksFor(client: Client, ids: string[], taskKey: string): Promise<Map<string, string | null>> {
+  if (!ids.length) return new Map();
+  const { rows } = await client.query<{ instance_id: string; assignee: string | null }>(
+    `select distinct on (instance_id) instance_id, assignee from task
+      where instance_id = any($1::uuid[]) and task_key = $2 and status = 'open'
+      order by instance_id, id`,
+    [ids, taskKey],
+  );
+  return new Map(rows.map((r) => [r.instance_id, r.assignee]));
+}
+
+/**
+ * Why this person could not take the work, or null if they could.
+ *
+ * A role was checked by the compiler. A person is checked here, against the
+ * live membership: they must be an active member of this workspace and able
+ * to operate this process — which is what completing a task asks of them.
+ */
+async function problemWithAssignee(
+  client: Client,
+  bp: Blueprint,
+  tenantId: string,
+  processKey: string,
+  to: string,
+): Promise<string | null> {
+  const who = to.trim();
+  if (who.startsWith('role:')) return null;
+  const { rows } = await client.query<{ id: string; active: boolean }>(
+    'select id, active from actor where tenant_id = $1 and lower(email) = lower($2)',
+    [tenantId, who],
+  );
+  const member = rows[0];
+  if (!member) return `${who} is not a member of this workspace`;
+  if (!member.active) return `${who} has been deactivated`;
+  const decision = await authorize(client, {
+    principal: { kind: 'actor', tenantId, actorId: member.id },
+    action: 'operate',
+    tenantId,
+    processKey,
+    blueprint: bp,
+  });
+  return decision.allowed ? null : `${who} cannot work on this process (${decision.reason})`;
 }
 
 /**
@@ -537,11 +663,71 @@ export async function confirm(
     throw new Error('the plan changed since it was previewed — look at it again before confirming');
   }
 
-  const eligible = run.targets.filter((t) => t.decision === 'eligible');
+  const eligible = run.targets.filter((t) => t.decision === 'eligible') as {
+    instanceId: string;
+    reference: string;
+    decision: string;
+    to?: string[];
+    via?: string;
+  }[];
   const engine = new Engine(pool);
-  const report: ExecutionReport = { runId: run.id, attempted: eligible.length, sent: [], skipped: [], failed: [] };
+  const action = run.action_plan;
+  const report: ExecutionReport = {
+    runId: run.id,
+    kind: action.kind,
+    attempted: eligible.length,
+    sent: [],
+    skipped: [],
+    failed: [],
+  };
+  const why = `bulk action ${run.id.slice(0, 8)}`;
 
   for (const target of eligible) {
+    // Each is re-authorized inside the engine call, not trusted from the
+    // preview: a role can be removed between the two, and the preview is
+    // evidence of what was true then, not permission for now.
+    if (action.kind === 'assign') {
+      try {
+        const outcome = await engine.reassignTask({
+          principal: args.principal,
+          instanceId: target.instanceId,
+          taskKey: action.task,
+          to: action.to.trim(),
+          reason: why,
+          now,
+        });
+        if (outcome.performed) report.sent.push({ instanceId: target.instanceId, reference: target.reference, to: [action.to.trim()] });
+        else report.skipped.push({ instanceId: target.instanceId, reference: target.reference, reason: outcome.reason ?? 'no effect' });
+      } catch (err) {
+        report.failed.push({
+          instanceId: target.instanceId,
+          reference: target.reference,
+          reason: err instanceof AuthorizationError ? err.reason : err instanceof Error ? err.message : String(err),
+        });
+      }
+      continue;
+    }
+
+    if (action.kind === 'change_state') {
+      try {
+        const outcome = await engine.fireManual({
+          principal: args.principal,
+          instanceId: target.instanceId,
+          transitionKey: target.via ?? '',
+          now,
+        });
+        if (outcome.applied) report.sent.push({ instanceId: target.instanceId, reference: target.reference, to: target.to ?? [] });
+        else report.skipped.push({ instanceId: target.instanceId, reference: target.reference, reason: outcome.reason ?? 'no effect' });
+      } catch (err) {
+        report.failed.push({
+          instanceId: target.instanceId,
+          reference: target.reference,
+          reason: err instanceof AuthorizationError ? err.reason : err instanceof Error ? err.message : String(err),
+        });
+      }
+      continue;
+    }
+
     try {
       // Re-authorized at execution, not trusted from the preview: a role can
       // be removed between the two, and the preview is evidence of what was
@@ -571,6 +757,10 @@ export async function confirm(
     }
   }
 
+  // A move queues the step's own actions — its emails, tasks, approvals.
+  // Delivered now, so the report is not the only thing that has happened.
+  if (action.kind === 'change_state' && report.sent.length) await engine.drain(now, 'bulk', tenantId);
+
   await pool.query(
     `update copilot_run
         set status = $1, result = $2, confirmed_by = $3, confirmed_at = $4
@@ -585,6 +775,117 @@ export async function confirm(
   );
 
   return report;
+}
+
+export interface BulkOptions {
+  templates: { key: string; name: string }[];
+  tasks: { key: string; name: string }[];
+  /** States the process lets somebody move a record into by hand. */
+  moveTargets: { key: string; name: string }[];
+  /** Who a task could go to: members who can operate this process, and its operating roles. */
+  assignees: { value: string; label: string }[];
+}
+
+/**
+ * What the Records page can offer to do to a selection.
+ *
+ * Only choices that could work: a move target is a state some manual step
+ * leads to, and an assignee is a member who could complete the work. The
+ * preview still decides per record — this only keeps the menu from offering
+ * things that would be refused on every row.
+ */
+export async function bulkOptions(pool: Pool, principal: Principal, processKey: string): Promise<BulkOptions> {
+  if (principal.kind !== 'actor') throw new Error('the copilot answers to signed-in members');
+  const tenantId = principal.tenantId;
+  return inTransaction(pool, async (client) => {
+    const bp = await blueprintFor(client, tenantId, processKey);
+    await require_(client, { principal, action: 'view', tenantId, processKey, blueprint: bp }, pool);
+
+    const manualTargets = new Set(bp.workflow.transitions.filter((t) => t.trigger.on === 'manual').map((t) => t.to));
+    const { rows: members } = await client.query<{ id: string; email: string; display_name: string }>(
+      'select id, email, display_name from actor where tenant_id = $1 and active order by display_name',
+      [tenantId],
+    );
+    const assignees: BulkOptions['assignees'] = [];
+    for (const m of members) {
+      const decision = await authorize(client, {
+        principal: { kind: 'actor', tenantId, actorId: m.id },
+        action: 'operate',
+        tenantId,
+        processKey,
+        blueprint: bp,
+      });
+      if (decision.allowed) assignees.push({ value: m.email, label: `${m.display_name} (${m.email})` });
+    }
+    for (const r of bp.roles) {
+      if (r.kind === 'internal' && r.capabilities.includes('operate')) {
+        assignees.push({ value: `role:${r.key}`, label: `Anyone who is ${r.name}` });
+      }
+    }
+
+    return {
+      templates: bp.communications.email.map((t) => ({ key: t.key, name: t.name })),
+      tasks: bp.workflow.tasks.map((t) => ({ key: t.key, name: t.name })),
+      moveTargets: bp.workflow.states.filter((s) => manualTargets.has(s.key)).map((s) => ({ key: s.key, name: s.name })),
+      assignees,
+    };
+  });
+}
+
+/** What stands in for a model when the console builds the plan itself. */
+const CONSOLE: Pick<Asker, 'name' | 'model' | 'promptVersion'> = { name: 'console', model: 'none', promptVersion: 'direct' };
+
+/**
+ * A plan the console built — from filters, or from rows somebody ticked.
+ *
+ * Previewing an action records a run, the same as asking does, because the
+ * confirmation is bound to that run: its digest, its target list, and the
+ * person who previewed it. Without the record there is nothing to confirm,
+ * which is why this path could preview a bulk action and never carry one
+ * out. Only runs with an action are recorded — a filter is not an event —
+ * and they count against the same hourly limit as questions.
+ */
+export async function runDirect(
+  pool: Pool,
+  args: { principal: Principal; plan: QueryPlan; action?: ActionPlan | null; label?: string; now?: Date },
+): Promise<{
+  runId: string | null;
+  rows: MatchedRecord[];
+  diagnostics: Diagnostic[];
+  ok: boolean;
+  preview: ActionPreview | null;
+}> {
+  if (args.principal.kind !== 'actor') throw new Error('the copilot answers to signed-in members');
+  const { actorId, tenantId } = args.principal;
+  if (args.action) await enforceRateLimit(pool, actorId, tenantId);
+
+  const started = Date.now();
+  const outcome = await runPlan(pool, { principal: args.principal, plan: args.plan, action: args.action, now: args.now });
+  if (!args.action) return { runId: null, rows: outcome.rows, diagnostics: outcome.diagnostics, ok: outcome.ok, preview: null };
+
+  const runId = await recordRun(pool, {
+    tenantId,
+    actorId,
+    processKey: args.plan.processKey,
+    question: args.label ?? 'bulk action from the console',
+    reading: outcome.preview?.summary ?? null,
+    plan: args.plan,
+    action: args.action,
+    diagnostics: outcome.diagnostics,
+    targets: outcome.preview
+      ? [
+          ...outcome.preview.eligible.map((e) => ({ ...e, decision: 'eligible' as const })),
+          ...outcome.preview.refused.map((r) => ({ ...r, decision: 'refused' as const })),
+          ...outcome.preview.skipped.map((x) => ({ ...x, decision: 'skipped' as const })),
+        ]
+      : [],
+    digest: outcome.preview?.digest ?? null,
+    status: !outcome.ok ? 'refused' : 'previewed',
+    asker: CONSOLE as Asker,
+    latencyMs: Date.now() - started,
+    error: null,
+  });
+  return { runId, rows: outcome.rows, diagnostics: outcome.diagnostics, ok: outcome.ok, preview: outcome.preview };
 }
 
 /** The §7.3 record of what was asked and what happened, newest first. */

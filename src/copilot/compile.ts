@@ -191,6 +191,9 @@ function compileFilter(filter: Filter, ctx: Ctx): string | null {
       return filter.is ? failing : `not ${failing}`;
     }
 
+    case 'records':
+      return `i.id = any(${push(filter.ids)}::uuid[])`;
+
     case 'answer':
       return compileAnswerFilter(filter, ctx);
   }
@@ -322,6 +325,45 @@ export function compileAction(bp: Blueprint, action: ActionPlan): Diagnostic[] {
     // way to exfiltrate a record one email at a time.
     if (!template.to.length) {
       d.error('ACT003', 'action.template', `Template "${template.key}" is addressed to nobody.`);
+    }
+  }
+
+  if (action.kind === 'assign') {
+    const task = bp.workflow.tasks.find((t) => t.key === action.task);
+    if (!task) {
+      d.error(
+        'ACT004',
+        'action.task',
+        `The process has no task "${action.task}".`,
+        `Tasks are: ${bp.workflow.tasks.map((t) => t.key).join(', ') || '(none)'}.`,
+      );
+    }
+    const to = action.to.trim();
+    if (to.startsWith('role:')) {
+      const role = bp.roles.find((r) => r.key === to.slice(5));
+      if (!role || role.kind !== 'internal') {
+        d.error('ACT005', 'action.to', `"${to}" is not an internal role of this process.`);
+      } else if (!role.capabilities.includes('operate')) {
+        // A task handed to a role that cannot complete it is a task nobody
+        // can complete — the one outcome reassignment exists to prevent.
+        d.error('ACT005', 'action.to', `Role "${role.key}" cannot operate this process, so it could not complete the task.`);
+      }
+    } else if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)) {
+      d.error('ACT005', 'action.to', `"${to}" is neither an email address nor a role.`, `Use a member's email or role:<key>.`);
+    }
+  }
+
+  if (action.kind === 'change_state') {
+    const target = bp.workflow.states.find((s) => s.key === action.to);
+    if (!target) {
+      d.error('ACT006', 'action.to', `The process has no state "${action.to}".`);
+    } else if (!bp.workflow.transitions.some((t) => t.to === action.to && t.trigger.on === 'manual')) {
+      d.error(
+        'ACT007',
+        'action.to',
+        `Nothing in the process moves a record to "${target.name}" by hand.`,
+        `A bulk move follows the process's own manual steps, so the state needs one leading to it.`,
+      );
     }
   }
 

@@ -170,9 +170,22 @@ test('an action can only name a template the blueprint already has', () => {
   );
 });
 
-test('actions that are named but not built are refused, not half-performed', () => {
-  const assign = compileAction(bp, ActionPlan.parse({ kind: 'assign', task: 'issue_equipment', to: 'x' }));
-  assert.equal(assign[0]?.code, 'ACT001');
+test('a bulk reassignment names a real task and somebody who could do it', () => {
+  const codes = (action: unknown) => compileAction(bp, ActionPlan.parse(action)).map((d) => d.code);
+  assert.deepEqual(codes({ kind: 'assign', task: 'issue_equipment', to: 'ini@example.test' }), []);
+  assert.deepEqual(codes({ kind: 'assign', task: 'issue_equipment', to: 'role:it_operator' }), []);
+  assert.deepEqual(codes({ kind: 'assign', task: 'no_such_task', to: 'ini@example.test' }), ['ACT004']);
+  assert.deepEqual(codes({ kind: 'assign', task: 'issue_equipment', to: 'x' }), ['ACT005'], 'not an address');
+  // A respondent role, and a role that cannot operate, could never complete the task.
+  assert.deepEqual(codes({ kind: 'assign', task: 'issue_equipment', to: 'role:new_hire' }), ['ACT005']);
+  assert.deepEqual(codes({ kind: 'assign', task: 'issue_equipment', to: 'role:hr_approver' }), ['ACT005']);
+});
+
+test(`a bulk move follows the process's own manual steps, or does not compile`, () => {
+  const codes = (to: string) => compileAction(bp, ActionPlan.parse({ kind: 'change_state', to })).map((d) => d.code);
+  assert.deepEqual(codes('withdrawn'), [], 'HR can withdraw a record by hand');
+  assert.deepEqual(codes('provisioning'), ['ACT007'], 'nothing moves a record into provisioning by hand');
+  assert.deepEqual(codes('nowhere'), ['ACT006']);
 });
 
 test('a proposal is only a proposal when it has a reading the operator can check', () => {

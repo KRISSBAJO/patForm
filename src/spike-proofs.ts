@@ -5,7 +5,7 @@ import { AuthorizationError, type Principal } from './runtime/policy.js';
 import { resolveResumeToken } from './runtime/auth.js';
 import { runRetention } from './runtime/retention.js';
 import { checkAnswers, loadDraft, publicForm, respondentStatus, respondentUpdate, saveDraft, submitForm } from './runtime/intake.js';
-import { confirm, runPlan } from './runtime/copilot.js';
+import { confirm, runDirect, runPlan } from './runtime/copilot.js';
 import { traceByRequest, traceForInstance } from './runtime/support.js';
 import { dataMap, eraseSubject, findSubject } from './runtime/privacy.js';
 import { withTrace } from './runtime/trace.js';
@@ -1083,6 +1083,160 @@ export async function proveSendingHealth({ pool, bp, T0, record, completeFor }: 
     if (previous === undefined) delete process.env.OPS_ALERT_EMAIL;
     else process.env.OPS_ALERT_EMAIL = previous;
   }
+}
+
+/**
+ * Bulk assignment and bulk moves: previewed per record, confirmed as a set, reported honestly.
+ *
+ * §6.4: "Bulk actions require permission checks per record, an impact
+ * preview, rate limits, and result report." Reminders were the only bulk
+ * action; the compiler refused the other two with ACT001. This proof runs
+ * both through the same preview-and-confirm path the reminders use, and
+ * checks every way it should say no.
+ */
+export async function proveBulkActions({ pool, bp, T0, record, completeFor }: ProofCtx): Promise<void> {
+  const engine = new Engine(pool);
+  const tenantId = await engine.createTenant('proof:bulk');
+  const version = await engine.publish(tenantId, bp, 'proof');
+  const as = (actorId: string): Principal => ({ kind: 'actor', tenantId, actorId });
+
+  const admin = await engine.createActor(tenantId, 'lead@proof-bulk.test', 'Joy Lead', 'admin');
+  await engine.grant({ tenantId, actorId: admin, processKey: bp.key, roleKey: 'hr_admin' });
+  const manager = await engine.createActor(tenantId, 'manager_email@example.test', 'Priya Raman');
+  await engine.grant({ tenantId, actorId: manager, processKey: bp.key, roleKey: 'hiring_manager' });
+  const hr = await engine.createActor(tenantId, 'hr@proof-bulk.test', 'Sam Boateng');
+  await engine.grant({ tenantId, actorId: hr, processKey: bp.key, roleKey: 'hr_approver' });
+  const it = await engine.createActor(tenantId, 'it@proof-bulk.test', 'Ini Etim', 'operator');
+  await engine.grant({ tenantId, actorId: it, processKey: bp.key, roleKey: 'it_operator' });
+  const it2 = await engine.createActor(tenantId, 'it2@proof-bulk.test', 'Tomi Etim');
+  await engine.grant({ tenantId, actorId: it2, processKey: bp.key, roleKey: 'it_operator' });
+  const leaver = await engine.createActor(tenantId, 'leaver@proof-bulk.test', 'Gone Person');
+  await engine.grant({ tenantId, actorId: leaver, processKey: bp.key, roleKey: 'it_operator' });
+  await engine.deactivateActor(leaver);
+  await engine.createActor(tenantId, 'reader@proof-bulk.test', 'Only Reads', 'read_only');
+
+  const submitted = async (email: string) => {
+    const { instanceId } = await engine.submit({ version, answers: completeFor(bp, { personal_email: email }) as never, now: T0 });
+    await engine.drain(T0, 'proof', tenantId);
+    return instanceId;
+  };
+  const provisioned = async (email: string) => {
+    const id = await submitted(email);
+    for (const [approvalKey, actorId] of [['manager_approval', manager], ['hr_approval', hr]] as const) {
+      await engine.decide({ instanceId: id, approvalKey, decision: 'approved', principal: as(actorId), now: T0 });
+      await engine.drain(T0, 'proof', tenantId);
+    }
+    return id;
+  };
+  const p1 = await provisioned('bulk.p1@example.test');
+  const p2 = await provisioned('bulk.p2@example.test');
+  const m1 = await submitted('bulk.m1@example.test');
+  const m2 = await submitted('bulk.m2@example.test');
+
+  const plan = (ids: string[]) => QueryPlan.parse({ processKey: bp.key, filters: [{ kind: 'records', ids }], limit: 50 });
+  const assign = (to: string) => ({ kind: 'assign' as const, task: 'issue_equipment', to });
+  const names = (xs: { reference: string }[]) => xs.map((x) => x.reference).sort().join(',');
+  const ref = (id: string) => id.slice(0, 8).toUpperCase();
+
+  // ---- assign: the preview
+  const assignRun = await runDirect(pool, { principal: as(admin), plan: plan([p1, p2, m1]), action: assign('it2@proof-bulk.test'), now: T0 });
+  const byOperator = await runDirect(pool, { principal: as(it), plan: plan([p1, p2]), action: assign('it2@proof-bulk.test'), now: T0 });
+  const toLeaver = await runDirect(pool, { principal: as(admin), plan: plan([p1]), action: assign('leaver@proof-bulk.test'), now: T0 });
+  const toReader = await runDirect(pool, { principal: as(admin), plan: plan([p1]), action: assign('reader@proof-bulk.test'), now: T0 });
+
+  // ---- assign: the confirmation, and each way it refuses
+  let otherPerson = 'allowed';
+  try {
+    await confirm(pool, { principal: as(hr), runId: assignRun.runId!, digest: assignRun.preview!.digest, now: T0 });
+  } catch (err) {
+    otherPerson = err instanceof AuthorizationError ? 'refused' : String(err);
+  }
+  let staleDigest = 'allowed';
+  try {
+    await confirm(pool, { principal: as(admin), runId: assignRun.runId!, digest: 'not-the-digest', now: T0 });
+  } catch (err) {
+    staleDigest = err instanceof Error ? err.message : String(err);
+  }
+  const assigned = await confirm(pool, { principal: as(admin), runId: assignRun.runId!, digest: assignRun.preview!.digest, now: T0 });
+  let twice = 'allowed';
+  try {
+    await confirm(pool, { principal: as(admin), runId: assignRun.runId!, digest: assignRun.preview!.digest, now: T0 });
+  } catch (err) {
+    twice = err instanceof Error ? err.message : String(err);
+  }
+  const { rows: tasks } = await pool.query<{ assignee: string }>(
+    `select assignee from task where instance_id = any($1::uuid[]) and task_key = 'issue_equipment' and status = 'open'`,
+    [[p1, p2]],
+  );
+  // The new assignee can finish it; the old one, who held only the role, no longer can.
+  let oldAssignee = 'allowed';
+  try {
+    await engine.completeTask({ instanceId: p2, taskKey: 'issue_equipment', principal: as(it), now: T0 });
+  } catch (err) {
+    oldAssignee = err instanceof AuthorizationError ? 'refused' : String(err);
+  }
+  await engine.completeTask({ instanceId: p1, taskKey: 'issue_equipment', principal: as(it2), now: T0 });
+  const { rows: moved } = await pool.query<{ type: string }>(
+    `select type from event where instance_id = $1 and type = 'task_reassigned'`,
+    [p1],
+  );
+
+  // ---- change_state: withdraw two waiting records, and see what it will not do
+  const withdraw = { kind: 'change_state' as const, to: 'withdrawn' };
+  const moveRun = await runDirect(pool, { principal: as(admin), plan: plan([m1, m2, p2]), action: withdraw, now: T0 });
+  const moveByOperator = await runDirect(pool, { principal: as(it), plan: plan([m1]), action: withdraw, now: T0 });
+  const intoProvisioning = await runDirect(pool, {
+    principal: as(admin),
+    plan: plan([m1]),
+    action: { kind: 'change_state', to: 'provisioning' },
+    now: T0,
+  });
+  const movedReport = await confirm(pool, { principal: as(admin), runId: moveRun.runId!, digest: moveRun.preview!.digest, now: T0 });
+  const states = await Promise.all([m1, m2, p2].map(async (id) => (await engine.instance(id)).state));
+  const { rows: notices } = await pool.query<{ n: number }>(
+    `select count(*)::int as n from email_log where instance_id = any($1::uuid[]) and template_key = 'withdrawn_notice'`,
+    [[m1, m2]],
+  );
+
+  record(
+    'Many records at once: previewed per record, confirmed as a set, and reported',
+    '§6.4 bulk actions — assignment and status change — through the same preview, digest and per-record checks as reminders.',
+    names(assignRun.preview!.eligible) === [ref(p1), ref(p2)].sort().join(',') &&
+      assignRun.preview!.eligible.every((e) => e.from === 'role:it_operator') &&
+      names(assignRun.preview!.skipped) === ref(m1) &&
+      byOperator.preview!.eligible.length === 0 &&
+      byOperator.preview!.refused.length === 2 &&
+      toLeaver.preview!.refused[0]?.reason.includes('deactivated') === true &&
+      toReader.preview!.refused[0]?.reason.includes('cannot work on this process') === true &&
+      otherPerson === 'refused' &&
+      staleDigest.includes('changed since it was previewed') &&
+      assigned.kind === 'assign' &&
+      assigned.sent.length === 2 &&
+      twice.includes('already been carried out') &&
+      tasks.every((t) => t.assignee === 'it2@proof-bulk.test') &&
+      oldAssignee === 'refused' &&
+      moved.length === 1 &&
+      names(moveRun.preview!.eligible) === [ref(m1), ref(m2)].sort().join(',') &&
+      moveRun.preview!.skipped[0]?.reason.startsWith('nothing in the process moves a record from') === true &&
+      moveByOperator.preview!.refused[0]?.reason.startsWith('only HR administrator') === true &&
+      !intoProvisioning.ok &&
+      intoProvisioning.diagnostics.some((d) => d.code === 'ACT007') &&
+      movedReport.sent.length === 2 &&
+      states[0] === 'withdrawn' &&
+      states[1] === 'withdrawn' &&
+      states[2] === 'provisioning' &&
+      notices[0]!.n === 2,
+    `Reassigning equipment to it2 previewed ${assignRun.preview!.eligible.length} records (from role:it_operator) and ` +
+      `skipped ${assignRun.preview!.skipped.length} with no open task. An operator previewing the same was refused on ` +
+      `${byOperator.preview!.refused.length} — reassignment is an administrator's call. A deactivated member was refused ` +
+      `("${toLeaver.preview!.refused[0]?.reason}") and so was a member with no role on the process. Confirming as somebody ` +
+      `else was ${otherPerson}; a stale digest was refused; confirming ran ${assigned.sent.length} and a second confirm ` +
+      `was refused. The old assignee could no longer complete the task (${oldAssignee}); the new one did. ` +
+      `Withdrawing three records moved the two in manager review and skipped the one in provisioning ` +
+      `("${moveRun.preview!.skipped[0]?.reason}"); an IT operator was refused ("${moveByOperator.preview!.refused[0]?.reason}"); ` +
+      `a move into provisioning did not compile (ACT007), because nothing moves a record there by hand. The two ` +
+      `withdrawn records each got the withdrawal notice the step sends — ${notices[0]!.n} in all.`,
+  );
 }
 
 /**

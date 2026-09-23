@@ -57,6 +57,7 @@ interface AskResult {
 }
 
 interface Report {
+  kind?: string;
   attempted: number;
   sent: { reference: string; to: string[] }[];
   skipped: { reference: string; reason: string }[];
@@ -360,18 +361,22 @@ function Preview({ preview, busy, onConfirm }: { preview: ActionPreview; busy: b
           is not included.
         </span>
         <button className="cs__btn cs__btn--primary" onClick={onConfirm} disabled={busy || !preview.eligible.length}>
-          {busy ? 'Sending…' : `Send ${preview.eligible.length}`}
+          {busy ? 'Working…' : `${VERB[preview.kind] ?? 'Confirm'} ${preview.eligible.length}`}
         </button>
       </div>
     </div>
   );
 }
 
+/* The copilot can do three things now; the words follow the thing done. */
+const VERB: Record<string, string> = { send_reminder: 'Send', assign: 'Reassign', change_state: 'Move' };
+const DONE: Record<string, string> = { send_reminder: 'sent', assign: 'reassigned', change_state: 'moved' };
+
 function Result({ report }: { report: Report }) {
   return (
     <div className="ask__result" role="status" aria-live="polite">
       <strong>
-        {report.sent.length} sent of {report.attempted} attempted.
+        {report.sent.length} {DONE[report.kind ?? 'send_reminder'] ?? 'done'} of {report.attempted} attempted.
       </strong>
       {report.sent.map((s, i) => (
         <p key={i}>

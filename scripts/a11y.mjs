@@ -211,6 +211,26 @@ async function main() {
     }
   }
 
+  /*
+   * The Records list with a selection, and a bulk preview open. Previewing
+   * only — the gate never confirms, so it changes nothing.
+   */
+  const recordsNav = page.locator('button', { hasText: /^Records$/ }).first();
+  if (await recordsNav.count()) {
+    await recordsNav.click();
+    await page.waitForTimeout(1800);
+    const first = page.locator('tbody input[type=checkbox]').first();
+    if (await first.count()) {
+      await first.check();
+      await page.selectOption('.bk__bar select >> nth=0', 'send_reminder');
+      await page.selectOption('.bk__bar select >> nth=1', { index: 1 });
+      await page.locator('.bk__bar button', { hasText: 'Preview' }).click();
+      await page.waitForTimeout(1500);
+      all.push(...(await audit(page, 'Records with a bulk preview open')));
+      await page.locator('.bk__clear').click();
+    }
+  }
+
   // The two views that answer "how do records arrive" and "how do people get
   // in". Both existed as endpoints with nothing calling them.
   for (const [name, label] of [

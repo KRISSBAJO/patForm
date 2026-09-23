@@ -76,6 +76,13 @@ export const Filter = z.union([
   /** A delivery that failed, or an action the outbox has given up on. */
   z.object({ kind: z.literal('has_failure'), is: z.boolean() }).strict(),
 
+  /**
+   * These records and no others — what the console sends when somebody ticks
+   * rows on the Records page. It narrows; it never widens: the rest of the
+   * plan, the tenant and the permission checks still apply to every id.
+   */
+  z.object({ kind: z.literal('records'), ids: z.array(z.string().uuid()).min(1).max(200) }).strict(),
+
   AnswerFilter,
 ]);
 export type Filter = z.infer<typeof Filter>;
@@ -127,12 +134,30 @@ export const ActionPlan = z.union([
       template: Key,
     })
     .strict(),
-  z.object({ kind: z.literal('assign'), task: Key, to: z.string() }).strict(),
+  /**
+   * Hands a record's open task to somebody else.
+   *
+   * `to` is a member's email or `role:<key>`, the two forms a task assignee
+   * already takes. Reassigning somebody's work is an administrator's call —
+   * the policy has said so since assignment existed — and the new assignee
+   * must be somebody who could actually complete it.
+   */
+  z.object({ kind: z.literal('assign'), task: Key, to: z.string().min(1).max(254) }).strict(),
+
+  /**
+   * Moves records to a state, by the process's own manual steps only.
+   *
+   * Not a raw state write. A manual transition carries its role list, its
+   * guard and its actions — the emails, tasks and approvals the process
+   * defines for that move — and writing the state directly would skip every
+   * one of them. A record whose current state has no manual step to the
+   * target is skipped and told why.
+   */
   z.object({ kind: z.literal('change_state'), to: Key }).strict(),
 ]);
 export type ActionPlan = z.infer<typeof ActionPlan>;
 
-export const IMPLEMENTED_ACTIONS = new Set(['send_reminder']);
+export const IMPLEMENTED_ACTIONS = new Set(['send_reminder', 'assign', 'change_state']);
 
 /** What the model returns: a plan, and its own account of what it understood. */
 export const Proposal = z

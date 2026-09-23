@@ -2912,3 +2912,124 @@ a.cs__navItem {
   gap: 12px;
   align-items: center;
 }
+
+/* ------------------------------------------------------------- bulk actions */
+
+.bk__pick {
+  width: 36px;
+}
+
+.bk__pick input {
+  width: 16px;
+  height: 16px;
+}
+
+.vw__table tr[aria-selected='true'] td {
+  background: var(--green-tint);
+}
+
+.bk {
+  margin: 0 18px 12px;
+  border: 1px solid var(--green-border);
+  border-radius: 10px;
+  background: var(--green-tint);
+}
+
+.bk__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  padding: 10px 14px;
+}
+
+.bk__count {
+  font-size: 13.5px;
+  color: var(--green-deep);
+  margin-right: 4px;
+}
+
+.bk__field .wk__select {
+  min-width: 180px;
+}
+
+.bk__clear {
+  margin-left: auto;
+  min-height: 24px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--green);
+  font: inherit;
+  font-size: 12.5px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.bk__problem {
+  margin: 0;
+  padding: 0 14px 10px;
+  font-size: 13px;
+  color: var(--red-text);
+}
+
+.bk__preview {
+  padding: 12px 14px 14px;
+  border-top: 1px solid var(--green-border);
+  background: var(--white);
+  border-radius: 0 0 10px 10px;
+}
+
+.bk__summary {
+  margin: 0 0 10px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.bk__group {
+  margin-top: 8px;
+  padding-left: 10px;
+  border-left: 3px solid var(--line);
+}
+
+.bk__group--go {
+  border-left-color: var(--green);
+}
+
+.bk__group--quiet {
+  border-left-color: var(--line-strong);
+}
+
+.bk__group--stop {
+  border-left-color: var(--red-border);
+}
+
+.bk__groupTitle {
+  margin: 0 0 4px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.bk__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 3px;
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+
+.bk__list code {
+  font-family: var(--font-mono), monospace;
+  font-size: 12px;
+  color: var(--ink);
+}
+
+.bk__actions {
+  margin-top: 12px;
+  display: flex;
+  gap: 8px;
+}

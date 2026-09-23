@@ -77,7 +77,7 @@ import {
   submitForm,
 } from '../runtime/intake.js';
 import type { Answers } from '../blueprint/answers.js';
-import { ask, confirm, recentRuns, runPlan } from '../runtime/copilot.js';
+import { ask, bulkOptions, confirm, recentRuns, runDirect } from '../runtime/copilot.js';
 import { askerFor } from '../copilot/ask.js';
 import { availableProviders, providerFor } from '../ai/index.js';
 import { proposeRule } from '../ai/rule.js';
@@ -320,15 +320,19 @@ route('POST', /^\/api\/copilot\/ask$/, async ({ pool, principal }, body) => {
 });
 
 route('POST', /^\/api\/copilot\/run$/, async ({ pool, principal }, body) => {
-  const { plan, action } = body as { plan?: unknown; action?: unknown };
+  const { plan, action, label } = body as { plan?: unknown; action?: unknown; label?: string };
   const parsed = QueryPlan.safeParse(plan);
   if (!parsed.success) throw new HttpError(400, `that is not a query plan: ${parsed.error.issues[0]?.message}`);
   const parsedAction = action ? ActionPlan.safeParse(action) : null;
   if (parsedAction && !parsedAction.success) {
     throw new HttpError(400, `that is not an action plan: ${parsedAction.error.issues[0]?.message}`);
   }
-  const outcome = await runPlan(pool, { principal, plan: parsed.data, action: parsedAction?.data ?? null });
-  return { rows: outcome.rows, diagnostics: outcome.diagnostics, ok: outcome.ok, preview: outcome.preview };
+  return runDirect(pool, {
+    principal,
+    plan: parsed.data,
+    action: parsedAction?.data ?? null,
+    label: typeof label === 'string' ? label.slice(0, 200) : undefined,
+  });
 });
 
 route('POST', /^\/api\/copilot\/confirm$/, async ({ pool, principal }, body) => {
@@ -338,6 +342,13 @@ route('POST', /^\/api\/copilot\/confirm$/, async ({ pool, principal }, body) => 
 });
 
 route('GET', /^\/api\/copilot\/runs$/, async ({ pool, principal }) => recentRuns(pool, principal));
+
+// What the Records page may offer to do to a selection. See bulkOptions.
+route('GET', /^\/api\/bulk\/options$/, async ({ pool, principal, url }) => {
+  const processKey = url.searchParams.get('process');
+  if (!processKey) throw new HttpError(400, 'process is required');
+  return bulkOptions(pool, principal, processKey);
+});
 
 // ------------------------------------------------------------------- export
 //

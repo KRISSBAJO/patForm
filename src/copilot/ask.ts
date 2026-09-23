@@ -38,6 +38,12 @@ Rules:
   question that merely asks what is true gets a query and no action.
 - A reminder can only name an existing email template. You cannot write the
   message; the template decides the wording and who receives it.
+- "assign" hands an open task to someone: "to" is the email address the
+  operator gave, or "role:<role key>". Never guess an address; if the
+  operator did not give one, say so in "reading" and leave the action out.
+- "change_state" moves records to a state using the process's own manual
+  steps. Use it only when the operator asked to move, close or advance
+  records, and only with a state key given to you.
 - "reading" is one sentence, in plain words, telling the operator what you
   understood. It is shown to them before anything runs, so it should name the
   filters in their language, not yours.`;

@@ -209,6 +209,13 @@ export function RecordsView({
   const [query, setQuery] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /*
+   * Ticked rows, by id. Kept across "load more" and across a search, because
+   * people select from several screens of results before acting — and cleared
+   * after an action runs, so a second action never lands on the first one's
+   * records by accident.
+   */
+  const [selected, setSelected] = useState<Map<string, string>>(new Map());
 
   /*
    * A pause before searching.
@@ -309,9 +316,38 @@ export function RecordsView({
         </div>
       )}
 
+      {selected.size > 0 && (
+        <BulkBar
+          processKey={processKey}
+          selected={selected}
+          onClear={() => setSelected(new Map())}
+          onDone={() => {
+            setSelected(new Map());
+            void load();
+          }}
+        />
+      )}
+
       <table className="vw__table">
         <thead>
           <tr>
+            <th className="bk__pick">
+              <input
+                type="checkbox"
+                aria-label="Select every record shown"
+                checked={rows.length > 0 && rows.every((r) => selected.has(r.id))}
+                onChange={(e) =>
+                  setSelected((prev) => {
+                    const next = new Map(prev);
+                    for (const r of rows) {
+                      if (e.target.checked) next.set(r.id, r.reference);
+                      else next.delete(r.id);
+                    }
+                    return next;
+                  })
+                }
+              />
+            </th>
             <th>Reference</th>
             <th>State</th>
             <th>Opened</th>
@@ -320,7 +356,22 @@ export function RecordsView({
         </thead>
         <tbody>
           {rows.map((r) => (
-            <tr key={r.id}>
+            <tr key={r.id} aria-selected={selected.has(r.id)}>
+              <td className="bk__pick">
+                <input
+                  type="checkbox"
+                  aria-label={`Select ${r.reference}`}
+                  checked={selected.has(r.id)}
+                  onChange={(e) =>
+                    setSelected((prev) => {
+                      const next = new Map(prev);
+                      if (e.target.checked) next.set(r.id, r.reference);
+                      else next.delete(r.id);
+                      return next;
+                    })
+                  }
+                />
+              </td>
               <td>
                 <button className="ask__ref" onClick={() => onOpenRecord(r.id)}>
                   <code>{r.reference}</code>
@@ -337,7 +388,7 @@ export function RecordsView({
           ))}
           {!rows.length && !busy && (
             <tr>
-              <td colSpan={4} className="ask__empty">
+              <td colSpan={5} className="ask__empty">
                 {query || filter !== 'all' ? (
                   <>
                     Nothing matches that.{' '}
@@ -1252,6 +1303,333 @@ export function HeldView({ onChanged }: { onChanged: (count: number) => void }) 
           })}
         </ul>
       )}
+    </div>
+  );
+}
+
+// ------------------------------------------------------------ bulk actions
+
+interface BulkOptions {
+  templates: { key: string; name: string }[];
+  tasks: { key: string; name: string }[];
+  moveTargets: { key: string; name: string }[];
+  assignees: { value: string; label: string }[];
+}
+
+interface BulkPreview {
+  kind: string;
+  summary: string;
+  digest: string;
+  eligible: { instanceId: string; reference: string; to: string[]; from?: string | null }[];
+  refused: { instanceId: string; reference: string; reason: string }[];
+  skipped: { instanceId: string; reference: string; reason: string }[];
+}
+
+interface BulkReport {
+  kind: string;
+  attempted: number;
+  sent: { reference: string; to: string[] }[];
+  skipped: { reference: string; reason: string }[];
+  failed: { reference: string; reason: string }[];
+}
+
+type BulkKind = 'send_reminder' | 'assign' | 'change_state';
+
+const BULK_DONE: Record<BulkKind, string> = {
+  send_reminder: 'Sent',
+  assign: 'Reassigned',
+  change_state: 'Moved',
+};
+
+/**
+ * Doing one thing to many records, in three steps that cannot be merged.
+ *
+ * Choose, then see exactly what will happen to each record — including the
+ * ones it will not touch and why — then confirm that set. The confirmation is
+ * bound to the preview by a digest on the server, so a record that starts
+ * matching in between is not swept in, and a permission removed in between
+ * is checked again when it runs. The report afterwards says what happened to
+ * every record, because "done" over eleven rows where four were skipped is a
+ * claim, not a report.
+ */
+function BulkBar({
+  processKey,
+  selected,
+  onClear,
+  onDone,
+}: {
+  processKey: string;
+  selected: Map<string, string>;
+  onClear: () => void;
+  onDone: () => void;
+}) {
+  const [options, setOptions] = useState<BulkOptions | null>(null);
+  const [kind, setKind] = useState<BulkKind | ''>('');
+  const [choice, setChoice] = useState('');
+  const [task, setTask] = useState('');
+  const [preview, setPreview] = useState<{ runId: string; preview: BulkPreview } | null>(null);
+  const [report, setReport] = useState<BulkReport | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+
+  useEffect(() => {
+    call<BulkOptions>(`/api/bulk/options?process=${encodeURIComponent(processKey)}`)
+      .then(setOptions)
+      .catch((err) => setProblem(err instanceof Error ? err.message : String(err)));
+  }, [processKey]);
+
+  // A different selection is a different set; any preview of the old one is void.
+  useEffect(() => {
+    setPreview(null);
+  }, [selected, kind, choice, task]);
+
+  const action =
+    kind === 'send_reminder' && choice
+      ? { kind, template: choice }
+      : kind === 'assign' && task && choice
+        ? { kind, task, to: choice }
+        : kind === 'change_state' && choice
+          ? { kind, to: choice }
+          : null;
+
+  const runPreview = async () => {
+    if (!action) return;
+    setBusy(true);
+    setProblem(null);
+    setReport(null);
+    try {
+      const out = await post<{
+        runId: string | null;
+        ok: boolean;
+        diagnostics: { message: string; hint?: string }[];
+        preview: BulkPreview | null;
+      }>('/api/copilot/run', {
+        plan: { processKey, filters: [{ kind: 'records', ids: [...selected.keys()] }], limit: 200 },
+        action,
+        label: `bulk action on ${selected.size} selected record${selected.size === 1 ? '' : 's'}`,
+      });
+      if (!out.ok || !out.preview || !out.runId) {
+        setProblem(out.diagnostics.map((d) => d.message).join(' ') || 'That cannot run.');
+        return;
+      }
+      setPreview({ runId: out.runId, preview: out.preview });
+    } catch (err) {
+      setProblem(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const runConfirm = async () => {
+    if (!preview) return;
+    setBusy(true);
+    setProblem(null);
+    try {
+      const out = await post<BulkReport>('/api/copilot/confirm', { runId: preview.runId, digest: preview.preview.digest });
+      setReport(out);
+      setPreview(null);
+    } catch (err) {
+      setProblem(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const eligible = preview?.preview.eligible ?? [];
+  // People and roles by name, the way the picker showed them — not "role:it_operator".
+  const who = (value: string | null | undefined) =>
+    value ? (options?.assignees.find((x) => x.value === value)?.label ?? value) : 'nobody';
+
+  return (
+    <section className="bk" aria-label="Act on the selected records">
+      <div className="bk__bar">
+        <strong className="bk__count">
+          {selected.size} selected
+        </strong>
+        <label className="bk__field">
+          <span className="cs__srOnly">What to do</span>
+          <select
+            className="wk__select"
+            value={kind}
+            onChange={(e) => {
+              setKind(e.target.value as BulkKind | '');
+              setChoice('');
+              setTask('');
+              setReport(null);
+            }}
+          >
+            <option value="">Do something to them…</option>
+            <option value="send_reminder" disabled={!options?.templates.length}>
+              Send a message
+            </option>
+            <option value="assign" disabled={!options?.tasks.length}>
+              Give a task to someone
+            </option>
+            <option value="change_state" disabled={!options?.moveTargets.length}>
+              Move them to a state
+            </option>
+          </select>
+        </label>
+
+        {kind === 'send_reminder' && (
+          <label className="bk__field">
+            <span className="cs__srOnly">Which message</span>
+            <select className="wk__select" value={choice} onChange={(e) => setChoice(e.target.value)}>
+              <option value="">Which message…</option>
+              {options?.templates.map((t) => (
+                <option key={t.key} value={t.key}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+
+        {kind === 'assign' && (
+          <>
+            <label className="bk__field">
+              <span className="cs__srOnly">Which task</span>
+              <select className="wk__select" value={task} onChange={(e) => setTask(e.target.value)}>
+                <option value="">Which task…</option>
+                {options?.tasks.map((t) => (
+                  <option key={t.key} value={t.key}>
+                    {t.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="bk__field">
+              <span className="cs__srOnly">Give it to</span>
+              <select className="wk__select" value={choice} onChange={(e) => setChoice(e.target.value)}>
+                <option value="">To whom…</option>
+                {options?.assignees.map((a) => (
+                  <option key={a.value} value={a.value}>
+                    {a.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </>
+        )}
+
+        {kind === 'change_state' && (
+          <label className="bk__field">
+            <span className="cs__srOnly">Move to</span>
+            <select className="wk__select" value={choice} onChange={(e) => setChoice(e.target.value)}>
+              <option value="">To which state…</option>
+              {options?.moveTargets.map((t) => (
+                <option key={t.key} value={t.key}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+
+        <button type="button" className="cs__btn" disabled={!action || busy} onClick={() => void runPreview()}>
+          {busy && !preview ? 'Checking…' : 'Preview'}
+        </button>
+        <button type="button" className="bk__clear" onClick={onClear}>
+          Clear selection
+        </button>
+      </div>
+
+      {problem && (
+        <p className="bk__problem" role="alert">
+          {problem}
+        </p>
+      )}
+
+      {preview && (
+        <div className="bk__preview" aria-live="polite">
+          <p className="bk__summary">{preview.preview.summary}</p>
+          <BulkList
+            title={`Will change (${eligible.length})`}
+            tone="go"
+            items={eligible.map((e) => ({
+              reference: e.reference,
+              detail: e.from !== undefined ? `${who(e.from)} → ${e.to.map(who).join(', ')}` : e.to.join(', '),
+            }))}
+          />
+          <BulkList
+            title={`Left alone (${preview.preview.skipped.length})`}
+            tone="quiet"
+            items={preview.preview.skipped.map((x) => ({ reference: x.reference, detail: x.reason }))}
+          />
+          <BulkList
+            title={`Not allowed (${preview.preview.refused.length})`}
+            tone="stop"
+            items={preview.preview.refused.map((x) => ({ reference: x.reference, detail: x.reason }))}
+          />
+          <div className="bk__actions">
+            <button
+              type="button"
+              className="cs__btn cs__btn--primary"
+              disabled={!eligible.length || busy}
+              onClick={() => void runConfirm()}
+            >
+              {busy ? 'Working…' : eligible.length ? `Confirm ${eligible.length}` : 'Nothing to do'}
+            </button>
+            <button type="button" className="cs__btn" onClick={() => setPreview(null)} disabled={busy}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {report && (
+        <div className="bk__preview" role="status">
+          <p className="bk__summary">
+            {BULK_DONE[report.kind as BulkKind] ?? 'Done'} {report.sent.length} of {report.attempted}.
+            {report.skipped.length ? ` ${report.skipped.length} left alone.` : ''}
+            {report.failed.length ? ` ${report.failed.length} failed.` : ''}
+          </p>
+          <BulkList
+            title={`${BULK_DONE[report.kind as BulkKind] ?? 'Done'} (${report.sent.length})`}
+            tone="go"
+            items={report.sent.map((x) => ({ reference: x.reference, detail: x.to.join(', ') }))}
+          />
+          <BulkList
+            title={`Left alone (${report.skipped.length})`}
+            tone="quiet"
+            items={report.skipped.map((x) => ({ reference: x.reference, detail: x.reason }))}
+          />
+          <BulkList
+            title={`Failed (${report.failed.length})`}
+            tone="stop"
+            items={report.failed.map((x) => ({ reference: x.reference, detail: x.reason }))}
+          />
+          <div className="bk__actions">
+            <button type="button" className="cs__btn" onClick={onDone}>
+              Done
+            </button>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function BulkList({
+  title,
+  tone,
+  items,
+}: {
+  title: string;
+  tone: 'go' | 'quiet' | 'stop';
+  items: { reference: string; detail: string }[];
+}) {
+  if (!items.length) return null;
+  return (
+    <div className={`bk__group bk__group--${tone}`}>
+      <h3 className="bk__groupTitle">{title}</h3>
+      <ul className="bk__list">
+        {items.map((i) => (
+          <li key={i.reference}>
+            <code>{i.reference}</code> <span>{i.detail}</span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

@@ -674,22 +674,28 @@ export class Engine {
     });
   }
 
+  /*
+   * `reason` is new, and is why a bulk move can report something better than
+   * "not applied" eleven times: the record had moved on, the person holds the
+   * wrong role, or the step's own condition did not hold are three different
+   * things to go and do something about.
+   */
   async fireManual(args: {
     instanceId: string;
     transitionKey: string;
     principal: Principal;
     now: Date;
-  }): Promise<{ applied: boolean }> {
+  }): Promise<{ applied: boolean; reason?: string }> {
     return inTransaction(this.pool, async (client) => {
       const instance = await loadInstance(client, args.instanceId, { lock: true });
       const bp = await loadBlueprint(client, instance.process_version_id);
       const transition = bp.workflow.transitions.find((t) => t.key === args.transitionKey);
-      if (
-        !transition ||
-        transition.from !== instance.state ||
-        transition.trigger.on !== 'manual'
-      ) {
-        return { applied: false };
+      if (!transition || transition.trigger.on !== 'manual') {
+        return { applied: false, reason: 'no such manual step' };
+      }
+      if (transition.from !== instance.state) {
+        const now = bp.workflow.states.find((st) => st.key === instance.state);
+        return { applied: false, reason: `it has moved on to ${now?.name ?? instance.state}` };
       }
 
       const decision = await require_(client, {
@@ -717,11 +723,14 @@ export class Engine {
           },
           `transition "${transition.key}" is restricted to ${permitted.join(', ')}`,
         );
-        return { applied: false };
+        const who = permitted.map((k) => bp.roles.find((r) => r.key === k)?.name ?? k);
+        return { applied: false, reason: `only ${who.join(' or ')} may take this step` };
       }
 
       const actor = describePrincipal(args.principal);
-      if (!passesGuard(transition, instance, args.now, actor)) return { applied: false };
+      if (!passesGuard(transition, instance, args.now, actor)) {
+        return { applied: false, reason: 'the condition on this step did not hold for this record' };
+      }
       await applyTransition(client, {
         bp,
         instance,
@@ -732,6 +741,66 @@ export class Engine {
         now: args.now,
       });
       return { applied: true };
+    });
+  }
+
+  /**
+   * Hands an open task to somebody else.
+   *
+   * `administer`, per record: reassigning somebody's work is break-glass in
+   * this policy, the same as completing a task assigned to someone else. The
+   * new assignee is not checked here — the caller previewing a bulk
+   * reassignment does that once, against the process — but the move is
+   * recorded, with who it was taken from, because "why is this mine now" is
+   * the first question the new assignee will ask.
+   */
+  async reassignTask(args: {
+    principal: Principal;
+    instanceId: string;
+    taskKey: string;
+    to: string;
+    reason: string;
+    now: Date;
+  }): Promise<{ performed: boolean; from: string | null; reason?: string }> {
+    return inTransaction(this.pool, async (client) => {
+      const instance = await loadInstance(client, args.instanceId, { lock: true });
+      const bp = await loadBlueprint(client, instance.process_version_id);
+      await require_(
+        client,
+        {
+          principal: args.principal,
+          action: 'administer',
+          tenantId: instance.tenant_id,
+          processKey: instance.process_key,
+          blueprint: bp,
+          instanceId: instance.id,
+        },
+        this.pool,
+      );
+
+      const { rows } = await client.query<{ id: string; assignee: string | null }>(
+        `select id, assignee from task
+          where instance_id = $1 and task_key = $2 and status = 'open'
+          order by id for update`,
+        [instance.id, args.taskKey],
+      );
+      const task = rows[0];
+      const name = bp.workflow.tasks.find((t) => t.key === args.taskKey)?.name ?? args.taskKey;
+      if (!task) return { performed: false, from: null, reason: `no open "${name}" task` };
+      if ((task.assignee ?? '').toLowerCase() === args.to.toLowerCase()) {
+        return { performed: false, from: task.assignee, reason: `already assigned to ${args.to}` };
+      }
+
+      await client.query('update task set assignee = $1 where id = $2', [args.to, task.id]);
+      await appendEvent(client, {
+        tenantId: instance.tenant_id,
+        instanceId: instance.id,
+        type: 'task_reassigned',
+        payload: { task: args.taskKey, from: task.assignee, to: args.to, reason: args.reason },
+        actor: describePrincipal(args.principal),
+        now: args.now,
+      });
+      return { performed: true, from: task.assignee };
     });
   }
 
