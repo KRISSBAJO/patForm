@@ -16,6 +16,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import '../console/console.css';
+import { PasswordInput } from '../console/PasswordInput';
 
 export function Signup() {
   const [workspaceName, setWorkspaceName] = useState('');
@@ -115,10 +116,8 @@ export function Signup() {
         <label className="cs__label" htmlFor="signup-password">
           Password
         </label>
-        <input
+        <PasswordInput
           id="signup-password"
-          className="cs__input"
-          type="password"
           autoComplete="new-password"
           minLength={12}
           value={password}

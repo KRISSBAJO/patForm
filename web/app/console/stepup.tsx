@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { PasswordInput } from './PasswordInput';
 
 /**
  * Confirming it is you, in the middle of doing something.
@@ -117,18 +118,17 @@ export function ReauthDialog() {
           Confirm it is you
         </h2>
         <p className="ru__reason">{asking.reason} It has been a while since you signed in.</p>
-        <label className="ru__row">
-          <span>Password</span>
-          <input
-            ref={first}
-            className="cs__input"
-            type="password"
+        <div className="ru__row">
+          <label htmlFor="reauth-password">Password</label>
+          <PasswordInput
+            id="reauth-password"
+            inputRef={first}
             autoComplete="current-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
           />
-        </label>
+        </div>
         {asking.mfa && (
           <label className="ru__row">
             <span>Code from your authenticator</span>

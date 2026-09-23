@@ -17,6 +17,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import '../console/console.css';
+import { PasswordInput } from '../console/PasswordInput';
 
 async function post<T>(path: string, body: unknown): Promise<T> {
   const res = await fetch(path, {
@@ -69,36 +70,22 @@ function Password({
   hint?: string;
   invalid?: boolean;
 }) {
-  const [visible, setVisible] = useState(false);
   return (
     <>
       <label className="cs__label" htmlFor={id}>
         {label}
       </label>
-      <div className="cs__passwordField">
-        <input
-          id={id}
-          className="cs__input"
-          type={visible ? 'text' : 'password'}
-          autoComplete="new-password"
-          minLength={12}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          required
-          aria-invalid={invalid || undefined}
-          aria-describedby={`${id}-hint`}
-        />
-        <button
-          type="button"
-          className="cs__passwordToggle"
-          aria-label={`${visible ? 'Hide' : 'Show'} ${label.toLowerCase()}`}
-          aria-pressed={visible}
-          aria-controls={id}
-          onClick={() => setVisible((was) => !was)}
-        >
-          {visible ? 'Hide' : 'Show'}
-        </button>
-      </div>
+      <PasswordInput
+        id={id}
+        description={label.toLowerCase()}
+        autoComplete="new-password"
+        minLength={12}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        required
+        aria-invalid={invalid || undefined}
+        aria-describedby={`${id}-hint`}
+      />
       <p id={`${id}-hint`} className="cs__loginNote" style={{ marginTop: 6 }}>
         {hint}
       </p>

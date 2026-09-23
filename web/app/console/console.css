@@ -680,20 +680,23 @@
 }
 
 .cs__passwordField { position: relative; }
-.cs__passwordField .cs__input { padding-right: 72px; }
+.cs__passwordField .cs__input { padding-right: 48px; }
 .cs__passwordToggle {
   position: absolute;
   top: 50%;
   right: 8px;
   transform: translateY(-50%);
-  padding: 7px 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
   border: 0;
   border-radius: 5px;
   background: transparent;
   color: var(--green);
   font: inherit;
-  font-size: 12px;
-  font-weight: 600;
   cursor: pointer;
 }
 .cs__passwordToggle:hover { background: var(--green-tint); }

@@ -12,6 +12,7 @@ import { RecordTrail } from './Trail';
 import { RecordPage } from './Record';
 import { WorkList } from './WorkList';
 import { ReauthDialog } from './stepup';
+import { PasswordInput } from './PasswordInput';
 
 /**
  * Calls go to the same origin so the HttpOnly, SameSite=Lax session cookie is
@@ -187,23 +188,31 @@ export function Console() {
   const load = useCallback(async () => {
     if (!session) return;
     setError(null);
-    try {
-      setWork(await call<Work>(`/api/work?process=${processKey}`));
-    } catch (err) {
+    if (processKey) {
+      try {
+        setWork(await call<Work>(`/api/work?process=${processKey}`));
+      } catch (err) {
+        setWork(null);
+        if (err instanceof Unauthenticated) return endSession();
+        setError(err instanceof Error ? err.message : String(err));
+      }
+    } else {
       setWork(null);
-      if (err instanceof Unauthenticated) return endSession();
-      setError(err instanceof Error ? err.message : String(err));
     }
     try {
       setHeldCount((await call<{ held: unknown[] }>('/api/held')).held.length);
     } catch {
       setHeldCount(0);
     }
-    try {
-      setHealth(await call<Health>(`/api/automation?process=${processKey}`));
-    } catch {
-      // Automation health needs `report`. Someone without it does not get the
-      // panel, which is the right answer rather than an error.
+    if (processKey) {
+      try {
+        setHealth(await call<Health>(`/api/automation?process=${processKey}`));
+      } catch {
+        // Automation health needs `report`. Someone without it does not get the
+        // panel, which is the right answer rather than an error.
+        setHealth(null);
+      }
+    } else {
       setHealth(null);
     }
   }, [session, processKey]);
@@ -651,6 +660,14 @@ export function Console() {
               <SecurityView />
             ) : view === 'held' ? (
               <HeldView onChanged={setHeldCount} />
+            ) : !processKey && ['work', 'records', 'dashboard', 'ask'].includes(view) ? (
+              <div className="cs__panel">
+                <div className="cs__empty">
+                  <strong>Your workspace is ready</strong>
+                  <p>Choose a template to set up your first process. Its form, approvals and tasks will appear here once it is published.</p>
+                  <a className="cs__btn cs__btn--primary" href="/builder/new" style={{ display: 'inline-flex', alignItems: 'center', marginTop: 12 }}>Explore templates</a>
+                </div>
+              </div>
             ) : view === 'health' ? (
               // `administer` is what the lift endpoint requires, so the button
               // is only offered to somebody the server will accept it from.
@@ -716,7 +733,7 @@ export function Console() {
               be a column of cards about a different subject. */}
           {view !== 'record' && (
           <div className="cs__right">
-            {health ? (
+            {!processKey ? null : health ? (
               <div className="cs__card">
                 <span className="cs__cardLabel">AUTOMATION HEALTH</span>
                 <div style={{ marginTop: 14 }}>
@@ -1284,10 +1301,8 @@ function SignIn({ onSignedIn: signedIn, signedOut }: { onSignedIn: () => void; s
         <label className="cs__label" htmlFor="password">
           Password
         </label>
-        <input
+        <PasswordInput
           id="password"
-          className="cs__input"
-          type="password"
           autoComplete="current-password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}

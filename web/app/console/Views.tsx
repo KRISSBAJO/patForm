@@ -7,6 +7,7 @@ import { useDialog } from '../useDialog';
 import { Icon } from './Icon';
 import { Trend, WhereItSits, type Point, type Standing } from './Charts';
 import { postJson } from './stepup';
+import { PasswordInput } from './PasswordInput';
 
 /**
  * The three nav items that used to say "Not built yet".
@@ -1059,10 +1060,8 @@ export function SecurityView() {
             <label className="cs__label" htmlFor="mfa-password">
               Your password
             </label>
-            <input
+            <PasswordInput
               id="mfa-password"
-              className="cs__input"
-              type="password"
               autoComplete="current-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
