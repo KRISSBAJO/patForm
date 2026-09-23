@@ -19,6 +19,12 @@ at the owner's request. Do not put customer data on this free deployment.
 3. Create a staging workspace through `/signup` after the site is deployed.
    Use test accounts and test records only.
 
+Staging startup publishes the 88 generated process packs and three hand-built
+reference packs into the catalogue. It compares each with the current built-in
+version before publishing, so restarts do not create duplicate versions or
+change an installed process. The development `npm run seed` is never used in
+staging: it drops the database and creates fictional accounts and records.
+
 ## Render
 
 Deploy the `render.yaml` Blueprint from this repository on the Free instance.
@@ -36,6 +42,38 @@ spins down after idle time. Approvals still exist in the database, but email,
 webhook delivery, reminders, and due timers **do not run while asleep**. They
 resume when an HTTP request wakes the service. Render Free also blocks outbound
 SMTP ports 25, 465, and 587. Do not configure SMTP for this staging setup.
+
+## Email
+
+Render must use the RelyKit HTTP provider for real staging email. In the
+`patform-staging-api` service Environment page, set `EMAIL_PROVIDER=relykit`,
+`MAIL_FROM=noreply@renviq.com`, and `RELYKIT_API_KEY` to a dedicated staging
+key from RelyKit. The `renviq.com` sending domain is verified in the RelyKit
+account. Never put the key in this document, source control, or chat. Save and
+redeploy after changing the environment.
+
+Without `EMAIL_PROVIDER`, the app's default console provider prints messages
+to Render's logs and no email reaches the recipient. After the deployment is
+live, use the console's **Send the link again** action for an unverified test
+account, then confirm the message appears in RelyKit's email activity and is
+delivered. If it does not, inspect the Render application logs and RelyKit's
+message details before requesting another resend.
+
+For bounce and complaint handling, add an active RelyKit delivery webhook at
+`https://patform-staging-api.onrender.com/api/webhooks/relykit` and set Render's
+`RELYKIT_WEBHOOK_SECRET` to **that endpoint's** signing secret. A disabled
+localhost webhook cannot report delivery outcomes to staging. Check a webhook
+attempt in RelyKit after a test message; the API must accept its signature.
+
+## Receipt storage
+
+Finance receipt uploads use S3. Set `AWS_REGION`, `AWS_S3_BUCKET`, and AWS
+credentials with access to the staging bucket on Render. The bucket must remain
+private and encrypted. GuardDuty Malware Protection must tag uploaded objects
+with `GuardDutyMalwareScanStatus`; until an upload is tagged
+`NO_THREATS_FOUND`, the form will not accept its receipt reference. Test with a
+synthetic PDF in a Finance process and confirm it changes from scanning to
+ready before submitting the form.
 
 ## Vercel
 
