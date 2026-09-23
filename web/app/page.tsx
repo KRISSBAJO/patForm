@@ -424,12 +424,10 @@ export default function Home() {
                   ),
                 )}
               </div>
-              <div className="pack__note">
-                <p style={{ color: 'var(--muted)' }}>
-                  Safeguarding checks are recorded by reference, not stored here. The process waits for the check; your
-                  platform never holds the certificate.
-                </p>
-              </div>
+              <p className="pack__claim">
+                Safeguarding checks are recorded <strong>by reference</strong>, not stored here. The process waits for
+                the check; your platform never holds the certificate.
+              </p>
             </article>
 
             <article className="pack">
@@ -444,14 +442,28 @@ export default function Home() {
                   ),
                 )}
               </div>
-              <div className="pack__note">
-                <p style={{ color: 'var(--muted)' }}>
-                  Payroll and right-to-work data is visible to HR and nobody else — the hiring manager sees the role,
-                  not the identification number.
-                </p>
-              </div>
+              <p className="pack__claim">
+                Payroll and right-to-work data is visible to <strong>HR and nobody else</strong> — the hiring manager
+                sees the role, not the identification number.
+              </p>
             </article>
           </div>
+
+          {/*
+            * The section is called "Start from a pack" and had no link in it.
+            * Eighty-eight of them sit behind /builder/new and nothing on this
+            * page pointed at them — the same shape as the landing page that
+            * never reached sign-in.
+            */}
+          <p className="packs__more">
+            <a className="btn btn--secondary" href="/builder/new">
+              Browse all 88 packs
+              <ArrowRight />
+            </a>
+            <span className="packs__moreNote">
+              Nineteen categories. Each one carries its own approvals, retention floor and escalation path.
+            </span>
+          </p>
         </section>
 
         {/* =============================================== lighthouse */}

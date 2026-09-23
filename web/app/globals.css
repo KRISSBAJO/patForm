@@ -1084,11 +1084,46 @@ html {
   gap: 7px;
 }
 
-.pack__note {
-  display: none;
-  margin-top: 24px;
-  padding-top: 20px;
-  border-top: 1px solid var(--paper-2);
+/*
+ * The claim, not the small print.
+ *
+ * This was `.pack__note`: muted, smallest on the card, under a rule, hidden
+ * below 900px. It is the one sentence on the card that a form builder cannot
+ * write — the whole argument for a pack over a template — and it was styled
+ * as a disclaimer and then hidden on a phone.
+ *
+ * Tinted rather than shadowed. The page's weight comes from one accent and a
+ * lot of space; a second colour or a drop shadow here would be decoration
+ * carrying no information.
+ */
+.pack__claim {
+  margin-top: 20px;
+  padding: 13px 15px;
+  border-left: 3px solid var(--green);
+  border-radius: 0 8px 8px 0;
+  background: var(--green-tint);
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--ink-soft);
+}
+
+.pack__claim strong {
+  font-weight: 600;
+  color: var(--green-deep);
+}
+
+.packs__more {
+  margin-top: 22px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 18px;
+}
+
+.packs__moreNote {
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--muted);
 }
 
 /* -------------------------------------------------------------- lighthouse */
@@ -1727,15 +1762,6 @@ html {
     gap: 8px;
   }
 
-  .pack__note {
-    display: block;
-  }
-
-  .pack__note p {
-    margin: 0;
-    font-size: 14.5px;
-    line-height: 1.55;
-  }
 
   .lighthouse {
     margin-top: 92px;
