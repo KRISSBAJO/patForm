@@ -1,5 +1,5 @@
 {
-  "ranAt": "2026-09-23T11:52:36.524Z",
+  "ranAt": "2026-09-23T12:10:38.272Z",
   "postgres": "PostgreSQL 17.11 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit",
   "proofs": [
     {
@@ -66,7 +66,7 @@
       "name": "Two workspaces with the same process each get their own form and their own records",
       "claim": "Public form links name one workspace’s form; the old key-only link refuses once it is shared; the public API is scoped to its key’s workspace.",
       "passed": true,
-      "detail": "Workspace A published once and B twice, which is the case that used to hand A's applicants to B. A's link (jmmu-a34t-6tui) served A's form at version 1; B's (fsrn-ftyv-upxy) served B's. A submission through each landed in its own workspace. The old /f/employee_onboarding link, now shared, answered \"ambiguous\" instead of choosing. The public API, given A's workspace, filed into A despite B's higher version. A ticket from A's form was refused on B's (bad_ticket). A's draft token used on B's form started a new draft and left A's reading \"Draft In A\"; read through B's form it returned nothing. Publishing A again kept its link, and a key only A has still resolves by name."
+      "detail": "Workspace A published once and B twice, which is the case that used to hand A's applicants to B. A's link (sfjx-bp2d-7znw) served A's form at version 1; B's (vzuh-5xqs-2wcw) served B's. A submission through each landed in its own workspace. The old /f/employee_onboarding link, now shared, answered \"ambiguous\" instead of choosing. The public API, given A's workspace, filed into A despite B's higher version. A ticket from A's form was refused on B's (bad_ticket). A's draft token used on B's form started a new draft and left A's reading \"Draft In A\"; read through B's form it returned nothing. Publishing A again kept its link, and a key only A has still resolves by name."
     },
     {
       "name": "An integration asks, the member sees exactly what it wants, and the grant keeps its word",
@@ -78,7 +78,13 @@
       "name": "A copy of the database is not enough to pass anybody's second factor",
       "claim": "Two-factor secrets sealed at rest (AES-256-GCM, key outside the database, bound to the account), readable across a key rotation.",
       "passed": true,
-      "detail": "The enrolled secret is stored as \"v1.90244641.ypBC…\", which does not contain it. Copied onto another account it was refused, because each value is bound to its owner. A secret stored in the clear before this change still signed in, and was sealed on the way. With a new key and the old one kept as previous, sign-in worked and moved the secret from key 90244641 to 404a1622; with the old key then dropped it still worked. The same database under a different key was refused. Production without a key refused to start (\"MFA_ENCRYPTION_KEY is not set\")."
+      "detail": "The enrolled secret is stored as \"v1.7914383f.Ex-A…\", which does not contain it. Copied onto another account it was refused, because each value is bound to its owner. A secret stored in the clear before this change still signed in, and was sealed on the way. With a new key and the old one kept as previous, sign-in worked and moved the secret from key 7914383f to 3a1d2e20; with the old key then dropped it still worked. The same database under a different key was refused. Production without a key refused to start (\"MFA_ENCRYPTION_KEY is not set\")."
+    },
+    {
+      "name": "A session left open asks again before it grants access or destroys data",
+      "claim": "Step-up: actions that grant access or delete data need a sign-in from the last ten minutes; actions that reduce access never ask.",
+      "passed": true,
+      "detail": "All 9 granting or destroying actions asked; none of the 7 that reduce access did, including a retention preview. A new session was fresh; ten minutes on it was not. A wrong password was \"that password is not right\"; the right one confirmed and cleared the count. With two-step on, the password alone was \"the code from your authenticator, please\", password and code confirmed, and the same code a second time was \"that code has already been used — wait for the next one\". Five wrong guesses inside another session ended it (\"too many wrong answers — you have been signed out\")."
     },
     {
       "name": "The operator asks what is overdue and sends a reminder that matches what they confirmed",
@@ -90,13 +96,13 @@
       "name": "Every action traces back to the request that caused it, across the worker boundary",
       "claim": "Section 20.2 observability: traceable request, event, job, attempt and result identifiers.",
       "passed": true,
-      "detail": "One submission produced 1 event(s), 1 job(s) and 3 action run(s), every one carrying \"proof-request-0001\" and 0 unattributed. The actions ran in a later drain that knew nothing about the submission — the link survived because the request id is stamped on the outbox row and read back when the job runs. A timer firing got an id of its own (req_26499b95b08b…) rather than inheriting one, because a deadline is its own cause. The support view joined them into 2 step(s) with every attempt count present, and answered in a sentence: \"Queued: 1 job scheduled and not yet run. If this does not clear, no worker is ru\". Asking by request id found 1 record; an admin of another workspace asking the same id found 0."
+      "detail": "One submission produced 1 event(s), 1 job(s) and 3 action run(s), every one carrying \"proof-request-0001\" and 0 unattributed. The actions ran in a later drain that knew nothing about the submission — the link survived because the request id is stamped on the outbox row and read back when the job runs. A timer firing got an id of its own (req_6fcb528b6e27…) rather than inheriting one, because a deadline is its own cause. The support view joined them into 2 step(s) with every attempt count present, and answered in a sentence: \"Queued: 1 job scheduled and not yet run. If this does not clear, no worker is ru\". Asking by request id found 1 record; an admin of another workspace asking the same id found 0."
     },
     {
       "name": "An administrator exports the record with its history, and only then is it deleted",
       "claim": "Section 20.1 step 11, and 6.4: corrections append history; destructive overwriting of audit evidence is prohibited.",
       "passed": true,
-      "detail": "The bundle carried 4 history entries for a finished record — submission, both decisions with the reasons given, and every task completion — plus 2 approval(s), 2 message(s) and 1 document(s). An approver could not export at all (\"neither the roles held (hiring_manager) nor workspace role \"approver\" grant \"administer\"\"). An administrator holding no process role saw every field; one who is also a hiring manager had 3 withheld (national_id, bank_account, right_to_work_reference) — named in the bundle rather than quietly absent, and not left in the answers as the literal string \"[redacted]\". The export is itself on the record's history, and a second export of an unchanged record produced the same checksum (7360741905c3), so a file can be verified later. Retention then deleted 1 instance and 7 event(s) — in that order, because afterwards there is nothing left to export."
+      "detail": "The bundle carried 4 history entries for a finished record — submission, both decisions with the reasons given, and every task completion — plus 2 approval(s), 2 message(s) and 1 document(s). An approver could not export at all (\"neither the roles held (hiring_manager) nor workspace role \"approver\" grant \"administer\"\"). An administrator holding no process role saw every field; one who is also a hiring manager had 3 withheld (national_id, bank_account, right_to_work_reference) — named in the bundle rather than quietly absent, and not left in the answers as the literal string \"[redacted]\". The export is itself on the record's history, and a second export of an unchanged record produced the same checksum (f9951fe5e17a), so a file can be verified later. Retention then deleted 1 instance and 7 event(s) — in that order, because afterwards there is nothing left to export."
     },
     {
       "name": "A workspace can be created and joined, and nobody can grant more than they hold",
@@ -210,7 +216,7 @@
       "name": "Submission and workflow start are far inside the section 10.4 budget",
       "claim": "Beta targets: acknowledgment p95 under 1.5s, workflow start p95 under 30s.",
       "passed": true,
-      "detail": "Over 100 submissions: acknowledgment p95 17.1ms (budget 1500ms), first action p95 38.1ms (budget 30000ms). Database round trips only, local container."
+      "detail": "Over 100 submissions: acknowledgment p95 17.7ms (budget 1500ms), first action p95 43.7ms (budget 30000ms). Database round trips only, local container."
     }
   ]
 }

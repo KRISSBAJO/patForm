@@ -35,6 +35,8 @@ import { DraftConflict } from '../runtime/errors.js';
 import { assertScreeningConfigured, issueTicket, screen, TRAP_FIELD } from '../runtime/screening.js';
 import { resolveForm } from '../runtime/form-links.js';
 import { assertSecretKeyConfigured } from '../runtime/secret-box.js';
+import { isFresh, reauthenticate, stepUpFor } from '../runtime/step-up.js';
+import { isEnabled as mfaIsEnabled } from '../runtime/mfa.js';
 import { FormLinkError } from '../runtime/errors.js';
 import { discardHeld, listHeld, releaseHeld } from '../runtime/held.js';
 import { resendSkipped, sendingHealth, skippedFor } from '../runtime/delivery-health.js';
@@ -128,6 +130,8 @@ interface Ctx {
   principal: Principal;
   actorId: string;
   url: URL;
+  /** The signed-in session, where there is one. Absent on the public form routes. */
+  session?: { sessionId: string; authenticatedAt: Date };
 }
 
 type Handler = (ctx: Ctx, body: unknown) => Promise<unknown>;
@@ -809,6 +813,17 @@ route('POST', /^\/api\/account\/mfa\/recovery-codes$/, async ({ pool, actorId },
   return { recoveryCodes: await regenerateRecoveryCodes(pool, { actorId, password }) };
 });
 
+/**
+ * Confirm it is you: the password, and the authenticator code when two-step
+ * is on. Marks this session fresh for ten minutes. See runtime/step-up.ts.
+ */
+route('POST', /^\/api\/auth\/reauthenticate$/, async ({ pool, actorId, session }, body) => {
+  if (!session) throw new HttpError(401, 'sign in first');
+  const { password, code } = body as { password?: string; code?: string };
+  if (!password) throw new HttpError(400, 'password is required');
+  return reauthenticate(pool, { sessionId: session.sessionId, actorId, password, code });
+});
+
 /** §6.1 IAM-04: revoke sessions. Signing out everywhere is its own control. */
 route('POST', /^\/api\/session\/revoke-all$/, async ({ pool, actorId }) => {
   const revoked = await revokeAllSessions(pool, actorId);
@@ -1286,7 +1301,26 @@ async function main(): Promise<void> {
         if (!match) throw new HttpError(404, `no route for ${req.method} ${url.pathname}`);
 
         const body = req.method === 'POST' ? await readBody(req) : {};
-        const result = await match.handler({ engine, pool, principal, actorId, url }, body);
+
+        /*
+         * Actions that grant access or destroy data ask for a recent sign-in.
+         * Checked here, before the handler, so no route can forget to — and
+         * answered as a question rather than a refusal: the console asks the
+         * person to confirm it is them and then sends the same request again.
+         */
+        const stepUp = stepUpFor(req.method!, url.pathname, body);
+        if (stepUp && !isFresh(session.authenticatedAt)) {
+          return send(res, 403, {
+            error: 'reauthenticate',
+            reason: `Confirm it is you to ${stepUp.what}.`,
+            mfa: await mfaIsEnabled(pool, actorId),
+          });
+        }
+
+        const result = await match.handler(
+          { engine, pool, principal, actorId, url, session: { sessionId: session.sessionId, authenticatedAt: session.authenticatedAt } },
+          body,
+        );
         logIfEnabled('info', 'api.request', {
           method: req.method,
           path: url.pathname,

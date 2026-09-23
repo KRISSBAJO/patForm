@@ -265,6 +265,24 @@ async function main() {
   }
 
   /*
+   * "Confirm it is you" — raised the way the console raises it, since a
+   * fresh scan session never goes stale on its own. Audited, then dismissed.
+   */
+  await page.evaluate(() =>
+    window.dispatchEvent(
+      new CustomEvent('patform:reauth', {
+        detail: { reason: 'Confirm it is you to issue an API key.', mfa: true, resolve: () => {} },
+      }),
+    ),
+  );
+  await page.waitForTimeout(500);
+  if (await page.locator('.ru').count()) {
+    all.push(...(await audit(page, 'Confirm it is you')));
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(300);
+  }
+
+  /*
    * The OAuth consent screen, with a real registered application — the screen
    * is only drawn for a request that would work, so a made-up client_id now
    * shows the error page. Both are audited.

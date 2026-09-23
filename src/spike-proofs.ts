@@ -74,6 +74,7 @@ import {
 import { DraftConflict } from './runtime/errors.js';
 import { issueTicket, screen } from './runtime/screening.js';
 import { assertSecretKeyConfigured } from './runtime/secret-box.js';
+import { isFresh, reauthenticate, stepUpFor } from './runtime/step-up.js';
 import { PUBLIC_ID, resolveForm } from './runtime/form-links.js';
 import { FormLinkError } from './runtime/errors.js';
 import {
@@ -1693,6 +1694,114 @@ export async function proveSecretsAtRest({ pool, record }: ProofCtx): Promise<vo
     restore('MFA_ENCRYPTION_KEY_PREVIOUS', saved.previous);
     restore('NODE_ENV', saved.env);
   }
+}
+
+/**
+ * A session that has been sitting open asks again before it grants access or destroys data.
+ *
+ * The second factor was asked for at sign-in and never again. A cookie
+ * lifted from a laptop could issue API keys, add webhooks, change roles and
+ * run deletions. This checks which actions ask, that nothing which *reduces*
+ * access does, that confirming takes what signing in takes, and that
+ * guessing inside somebody's session loses it.
+ */
+export async function proveStepUp({ pool, record }: ProofCtx): Promise<void> {
+  const created = await createWorkspace(pool, {
+    workspaceName: 'Proof Step Up',
+    ownerEmail: 'owner@proof-stepup.test',
+    ownerName: 'An Owner',
+    password: 'the-account-password',
+  });
+  const actorId = created.actorId;
+  const T = Date.UTC(2026, 8, 23, 10, 0, 0);
+  const step = stepFor(T);
+  const signedIn = async () => {
+    const s = await startSession(pool, { actorId });
+    return (await resolveSession(pool, s!.token))!;
+  };
+
+  // ---- 1. Which requests ask
+  const asks = (method: string, path: string, body: unknown = {}) => Boolean(stepUpFor(method, path, body));
+  const id = '00000000-0000-0000-0000-000000000000';
+  const granting = [
+    asks('POST', '/api/keys'),
+    asks('POST', '/api/webhooks'),
+    asks('POST', `/api/webhooks/${id}/rotate`),
+    asks('POST', '/api/oauth/clients'),
+    asks('POST', '/api/invitations'),
+    asks('POST', `/api/members/${id}/role`),
+    asks('POST', `/api/members/${id}/reactivate`),
+    asks('POST', '/api/account/mfa/begin'),
+    asks('POST', '/api/retention', { processKey: 'x', preview: false }),
+  ];
+  const reducing = [
+    asks('POST', `/api/keys/${id}/revoke`),
+    asks('POST', `/api/oauth/grants/${id}/revoke`),
+    asks('POST', `/api/invitations/${id}/revoke`),
+    asks('POST', `/api/members/${id}/deactivate`),
+    asks('POST', `/api/members/${id}/revoke-sessions`),
+    asks('POST', '/api/session/revoke-all'),
+    asks('POST', '/api/retention', { processKey: 'x' }),
+  ];
+
+  // ---- 2. Fresh after signing in; stale after ten minutes
+  const session = await signedIn();
+  const freshNow = isFresh(session.authenticatedAt);
+  await pool.query(`update session set authenticated_at = now() - interval '11 minutes' where id = $1`, [session.sessionId]);
+  const { rows: aged } = await pool.query<{ authenticated_at: Date }>('select authenticated_at from session where id = $1', [session.sessionId]);
+  const freshAfterTen = isFresh(aged[0]!.authenticated_at);
+
+  // ---- 3. Confirming: a wrong password is refused and counted; the right one makes it fresh
+  const attempt = async (password: string, code?: string, sessionId = session.sessionId) => {
+    try {
+      await reauthenticate(pool, { sessionId, actorId, password, code, nowMs: T });
+      return 'confirmed';
+    } catch (err) {
+      return err instanceof Error ? err.message : String(err);
+    }
+  };
+  const wrong = await attempt('not-the-password');
+  const right = await attempt('the-account-password');
+  const { rows: afterRight } = await pool.query<{ authenticated_at: Date; reauth_failures: number }>(
+    'select authenticated_at, reauth_failures from session where id = $1',
+    [session.sessionId],
+  );
+
+  // ---- 4. With two-step on, the password alone is not enough, and the code is spent
+  const enrolled = await beginEnrolment(pool, { actorId });
+  await confirmEnrolment(pool, { actorId, code: codeFor(enrolled.secret, step), nowMs: T });
+  const passwordOnly = await attempt('the-account-password');
+  const withCode = await attempt('the-account-password', codeFor(enrolled.secret, step + 1));
+  const sameCodeAgain = await attempt('the-account-password', codeFor(enrolled.secret, step + 1));
+
+  // ---- 5. Guessing inside somebody's session loses the session
+  const other = await signedIn();
+  const guesses: string[] = [];
+  for (let i = 0; i < 5; i++) guesses.push(await attempt(`guess-${i}`, undefined, other.sessionId));
+  const { rows: gone } = await pool.query<{ revoked_at: Date | null }>('select revoked_at from session where id = $1', [other.sessionId]);
+
+  record(
+    'A session left open asks again before it grants access or destroys data',
+    'Step-up: actions that grant access or delete data need a sign-in from the last ten minutes; actions that reduce access never ask.',
+    granting.every(Boolean) &&
+      reducing.every((x) => !x) &&
+      freshNow &&
+      !freshAfterTen &&
+      wrong === 'that password is not right' &&
+      right === 'confirmed' &&
+      isFresh(afterRight[0]!.authenticated_at) &&
+      afterRight[0]!.reauth_failures === 0 &&
+      passwordOnly.startsWith('the code from your authenticator') &&
+      withCode === 'confirmed' &&
+      sameCodeAgain !== 'confirmed' &&
+      guesses[4]!.includes('signed out') &&
+      gone[0]!.revoked_at !== null,
+    `All ${granting.length} granting or destroying actions asked; none of the ${reducing.length} that reduce access did, ` +
+      `including a retention preview. A new session was fresh; ten minutes on it was not. A wrong password was ` +
+      `"${wrong}"; the right one confirmed and cleared the count. With two-step on, the password alone was ` +
+      `"${passwordOnly}", password and code confirmed, and the same code a second time was "${sameCodeAgain}". ` +
+      `Five wrong guesses inside another session ended it ("${guesses[4]}").`,
+  );
 }
 
 /**

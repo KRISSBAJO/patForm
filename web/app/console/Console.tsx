@@ -9,6 +9,7 @@ import { DataView, IntegrationsView } from './Settings';
 import { RecordTrail } from './Trail';
 import { RecordPage } from './Record';
 import { WorkList } from './WorkList';
+import { ReauthDialog } from './stepup';
 
 /**
  * Calls go to the same origin so the HttpOnly, SameSite=Lax session cookie is
@@ -350,6 +351,7 @@ export function Console() {
         <span className="cs__topWorkspace">{me.workspace_name}</span>
       </header>
 
+      <ReauthDialog />
       <div className="cs__shell">
       <aside className="cs__side">
         <nav className="cs__nav" aria-label="Console">

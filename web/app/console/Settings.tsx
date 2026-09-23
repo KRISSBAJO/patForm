@@ -15,6 +15,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
+import { postJson } from './stepup';
 
 async function get<T>(path: string): Promise<T> {
   const res = await fetch(path, { credentials: 'same-origin' });
@@ -23,17 +24,8 @@ async function get<T>(path: string): Promise<T> {
   return body as T;
 }
 
-async function post<T>(path: string, body?: unknown): Promise<T> {
-  const res = await fetch(path, {
-    method: 'POST',
-    credentials: 'same-origin',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body ?? {}),
-  });
-  const parsed = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(parsed.reason ?? parsed.error ?? `HTTP ${res.status}`);
-  return parsed as T;
-}
+/** Asks the person to confirm it is them when an action needs a recent sign-in; see stepup.tsx. */
+const post = postJson;
 
 function Panel({
   title,
@@ -128,7 +120,20 @@ interface Grant {
   revoked_at: string | null;
 }
 
-const SCOPES = ['records:read', 'records:write', 'processes:read', 'events:read'];
+/*
+ * What a key may do, in the names the server actually checks.
+ *
+ * This list used to be `records:read`, `records:write`, `processes:read` and
+ * `events:read` — names that exist nowhere on the server, which scopes keys by
+ * capability. Every one failed the "no broader than you" check, so no key
+ * could be created from this page at all. Found testing the step-up prompt,
+ * which confirmed correctly and then watched the retried request fail.
+ */
+const SCOPES: { value: string; label: string }[] = [
+  { value: 'view', label: 'Read processes and records' },
+  { value: 'edit', label: 'Create records and import them' },
+  { value: 'report', label: 'Read metrics' },
+];
 
 export function IntegrationsView() {
   const keys = useFeed<ApiKey[]>('/api/keys');
@@ -141,7 +146,7 @@ export function IntegrationsView() {
   const [busy, setBusy] = useState<string | null>(null);
 
   const [keyName, setKeyName] = useState('');
-  const [keyScopes, setKeyScopes] = useState<string[]>(['records:read']);
+  const [keyScopes, setKeyScopes] = useState<string[]>(['view']);
   const [hookUrl, setHookUrl] = useState('');
   const [hookKind, setHookKind] = useState<'http' | 'slack' | 'teams'>('http');
   const [clientName, setClientName] = useState('');
@@ -250,17 +255,17 @@ export function IntegrationsView() {
             <fieldset className="st__fieldset">
               <legend className="cs__label">What it may do</legend>
               {SCOPES.map((scope) => (
-                <label key={scope} className="st__check">
+                <label key={scope.value} className="st__check">
                   <input
                     type="checkbox"
-                    checked={keyScopes.includes(scope)}
+                    checked={keyScopes.includes(scope.value)}
                     onChange={(e) =>
                       setKeyScopes((was) =>
-                        e.target.checked ? [...was, scope] : was.filter((s) => s !== scope),
+                        e.target.checked ? [...was, scope.value] : was.filter((s) => s !== scope.value),
                       )
                     }
                   />
-                  <code>{scope}</code>
+                  {scope.label} <code>{scope.value}</code>
                 </label>
               ))}
             </fieldset>
@@ -288,7 +293,7 @@ export function IntegrationsView() {
             </thead>
             <tbody>
               {keys.data.map((k) => (
-                <tr key={k.id} style={k.revoked_at ? { opacity: 0.6 } : undefined}>
+                <tr key={k.id} className={k.revoked_at ? 'vw__rowOff' : undefined}>
                   <th scope="row">
                     {k.name}
                     <span className="mg__sub">

@@ -102,7 +102,15 @@ create table session (
   created_at  timestamptz not null default now(),
   last_seen_at timestamptz not null default now(),
   expires_at  timestamptz not null,
-  revoked_at  timestamptz
+  revoked_at  timestamptz,
+  /*
+   * When the person last proved it was them — at sign-in, or by confirming
+   * again. Actions that grant access or destroy data ask for this to be
+   * recent; see runtime/step-up.ts. `reauth_failures` counts wrong answers to
+   * that question, and five end the session.
+   */
+  authenticated_at timestamptz not null default now(),
+  reauth_failures  int not null default 0
 );
 
 create index session_live on session (actor_id) where revoked_at is null;

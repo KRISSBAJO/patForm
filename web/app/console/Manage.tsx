@@ -15,6 +15,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
+import { postJson } from './stepup';
 
 async function get<T>(path: string): Promise<T> {
   const res = await fetch(path, { credentials: 'same-origin' });
@@ -23,17 +24,8 @@ async function get<T>(path: string): Promise<T> {
   return body as T;
 }
 
-async function post<T>(path: string, body?: unknown): Promise<T> {
-  const res = await fetch(path, {
-    method: 'POST',
-    credentials: 'same-origin',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body ?? {}),
-  });
-  const parsed = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(parsed.reason ?? parsed.error ?? `HTTP ${res.status}`);
-  return parsed as T;
-}
+/** Asks the person to confirm it is them when an action needs a recent sign-in; see stepup.tsx. */
+const post = postJson;
 
 /**
  * Icons for the actions.
@@ -364,7 +356,7 @@ export function PeopleView({ canAdminister }: { canAdminister: boolean }) {
           </thead>
           <tbody>
             {members.map((m) => (
-              <tr key={m.id} style={m.active ? undefined : { opacity: 0.6 }}>
+              <tr key={m.id} className={m.active ? undefined : 'vw__rowOff'}>
                 <th scope="row" style={{ fontWeight: 600 }}>
                   {m.display_name}
                   <span className="mg__sub">{m.email}</span>

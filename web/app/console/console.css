@@ -3021,3 +3021,68 @@ a.cs__navItem {
   font-size: 13px;
   color: var(--ink-soft);
 }
+
+/* ------------------------------------------------------- confirm it is you */
+
+.ru__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(19, 26, 23, 0.45);
+}
+
+.ru {
+  width: 100%;
+  max-width: 400px;
+  padding: 22px;
+  border-radius: 12px;
+  background: var(--white);
+  box-shadow: 0 30px 70px -30px rgba(0, 0, 0, 0.5);
+}
+
+.ru__title {
+  margin: 0;
+  font-size: 18px;
+}
+
+.ru__reason {
+  margin: 6px 0 14px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--ink-soft);
+}
+
+.ru__row {
+  display: grid;
+  gap: 5px;
+  margin-bottom: 12px;
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+
+.ru__error {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: var(--red-text);
+}
+
+.ru__actions {
+  display: flex;
+  gap: 8px;
+}
+
+/*
+ * A row that no longer counts — a revoked key, a deactivated member.
+ *
+ * It was faded with opacity, which took its text under the contrast minimum:
+ * dimming everything is the easy way to say "inactive" and the unreadable
+ * one. The state is already said in words on the row; this only quietens the
+ * text, to a colour that still passes.
+ */
+.vw__table tr.vw__rowOff th,
+.vw__table tr.vw__rowOff td {
+  color: var(--muted);
+}

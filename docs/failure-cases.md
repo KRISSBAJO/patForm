@@ -859,6 +859,16 @@ The same page listed every requested scope as though it would be granted, includ
 
 **Generalisable:** the safe-looking choice gets the same scrutiny as the dangerous one. Here the Allow path was checked on the server and the Refuse path was not checked anywhere, because refusing felt like it could not hurt.
 
+### 80. A form that offered four choices the server had never heard of
+
+The Integrations page let an administrator issue an API key, choosing what it may do from `records:read`, `records:write`, `processes:read` and `events:read`. The server scopes keys by capability — `view`, `edit`, `report` — and checks that a key is no broader than the person making it. None of the four names is a capability, so every one failed that check: "you cannot grant a key records:read — you do not hold it yourself". No key had ever been created from the page.
+
+It was found testing something else. The new "confirm it is you" prompt answered correctly, the request was sent again, and the retry failed — for a reason that had nothing to do with the prompt. The accessibility gate had been through the page every run; it checks what a page shows, not whether its one button works.
+
+In the same run the gate failed the page for the first time, because the test had left a revoked key in the table and nobody had ever scanned a row of it: revoked keys, and deactivated members on People, were faded to 60% opacity, which put their text under the contrast minimum. The state is said in words on the row; it now uses the muted text colour instead, and the gate's own setup makes a revoked key so the row is always checked.
+
+**Fixed** by offering the scopes the server checks, with what each lets a key do. **Generalisable:** a form's options are a claim about the server. When they are typed in by hand on the client, the only test of the claim is using it — and a page that only ever renders empty is a page whose rows have never been checked.
+
 ---
 
 ## What the compiler structurally cannot catch

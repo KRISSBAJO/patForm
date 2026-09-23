@@ -785,6 +785,24 @@ missing check away from being a session that counts.
 A phone whose clock is a minute out still works. Rejecting drift is how a
 second factor becomes a support queue.
 
+**Confirm it is you.** Signing in used to be the only time anybody was asked,
+so a session left open — or a lifted cookie — could issue an API key, add a
+webhook that ships records elsewhere, change a role or run a deletion. Now
+anything that **grants access or destroys data** needs a sign-in from the last
+ten minutes: issuing an API key, adding a webhook or rotating its secret,
+registering an OAuth application, inviting somebody, changing a role,
+reactivating a member, setting up a new authenticator, and running a retention
+deletion (not its preview). Anything that **reduces** access never asks —
+revoking keys, grants and invitations, deactivating somebody, signing out
+sessions — because in an incident those must be one click.
+
+The check is in the API's dispatcher, before any handler runs, so no route can
+forget it. It answers `403 reauthenticate` rather than refusing, and the
+console asks for the password (and the code, if two-step is on), then sends
+the same request again — the person never presses the button twice. Confirming
+spends the code's window like signing in does. Five wrong answers end the
+session: whoever is guessing inside it does not get to keep it.
+
 ### The catalogue
 
 ```bash
@@ -1140,9 +1158,8 @@ Everything below is a deliberate deferral:
 - **A KMS for the two-factor key.** Secrets are sealed with a key from the
   environment (see *Two-step verification*); a KMS would keep it out of the
   process entirely.
-- **No trusted devices, and no step-up.** The second factor is asked for on
-  every sign-in, and never asked for again — a destructive action inside a
-  live session is not re-challenged.
+- **Trusted devices.** The second factor is asked for on every sign-in; there
+  is no "remember this browser".
 - **CAPTCHA, IP reputation, and scoring what a submission says.** Public
   forms are screened with a signed ticket and a trap field, and a suspicious
   submission is held rather than acted on (above). Nothing challenges the

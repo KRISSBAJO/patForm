@@ -472,6 +472,37 @@ export async function answerChallenge(
 }
 
 /**
+ * Checks a code from somebody already signed in, for a step-up.
+ *
+ * The same rules as signing in: the secret is opened the same way, the code
+ * must be from a window after the last one accepted, and accepting it spends
+ * that window — a code used to confirm an action cannot then sign somebody
+ * else in.
+ */
+export async function verifyCurrentCode(
+  pool: Pool,
+  args: { actorId: string; code: string; nowMs?: number },
+): Promise<{ ok: boolean; reason?: string }> {
+  return inTransaction(pool, async (client) => {
+    const { rows } = await client.query<{ secret: string; last_used_step: string | null }>(
+      `select secret, last_used_step from mfa_enrolment
+        where actor_id = $1 and confirmed_at is not null for update`,
+      [args.actorId],
+    );
+    const enrolment = rows[0];
+    if (!enrolment) return { ok: true };
+    const secret = await readSecret(client, args.actorId, enrolment.secret);
+    const check = checkCode(secret, args.code, {
+      nowMs: args.nowMs ?? Date.now(),
+      after: enrolment.last_used_step == null ? null : Number(enrolment.last_used_step),
+    });
+    if (!check.ok) return { ok: false, reason: check.reason ?? 'that code is not right' };
+    await client.query('update mfa_enrolment set last_used_step = $2 where actor_id = $1', [args.actorId, check.step]);
+    return { ok: true };
+  });
+}
+
+/**
  * The secret, opened — and sealed again when it needs to be.
  *
  * A secret stored before encryption existed is read as it is and replaced

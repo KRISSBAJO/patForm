@@ -211,6 +211,8 @@ export interface SessionActor {
   displayName: string;
   email: string;
   workspaceRole: string;
+  /** When this session last proved who it was: sign-in, or a step-up since. */
+  authenticatedAt: Date;
   /**
    * Set when this request extended the session, so the caller can re-issue
    * the cookie with the new expiry.
@@ -234,8 +236,10 @@ export async function resolveSession(pool: Pool, token: string): Promise<Session
     email: string;
     workspace_role: string;
     expires_at: Date;
+    authenticated_at: Date;
   }>(
-    `select s.id, s.actor_id, s.tenant_id, a.display_name, a.email, a.workspace_role, s.expires_at
+    `select s.id, s.actor_id, s.tenant_id, a.display_name, a.email, a.workspace_role, s.expires_at,
+            s.authenticated_at
        from session s join actor a on a.id = s.actor_id
       where s.token_hash = $1
         and s.revoked_at is null
@@ -284,6 +288,7 @@ export async function resolveSession(pool: Pool, token: string): Promise<Session
     displayName: row.display_name,
     email: row.email,
     workspaceRole: row.workspace_role,
+    authenticatedAt: row.authenticated_at,
     renewedUntil,
   };
 }

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Icon } from './Icon';
 import { Trend, WhereItSits, type Point, type Standing } from './Charts';
+import { postJson } from './stepup';
 
 /**
  * The three nav items that used to say "Not built yet".
@@ -845,17 +846,8 @@ interface MfaStatus {
   recoveryCodesLeft: number;
 }
 
-async function post<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(path, {
-    method: 'POST',
-    credentials: 'same-origin',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body ?? {}),
-  });
-  const parsed = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(parsed.reason ?? parsed.error ?? `HTTP ${res.status}`);
-  return parsed as T;
-}
+/** Asks the person to confirm it is them when an action needs a recent sign-in; see stepup.tsx. */
+const post = postJson;
 
 /**
  * Turning the second factor on, and off.

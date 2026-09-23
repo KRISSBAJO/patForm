@@ -96,6 +96,27 @@ if (process.argv[2] === 'restore') {
     );
   }
 
+  // A revoked key, so the scan sees the "no longer counts" row style. It was
+  // faded with opacity until a revoked key happened to exist during a scan,
+  // and then it failed contrast; a table the scan never sees a row of is a
+  // table it has not checked.
+  {
+    const { issueApiKey, revokeApiKey } = await import('../src/api/keys.js');
+    const { rows: existing } = await pool.query<{ n: number }>(
+      `select count(*)::int as n from api_key where tenant_id = $1 and revoked_at is not null`,
+      [scan.tenant_id],
+    );
+    if (!existing[0]!.n) {
+      const made = await issueApiKey(pool, {
+        tenantId: scan.tenant_id,
+        actorId: scan.id,
+        name: 'Revoked for the accessibility scan',
+        scopes: ['view'],
+      });
+      await revokeApiKey(pool, { tenantId: scan.tenant_id, id: made.id });
+    }
+  }
+
   // The banner only renders for an unverified account, so the scan needs one.
   await pool.query('update actor set email_verified_at = null where id = $1', [scan.id]);
 
