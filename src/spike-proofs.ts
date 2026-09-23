@@ -73,6 +73,7 @@ import {
 } from './runtime/builder.js';
 import { DraftConflict } from './runtime/errors.js';
 import { issueTicket, screen } from './runtime/screening.js';
+import { assertSecretKeyConfigured } from './runtime/secret-box.js';
 import { PUBLIC_ID, resolveForm } from './runtime/form-links.js';
 import { FormLinkError } from './runtime/errors.js';
 import {
@@ -1571,6 +1572,127 @@ export async function proveOAuthConsent({ pool, record }: ProofCtx): Promise<voi
       `old one was treated as theft and the rotated access token stopped working. A member demoted after granting ` +
       `took the integration down with them: ${before?.scopes.join(' ')} became ${afterDemotion?.scopes.join(' ')}.`,
   );
+}
+
+/**
+ * A copy of the database is not enough to pass anybody's second factor.
+ *
+ * The TOTP secret was stored as text: a backup, a replica or one select gave
+ * the current code for every account. It is now sealed with a key outside
+ * the database and bound to its account. This checks the seal, what happens
+ * when a sealed secret is moved to another account, that people enrolled
+ * before the change are not locked out, and that a key can be rotated.
+ */
+export async function proveSecretsAtRest({ pool, record }: ProofCtx): Promise<void> {
+  const saved = {
+    key: process.env.MFA_ENCRYPTION_KEY,
+    previous: process.env.MFA_ENCRYPTION_KEY_PREVIOUS,
+    env: process.env.NODE_ENV,
+  };
+  const keyA = randomBytes(32).toString('base64');
+  const keyB = randomBytes(32).toString('base64');
+  const T = Date.UTC(2026, 8, 23, 9, 0, 0);
+  const step = stepFor(T);
+
+  const owner = async (n: string) =>
+    (
+      await createWorkspace(pool, {
+        workspaceName: `Proof Sealed ${n}`,
+        ownerEmail: `owner-${n}@proof-sealed.test`,
+        ownerName: `Owner ${n}`,
+        password: 'the-account-password',
+      })
+    ).actorId;
+  const stored = async (actorId: string) =>
+    (await pool.query<{ secret: string }>('select secret from mfa_enrolment where actor_id = $1', [actorId])).rows[0]!.secret;
+  const signInWith = async (n: string, code: string, at: number) => {
+    const challenged = await signIn(pool, { email: `owner-${n}@proof-sealed.test`, password: 'the-account-password' });
+    const token = (challenged as { challengeToken: string }).challengeToken;
+    try {
+      await answerChallenge(pool, { token, code, nowMs: at });
+      return 'signed in';
+    } catch (err) {
+      return `refused: ${err instanceof Error ? err.message : String(err)}`;
+    }
+  };
+
+  try {
+    process.env.MFA_ENCRYPTION_KEY = keyA;
+    delete process.env.MFA_ENCRYPTION_KEY_PREVIOUS;
+
+    // ---- 1. Enrolled: the row holds a sealed value, not the secret
+    const a = await owner('a');
+    const enrolledA = await beginEnrolment(pool, { actorId: a });
+    await confirmEnrolment(pool, { actorId: a, code: codeFor(enrolledA.secret, step), nowMs: T });
+    const sealedA = await stored(a);
+
+    // ---- 2. Moved to another account by somebody with write access: useless there
+    const b = await owner('b');
+    const enrolledB = await beginEnrolment(pool, { actorId: b });
+    await confirmEnrolment(pool, { actorId: b, code: codeFor(enrolledB.secret, step), nowMs: T });
+    await pool.query('update mfa_enrolment set secret = $2 where actor_id = $1', [b, sealedA]);
+    const movedIn = await signInWith('b', codeFor(enrolledA.secret, step + 1), T + 30_000);
+
+    // ---- 3. Enrolled before encryption: still signs in, and is sealed on the way
+    const c = await owner('c');
+    const legacySecret = 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP';
+    await pool.query(
+      `insert into mfa_enrolment (actor_id, secret, confirmed_at) values ($1, $2, now())`,
+      [c, legacySecret],
+    );
+    const legacy = await signInWith('c', codeFor(legacySecret, step), T);
+    const legacyAfter = await stored(c);
+
+    // ---- 4. Rotation: a new key, the old one kept as previous; the next use moves it
+    process.env.MFA_ENCRYPTION_KEY = keyB;
+    process.env.MFA_ENCRYPTION_KEY_PREVIOUS = keyA;
+    const duringRotation = await signInWith('a', codeFor(enrolledA.secret, step + 2), T + 60_000);
+    const rotatedA = await stored(a);
+    delete process.env.MFA_ENCRYPTION_KEY_PREVIOUS;
+    const afterRotation = await signInWith('a', codeFor(enrolledA.secret, step + 3), T + 90_000);
+
+    // ---- 5. The database somewhere without the key: nobody's second factor passes
+    process.env.MFA_ENCRYPTION_KEY = randomBytes(32).toString('base64');
+    const wrongKey = await signInWith('a', codeFor(enrolledA.secret, step + 4), T + 120_000);
+
+    // ---- 6. Production will not start without a key
+    delete process.env.MFA_ENCRYPTION_KEY;
+    process.env.NODE_ENV = 'production';
+    let startup = 'started';
+    try {
+      assertSecretKeyConfigured();
+    } catch (err) {
+      startup = err instanceof Error ? err.message.split('.')[0]! : String(err);
+    }
+
+    const keyIdOf = (v: string) => v.split('.')[1];
+    record(
+      'A copy of the database is not enough to pass anybody\'s second factor',
+      'Two-factor secrets sealed at rest (AES-256-GCM, key outside the database, bound to the account), readable across a key rotation.',
+      sealedA.startsWith('v1.') &&
+        !sealedA.includes(enrolledA.secret) &&
+        movedIn.startsWith('refused') &&
+        legacy === 'signed in' &&
+        legacyAfter.startsWith('v1.') &&
+        !legacyAfter.includes(legacySecret) &&
+        duringRotation === 'signed in' &&
+        keyIdOf(rotatedA) !== keyIdOf(sealedA) &&
+        afterRotation === 'signed in' &&
+        wrongKey.startsWith('refused') &&
+        startup.startsWith('MFA_ENCRYPTION_KEY is not set'),
+      `The enrolled secret is stored as "${sealedA.slice(0, 16)}…", which does not contain it. Copied onto another ` +
+        `account it was ${movedIn.split(':')[0]}, because each value is bound to its owner. A secret stored in the clear ` +
+        `before this change still ${legacy === 'signed in' ? 'signed in' : 'failed'}, and was sealed on the way. With a new ` +
+        `key and the old one kept as previous, sign-in worked and moved the secret from key ${keyIdOf(sealedA)} to ` +
+        `${keyIdOf(rotatedA)}; with the old key then dropped it still worked. The same database under a different key ` +
+        `was ${wrongKey.split(':')[0]}. Production without a key refused to start ("${startup}").`,
+    );
+  } finally {
+    const restore = (k: string, v: string | undefined) => (v === undefined ? delete process.env[k] : (process.env[k] = v));
+    restore('MFA_ENCRYPTION_KEY', saved.key);
+    restore('MFA_ENCRYPTION_KEY_PREVIOUS', saved.previous);
+    restore('NODE_ENV', saved.env);
+  }
 }
 
 /**

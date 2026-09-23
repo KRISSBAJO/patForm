@@ -34,6 +34,7 @@ import { requestPasswordReset, resetPassword, sendVerification, verifyEmail } fr
 import { DraftConflict } from '../runtime/errors.js';
 import { assertScreeningConfigured, issueTicket, screen, TRAP_FIELD } from '../runtime/screening.js';
 import { resolveForm } from '../runtime/form-links.js';
+import { assertSecretKeyConfigured } from '../runtime/secret-box.js';
 import { FormLinkError } from '../runtime/errors.js';
 import { discardHeld, listHeld, releaseHeld } from '../runtime/held.js';
 import { resendSkipped, sendingHealth, skippedFor } from '../runtime/delivery-health.js';
@@ -977,6 +978,8 @@ async function main(): Promise<void> {
   // Refuse to start in production without a ticket key, rather than hold
   // every submission made across the next deploy. See screening.ts.
   assertScreeningConfigured();
+  // Nor without a key for two-factor secrets; see secret-box.ts.
+  assertSecretKeyConfigured();
   const pool = createPool(12);
   const engine = new Engine(pool);
 

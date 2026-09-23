@@ -764,6 +764,18 @@ usually got wrong:
   table is not a set of working ones.
 - **Turning it off asks for the password, not a code.** Somebody holding the
   phone but not the password is exactly who must not remove the factor.
+- **The secret is sealed at rest.** A second factor is only a second factor
+  if a copy of the database is not enough to pass it, and the secret was
+  stored as text. It is now AES-256-GCM under `MFA_ENCRYPTION_KEY`, a key
+  outside the database, and each value is bound to its account, so one copied
+  onto another account does not decrypt. Production will not start without
+  the key. Secrets stored before this change still work and are sealed the
+  next time they are used; to rotate, move the key to
+  `MFA_ENCRYPTION_KEY_PREVIOUS` and set a new one, and each secret moves on its
+  next use. A secret that cannot be opened is a clear refusal and an `error`
+  log line — tampering or the wrong key — pointing the person at a recovery
+  code. A KMS would keep the key out of the process's environment too; the
+  stored format names its key, so one can be put behind it.
 
 A correct password on an enrolled account returns a challenge token and
 **sets no cookie**. The challenge is its own short-lived row rather than a
@@ -1125,9 +1137,9 @@ Everything below is a deliberate deferral:
 - **SSO itself.** The identity model accommodates it (IAM-05) — external
   identities match on the provider's subject, never the email — and no
   provider is wired to it.
-- **The TOTP secret is stored unencrypted.** It is a credential at rest with
-  no envelope around it. Encrypting it needs a key that does not live in the
-  same database, which needs a KMS this deployment does not have.
+- **A KMS for the two-factor key.** Secrets are sealed with a key from the
+  environment (see *Two-step verification*); a KMS would keep it out of the
+  process entirely.
 - **No trusted devices, and no step-up.** The second factor is asked for on
   every sign-in, and never asked for again — a destructive action inside a
   live session is not re-challenged.

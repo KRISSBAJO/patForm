@@ -27,6 +27,7 @@
  */
 
 import { createHmac, createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import { open as openSecret, seal } from './secret-box.js';
 import type { Client, Pool } from './db.js';
 import { inTransaction } from './db.js';
 import { InvalidInput } from './errors.js';
@@ -217,11 +218,13 @@ export async function beginEnrolment(
   }
 
   const secret = base32Encode(randomBytes(20));
+  // Stored sealed and bound to this account; shown in the clear exactly once,
+  // here, for the authenticator to scan. See secret-box.ts.
   await pool.query(
     `insert into mfa_enrolment (actor_id, secret) values ($1, $2)
      on conflict (actor_id) do update set secret = excluded.secret, created_at = now(),
        last_used_step = null`,
-    [args.actorId, secret],
+    [args.actorId, seal(secret, args.actorId)],
   );
 
   return {
@@ -251,7 +254,8 @@ export async function confirmEnrolment(
     if (!enrolment) throw new InvalidInput('start setting up two-step verification first');
     if (enrolment.confirmed_at) throw new InvalidInput('two-step verification is already on');
 
-    const check = checkCode(enrolment.secret, args.code, {
+    const secret = await readSecret(client, args.actorId, enrolment.secret);
+    const check = checkCode(secret, args.code, {
       nowMs,
       after: enrolment.last_used_step == null ? null : Number(enrolment.last_used_step),
     });
@@ -442,7 +446,8 @@ export async function answerChallenge(
     const enrolment = enrolments[0];
     if (!enrolment) throw new InvalidInput('two-step verification is not set up on this account');
 
-    const check = checkCode(enrolment.secret, entered, {
+    const secret = await readSecret(client, challenge.actor_id, enrolment.secret);
+    const check = checkCode(secret, entered, {
       nowMs,
       after: enrolment.last_used_step == null ? null : Number(enrolment.last_used_step),
     });
@@ -464,6 +469,36 @@ export async function answerChallenge(
       recoveryCodesLeft: left[0]!.count,
     };
   });
+}
+
+/**
+ * The secret, opened — and sealed again when it needs to be.
+ *
+ * A secret stored before encryption existed is read as it is and replaced
+ * with a sealed one in the same transaction, so nobody enrolled earlier is
+ * locked out and no plaintext outlives its next use. One sealed under the
+ * previous key is moved to the current key the same way, which is how a key
+ * is rotated without a migration: set the new key, keep the old one as
+ * MFA_ENCRYPTION_KEY_PREVIOUS until everybody has signed in once.
+ */
+async function readSecret(client: Client, actorId: string, stored: string): Promise<string> {
+  let opened: { plaintext: string; reseal: boolean };
+  try {
+    opened = openSecret(stored, actorId);
+  } catch (err) {
+    // Tampered with, copied from another account, or this deployment has the
+    // wrong key. Said plainly, and logged loudly: it is either an attack or a
+    // misconfiguration, and neither should look like "that code is not right".
+    logIfEnabled('error', 'mfa.secret_unreadable', { actorId, detail: err instanceof Error ? err.message : String(err) });
+    throw new InvalidInput(
+      'the two-step verification for this account cannot be read — use a recovery code, or ask an owner to reset it',
+    );
+  }
+  const { plaintext, reseal } = opened;
+  if (reseal) {
+    await client.query('update mfa_enrolment set secret = $2 where actor_id = $1', [actorId, seal(plaintext, actorId)]);
+  }
+  return plaintext;
 }
 
 export async function isEnabled(db: Pool | Client, actorId: string): Promise<boolean> {
