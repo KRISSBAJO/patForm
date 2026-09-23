@@ -145,6 +145,13 @@ export function FormPreview({
                               value={answers[f.key]}
                               onChange={(v) => setAnswers((was) => ({ ...was, [f.key]: v }))}
                             />
+                            {(f.key === 'receipt_reference' || f.key === 'invoice_evidence_reference') && (
+                              <div className="fm__field" style={{ marginTop: 10 }}>
+                                <label className="fm__label" htmlFor={`preview-upload-${f.key}`}>Or upload the document</label>
+                                <input id={`preview-upload-${f.key}`} type="file" accept="application/pdf,image/png,image/jpeg" disabled />
+                                <p className="fm__help">On the live form: PDF, PNG or JPEG, up to 5 MB. The document must pass a malware scan.</p>
+                              </div>
+                            )}
                           </FieldCell>
                         ))}
                       </div>

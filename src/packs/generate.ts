@@ -77,8 +77,10 @@ export interface PackSpec {
   notes?: string[];
   /** The first open question, when "who approves" is not the one that matters. */
   decision?: { question: string; provisionally: string };
+  /** What a successful finish means in the message to the submitter. */
+  completionMessage?: string;
   /** Work somebody does after the decision, before it is finished. */
-  task?: { key: string; name: string; byRole: string; requiredFields?: string[] };
+  task?: { key: string; name: string; byRole: string; description?: string; requiredFields?: string[] };
   fields: PackField[];
   /** Days after completion. Null keeps the record forever, and says so. */
   retentionDays: number | null;
@@ -745,7 +747,7 @@ Open it in the console — it is still decidable, and it closes itself if nobody
       to: [{ submitter: true }],
       cc: [],
       subject: 'Approved',
-      body: `Hello {{submitter_name}},\n\nThis has been approved and is complete. Nothing further is needed from you.`,
+      body: `Hello {{submitter_name}},\n\n${spec.completionMessage ?? 'This has been approved and is complete. Nothing further is needed from you.'}`,
     },
     {
       key: 'rejected',
@@ -792,6 +794,14 @@ function tests(spec: PackSpec, answers: Record<string, unknown>, rules: Category
   if (required) delete (missing as Record<string, unknown>)[required];
   delete (missing as Record<string, unknown>).submitter_email;
 
+  const taskAnswers = Object.fromEntries((spec.task?.requiredFields ?? []).map((key) => [
+    key,
+    spec.fields.find((field) => field.key === key)?.sample ?? `${key.toUpperCase()}-2026-001`,
+  ]));
+  const evidenceField = spec.category === 'Finance'
+    ? spec.fields.find((field) => ['receipt_reference', 'invoice_evidence_reference'].includes(field.key))?.key
+    : undefined;
+
   return [
     {
       key: 'happy_path',
@@ -800,12 +810,12 @@ function tests(spec: PackSpec, answers: Record<string, unknown>, rules: Category
       steps: approveAll,
       expect: { state: endState, instanceCount: 1 },
     },
-    ...(spec.key === 'budget_transfer' && spec.task
+    ...(spec.category === 'Finance' && spec.task && spec.task.requiredFields?.length
       ? [
           {
-            key: 'journal_reference_required',
+            key: 'task_reference_required',
             kind: 'happy_path',
-            name: 'Finance cannot finish before recording the journal reference',
+            name: 'Finance cannot finish before recording the required reference',
             steps: [
               ...approveAll,
               { step: 'complete_task', task: spec.task.key, as: spec.task.byRole, expectDenied: true },
@@ -813,16 +823,25 @@ function tests(spec: PackSpec, answers: Record<string, unknown>, rules: Category
             expect: { state: 'doing', openTasks: [spec.task.key], instanceCount: 1 },
           },
           {
-            key: 'journal_posted',
+            key: 'task_completed_with_reference',
             kind: 'happy_path',
-            name: 'Finance records the journal reference and finishes the transfer',
+            name: 'Finance records the reference and finishes the work',
             steps: [
               ...approveAll,
-              { step: 'complete_task', task: spec.task.key, as: spec.task.byRole, answers: { journal_reference: 'JR-2026-0412' } },
+              { step: 'complete_task', task: spec.task.key, as: spec.task.byRole, answers: taskAnswers },
             ],
             expect: { state: 'done', openTasks: [], instanceCount: 1 },
           },
         ]
+      : []),
+    ...(evidenceField
+      ? [{
+          key: 'evidence_reference_required',
+          kind: 'missing_data',
+          name: 'A missing receipt or invoice reference cannot be submitted',
+          steps: [{ step: 'submit', answers: Object.fromEntries(Object.entries(answers).filter(([key]) => key !== evidenceField)) }],
+          expect: { instanceCount: 0 },
+        }]
       : []),
     // Both sides of the threshold, because a rule tested on one side only is
     // how every Finance pack came to send everything to the controller.
@@ -1087,6 +1106,7 @@ export function buildBlueprint(spec: PackSpec): unknown {
             {
               key: spec.task.key,
               name: spec.task.name,
+              ...(spec.task.description ? { description: spec.task.description } : {}),
               assignee: { role: spec.task.byRole },
               blocking: true,
               dueInHours: 120,

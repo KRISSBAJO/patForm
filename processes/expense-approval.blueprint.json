@@ -220,7 +220,7 @@
         "label": "Where the receipts are",
         "required": true,
         "classification": "confidential",
-        "help": "The expense-system reference, or where a manager can see the receipts. Do not send images here.",
+        "help": "Upload a PDF, PNG or JPEG receipt below, or enter the reference where a manager can see it.",
         "collectionReason": "Finance and HMRC need to be able to find the evidence; holding it here would make this platform the system of record for it."
       },
       {

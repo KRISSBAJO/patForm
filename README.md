@@ -77,9 +77,22 @@ is specific to either.
 from `src/packs/catalogue.ts`. After changing it, `npm run packs -- --catalogue`
 publishes a new version of each template that changed and leaves the rest
 alone, without a re-seed. Workspaces that installed the older version keep it.
-Budget transfer now requires Finance to record a journal reference when marking
-the posting task done. A new catalogue version carries that change; an existing
-draft or published process must be updated in the builder to use it.
+The Finance packs now ask process-specific questions and keep an approved record
+open until Finance records the handoff, payment queue, order, refund, reconciliation
+or journal reference that finishes the work. Refunds remain a Finance task; the
+Stripe and Paystack settings do not issue money from these processes. An existing
+draft or published process keeps its own version until it is changed in the builder.
+
+**Finance receipts.** Expense claims, petty cash and invoice approvals accept a
+PDF, PNG or JPEG up to 5 MB, or an external document reference. Uploads go to the
+private `finance/receipts/` prefix in `AWS_S3_BUCKET`. The GuardDuty malware plan
+tags each new object; a submission and a signed download require
+`NO_THREATS_FOUND`. The download link lasts one minute and is available only to
+an actor who can view the field on that record. The worker removes expired draft
+files and retries object deletion after retention or erasure. Configure
+`AWS_REGION`, `AWS_S3_BUCKET`, AWS credentials, and a GuardDuty Malware Protection
+plan with tagging enabled for the same prefix. The idempotent setup script is
+`node --env-file=.env scripts/enable-receipt-scanning.mjs`.
 
 **Signatures.** A `signature` field lets the person type their name and adopt
 it in one of three handwriting styles, or draw it with a mouse, finger or pen

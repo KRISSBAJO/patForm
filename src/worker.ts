@@ -4,6 +4,7 @@ import { Engine, newWorkerId } from './runtime/engine.js';
 import { sweepExpiredTokens } from './runtime/retention.js';
 import { sweepHeld } from './runtime/held.js';
 import { checkSendingHealth } from './runtime/delivery-health.js';
+import { cleanupExpiredReceipts, drainReceiptDeletions } from './runtime/receipt-files.js';
 
 /**
  * The durable worker §10.1 asks for: "Queue-backed workers for email,
@@ -75,9 +76,12 @@ async function main(): Promise<void> {
       if (now.getTime() - lastSweep > SWEEP_EVERY_MS) {
         const swept = await sweepExpiredTokens(pool);
         const held = await sweepHeld(pool);
+        await cleanupExpiredReceipts(pool);
+        const removedReceipts = await drainReceiptDeletions(pool);
         lastSweep = now.getTime();
         if (swept) console.log(`  ${now.toISOString()}  swept ${swept} expired token(s)`);
         if (held) console.log(`  ${now.toISOString()}  deleted ${held} held submission(s) past thirty days`);
+        if (removedReceipts) console.log(`  ${now.toISOString()}  removed ${removedReceipts} receipt object(s)`);
 
         // The rate the provider judges the account by. Quiet unless it
         // crosses a threshold or recovers; see delivery-health.ts.

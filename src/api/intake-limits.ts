@@ -77,6 +77,8 @@ export interface IntakeLimit {
  * the one worth being mean about.
  */
 export const INTAKE_LIMITS: { test: RegExp; method: string; limit: IntakeLimit }[] = [
+  { method: 'POST', test: /^\/api\/forms\/[a-z0-9_-]+\/receipts$/, limit: { scope: 'receipt-upload', perMinute: 5, perHour: 20 } },
+  { method: 'GET', test: /^\/api\/forms\/[a-z0-9_-]+\/receipts\/[0-9a-f-]{36}$/, limit: { scope: 'receipt-status', perMinute: 60 } },
   { method: 'POST', test: /^\/api\/forms\/[a-z0-9_-]+\/submit$/, limit: { scope: 'submit', perMinute: 5, perHour: 20 } },
   { method: 'POST', test: /^\/api\/forms\/[a-z0-9_-]+\/draft$/, limit: { scope: 'draft', perMinute: 30 } },
   { method: 'POST', test: /^\/api\/forms\/[a-z0-9_-]+\/check$/, limit: { scope: 'check', perMinute: 120 } },

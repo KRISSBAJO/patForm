@@ -1,6 +1,7 @@
 import type { Blueprint } from '../blueprint/index.js';
 import { inTransaction, type Pool } from './db.js';
 import { require_, type Principal } from './policy.js';
+import { queueReceiptDeletions } from './receipt-files.js';
 
 /**
  * §9.2 and §12.1's data lifecycle: "Configurable retention, deletion jobs,
@@ -142,6 +143,7 @@ export async function runRetention(
       await client.query('delete from resume_token where instance_id = any($1::uuid[])', [ids]);
       await client.query('delete from outbox where instance_id = any($1::uuid[])', [ids]);
       await client.query('delete from action_run where instance_id = any($1::uuid[])', [ids]);
+      await queueReceiptDeletions(client, ids);
       await client.query('delete from event where instance_id = any($1::uuid[])', [ids]);
       await client.query('delete from instance where id = any($1::uuid[])', [ids]);
 

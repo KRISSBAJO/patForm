@@ -11,8 +11,8 @@ import { Blueprint } from './blueprint/index.js';
  *
  *   npm run packs                 publish the catalogue
  *   npm run packs -- --list       show what is there
- *   npm run packs -- --catalogue  publish a new version of each generated
- *                                 template that has changed, and nothing else
+ *   npm run packs -- --catalogue  publish changed generated templates and the
+ *                                 Finance reference process, and nothing else
  *
  * The three reference processes are already hand-compiled, already carry
  * scenarios, and already compile clean — which is exactly what a pack has to
@@ -127,7 +127,24 @@ async function main(): Promise<void> {
       published++;
       console.log(`  ${GREEN}published${OFF} ${BOLD}${spec.name}${OFF} ${DIM}v${result.version}${OFF}`);
     }
-    console.log(`\n${published ? GREEN : DIM}${published} of ${GENERATED.length} templates changed${OFF}\n`);
+    // The hand-built Expense Approval pack is also in Finance. Keep its card in
+    // step with its blueprint without republishing unrelated reference packs.
+    const reference = CATALOGUE.find((item) => item.packKey === 'expense_approval')!;
+    const referenceBlueprint = Blueprint.parse(JSON.parse(readFileSync(reference.file, 'utf8')));
+    const { rows: referenceRows } = await pool.query<{ blueprint: unknown }>(
+      `select blueprint from pack where pack_key = $1 and tenant_id is null order by version desc limit 1`,
+      [reference.packKey],
+    );
+    if (!referenceRows[0] || canonical(Blueprint.parse(referenceRows[0].blueprint)) !== canonical(referenceBlueprint)) {
+      const result = await publishPack(pool, {
+        principal: 'system', packKey: reference.packKey, name: reference.name,
+        summary: reference.summary, category: reference.category, audience: reference.audience,
+        blueprint: referenceBlueprint, builtIn: true,
+      });
+      published++;
+      console.log(`  ${GREEN}published${OFF} ${BOLD}${reference.name}${OFF} ${DIM}v${result.version}${OFF}`);
+    }
+    console.log(`\n${published ? GREEN : DIM}${published} of ${GENERATED.length + 1} Finance and generated templates changed${OFF}\n`);
     await pool.end();
     return;
   }

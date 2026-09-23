@@ -57,6 +57,8 @@ export function Form({ processKey: fromUrl }: { processKey: string }) {
   const [pageIndex, setPageIndex] = useState(0);
   const [token, setToken] = useState<string | null>(null);
   const [saving, setSaving] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const [receiptUploads, setReceiptUploads] = useState<Record<string, string>>({});
+  const draftCreation = useRef<Promise<string> | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const trapRef = useRef<HTMLInputElement>(null);
   const [done, setDone] = useState<{ reference: string; statusUrl: string | null } | null>(null);
@@ -132,10 +134,15 @@ export function Form({ processKey: fromUrl }: { processKey: string }) {
     const id = setTimeout(async () => {
       setSaving('saving');
       try {
-        const saved = await api<{ token: string }>(`/api/forms/${processKey}/draft`, {
-          method: 'POST',
-          body: JSON.stringify({ token, answers, page: pageIndex }),
-        });
+        const currentToken = token ?? (draftCreation.current ??= api<{ token: string }>(`/api/forms/${processKey}/draft`, {
+          method: 'POST', body: JSON.stringify({ answers, page: pageIndex }),
+        }).then((saved) => saved.token));
+        const settledToken = await currentToken;
+        const saved = token
+          ? await api<{ token: string }>(`/api/forms/${processKey}/draft`, {
+              method: 'POST', body: JSON.stringify({ token, answers, page: pageIndex }),
+            })
+          : { token: settledToken };
         if (!token) {
           setToken(saved.token);
           // Put the resume link in the address bar so closing the tab is not
@@ -146,11 +153,66 @@ export function Form({ processKey: fromUrl }: { processKey: string }) {
         }
         setSaving('saved');
       } catch {
+        draftCreation.current = null;
         setSaving('idle');
       }
     }, 900);
     return () => clearTimeout(id);
   }, [answers, pageIndex, token, form, processKey]);
+
+  const uploadReceipt = async (fieldKey: string, file: File) => {
+    setReceiptUploads((prev) => ({ ...prev, [fieldKey]: 'Uploading…' }));
+    try {
+      let draftToken = token;
+      if (!draftToken) {
+        draftCreation.current ??= api<{ token: string }>(`/api/forms/${processKey}/draft`, {
+          method: 'POST', body: JSON.stringify({ answers, page: pageIndex }),
+        }).then((saved) => saved.token);
+        draftToken = await draftCreation.current;
+        setToken(draftToken);
+        const url = new URL(window.location.href);
+        url.searchParams.set('resume', draftToken);
+        window.history.replaceState({}, '', url);
+      }
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = () => reject(new Error('Could not read this file.'));
+        reader.readAsDataURL(file);
+      });
+      const uploaded = await api<{ reference: string }>(`/api/forms/${processKey}/receipts`, {
+        method: 'POST',
+        body: JSON.stringify({ token: draftToken, fieldKey, filename: file.name, base64: dataUrl.split(',')[1] }),
+      });
+      set(fieldKey, uploaded.reference);
+      setReceiptUploads((prev) => ({ ...prev, [fieldKey]: 'Scanning for malware…' }));
+    } catch (err) {
+      setReceiptUploads((prev) => ({ ...prev, [fieldKey]: err instanceof Error ? err.message : 'Upload failed.' }));
+    }
+  };
+
+  useEffect(() => {
+    if (!token) return;
+    const pending = Object.entries(answers).filter(([key, value]) =>
+      (key === 'receipt_reference' || key === 'invoice_evidence_reference') &&
+      typeof value === 'string' && /^receipt-file:[0-9a-f-]{36}$/.test(value));
+    if (!pending.length) return;
+    let active = true;
+    const check = async () => {
+      for (const [key, value] of pending) {
+        try {
+          const id = String(value).slice('receipt-file:'.length);
+          const result = await api<{ status: string; filename: string }>(`/api/forms/${processKey}/receipts/${id}?token=${encodeURIComponent(token)}`);
+          if (active) setReceiptUploads((prev) => ({ ...prev, [key]: result.status === 'clean' ? `${result.filename} — scan passed` : result.status === 'scanning' ? 'Scanning for malware…' : 'The file did not pass its security scan. Choose another.' }));
+        } catch {
+          if (active) setReceiptUploads((prev) => ({ ...prev, [key]: 'Could not check the scan yet. Try again shortly.' }));
+        }
+      }
+    };
+    void check();
+    const interval = setInterval(() => void check(), 5000);
+    return () => { active = false; clearInterval(interval); };
+  }, [token, processKey, answers]);
 
   const set = (key: string, value: unknown) => {
     dirty.current = true;
@@ -306,13 +368,33 @@ export function Form({ processKey: fromUrl }: { processKey: string }) {
                 <div className="fm__grid">
                   {fields.map((field) => (
                     <FieldCell section={section} fieldKey={field.key} key={field.key}>
-                      <Field
-                        field={field}
-                        value={answers[field.key]}
-                        computed={computed[field.key]}
-                        error={errors[field.key]}
-                        onChange={(v) => set(field.key, v)}
-                      />
+                      {typeof answers[field.key] === 'string' && String(answers[field.key]).startsWith('receipt-file:') ? (
+                        <div className="fm__field">
+                          <span className="fm__label">{field.label}</span>
+                          <p className="fm__help">Document uploaded. {receiptUploads[field.key] ?? 'Checking scan status…'}</p>
+                          <button type="button" className="fm__btn" onClick={() => set(field.key, '')}>Use an existing document reference instead</button>
+                          {errors[field.key] && <p className="fm__error" role="alert">{errors[field.key]}</p>}
+                        </div>
+                      ) : (
+                        <Field
+                          field={field}
+                          value={answers[field.key]}
+                          computed={computed[field.key]}
+                          error={errors[field.key]}
+                          onChange={(v) => set(field.key, v)}
+                        />
+                      )}
+                      {(field.key === 'receipt_reference' || field.key === 'invoice_evidence_reference') && (
+                        <div className="fm__field" style={{ marginTop: 10 }}>
+                          <label className="fm__label" htmlFor={`upload-${field.key}`}>Or upload the document</label>
+                          <input id={`upload-${field.key}`} type="file" accept="application/pdf,image/png,image/jpeg" onChange={(event) => {
+                            const file = event.target.files?.[0];
+                            if (file) void uploadReceipt(field.key, file);
+                          }} />
+                          <p className="fm__help">PDF, PNG or JPEG, up to 5 MB. We check it before accepting the form.</p>
+                          {receiptUploads[field.key] && <p className="fm__help" role="status">{receiptUploads[field.key]}</p>}
+                        </div>
+                      )}
                     </FieldCell>
                   ))}
                 </div>

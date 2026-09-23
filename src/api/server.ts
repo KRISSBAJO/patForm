@@ -35,6 +35,7 @@ import { requestPasswordReset, resetPassword, sendVerification, verifyEmail } fr
 import { DraftConflict } from '../runtime/errors.js';
 import { assertScreeningConfigured, issueTicket, screen, TRAP_FIELD } from '../runtime/screening.js';
 import { resolveForm } from '../runtime/form-links.js';
+import { receiptDownload, receiptStatus, uploadReceipt } from '../runtime/receipt-files.js';
 import { assertSecretKeyConfigured } from '../runtime/secret-box.js';
 import { isFresh, reauthenticate, stepUpFor } from '../runtime/step-up.js';
 import { isEnabled as mfaIsEnabled } from '../runtime/mfa.js';
@@ -178,6 +179,22 @@ route('GET', /^\/api\/forms\/([a-z0-9_-]+)\/draft$/, async ({ pool, url }) => {
   const draft = await loadDraft(pool, token, url.pathname.split('/')[3]!);
   if (!draft) throw new HttpError(404, 'that link has expired');
   return draft;
+});
+
+route('POST', /^\/api\/forms\/([a-z0-9_-]+)\/receipts$/, async ({ pool, url }, body) => {
+  const key = url.pathname.split('/')[3]!;
+  const { token, fieldKey, filename, base64 } = body as Record<string, string>;
+  if (![token, fieldKey, filename, base64].every((value) => typeof value === 'string' && value.length)) {
+    throw new HttpError(400, 'draft token, field, filename and file are required');
+  }
+  return uploadReceipt(pool, { form: key, token: token!, fieldKey: fieldKey!, filename: filename!, base64: base64! });
+});
+
+route('GET', /^\/api\/forms\/([a-z0-9_-]+)\/receipts\/([0-9a-f-]{36})$/, async ({ pool, url }) => {
+  const parts = url.pathname.split('/');
+  const token = url.searchParams.get('token');
+  if (!token) throw new HttpError(400, 'draft token is required');
+  return receiptStatus(pool, { form: parts[3]!, token, reference: `receipt-file:${parts[5]}` });
 });
 
 route('POST', /^\/api\/forms\/([a-z0-9_-]+)\/submit$/, async ({ pool, engine, url }, body) => {
@@ -908,6 +925,11 @@ route('GET', /^\/api\/records\/([0-9a-f-]{36})$/, async ({ engine, principal, ur
   return engine.recordDetail(principal, id);
 });
 
+route('GET', /^\/api\/records\/([0-9a-f-]{36})\/receipts\/([0-9a-f-]{36})$/, async ({ pool, principal, url }) => {
+  const parts = url.pathname.split('/');
+  return receiptDownload(pool, principal, parts[3]!, parts[5]!);
+});
+
 route('POST', /^\/api\/records\/([0-9a-f-]{36})\/decide$/, async ({ engine, principal, url }, body) => {
   const id = url.pathname.split('/')[3]!;
   const { approvalKey, decision, reason } = body as {
@@ -963,9 +985,14 @@ async function readRaw(req: IncomingMessage): Promise<string> {
   return Buffer.concat(chunks).toString('utf8');
 }
 
-async function readBody(req: IncomingMessage): Promise<unknown> {
+async function readBody(req: IncomingMessage, maxBytes = Number.MAX_SAFE_INTEGER): Promise<unknown> {
   const chunks: Buffer[] = [];
-  for await (const chunk of req) chunks.push(chunk as Buffer);
+  let size = 0;
+  for await (const chunk of req) {
+    size += (chunk as Buffer).length;
+    if (size > maxBytes) throw new HttpError(413, 'request is too large');
+    chunks.push(chunk as Buffer);
+  }
   if (!chunks.length) return {};
   try {
     return JSON.parse(Buffer.concat(chunks).toString('utf8'));
@@ -1321,7 +1348,7 @@ async function main(): Promise<void> {
             }
           }
 
-          const body = req.method === 'POST' ? await readBody(req) : {};
+          const body = req.method === 'POST' ? await readBody(req, url.pathname.endsWith('/receipts') ? 7 * 1024 * 1024 : Number.MAX_SAFE_INTEGER) : {};
           const anonymous: Principal = { kind: 'respondent', tenantId: '' };
           return send(
             res,

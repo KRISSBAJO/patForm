@@ -105,6 +105,7 @@ export function RecordPage({
   const [reason, setReason] = useState('');
   const [rejecting, setRejecting] = useState(false);
   const [completionAnswers, setCompletionAnswers] = useState<Record<string, string>>({});
+  const [receiptError, setReceiptError] = useState<string | null>(null);
   // A majority vote reads as a vote: "Vote for", "Vote against".
   const voting = approval?.progress?.of !== undefined;
 
@@ -115,6 +116,7 @@ export function RecordPage({
   return (
     <div className="rc">
       <div className="rc__bar">
+        {receiptError && <span role="alert" className="fm__error">{receiptError}</span>}
         <button type="button" className="rc__back" onClick={onBack}>
           <Icon name="back" />
           Back to your work
@@ -298,6 +300,14 @@ export function RecordPage({
                         <span className="cs__redacted">hidden from your role</span>
                       ) : isSignature(f.value) ? (
                         <SignatureView value={f.value} />
+                      ) : typeof f.value === 'string' && /^receipt-file:[0-9a-f-]{36}$/.test(f.value) ? (
+                        <button type="button" className="cs__btn" onClick={async () => {
+                          const id = String(f.value).slice('receipt-file:'.length);
+                          const response = await fetch(`/api/records/${record.instanceId}/receipts/${id}`);
+                          const result = await response.json();
+                          if (!response.ok) { setReceiptError(result.error ?? 'The document is unavailable.'); return; }
+                          window.location.assign(result.url);
+                        }}>Download scanned document</button>
                       ) : f.table && f.table.rows.length ? (
                         <table className="rc__rows">
                           <thead>

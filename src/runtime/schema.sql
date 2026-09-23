@@ -341,6 +341,13 @@ create table file (
 create index file_for_draft on file (draft_id);
 create index file_for_instance on file (instance_id);
 
+-- S3 deletion may fail after a record's database transaction commits. Keep the
+-- object key here until a worker has actually removed it.
+create table file_deletion (
+  storage_key text primary key,
+  queued_at timestamptz not null default now()
+);
+
 -- ------------------------------------------------------------ event history
 
 create table event (

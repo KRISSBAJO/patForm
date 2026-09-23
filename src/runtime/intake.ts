@@ -7,6 +7,7 @@ import { withCalculatedFields } from './expr.js';
 import { inTransaction, type Client, type Pool } from './db.js';
 import { Engine } from './engine.js';
 import { issueResumeToken } from './auth.js';
+import { checkReceiptReferences } from './receipt-files.js';
 
 /**
  * The respondent side: the public form, its draft, and its submission.
@@ -349,6 +350,10 @@ export async function submitForm(
 
   const errors = validateAnswers(bp, answers, { now });
   if (errors.length) return { ok: false, errors };
+  const receiptError = await checkReceiptReferences(pool, {
+    tenantId: version.tenant_id, processKey: bp.key, token: args.token, answers,
+  });
+  if (receiptError) return { ok: false, errors: [receiptError] };
 
   /*
    * Held after validation, not before. Telling a script its answers are
@@ -400,12 +405,26 @@ export async function submitForm(
           where token_hash = $2 and tenant_id = $3`,
         [result.instanceId, sha256(args.token), version.tenant_id],
       );
-      // Files uploaded against the draft now belong to the record.
-      await tx.query(
-        `update file set instance_id = $1
-          where draft_id = (select id from draft where token_hash = $2 and tenant_id = $3)`,
-        [result.instanceId, sha256(args.token), version.tenant_id],
-      );
+      if (result.duplicate) {
+        // The original record keeps its original evidence. A second upload
+        // made for a duplicate submission must not become an unseen attachment.
+        await tx.query(
+          `insert into file_deletion (storage_key)
+             select f.storage_key from file f join draft d on d.id = f.draft_id
+              where d.token_hash = $1 and d.tenant_id = $2 on conflict do nothing`,
+          [sha256(args.token), version.tenant_id],
+        );
+        await tx.query(`delete from file where draft_id =
+          (select id from draft where token_hash = $1 and tenant_id = $2)`,
+        [sha256(args.token), version.tenant_id]);
+      } else {
+        // Files uploaded against the draft now belong to the record.
+        await tx.query(
+          `update file set instance_id = $1, draft_id = null
+            where draft_id = (select id from draft where token_hash = $2 and tenant_id = $3)`,
+          [result.instanceId, sha256(args.token), version.tenant_id],
+        );
+      }
     }
   });
 

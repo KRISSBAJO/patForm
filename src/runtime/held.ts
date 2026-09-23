@@ -222,6 +222,22 @@ export async function releaseHeld(
         instanceId,
         row.draft_token_hash,
       ]);
+      await tx.query(
+        `update file set instance_id = $1, draft_id = null
+          where draft_id = (select id from draft where token_hash = $2 and tenant_id = $3)`,
+        [instanceId, row.draft_token_hash, actor.tenantId],
+      );
+    }
+    if (row.draft_token_hash && duplicate) {
+      await tx.query(
+        `insert into file_deletion (storage_key)
+           select f.storage_key from file f join draft d on d.id = f.draft_id
+            where d.token_hash = $1 and d.tenant_id = $2 on conflict do nothing`,
+        [row.draft_token_hash, actor.tenantId],
+      );
+      await tx.query(`delete from file where draft_id =
+        (select id from draft where token_hash = $1 and tenant_id = $2)`,
+      [row.draft_token_hash, actor.tenantId]);
     }
   });
 
