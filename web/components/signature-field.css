@@ -1,0 +1,226 @@
+/* Signing a form. See signature-field.tsx. The fonts load in the root layout. */
+
+.sg {
+  display: grid;
+  gap: 10px;
+}
+
+.sg__modes {
+  display: inline-flex;
+  gap: 4px;
+  width: fit-content;
+  padding: 3px;
+  border-radius: 9px;
+  background: var(--paper-2, #efebe2);
+}
+
+.sg__mode {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 7px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink-soft, #2a332e);
+  cursor: pointer;
+}
+
+.sg__mode input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+}
+
+.sg__mode[data-on="true"] {
+  background: #ffffff;
+  color: var(--fm-accent, #14663f);
+  box-shadow: 0 1px 2px rgba(19, 26, 23, 0.12);
+}
+
+.sg__mode:focus-within {
+  outline: 2px solid var(--fm-accent, #14663f);
+  outline-offset: 2px;
+}
+
+.sg__nameLabel {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink-soft, #2a332e);
+}
+
+.sg__styles {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.sg__legend {
+  margin-bottom: 8px;
+  padding: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink-soft, #2a332e);
+}
+
+.sg__style {
+  position: relative;
+  display: grid;
+  gap: 6px;
+  justify-items: center;
+  padding: 16px 10px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--line-strong, #c9c3b6);
+  background: #ffffff;
+  cursor: pointer;
+  text-align: center;
+}
+
+.sg__style input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+}
+
+.sg__style[data-on="true"] {
+  border-color: var(--fm-accent, #14663f);
+  box-shadow: 0 0 0 1px var(--fm-accent, #14663f);
+}
+
+.sg__style:focus-within {
+  outline: 2px solid var(--fm-accent, #14663f);
+  outline-offset: 2px;
+}
+
+.sg__ink {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 28px;
+  line-height: 1.3;
+  color: #131a17;
+}
+
+.sg__ink--flowing {
+  font-family: "Dancing Script", "Brush Script MT", cursive;
+  font-weight: 500;
+}
+
+.sg__ink--elegant {
+  font-family: "Great Vibes", "Brush Script MT", cursive;
+  font-size: 32px;
+}
+
+.sg__ink--casual {
+  font-family: "Caveat", "Segoe Print", cursive;
+  font-weight: 500;
+  font-size: 30px;
+}
+
+.sg__styleName {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted, #5a6159);
+}
+
+.sg__draw {
+  display: grid;
+  gap: 8px;
+}
+
+.sg__padWrap {
+  position: relative;
+  height: 170px;
+  border-radius: 10px;
+  border: 1px dashed var(--line-strong, #c9c3b6);
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.sg__pad {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  cursor: crosshair;
+}
+
+.sg__line {
+  position: absolute;
+  left: 24px;
+  right: 24px;
+  bottom: 38px;
+  height: 1px;
+  background: var(--line-strong, #c9c3b6);
+  pointer-events: none;
+}
+
+.sg__hint {
+  position: absolute;
+  left: 26px;
+  bottom: 44px;
+  font-size: 13px;
+  color: var(--muted, #5a6159);
+  pointer-events: none;
+}
+
+.sg__clear {
+  justify-self: start;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--fm-accent, #14663f);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.sg__note {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--muted, #5a6159);
+}
+
+[data-invalid="true"] .sg__padWrap,
+.sg[data-invalid="true"] .sg__name {
+  border-color: var(--red-text, #9b3f38);
+}
+
+/* On a record */
+.sg__view {
+  display: inline-grid;
+  gap: 2px;
+}
+
+.sg__viewImg {
+  display: block;
+  max-width: 260px;
+  max-height: 80px;
+  object-fit: contain;
+  object-position: left;
+}
+
+.sg__viewInk {
+  font-size: 26px;
+}
+
+.sg__viewName {
+  font-size: 12.5px;
+  color: var(--muted, #5a6159);
+}
+
+@media (max-width: 560px) {
+  .sg__styles {
+    grid-template-columns: 1fr;
+  }
+}

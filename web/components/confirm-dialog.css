@@ -1,0 +1,147 @@
+/* The in-app confirm. See confirm-dialog.tsx. */
+
+.cf {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(19, 26, 23, 0.45);
+  backdrop-filter: blur(2px);
+  animation: cf-fade 0.15s ease-out;
+}
+
+.cf__box {
+  width: 100%;
+  max-width: 440px;
+  padding: 24px 24px 20px;
+  border-radius: 14px;
+  background: #ffffff;
+  box-shadow: 0 24px 60px -20px rgba(19, 26, 23, 0.45);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  animation: cf-rise 0.18s ease-out;
+}
+
+.cf__box:focus {
+  outline: none;
+}
+
+.cf__box:focus-visible {
+  outline: 2px solid var(--green, #14663f);
+  outline-offset: 2px;
+}
+
+.cf__mark {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  margin-bottom: 14px;
+  border-radius: 50%;
+  background: var(--green-pale, #e8f1eb);
+  color: var(--green-deep, #0f4e30);
+}
+
+.cf__mark--danger {
+  background: var(--red-pale, #fdedec);
+  color: var(--red-text, #9b3f38);
+}
+
+.cf__title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--ink, #131a17);
+}
+
+.cf__body {
+  margin-top: 8px;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--ink-soft, #2a332e);
+}
+
+.cf__body p {
+  margin: 0 0 8px;
+}
+
+.cf__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 22px;
+  flex-wrap: wrap;
+}
+
+.cf__btn {
+  height: 38px;
+  padding: 0 16px;
+  border-radius: 8px;
+  border: 1px solid var(--line-strong, #c9c3b6);
+  background: #ffffff;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink, #131a17);
+  cursor: pointer;
+}
+
+.cf__btn:hover {
+  background: var(--paper, #f7f5f0);
+}
+
+.cf__btn:focus-visible {
+  outline: 2px solid var(--green, #14663f);
+  outline-offset: 2px;
+}
+
+.cf__btn--primary {
+  border-color: var(--green, #14663f);
+  background: var(--green, #14663f);
+  color: #ffffff;
+}
+
+.cf__btn--primary:hover {
+  background: var(--green-deep, #0f4e30);
+}
+
+.cf__btn--danger {
+  border-color: var(--red-text, #9b3f38);
+  background: var(--red-text, #9b3f38);
+  color: #ffffff;
+}
+
+.cf__btn--danger:hover {
+  background: #7f322c;
+}
+
+@keyframes cf-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes cf-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cf,
+  .cf__box {
+    animation: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .cf__actions {
+    flex-direction: column-reverse;
+  }
+  .cf__btn {
+    width: 100%;
+  }
+}

@@ -308,6 +308,8 @@ function placeholderFor(field: Blueprint['data']['fields'][number]): unknown {
     case 'yes_no':
     case 'signature_ack':
       return true;
+    case 'signature':
+      return { method: 'typed', name: 'Sam Trent', style: 'flowing' };
     case 'single_choice':
     case 'dropdown':
       return field.choices?.[0]?.value ?? 'unknown';

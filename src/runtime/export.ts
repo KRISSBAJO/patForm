@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { isSignature, signatureWords } from '../blueprint/signature.js';
 import type { Blueprint } from '../blueprint/index.js';
 import { inTransaction, type Client, type Pool } from './db.js';
 import { redact, require_, type Principal } from './policy.js';
@@ -359,7 +360,12 @@ export function bundleToCsv(bundle: ExportBundle): string {
   const out: string[] = [];
   const cell = (value: unknown): string => {
     if (value === null || value === undefined) return '';
-    const text = typeof value === 'object' ? JSON.stringify(value) : String(value);
+    // A drawn signature is an image; a spreadsheet cell gets who signed and how.
+    const text = isSignature(value)
+      ? signatureWords(value)
+      : typeof value === 'object'
+        ? JSON.stringify(value)
+        : String(value);
     // A leading =, +, - or @ is executed as a formula by spreadsheet software.
     // Prefixing an apostrophe is the standard defence against somebody typing
     // a payload into a form field and having it run on an auditor's machine.

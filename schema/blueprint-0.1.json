@@ -227,6 +227,7 @@
                       "matrix",
                       "file",
                       "signature_ack",
+                      "signature",
                       "content",
                       "hidden",
                       "calculated",

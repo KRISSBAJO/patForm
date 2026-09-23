@@ -901,6 +901,28 @@ Nothing failed, which is why it took a person to notice. The suite was doing exa
 
 **Generalisable:** a command that destroys data should not share a setting with a command that serves it. One variable for both means the safe choice depends on remembering, every time, which one you are about to run.
 
+### 84. "Over a thousand needs a controller", on every amount
+
+Every Finance template with an amount said, on the template and in the builder, that anything over 1,000 also needs a financial controller. The generator sent every approved record to the controller whatever the amount: the transition out of the last approval went to the controller's state unconditionally. A £12 petty cash claim waited on the financial controller.
+
+Seven templates had it, and each one failed its own happy-path scenario, which expects an ordinary claim to finish without the controller. Nothing noticed because nothing ran the templates' scenarios. `packs:check` compiled them, and compiling was all that was ever checked.
+
+**Fixed** by splitting that transition on the amount: over the limit to the controller, otherwise straight on. Each Finance template now carries a second happy path over the limit, so both sides of the rule are tested, and the proof suite runs every template's scenarios (535 across 88).
+
+**Generalisable:** a template is a claim about behaviour, and compiling it checks only that the claim is well formed. The scenarios were written, generated and shipped with every template, and nobody ran them. A test that is never executed is documentation.
+
+### 85. Templates fixed in code, unchanged in every workspace
+
+The catalogue is generated from code, but the seed is the only thing that ever wrote it to the database. A template fixed in code stayed as it was in a running workspace until the database was re-seeded, which in development signs everybody out and empties the workspace.
+
+**Fixed** with `npm run packs -- --catalogue`, which publishes a new version of each template whose generated blueprint differs from the newest one stored, and nothing else. Running it twice publishes nothing the second time. Workspaces that installed the older version keep it. The first version of the comparison called every template changed, because Postgres stores JSON with its own key order; it compares with keys sorted.
+
+### 86. "localhost:3210 says"
+
+Discarding a draft, taking one over, reloading after a conflict and discarding a held submission all used the browser's `confirm()`. It rendered in the browser's styling, headed with the host name, and asked people to press "OK" to throw their work away. Separately, installing a template sent people to `/builder?draft=<id>`, and nothing read the `draft` parameter, so they landed on the start screen and had to find the draft they had just made.
+
+**Fixed** with an in-app confirm dialog that names the action on its button ("Discard the draft", "Keep editing"), says what is lost, and uses the same focus handling as every other dialog: focus moves in and stays in, Escape and the backdrop both mean no, and focus goes back. A unit test fails if `confirm`, `alert` or `prompt` appears in the web app again. The builder now opens the draft it is sent to. Installing under a key that already exists, and asking for a draft that is gone, now answer 400 and 404 with a sentence instead of 500.
+
 ---
 
 ## What the compiler structurally cannot catch

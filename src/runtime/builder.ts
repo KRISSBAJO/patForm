@@ -3,7 +3,7 @@ import { validate } from '../compiler/validate.js';
 import type { Diagnostic } from '../compiler/diagnostics.js';
 import { inTransaction, type Pool } from './db.js';
 import { require_, requireWorkspaceCapability, type Principal } from './policy.js';
-import { DraftConflict, InvalidInput } from './errors.js';
+import { DraftConflict, InvalidInput, NotFound } from './errors.js';
 import { runScenarios, type ScenarioResult } from './scenarios.js';
 import { Engine } from './engine.js';
 import {
@@ -290,7 +290,7 @@ export async function loadDraft(pool: Pool, principal: Principal, draftId: strin
     [draftId, actor.tenantId],
   );
   const row = rows[0];
-  if (!row) throw new Error('no such draft');
+  if (!row) throw new NotFound('no such draft — it may have been discarded or published');
   await requireDraftAdmin(pool, actor, row.process_key);
   const lock = (await lockRow(pool, actor, draftId))!;
 
@@ -396,7 +396,7 @@ async function draftKey(pool: Pool, actor: Actor, draftId: string): Promise<stri
     'select process_key from process_draft where id = $1 and tenant_id = $2',
     [draftId, actor.tenantId],
   );
-  if (!rows[0]) throw new Error('no such draft');
+  if (!rows[0]) throw new NotFound('no such draft — it may have been discarded or published');
   return rows[0].process_key;
 }
 
@@ -423,7 +423,7 @@ export async function claimDraft(
   await requireDraftAdmin(pool, actor, await draftKey(pool, actor, args.draftId));
 
   const before = await lockRow(pool, actor, args.draftId);
-  if (!before) throw new Error('no such draft');
+  if (!before) throw new NotFound('no such draft — it may have been discarded or published');
   if (before.published_as !== null) {
     throw await conflictFor(pool, actor, args.draftId, before.revision);
   }
@@ -640,7 +640,7 @@ export async function createDraft(
   const tenantId = principal.tenantId;
 
   if (!/^[a-z][a-z0-9_]{2,}$/.test(input.key)) {
-    throw new Error('a process key is lowercase letters, digits and underscores, at least three characters');
+    throw new InvalidInput('a process key is lowercase letters, digits and underscores, at least three characters');
   }
 
   const { rows: clash } = await pool.query(
@@ -649,7 +649,11 @@ export async function createDraft(
      select 1 from process_draft where tenant_id = $1 and process_key = $2 and published_as is null`,
     [tenantId, input.key],
   );
-  if (clash.length) throw new Error(`"${input.key}" already exists in this workspace`);
+  if (clash.length) {
+    throw new InvalidInput(
+      `there is already a process called "${input.key}" here. Open that one, or give this one a different key, such as ${input.key}_2`,
+    );
+  }
 
   let blueprint: Blueprint;
   let audit: GenerationOutcome['audit'] | undefined;
@@ -660,7 +664,7 @@ export async function createDraft(
     if (!source) throw new Error(`no published version of "${input.copyFrom}" to copy`);
     blueprint = { ...source.blueprint, key: input.key, name: input.name ?? `${source.blueprint.name} (copy)` };
   } else {
-    if (!input.description?.trim()) throw new Error('describe the process, or name one to copy');
+    if (!input.description?.trim()) throw new InvalidInput('describe the process, or name one to copy');
     const available = availableProviders();
     if (!available.length) {
       throw new Error('no AI provider is configured — set ANTHROPIC_API_KEY or OPENAI_API_KEY, or copy an existing process');

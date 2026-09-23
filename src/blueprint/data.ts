@@ -21,6 +21,7 @@ export const FieldType = z.enum([
   'matrix',
   'file',
   'signature_ack',
+  'signature',
   'content',
   'hidden',
   'calculated',
@@ -50,6 +51,8 @@ export const VALUE_KIND: Record<FieldType, 'text' | 'number' | 'boolean' | 'date
   matrix: 'list',
   yes_no: 'boolean',
   signature_ack: 'boolean',
+  // Not comparable: a rule cannot sensibly ask whether a signature is over 500.
+  signature: 'none',
   file: 'file',
   content: 'none',
   hidden: 'text',

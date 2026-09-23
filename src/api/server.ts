@@ -38,7 +38,7 @@ import { resolveForm } from '../runtime/form-links.js';
 import { assertSecretKeyConfigured } from '../runtime/secret-box.js';
 import { isFresh, reauthenticate, stepUpFor } from '../runtime/step-up.js';
 import { isEnabled as mfaIsEnabled } from '../runtime/mfa.js';
-import { FormLinkError } from '../runtime/errors.js';
+import { FormLinkError, NotFound } from '../runtime/errors.js';
 import { discardHeld, listHeld, releaseHeld } from '../runtime/held.js';
 import { resendSkipped, sendingHealth, skippedFor } from '../runtime/delivery-health.js';
 import {
@@ -1391,7 +1391,9 @@ async function main(): Promise<void> {
                     ? err.status
                 : err instanceof InvalidInput
                   ? 400
-                  : 500;
+                  : err instanceof NotFound
+                    ? 404
+                    : 500;
         logIfEnabled(status >= 500 ? 'error' : 'warn', 'api.request', {
           method: req.method,
           path: url.pathname,
@@ -1427,6 +1429,7 @@ async function main(): Promise<void> {
         // Something the caller can fix. Reporting it as 500 would say "we
         // broke" when the truth is "that password is too short".
         if (err instanceof InvalidInput) return send(res, 400, { error: err.message });
+        if (err instanceof NotFound) return send(res, 404, { error: err.message });
         console.error(err);
         send(res, 500, { error: 'internal error', requestId });
       }

@@ -18,6 +18,7 @@ import { useState } from 'react';
 import { RecordTrail } from './Trail';
 import { Icon } from './Icon';
 import { answer, who } from './format';
+import { isSignature, SignatureView } from '../../components/signature-field';
 
 export interface RecordDetail {
   instanceId: string;
@@ -247,6 +248,8 @@ export function RecordPage({
                     <span className="rc__valueText">
                       {f.value === '[redacted]' ? (
                         <span className="cs__redacted">hidden from your role</span>
+                      ) : isSignature(f.value) ? (
+                        <SignatureView value={f.value} />
                       ) : (
                         (answer(f.value) ?? <span className="rc__blank">not answered</span>)
                       )}

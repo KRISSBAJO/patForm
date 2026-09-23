@@ -39,6 +39,17 @@ export interface PackField {
   /** Required by the compiler for anything restricted, and a good idea anyway. */
   reason?: string;
   help?: string;
+  /** Passed through to the blueprint: a pattern, a range, a message. */
+  constraints?: Record<string, unknown>;
+  /**
+   * Filled in during the process by the owner (a journal reference, a case
+   * number), so it is kept off the respondent's form and the owner may edit it.
+   */
+  setBy?: 'operator';
+  /** A heading on the form. Fields sharing one sit together, in order. */
+  group?: string;
+  /** What the generated tests answer, when the generic sample would fail a constraint. */
+  sample?: unknown;
 }
 
 export interface PackSpec {
@@ -53,8 +64,19 @@ export interface PackSpec {
   respondents: string;
   /** The person or team who owns the outcome. */
   ownerName: string;
-  /** Who decides. One entry is a single approval; two is a chain. */
-  approvals: { key: string; name: string; byRole: string; dueInHours?: number }[];
+  /**
+   * Who decides. One entry is a single approval; two is a chain.
+   *
+   * `byField` addresses the approval to the email in that field instead of
+   * to everybody holding the role — "the other budget holder", named on the
+   * form. The role still has to be held: an address is who is asked, the
+   * role is what lets them answer.
+   */
+  approvals: { key: string; name: string; byRole: string; byField?: string; dueInHours?: number }[];
+  /** Said on the pack alongside the category's own notes, for an installer to confirm. */
+  notes?: string[];
+  /** The first open question, when "who approves" is not the one that matters. */
+  decision?: { question: string; provisionally: string };
   /** Work somebody does after the decision, before it is finished. */
   task?: { key: string; name: string; byRole: string };
   fields: PackField[];
@@ -66,6 +88,16 @@ export interface PackSpec {
 
 const OPERATOR_ROLE = 'process_owner';
 
+/** The first decider, as a sentence says it: "the other budget holder", or a role. */
+function firstDecider(spec: PackSpec): string {
+  const first = spec.approvals[0]!;
+  return first.byField ? first.name.toLowerCase() : titleOf(first.byRole).toLowerCase();
+}
+
+function respondentFields(spec: PackSpec): PackField[] {
+  return spec.fields.filter((f) => f.setBy !== 'operator');
+}
+
 /**
  * Two fields every one of these needs.
  *
@@ -75,6 +107,31 @@ const OPERATOR_ROLE = 'process_owner';
  * an acknowledgement reaches anybody: a process that cannot write back to the
  * person who submitted is not a process, it is a form.
  */
+/**
+ * A signature on anything that asks for money.
+ *
+ * Every Finance pack with an amount gets one unless it declares its own, the
+ * way a paper claim form had a line to sign at the bottom. It goes last on
+ * the form, after everything it is confirming.
+ */
+function autoSignature(spec: PackSpec): PackField[] {
+  const rules = rulesFor(spec.category);
+  if (!rules.threshold || !moneyField(spec)) return [];
+  if (spec.fields.some((f) => f.type === 'signature')) return [];
+  return [
+    {
+      key: 'signature',
+      label: 'Sign to confirm',
+      type: 'signature',
+      required: true,
+      classification: 'confidential',
+      help: 'Your signature confirms that what you have written here is true and that you are entitled to ask for it.',
+      group: spec.fields.some((f) => f.group) ? 'Sign' : undefined,
+      sample: { method: 'typed', name: 'Sam Trent', style: 'flowing' },
+    },
+  ];
+}
+
 function standardFields(spec: PackSpec): PackField[] {
   return [
     {
@@ -93,6 +150,7 @@ function standardFields(spec: PackSpec): PackField[] {
       help: 'We write here when anything changes.',
     },
     ...spec.fields,
+    ...autoSignature(spec),
     {
       key: 'decision_note',
       label: 'Decision note',
@@ -139,7 +197,7 @@ function roles(spec: PackSpec, rules: CategoryRules) {
        * not the restricted fields: an owner correcting somebody's bank
        * account is not a correction anybody asked for.
        */
-      editableFields: ['decision_note'],
+      editableFields: ['decision_note', ...spec.fields.filter((f) => f.setBy === 'operator').map((f) => f.key)],
     },
     ...approverRoles.map((key) => ({
       key,
@@ -231,7 +289,7 @@ function states(spec: PackSpec, rules: CategoryRules) {
     { key: 'draft', name: 'Not yet submitted', type: 'initial' },
     {
       key: 'review_1',
-      name: `With ${titleOf(spec.approvals[0]!.byRole).toLowerCase()}`,
+      name: `With ${firstDecider(spec)}`,
       type: 'active',
       slaHours: firstSla,
       publicLabel: 'Being reviewed',
@@ -291,7 +349,7 @@ function approvals(spec: PackSpec, contextFields: string[], rules: CategoryRules
   const declared = spec.approvals.map((a, i) => ({
     key: a.key,
     name: a.name,
-    approvers: [{ role: a.byRole }],
+    approvers: [a.byField ? { field: a.byField } : { role: a.byRole }],
     mode: 'single',
     allowRequestChanges: true,
     reasonRequired: true,
@@ -332,6 +390,45 @@ function approvals(spec: PackSpec, contextFields: string[], rules: CategoryRules
  * non-terminal state with a way out, nothing leaving a terminal state, and
  * every self-loop carrying a timer so it cannot fire forever.
  */
+/**
+ * A final approval's way out, split on the money when the category has a
+ * threshold.
+ *
+ * The first version sent every approved record to the controller whatever
+ * the amount — "over a thousand needs a controller" was said on every Finance
+ * pack and enforced on none of them, and each of those packs failed its own
+ * happy path, which nothing ran. Now the record goes to the controller only
+ * over the limit, and straight on otherwise.
+ */
+function towardsEnd(
+  base: { key: string; from: string; trigger: Record<string, unknown> },
+  spec: PackSpec,
+  rules: CategoryRules,
+  tag: string,
+): Record<string, unknown>[] {
+  const done = spec.task ? 'doing' : 'done';
+  const money = rules.threshold ? moneyField(spec) : null;
+  if (!money || !rules.threshold) {
+    return [{ ...base, to: done, actions: landing(done, spec, tag) }];
+  }
+  const over = rules.threshold.over;
+  return [
+    {
+      ...base,
+      key: `${base.key}_over_limit`,
+      to: 'review_threshold',
+      when: { op: 'gt', left: { field: money }, right: { literal: over } },
+      actions: landing('review_threshold', spec, tag, rules.threshold.approval.key),
+    },
+    {
+      ...base,
+      to: done,
+      when: { op: 'lte', left: { field: money }, right: { literal: over } },
+      actions: landing(done, spec, `${tag}_within`),
+    },
+  ];
+}
+
 function transitions(spec: PackSpec, rules: CategoryRules) {
   const first = spec.approvals[0]!;
   const second = spec.approvals[1];
@@ -386,15 +483,26 @@ function transitions(spec: PackSpec, rules: CategoryRules) {
     },
 
     // ---- the escalation. Still decidable, and it closes itself if it is not.
-    {
-      key: 'escalated_approved',
-      from: 'escalated',
-      to: second ? 'review_2' : afterLast,
-      trigger: { on: 'approval_decided', approval: first.key, decision: 'approved' },
-      actions: second
-        ? [{ do: 'request_approval', key: 'ask_2_late', approval: second.key }]
-        : landing(afterLast, spec, 'late', threshold?.approval.key),
-    },
+    ...(second
+      ? [
+          {
+            key: 'escalated_approved',
+            from: 'escalated',
+            to: 'review_2',
+            trigger: { on: 'approval_decided', approval: first.key, decision: 'approved' },
+            actions: [{ do: 'request_approval', key: 'ask_2_late', approval: second.key }],
+          },
+        ]
+      : towardsEnd(
+          {
+            key: 'escalated_approved',
+            from: 'escalated',
+            trigger: { on: 'approval_decided', approval: first.key, decision: 'approved' },
+          },
+          spec,
+          rules,
+          'late',
+        )),
     {
       key: 'escalated_rejected',
       from: 'escalated',
@@ -420,13 +528,16 @@ function transitions(spec: PackSpec, rules: CategoryRules) {
         trigger: { on: 'approval_decided', approval: first.key, decision: 'approved' },
         actions: [{ do: 'request_approval', key: 'ask_2', approval: second.key }],
       },
-      {
-        key: 'approved_2',
-        from: 'review_2',
-        to: afterLast,
-        trigger: { on: 'approval_decided', approval: second.key, decision: 'approved' },
-        actions: landing(afterLast, spec, 'second', threshold?.approval.key),
-      },
+      ...towardsEnd(
+        {
+          key: 'approved_2',
+          from: 'review_2',
+          trigger: { on: 'approval_decided', approval: second.key, decision: 'approved' },
+        },
+        spec,
+        rules,
+        'second',
+      ),
       {
         key: 'rejected_2',
         from: 'review_2',
@@ -443,13 +554,18 @@ function transitions(spec: PackSpec, rules: CategoryRules) {
       },
     );
   } else {
-    out.push({
-      key: 'approved_1',
-      from: 'review_1',
-      to: afterLast,
-      trigger: { on: 'approval_decided', approval: first.key, decision: 'approved' },
-      actions: landing(afterLast, spec, 'first', threshold?.approval.key),
-    });
+    out.push(
+      ...towardsEnd(
+        {
+          key: 'approved_1',
+          from: 'review_1',
+          trigger: { on: 'approval_decided', approval: first.key, decision: 'approved' },
+        },
+        spec,
+        rules,
+        'first',
+      ),
+    );
   }
 
   /*
@@ -530,6 +646,28 @@ function transitions(spec: PackSpec, rules: CategoryRules) {
  */
 const SHORT_TYPES = new Set(['date', 'time', 'number', 'currency', 'phone', 'yes_no', 'dropdown', 'rating']);
 
+/**
+ * The details page. One untitled section, as every pack had, unless the pack
+ * groups its questions — then a titled section per group, in the order the
+ * groups first appear.
+ */
+function sectionsFor(fields: PackField[]) {
+  if (!fields.some((f) => f.group)) {
+    return [{ key: 'what', fields: fields.map((f) => f.key), ...widths(fields) }];
+  }
+  const order: string[] = [];
+  for (const f of fields) if (!order.includes(f.group ?? '')) order.push(f.group ?? '');
+  return order.map((title, i) => {
+    const inGroup = fields.filter((f) => (f.group ?? '') === title);
+    return {
+      key: `part_${i + 1}`,
+      ...(title ? { title } : {}),
+      fields: inGroup.map((f) => f.key),
+      ...widths(inGroup),
+    };
+  });
+}
+
 function widths(fields: { key: string; type: string }[]): { widths?: Record<string, 'half'> } {
   const out: Record<string, 'half'> = {};
   let run: string[] = [];
@@ -568,13 +706,13 @@ function emails(spec: PackSpec, rules: CategoryRules) {
       to: [{ submitter: true }],
       cc: [],
       subject: `We have your ${spec.name.toLowerCase()}`,
-      body: `Hello {{submitter_name}},\n\nWe have what you sent and it is with ${titleOf(first.byRole).toLowerCase()} now. You will hear from us when there is a decision.\n\nYou do not need to do anything.`,
+      body: `Hello {{submitter_name}},\n\nWe have what you sent and it is with ${firstDecider(spec)} now. You will hear from us when there is a decision.\n\nYou do not need to do anything.`,
     },
     {
       key: 'reminder',
       name: 'Still waiting',
       class: 'transactional',
-      to: [{ role: first.byRole }],
+      to: [first.byField ? { field: first.byField } : { role: first.byRole }],
       cc: [],
       subject: `Still waiting on you: ${spec.name.toLowerCase()}`,
       /*
@@ -649,7 +787,7 @@ function tests(spec: PackSpec, answers: Record<string, unknown>, rules: Category
     ...(second ? [{ step: 'decide', approval: second.key, as: second.byRole, decision: 'approved' }] : []),
   ];
 
-  const required = spec.fields.find((f) => f.required)?.key;
+  const required = respondentFields(spec).find((f) => f.required)?.key;
   const missing = { ...answers };
   if (required) delete (missing as Record<string, unknown>)[required];
   delete (missing as Record<string, unknown>).submitter_email;
@@ -662,6 +800,28 @@ function tests(spec: PackSpec, answers: Record<string, unknown>, rules: Category
       steps: approveAll,
       expect: { state: endState, instanceCount: 1 },
     },
+    // Both sides of the threshold, because a rule tested on one side only is
+    // how every Finance pack came to send everything to the controller.
+    ...(rules.threshold && moneyField(spec)
+      ? [
+          {
+            key: 'over_the_limit',
+            kind: 'happy_path',
+            name: `Over ${rules.threshold.over} it also needs the ${titleOf(rules.threshold.approval.byRole).toLowerCase()}`,
+            steps: [
+              { step: 'submit', answers: { ...answers, [moneyField(spec)!]: rules.threshold.over + 500 } },
+              ...approveAll.slice(1),
+              {
+                step: 'decide',
+                approval: rules.threshold.approval.key,
+                as: rules.threshold.approval.byRole,
+                decision: 'approved',
+              },
+            ],
+            expect: { state: endState, instanceCount: 1 },
+          },
+        ]
+      : []),
     {
       key: 'rejection',
       kind: 'rejection',
@@ -723,7 +883,11 @@ function tests(spec: PackSpec, answers: Record<string, unknown>, rules: Category
 function sampleAnswers(fields: PackField[]): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const f of fields) {
-    if (f.key === 'decision_note') continue;
+    if (f.key === 'decision_note' || f.setBy === 'operator') continue;
+    if (f.sample !== undefined) {
+      out[f.key] = f.sample;
+      continue;
+    }
     switch (f.type) {
       case 'email':
         out[f.key] = f.key === 'submitter_email' ? 'sam@example.com' : 'someone@example.com';
@@ -773,7 +937,7 @@ function sampleAnswers(fields: PackField[]): Record<string, unknown> {
 export function buildBlueprint(spec: PackSpec): unknown {
   const rules = rulesFor(spec.category);
   const fields = standardFields(spec);
-  const placed = fields.filter((f) => f.key !== 'decision_note');
+  const placed = fields.filter((f) => f.key !== 'decision_note' && f.setBy !== 'operator');
   const contextFields = placed.map((f) => f.key);
   const answers = sampleAnswers(placed);
 
@@ -831,13 +995,16 @@ export function buildBlueprint(spec: PackSpec): unknown {
         ...(rules.threshold && moneyField(spec)
           ? [{ statement: rules.threshold.because, affects: 'workflow' }]
           : []),
+        ...(spec.notes ?? []).map((statement) => ({ statement, affects: 'data' })),
       ],
       openDecisions: [
-        {
-          question: 'Who exactly approves this where you work?',
-          provisionally: `A role called "${titleOf(spec.approvals[0]!.byRole)}".`,
-          importance: 'review',
-        },
+        spec.decision
+          ? { ...spec.decision, importance: 'review' }
+          : {
+              question: 'Who exactly approves this where you work?',
+              provisionally: `A role called "${titleOf(spec.approvals[0]!.byRole)}".`,
+              importance: 'review',
+            },
       ],
     },
     roles: roles(spec, rules),
@@ -856,7 +1023,8 @@ export function buildBlueprint(spec: PackSpec): unknown {
         ...(f.choices ? { choices: f.choices.map((c) => ({ value: c, label: titleOf(c) })) } : {}),
         ...(f.reason ? { collectionReason: f.reason } : {}),
         ...(f.help ? { help: f.help } : {}),
-        ...(f.key === 'decision_note' ? { setBy: 'operator' } : {}),
+        ...(f.constraints ? { constraints: f.constraints } : {}),
+        ...(f.key === 'decision_note' || f.setBy === 'operator' ? { setBy: 'operator' } : {}),
       })),
     },
     experience: {
@@ -882,7 +1050,7 @@ export function buildBlueprint(spec: PackSpec): unknown {
         {
           key: 'details',
           title: spec.name,
-          sections: [{ key: 'what', fields: spec.fields.map((f) => f.key), ...widths(spec.fields) }],
+          sections: sectionsFor([...respondentFields(spec), ...autoSignature(spec)]),
         },
       ],
     },

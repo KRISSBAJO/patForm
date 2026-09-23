@@ -34,6 +34,8 @@ import {
   proveWorkerFiresTimers,
 } from './spike-proofs.js';
 import { runScenarios } from './runtime/scenarios.js';
+import { CATALOGUE } from './packs/catalogue.js';
+import { buildBlueprint } from './packs/generate.js';
 import { suppressDelivery } from './runtime/email.js';
 
 const GREEN = '\x1b[32m';
@@ -69,6 +71,29 @@ function loadBlueprints(): Blueprint[] {
 }
 
 // --------------------------------------------------------------------------
+
+/**
+ * Every catalogue template, run through its own scenarios.
+ *
+ * `packs:check` compiles them, and compiling was all that was ever checked.
+ * Seven Finance templates sent every request to the controller whatever the
+ * amount and failed their own happy path, and nothing noticed, because
+ * nothing ran them.
+ */
+async function provePackScenarios(pool: Pool): Promise<void> {
+  const all = [];
+  for (const spec of CATALOGUE) all.push(...(await runScenarios(pool, Blueprint.parse(buildBlueprint(spec)))));
+  const failed = all.filter((r) => !r.passed);
+  for (const f of failed) {
+    console.log(`        ${RED}${f.process}/${f.test}${OFF}: ${f.failures.join('; ')}`);
+  }
+  record(
+    'Every catalogue template passes its own scenarios',
+    'A template somebody installs runs the way its tests say it does, including both sides of a money threshold.',
+    failed.length === 0,
+    `${all.length - failed.length}/${all.length} scenarios passed across ${CATALOGUE.length} templates.`,
+  );
+}
 
 async function proveScenarios(pool: Pool, blueprints: Blueprint[]): Promise<void> {
   const all = [];
@@ -886,6 +911,9 @@ function completeFor(bp: Blueprint, overrides: Record<string, unknown>): Record<
       case 'signature_ack':
         answers[field.key] = true;
         break;
+      case 'signature':
+        answers[field.key] = { method: 'typed', name: 'Sam Trent', style: 'flowing' };
+        break;
       case 'single_choice':
       case 'dropdown':
         answers[field.key] = field.choices?.[0]?.value ?? 'unknown';
@@ -934,6 +962,7 @@ async function main(): Promise<void> {
 
   const steps: [string, () => Promise<void>][] = [
     ['scenarios', () => proveScenarios(pool, blueprints)],
+    ['template scenarios', () => provePackScenarios(pool)],
     ['authorization', () => proveAuthorization(pool, onboarding)],
     ['intake', () => proveIntake(ctx)],
     ['documents and delivery', () => proveDocumentsAndDelivery(ctx)],

@@ -73,6 +73,17 @@ or point `DATABASE_URL` in `.env` at a [Renviq](https://renviq.com) connection
 string and run `npm run spike` against managed Postgres. Nothing in the runtime
 is specific to either.
 
+**Updating templates in a running workspace.** The catalogue is generated
+from `src/packs/catalogue.ts`. After changing it, `npm run packs -- --catalogue`
+publishes a new version of each template that changed and leaves the rest
+alone, without a re-seed. Workspaces that installed the older version keep it.
+
+**Signatures.** A `signature` field lets the person type their name and adopt
+it in one of three handwriting styles, or draw it with a mouse, finger or pen
+(using `signature_pad`). The printed name is always part of the value. Every
+Finance template that asks for money ends with one. It is evidence of who put
+their name to the record and when, not a qualified electronic signature.
+
 The spike drops and recreates the schema before every proof. If the app is
 running against the same database, that signs everybody out and empties the
 workspace. Set `PROOF_DATABASE_URL` to a second database (on the local

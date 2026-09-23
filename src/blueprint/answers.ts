@@ -1,4 +1,5 @@
 import type { Blueprint, Field } from './index.js';
+import { signatureProblem } from './signature.js';
 import { evaluate, type Expr } from './common.js';
 
 
@@ -118,6 +119,12 @@ export function checkField(field: Field, value: unknown): string | null {
         return custom ?? `${field.label} must be accepted.`;
       }
       break;
+
+    case 'signature': {
+      const problem = signatureProblem(value);
+      if (problem) return custom ?? problem;
+      break;
+    }
 
     case 'file': {
       const files = Array.isArray(value) ? value : [value];

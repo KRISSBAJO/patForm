@@ -671,6 +671,7 @@ function completeFor(bp: Blueprint, email: string): Record<string, unknown> {
       case 'date': answers[f.key] = '2026-11-02'; break;
       case 'number': case 'currency': case 'rating': answers[f.key] = 1; break;
       case 'yes_no': case 'signature_ack': answers[f.key] = true; break;
+      case 'signature': answers[f.key] = { method: 'typed', name: 'Sam Trent', style: 'flowing' }; break;
       case 'single_choice': case 'dropdown': answers[f.key] = f.choices?.[0]?.value ?? 'other'; break;
       case 'multi_choice': answers[f.key] = [f.choices?.[0]?.value ?? 'other']; break;
       default: answers[f.key] = 'drill';

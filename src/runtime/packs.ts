@@ -1,4 +1,5 @@
 import { Blueprint } from '../blueprint/index.js';
+import { InvalidInput } from './errors.js';
 import { validate } from '../compiler/validate.js';
 import type { Diagnostic } from '../compiler/diagnostics.js';
 import { inTransaction, type Client, type Pool } from './db.js';
@@ -398,7 +399,7 @@ export async function installPack(
   const tenantId = args.principal.tenantId;
 
   if (!/^[a-z][a-z0-9_]{2,}$/.test(args.processKey)) {
-    throw new Error('a process key is lowercase letters, digits and underscores, at least three characters');
+    throw new InvalidInput('a process key is lowercase letters, digits and underscores, at least three characters');
   }
 
   const pack = await readPack(pool, { principal: args.principal, packId: args.packId });
@@ -409,7 +410,11 @@ export async function installPack(
      select 1 from process_draft where tenant_id = $1 and process_key = $2 and published_as is null`,
     [tenantId, args.processKey],
   );
-  if (clash.length) throw new Error(`"${args.processKey}" already exists in this workspace`);
+  if (clash.length) {
+    throw new InvalidInput(
+      `there is already a process called "${args.processKey}" here. Open that one in the builder, or install this under a different key, such as ${args.processKey}_2`,
+    );
+  }
 
   const blueprint = {
     ...pack.blueprint,

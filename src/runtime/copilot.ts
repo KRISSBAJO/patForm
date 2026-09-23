@@ -1,4 +1,5 @@
 import { BULK_EDITABLE_TYPES } from '../copilot/plan.js';
+import { isSignature, signatureWords } from '../blueprint/signature.js';
 import { createHash } from 'node:crypto';
 import type { Blueprint } from '../blueprint/index.js';
 import type { Diagnostic } from '../compiler/diagnostics.js';
@@ -448,6 +449,7 @@ async function valuesOf(client: Client, ids: string[], field: string): Promise<M
 function shown(value: unknown): string {
   if (value === null || value === undefined || value === '') return 'empty';
   if (typeof value === 'boolean') return value ? 'yes' : 'no';
+  if (isSignature(value)) return signatureWords(value);
   return String(value);
 }
 

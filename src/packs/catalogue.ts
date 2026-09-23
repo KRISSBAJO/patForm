@@ -394,25 +394,122 @@ export const CATALOGUE: PackSpec[] = [
       f.text('po_number', 'Purchase order, if there is one', false),
     ],
   },
+  /*
+   * Built out rather than left as a sketch.
+   *
+   * The first version said "both sides agreeing in writing" and then asked
+   * only the holder losing the money, with free-text codes, no period and
+   * nothing after Finance said yes — so "finished" meant "agreed", and the
+   * ledger was never touched. Now: whoever asks is one of the two budget
+   * holders and confirms it on the form; the other one, named by address,
+   * agrees next; Finance checks it (with a controller over the threshold);
+   * and Finance posts the journal and records its reference before the
+   * record closes.
+   */
   {
     key: 'budget_transfer',
     name: 'Budget transfer',
     category: 'Finance',
-    summary: 'Money moved between cost centres with both sides agreeing in writing.',
-    audience: 'For an organization with departmental budgets.',
-    outcome: 'A transfer is agreed by both budget holders and recorded.',
-    respondents: 'A budget holder.',
+    summary: 'Money moved between two budgets, agreed by both budget holders, checked by Finance and posted to the ledger.',
+    audience: 'For an organization with departmental budgets or cost centres.',
+    outcome: 'Both budget holders have agreed in writing, Finance has approved it, and the journal is posted with its reference on the record.',
+    respondents: 'One of the two budget holders — the one giving the money or the one receiving it.',
     ownerName: 'Finance',
     approvals: [
-      { key: 'from_holder', name: 'Losing budget holder', byRole: 'budget_holder', dueInHours: 72 },
+      {
+        key: 'other_holder',
+        name: 'The other budget holder',
+        byRole: 'budget_holder',
+        byField: 'other_holder_email',
+        dueInHours: 72,
+      },
       { key: 'finance', name: 'Finance', byRole: 'finance_reviewer', dueInHours: 96 },
     ],
+    task: { key: 'post_journal', name: 'Posting the journal', byRole: 'process_owner' },
     retentionDays: 2555,
+    notes: [
+      'Budget codes are typed in and checked only for shape (letters, numbers, dashes). If you have a fixed list of cost centres, change both code questions to a dropdown of your own codes in the builder.',
+      'Whoever submits is one of the two budget holders, and says so on the form. The other holder is asked by the address given — they must be a member of this workspace holding the budget holder role, or they cannot answer.',
+    ],
+    decision: {
+      question: 'Does Finance need to see every transfer, or only those over a limit?',
+      provisionally: 'Finance checks every one, and a controller also checks anything over the Finance threshold.',
+    },
     fields: [
-      f.text('from_code', 'From budget code'),
-      f.text('to_code', 'To budget code'),
-      f.money('transfer_amount', 'Amount'),
-      f.notes('transfer_reason', 'Why', true),
+      {
+        ...f.choice('my_side', 'Your budget is the one', ['giving_the_money', 'receiving_the_money']),
+        group: 'The two budgets',
+        help: 'You must hold the budget on your side. The other holder is asked to agree next.',
+      },
+      {
+        ...f.text('from_code', 'Moving from (budget code)'),
+        group: 'The two budgets',
+        help: 'The cost centre or budget code the money leaves.',
+        constraints: {
+          pattern: '^[A-Za-z0-9][A-Za-z0-9 ./-]{1,23}$',
+          message: 'Use the code as it appears in the ledger: letters, numbers and dashes, up to 24 characters.',
+        },
+        sample: 'CC-4100',
+      },
+      {
+        ...f.text('to_code', 'Moving to (budget code)'),
+        group: 'The two budgets',
+        help: 'The cost centre or budget code the money goes to.',
+        constraints: {
+          pattern: '^[A-Za-z0-9][A-Za-z0-9 ./-]{1,23}$',
+          message: 'Use the code as it appears in the ledger: letters, numbers and dashes, up to 24 characters.',
+        },
+        sample: 'CC-5200',
+      },
+      {
+        ...f.email('other_holder_email', "The other budget holder's email"),
+        group: 'The two budgets',
+        help: 'The person who holds the budget on the other side. They are asked to agree before Finance sees it.',
+      },
+      {
+        ...f.money('transfer_amount', 'Amount'),
+        group: 'The money',
+        constraints: { min: 0.01, message: 'The amount has to be more than nothing.' },
+      },
+      {
+        ...f.text('financial_year', 'Financial year'),
+        group: 'The money',
+        help: 'The year whose budget this changes, for example 2026/27.',
+        constraints: {
+          pattern: '^\\d{4}(/\\d{2}|/\\d{4}|-\\d{2}|-\\d{4})?$',
+          message: 'Write the year as 2026, 2026/27 or 2026-27.',
+        },
+        sample: '2026/27',
+      },
+      {
+        ...f.choice('how_long', 'How long for', ['this_year_only', 'permanent']),
+        group: 'The money',
+        help: 'Permanent also moves the money in next year\u2019s starting budget.',
+      },
+      {
+        ...f.date('effective_from', 'From'),
+        group: 'The money',
+        help: 'The first period the money moves in.',
+      },
+      {
+        ...f.notes('transfer_reason', 'Why is it moving?', true),
+        group: 'Why, and your agreement',
+        help: 'What the money will pay for, and why the budget it leaves can spare it.',
+      },
+      {
+        ...f.person('holder_signature', 'Sign to agree to this transfer'),
+        // A signature, not a yes/no: "No" is an answer, and a form that
+        // accepts it as agreement is not agreement in writing.
+        type: 'signature',
+        sample: { method: 'typed', name: 'Sam Trent', style: 'flowing' },
+        group: 'Why, and your agreement',
+        help: 'You hold the budget on your side and agree to move this money. The other holder gives their agreement when they approve.',
+      },
+      {
+        ...f.text('journal_reference', 'Journal reference', false),
+        setBy: 'operator' as const,
+        help: 'Filled in by Finance when the journal is posted.',
+      },
     ],
   },
   {

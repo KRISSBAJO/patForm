@@ -36,6 +36,11 @@ export function answer(value: unknown): string | null {
     const parts = value.map((v) => answer(v)).filter((v): v is string => v !== null);
     return parts.length ? parts.join(', ') : null;
   }
+  // A signature carries an image; in a line of text it is who signed, and how.
+  if (typeof value === 'object' && 'method' in value && 'name' in value) {
+    const s = value as { method: string; name: string };
+    return `Signed by ${s.name} (${s.method === 'typed' ? 'typed' : 'drawn'})`;
+  }
   if (typeof value === 'object') return JSON.stringify(value);
   return String(value);
 }

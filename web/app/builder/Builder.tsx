@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { RulesEditor } from './Rules';
 import { BootScreen } from '../../components/boot-screen';
+import { useConfirm } from '../../components/confirm-dialog';
 import './builder.css';
 import { FormPreview, TestsPanel, Versions, type VersionRow } from './SidePanel';
 import { useDialog } from '../useDialog';
@@ -290,7 +291,7 @@ interface PackDetail extends Pack {
 const FIELD_TYPES = [
   'short_text', 'long_text', 'email', 'phone', 'number', 'currency', 'url', 'address',
   'date', 'time', 'single_choice', 'multi_choice', 'dropdown', 'yes_no', 'rating',
-  'matrix', 'signature_ack', 'content', 'hidden', 'calculated', 'repeating_group',
+  'matrix', 'signature_ack', 'signature', 'content', 'hidden', 'calculated', 'repeating_group',
 ];
 const CHOICE_TYPES = new Set(['single_choice', 'multi_choice', 'dropdown', 'matrix']);
 const CLASSES = ['public', 'internal', 'confidential', 'restricted'];
@@ -444,6 +445,7 @@ export function Builder() {
   const [lock, setLock] = useState<DraftLock | null>(null);
   const [conflict, setConflict] = useState<ConflictInfo | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [ask, confirmDialog] = useConfirm();
 
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pending = useRef<Blueprint | null>(null);
@@ -493,9 +495,16 @@ export function Builder() {
         // Arriving from the Preview, Versions or Tests page with a process
         // named: open it, then take the name off the address so a reload
         // does not reopen it after somebody has moved on.
-        const asked = new URLSearchParams(window.location.search).get('process');
-        if (asked) {
-          window.history.replaceState(null, '', window.location.pathname);
+        const query = new URLSearchParams(window.location.search);
+        const asked = query.get('process');
+        // Installing a template sends people here with the new draft's id.
+        // Nothing read it, so they landed on the start screen and had to
+        // find the draft they had just made.
+        const draftId = query.get('draft');
+        if (asked || draftId) window.history.replaceState(null, '', window.location.pathname);
+        if (draftId && /^[0-9a-f-]{36}$/.test(draftId)) {
+          adopt(await call<DraftDetail>(`/api/builder/drafts/${draftId}`));
+        } else if (asked) {
           adopt(await call<DraftDetail>('/api/builder/open', { method: 'POST', body: JSON.stringify({ processKey: asked }) }));
           await refreshList();
         }
@@ -713,7 +722,16 @@ export function Builder() {
 
   const discard = async () => {
     if (!draft) return;
-    if (!confirm('Throw this draft away? Everything since you opened it is lost.')) return;
+    const sure = await ask({
+      title: 'Discard this draft?',
+      body: draft.basedOnVersion
+        ? `Every change since this draft was opened is lost. Version ${draft.basedOnVersion}, the live one, is not touched and keeps running.`
+        : 'This process has never been published, so discarding the draft removes it completely. This cannot be undone.',
+      confirmLabel: 'Discard the draft',
+      cancelLabel: 'Keep editing',
+      tone: 'danger',
+    });
+    if (!sure) return;
     setBusy('discard');
     try {
       await call(`/api/builder/drafts/${draft.id}/discard`, { method: 'POST' });
@@ -917,14 +935,12 @@ export function Builder() {
             lock={lock}
             onTakeOver={async () => {
               const who = conflict?.by ?? lock?.by ?? 'them';
-              if (
-                !confirm(
-                  `Take this draft over from ${who}? Anything they have not saved stays in their tab, ` +
-                    'and their next save will be refused with your name on it.',
-                )
-              ) {
-                return;
-              }
+              const sure = await ask({
+                title: `Take this draft over from ${who}?`,
+                body: 'Anything they have not saved stays in their tab, and their next save will be refused with your name on it.',
+                confirmLabel: 'Take it over',
+              });
+              if (!sure) return;
               try {
                 const keep = conflict?.kind === 'held' ? pending.current : null;
                 await claim(draft.id, true);
@@ -942,7 +958,12 @@ export function Builder() {
             onLoadLatest={async () => {
               if (
                 conflict &&
-                !confirm('Load the saved version? The change of yours that was not saved will be dropped from this tab.')
+                !(await ask({
+                  title: 'Load the saved version?',
+                  body: 'The change of yours that was not saved is dropped from this tab.',
+                  confirmLabel: 'Load the saved version',
+                  tone: 'danger',
+                }))
               ) {
                 return;
               }
@@ -1227,6 +1248,7 @@ export function Builder() {
           </>
         )}
 
+        {confirmDialog}
         {impact && (
           <PublishDrawer
             impact={impact}

@@ -2,12 +2,17 @@ import { readFileSync } from 'node:fs';
 import { createPool, describeTarget } from './runtime/db.js';
 import { suppressDelivery } from './runtime/email.js';
 import { listPacks, publishPack } from './runtime/packs.js';
+import { CATALOGUE as GENERATED } from './packs/catalogue.js';
+import { buildBlueprint } from './packs/generate.js';
+import { Blueprint } from './blueprint/index.js';
 
 /**
  * Publishes the reference blueprints as built-in packs.
  *
  *   npm run packs                 publish the catalogue
  *   npm run packs -- --list       show what is there
+ *   npm run packs -- --catalogue  publish a new version of each generated
+ *                                 template that has changed, and nothing else
  *
  * The three reference processes are already hand-compiled, already carry
  * scenarios, and already compile clean — which is exactly what a pack has to
@@ -45,6 +50,18 @@ const CATALOGUE = [
   },
 ];
 
+/**
+ * JSON with its keys sorted. Postgres stores jsonb with its own key order, so
+ * comparing plain JSON.stringify output called every stored template changed.
+ */
+function canonical(value: unknown): string {
+  return JSON.stringify(value, (_key, v) =>
+    v && typeof v === 'object' && !Array.isArray(v)
+      ? Object.fromEntries(Object.entries(v as Record<string, unknown>).sort(([x], [y]) => (x < y ? -1 : x > y ? 1 : 0)))
+      : v,
+  );
+}
+
 const GREEN = '\x1b[32m';
 const RED = '\x1b[31m';
 const YELLOW = '\x1b[33m';
@@ -71,6 +88,46 @@ async function main(): Promise<void> {
       );
     }
     console.log('');
+    await pool.end();
+    return;
+  }
+
+  /*
+   * The generated catalogue, brought up to date without a re-seed.
+   *
+   * The seed is the only thing that ever wrote these, and re-seeding a
+   * development database signs everybody out. A template fixed in code was
+   * therefore invisible in a running workspace until somebody accepted that.
+   * This publishes a new version of each template whose generated blueprint
+   * differs from the newest one stored, and leaves the rest alone, so running
+   * it twice publishes nothing the second time. Workspaces that installed an
+   * older version keep it, and are told a newer one exists.
+   */
+  if (process.argv.includes('--catalogue')) {
+    console.log(`\n${BOLD}Updating generated templates${OFF} ${DIM}- ${describeTarget()}${OFF}\n`);
+    let published = 0;
+    for (const spec of GENERATED) {
+      const blueprint = Blueprint.parse(buildBlueprint(spec));
+      const { rows } = await pool.query<{ blueprint: unknown }>(
+        `select blueprint from pack where pack_key = $1 and tenant_id is null
+          order by version desc limit 1`,
+        [spec.key],
+      );
+      if (rows[0] && canonical(Blueprint.parse(rows[0].blueprint)) === canonical(blueprint)) continue;
+      const result = await publishPack(pool, {
+        principal: 'system',
+        packKey: spec.key,
+        name: spec.name,
+        summary: spec.summary,
+        category: spec.category,
+        audience: spec.audience,
+        blueprint,
+        builtIn: true,
+      });
+      published++;
+      console.log(`  ${GREEN}published${OFF} ${BOLD}${spec.name}${OFF} ${DIM}v${result.version}${OFF}`);
+    }
+    console.log(`\n${published ? GREEN : DIM}${published} of ${GENERATED.length} templates changed${OFF}\n`);
     await pool.end();
     return;
   }

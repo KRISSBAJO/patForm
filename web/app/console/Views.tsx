@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { useConfirm } from '../../components/confirm-dialog';
 import { Icon } from './Icon';
 import { Trend, WhereItSits, type Point, type Standing } from './Charts';
 import { postJson } from './stepup';
@@ -1142,6 +1143,7 @@ interface Held {
  * check.
  */
 export function HeldView({ onChanged }: { onChanged: (count: number) => void }) {
+  const [ask, confirmDialog] = useConfirm();
   const [rows, setRows] = useState<Held[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -1182,7 +1184,13 @@ export function HeldView({ onChanged }: { onChanged: (count: number) => void }) 
   };
 
   const discard = async (row: Held) => {
-    if (!confirm(`Discard ${row.reference}? Its answers are deleted now and cannot be recovered.`)) return;
+    const sure = await ask({
+      title: `Discard ${row.reference}?`,
+      body: 'Its answers are deleted now and cannot be recovered. Nothing is sent to the person who filled it in.',
+      confirmLabel: 'Discard it',
+      tone: 'danger',
+    });
+    if (!sure) return;
     setBusy(row.id);
     setNote(null);
     try {
@@ -1216,6 +1224,7 @@ export function HeldView({ onChanged }: { onChanged: (count: number) => void }) 
 
   return (
     <div className="cs__panel">
+      {confirmDialog}
       <div className="cs__panelHead">
         <h2 className="cs__tab">Held for a person to check</h2>
         <span className="cs__sort">{rows.length} waiting</span>

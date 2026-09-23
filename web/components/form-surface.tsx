@@ -16,6 +16,7 @@
 
 import { useState, type CSSProperties, type ReactNode } from 'react';
 import './form-surface.css';
+import { SignatureField } from './signature-field';
 
 export interface PublicField {
   key: string;
@@ -348,6 +349,19 @@ export function Field({
             </label>
           ))}
         </div>,
+        false,
+      );
+
+    // Typed and adopted, or drawn. The name is part of it either way.
+    case 'signature':
+      return wrap(
+        <SignatureField
+          id={id}
+          value={value}
+          onChange={onChange}
+          describedBy={describedBy || undefined}
+          invalid={Boolean(error)}
+        />,
         false,
       );
 

@@ -14,6 +14,9 @@
  */
 export class InvalidInput extends Error {}
 
+/** Asked for something that is not there, or not any more: a discarded draft. The API answers 404. */
+export class NotFound extends Error {}
+
 /**
  * Somebody else got there first.
  *
