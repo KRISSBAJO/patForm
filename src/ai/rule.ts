@@ -53,7 +53,14 @@ function vocabulary(bp: Blueprint) {
     emails: bp.communications.email.map((e) => ({ key: e.key, name: e.name })),
     documents: bp.outputs.documents.map((d) => ({ key: d.key, name: d.name })),
     roles: bp.roles.map((r) => ({ key: r.key, name: r.name })),
-    fields: bp.data.fields.map((f) => ({ key: f.key, label: f.label, type: f.type })),
+    // A repeating group lists its row questions, which a condition can only
+    // reach through "any" or "all".
+    fields: bp.data.fields.map((f) => ({
+      key: f.key,
+      label: f.label,
+      type: f.type,
+      ...(f.fields?.length ? { rowFields: f.fields.map((c) => ({ key: c.key, label: c.label, type: c.type })) } : {}),
+    })),
     existingRuleKeys: bp.workflow.transitions.map((t) => t.key),
   };
 }
@@ -75,6 +82,10 @@ A rule is a JSON object with exactly these keys:
              { "on": "manual", "by": [<role key>, ...] }
   when     OPTIONAL condition: { "op": "eq"|"ne"|"gt"|"gte"|"lt"|"lte", "left": { "field": <key> }, "right": { "literal": <value> } }
            or { "op": "is_present"|"is_empty", "left": { "field": <key> } }
+           or, over the rows of a repeating group ("any line item over 200"):
+              { "op": "any"|"all", "over": <repeating group key>, "where": <one of the conditions above> }
+           A row field (listed under rowFields) may ONLY appear inside "where" of
+           "any"/"all" over its own group. Outside that it has no single value.
   actions  a list of:
              { "do": "send_email", "key": <unique within this rule>, "template": <key> }
              { "do": "request_approval", "key": ..., "approval": <key> }
@@ -161,8 +172,17 @@ function unknownReferences(rule: Record<string, unknown>, bp: Blueprint): string
     }
   }
 
-  const when = rule.when as { left?: { field?: string } } | undefined;
-  if (when?.left?.field && !bp.data.fields.some((f) => f.key === when.left!.field)) {
+  const when = rule.when as { op?: string; over?: string; where?: unknown; left?: { field?: string } } | undefined;
+  const allKeys = bp.data.fields.flatMap((f) => [f.key, ...(f.fields ?? []).map((c) => c.key)]);
+  if (when && (when.op === 'any' || when.op === 'all')) {
+    if (!bp.data.fields.some((f) => f.key === when.over && f.type === 'repeating_group')) {
+      out.push(`there is no repeating group called "${String(when.over)}"`);
+    }
+    const inner = (when.where ?? {}) as { left?: { field?: string } };
+    if (inner.left?.field && !allKeys.includes(inner.left.field)) {
+      out.push(`there is no field called "${String(inner.left.field)}"`);
+    }
+  } else if (when?.left?.field && !bp.data.fields.some((f) => f.key === when.left!.field)) {
     out.push(`there is no field called "${String(when.left.field)}"`);
   }
 

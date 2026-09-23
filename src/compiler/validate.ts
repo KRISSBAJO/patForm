@@ -77,8 +77,96 @@ export function validate(bp: Blueprint): Diagnostics {
     return f;
   };
 
+  /*
+   * Which repeating group each question belongs to, if any.
+   *
+   * A condition that names a row question directly — `line_amount > 200`
+   * outside any quantifier — used to compile, because the key exists, and
+   * then read nothing at runtime: there is no top-level answer called
+   * `line_amount`, only one per row. So it was silently false on every
+   * record. Now it has to go through `any` or `all` over its group.
+   */
+  const groupOf = new Map<string, string>();
+  for (const { path, field } of allFields) {
+    const parts = path.split('.');
+    if (parts.length > 1) groupOf.set(field.key, parts[parts.length - 2]!);
+  }
+
   const checkExpr = (expr: Expr, at: string): void => {
-    for (const key of fieldsInExpr(expr)) requireField(key, at, 'Condition');
+    const operand = (o: unknown, scope: Set<string>): void => {
+      if (!o || typeof o !== 'object' || !('field' in o)) return;
+      const key = (o as { field: string }).field;
+      const f = requireField(key, at, 'Condition');
+      const group = groupOf.get(key);
+      if (f && group && !scope.has(group)) {
+        const g = fieldByKey.get(group);
+        d.error(
+          'RPT001',
+          at,
+          `"${f.label}" is a question inside "${g?.label ?? group}", so there is one answer per row, not one for the record.`,
+          `Use "any" or "all" over ${group} — for example, any row where ${key} is more than a value.`,
+        );
+      }
+    };
+
+    const walk = (e: Expr, scope: Set<string>): void => {
+      switch (e.op) {
+        case 'and':
+        case 'or':
+          e.operands.forEach((x) => walk(x, scope));
+          return;
+        case 'not':
+          walk(e.operand, scope);
+          return;
+        case 'any':
+        case 'all': {
+          const g = requireField(e.over, at, 'Condition');
+          if (g && g.type !== 'repeating_group') {
+            d.error(
+              'RPT002',
+              at,
+              `"${g.label}" is a ${g.type.replace(/_/g, ' ')}, not a list of rows, so "${e.op}" has nothing to look through.`,
+              'Point it at a repeating group, or compare the answer directly.',
+            );
+          }
+          const outer = groupOf.get(e.over);
+          if (g && outer && !scope.has(outer)) {
+            d.error(
+              'RPT001',
+              at,
+              `"${g.label}" sits inside another group, "${fieldByKey.get(outer)?.label ?? outer}".`,
+              `Look through ${outer} first, with "any" or "all", and put this condition inside it.`,
+            );
+          }
+          walk(e.where, new Set(scope).add(e.over));
+          // A condition inside a quantifier that never reads the row gives the
+          // same answer for every row: "any" is then just "there is a row".
+          if (g?.type === 'repeating_group' && !fieldsInExpr(e.where).some((k) => groupOf.get(k) === e.over)) {
+            d.warn(
+              'RPT003',
+              at,
+              `The condition inside "${e.op}" over "${g.label}" never looks at a row, so it is the same for every row.`,
+              `Compare one of ${g.label}'s own questions, or move the condition outside.`,
+            );
+          }
+          return;
+        }
+        case 'in':
+        case 'not_in':
+          operand(e.left, scope);
+          e.right.forEach((r) => operand(r, scope));
+          return;
+        case 'is_empty':
+        case 'is_present':
+          operand(e.left, scope);
+          return;
+        default:
+          operand(e.left, scope);
+          operand(e.right, scope);
+      }
+    };
+
+    walk(expr, new Set());
     typeCheckExpr(d, expr, at, fieldByKey);
   };
 
@@ -1054,6 +1142,10 @@ function typeCheckExpr(d: Diagnostics, expr: Expr, at: string, fields: Map<strin
     }
     if (e.op === 'not') {
       walk(e.operand);
+      return;
+    }
+    if (e.op === 'any' || e.op === 'all') {
+      walk(e.where);
       return;
     }
     if (e.op === 'is_empty' || e.op === 'is_present') return;

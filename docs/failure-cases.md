@@ -76,13 +76,15 @@ The threshold case is currently handled by splitting into two transitions with d
 
 **Built** after all, with `mode: "quorum"` and `required`. Retrofitting it did touch the approval runtime, as predicted — and found that the runtime had never implemented `sequential` either (entry 81).
 
-### G3. The expression model cannot reach into repeating groups
+### G3. The expression model cannot reach into repeating groups — **fixed**
 
 `sum` and `count` over a repeating group work. Anything else does not: "any line item over £200", "more than three items", "any item in a restricted category" are all inexpressible.
 
 Expense approval wants the first of these for a real policy. It is currently not modelled.
 
 **Recommendation:** add `any` and `all` quantifiers over a repeating group in v0.2. They are a contained addition and the runtime cost is bounded.
+
+**Built** as `{ "op": "any" | "all", "over": <group>, "where": <condition> }`. Inside `where`, a field is one of the group's own questions, read per row, or an ordinary question from the rest of the form. Quantifiers nest for a group inside a group. Expense approval now uses it: a claim with any single item over £200 goes to finance whatever its total. "More than three items" was already expressible with a calculated `count`. See entry 87 for what building it found.
 
 ### G4. Timers are relative to state entry only — **fixed**
 
@@ -922,6 +924,26 @@ The catalogue is generated from code, but the seed is the only thing that ever w
 Discarding a draft, taking one over, reloading after a conflict and discarding a held submission all used the browser's `confirm()`. It rendered in the browser's styling, headed with the host name, and asked people to press "OK" to throw their work away. Separately, installing a template sent people to `/builder?draft=<id>`, and nothing read the `draft` parameter, so they landed on the start screen and had to find the draft they had just made.
 
 **Fixed** with an in-app confirm dialog that names the action on its button ("Discard the draft", "Keep editing"), says what is lost, and uses the same focus handling as every other dialog: focus moves in and stays in, Escape and the backdrop both mean no, and focus goes back. A unit test fails if `confirm`, `alert` or `prompt` appears in the web app again. The builder now opens the draft it is sent to. Installing under a key that already exists, and asking for a draft that is gone, now answer 400 and 404 with a sentence instead of 500.
+
+### 87. A condition on a row question that compiled and was always false
+
+A field inside a repeating group has one answer per row, not one for the record. A condition such as `line_amount > 200` outside any quantifier compiled, because the key exists, and then read nothing at runtime: there is no top-level answer called `line_amount`. The rule was silently false on every record, which for a routing rule means the record always takes the other path.
+
+**Fixed** with the quantifiers. The compiler now refuses a row question read outside `any` or `all` over its own group (`RPT001`), refuses `any` or `all` over something that is not a group (`RPT002`), and warns when the condition inside a quantifier never reads the row, so it gives the same answer for every row (`RPT003`). The builder's rule editor offers "any row of" and "every row of" each group, and a rule's sentence now includes its condition.
+
+### 88. A real person caught by the spam trap
+
+The trap input was named `website`, chosen to look plausible to a script. It looked plausible to Chrome's autofill too, which fills a field it recognises even when the page says `autocomplete="off"` and even when the field is off-screen. A person submitting a budget transfer was held as automated.
+
+**Fixed** by naming the trap something no autofill profile maps to. A script that fills every input it finds still fills it. Holding never discards anything, so the cost of the mistake was a delay, and the submission could still be released.
+
+### 89. Held answers shown as stored, and a scan that stopped scanning
+
+The held queue printed each answer as its stored value: choice keys like `receiving_the_money`, bare numbers, ISO dates, and a drawn signature as several screens of base64. "Show all answers" opened the card into five narrow columns. Answers are now turned into words on the server, from the field that asked for them, and the whole submission opens in a review window with the signature drawn and both decisions at the bottom. The record page uses the same wording, and shows a repeating group as a small table.
+
+The accessibility scan was meant to cover this queue. It submitted its test entry to the key-only form address, which has answered 410 since per-workspace form links arrived, so nothing was ever held and the queue went unscanned while the scan reported a pass. It now submits through the workspace's own link, fails loudly if the submission is refused, scans the review and the discard confirmation, and discards everything it held.
+
+**Generalisable:** a gate that sets up its own fixture must check the fixture arrived. "Nothing to scan" and "scanned, no problems" print the same green line.
 
 ---
 

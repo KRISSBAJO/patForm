@@ -27,7 +27,15 @@ export interface RecordDetail {
   stateName: string;
   nextAction: string;
   viewerRoles: string[];
-  fields: { key: string; label: string; classification: string; value: unknown }[];
+  fields: {
+    key: string;
+    label: string;
+    classification: string;
+    value: unknown;
+    /** The answer in words, from the server; absent on an older API. */
+    text?: string | null;
+    table?: { columns: string[]; rows: string[][] };
+  }[];
 }
 
 export interface PendingApproval {
@@ -250,6 +258,29 @@ export function RecordPage({
                         <span className="cs__redacted">hidden from your role</span>
                       ) : isSignature(f.value) ? (
                         <SignatureView value={f.value} />
+                      ) : f.table && f.table.rows.length ? (
+                        <table className="rc__rows">
+                          <thead>
+                            <tr>
+                              {f.table.columns.map((c) => (
+                                <th key={c} scope="col">
+                                  {c}
+                                </th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {f.table.rows.map((r, i) => (
+                              <tr key={i}>
+                                {r.map((cell, j) => (
+                                  <td key={j}>{cell}</td>
+                                ))}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      ) : f.text ? (
+                        f.text
                       ) : (
                         (answer(f.value) ?? <span className="rc__blank">not answered</span>)
                       )}

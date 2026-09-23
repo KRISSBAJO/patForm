@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useConfirm } from '../../components/confirm-dialog';
+import { SignatureView, type SignatureValue } from '../../components/signature-field';
+import { useDialog } from '../useDialog';
 import { Icon } from './Icon';
 import { Trend, WhereItSits, type Point, type Standing } from './Charts';
 import { postJson } from './stepup';
@@ -1129,7 +1131,7 @@ interface Held {
   receivedAt: string;
   reasons: string[];
   seconds: number | null;
-  answers: { label: string; value: string }[];
+  answers: { label: string; value: string; long?: boolean; signature?: SignatureValue }[];
 }
 
 /**
@@ -1148,7 +1150,7 @@ export function HeldView({ onChanged }: { onChanged: (count: number) => void }) 
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
-  const [open, setOpen] = useState<Set<string>>(new Set());
+  const [reviewing, setReviewing] = useState<Held | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
@@ -1225,6 +1227,23 @@ export function HeldView({ onChanged }: { onChanged: (count: number) => void }) 
   return (
     <div className="cs__panel">
       {confirmDialog}
+      {reviewing && (
+        <HeldReview
+          row={reviewing}
+          busy={busy !== null}
+          onClose={() => setReviewing(null)}
+          onRelease={() => {
+            const row = reviewing;
+            setReviewing(null);
+            void release(row);
+          }}
+          onDiscard={() => {
+            const row = reviewing;
+            setReviewing(null);
+            void discard(row);
+          }}
+        />
+      )}
       <div className="cs__panelHead">
         <h2 className="cs__tab">Held for a person to check</h2>
         <span className="cs__sort">{rows.length} waiting</span>
@@ -1246,8 +1265,9 @@ export function HeldView({ onChanged }: { onChanged: (count: number) => void }) 
       ) : (
         <ul className="hd__list">
           {rows.map((row) => {
-            const expanded = open.has(row.id);
-            const answers = expanded ? row.answers : row.answers.slice(0, 4);
+            // A glance on the card: short answers only. The rest, signatures
+            // and long text included, are in the review.
+            const answers = row.answers.filter((a) => !a.long && !a.signature).slice(0, 6);
             return (
               <li key={row.id} className="hd__item">
                 <div className="hd__head">
@@ -1265,25 +1285,13 @@ export function HeldView({ onChanged }: { onChanged: (count: number) => void }) 
                   {answers.map((a) => (
                     <div key={a.label} className="hd__answer">
                       <dt>{a.label}</dt>
-                      <dd>{a.value}</dd>
+                      <dd title={a.value}>{a.value}</dd>
                     </div>
                   ))}
                 </dl>
-                {row.answers.length > 4 && (
-                  <button
-                    type="button"
-                    className="hd__more"
-                    aria-expanded={expanded}
-                    onClick={() =>
-                      setOpen((prev) => {
-                        const next = new Set(prev);
-                        if (next.has(row.id)) next.delete(row.id);
-                        else next.add(row.id);
-                        return next;
-                      })
-                    }
-                  >
-                    {expanded ? 'Show fewer answers' : `Show all ${row.answers.length} answers`}
+                {row.answers.length > answers.length && (
+                  <button type="button" className="hd__more" onClick={() => setReviewing(row)}>
+                    Review all {row.answers.length} answers
                   </button>
                 )}
                 <div className="hd__actions">
@@ -1304,6 +1312,91 @@ export function HeldView({ onChanged }: { onChanged: (count: number) => void }) 
           })}
         </ul>
       )}
+    </div>
+  );
+}
+
+/**
+ * Every answer on a held submission, laid out to be read.
+ *
+ * "Show all answers" used to open the card downwards into a grid of five
+ * narrow columns, where a note wrapped to one word a line and a drawn
+ * signature was a screen of base64. Deciding whether something is a person or
+ * a script needs the answers read properly, so they get a window: a label and
+ * an answer per line, long text on its own, the signature as a signature, and
+ * the two decisions at the bottom where the reading ends.
+ */
+function HeldReview({
+  row,
+  busy,
+  onClose,
+  onRelease,
+  onDiscard,
+}: {
+  row: Held;
+  busy: boolean;
+  onClose: () => void;
+  onRelease: () => void;
+  onDiscard: () => void;
+}) {
+  const box = useDialog(onClose);
+  return (
+    <div
+      className="hr"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="held-review-title"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div className="hr__box" ref={box} tabIndex={-1}>
+        <header className="hr__head">
+          <div>
+            <p className="hr__eyebrow">
+              {row.processName} · {row.reference}
+            </p>
+            <h2 id="held-review-title" className="hr__title">
+              Review this submission
+            </h2>
+            <p className="hr__when">Received {new Date(row.receivedAt).toLocaleString()}</p>
+          </div>
+          <button type="button" className="hr__close" onClick={onClose} aria-label="Close">
+            ×
+          </button>
+        </header>
+
+        <div className="hr__why">
+          <strong>Why it was held</strong>
+          <ul>
+            {row.reasons.map((r) => (
+              <li key={r}>{r}</li>
+            ))}
+            {row.seconds !== null && <li>filled in over {row.seconds} seconds</li>}
+          </ul>
+        </div>
+
+        <dl className="hr__answers">
+          {row.answers.map((a) => (
+            <div key={a.label} className={`hr__answer${a.long || a.signature ? ' hr__answer--wide' : ''}`}>
+              <dt>{a.label}</dt>
+              <dd>{a.signature ? <SignatureView value={a.signature} /> : a.value}</dd>
+            </div>
+          ))}
+        </dl>
+
+        <footer className="hr__actions">
+          <p className="hr__note">Releasing makes it a record as if it had just arrived. Discarding deletes the answers.</p>
+          <div className="hr__buttons">
+            <button type="button" className="cs__btn" disabled={busy} onClick={onDiscard}>
+              Discard
+            </button>
+            <button type="button" className="cs__btn cs__btn--primary" disabled={busy} onClick={onRelease}>
+              Release as a record
+            </button>
+          </div>
+        </footer>
+      </div>
     </div>
   );
 }

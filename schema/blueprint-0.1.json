@@ -694,6 +694,30 @@
                                 "left"
                               ],
                               "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "op": {
+                                  "type": "string",
+                                  "enum": [
+                                    "any",
+                                    "all"
+                                  ]
+                                },
+                                "over": {
+                                  "$ref": "#/definitions/ProcessBlueprint/properties/key"
+                                },
+                                "where": {
+                                  "$ref": "#/definitions/ProcessBlueprint/properties/experience/properties/pages/items/properties/sections/items/properties/visibleWhen"
+                                }
+                              },
+                              "required": [
+                                "op",
+                                "over",
+                                "where"
+                              ],
+                              "additionalProperties": false
                             }
                           ]
                         }

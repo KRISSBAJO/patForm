@@ -3725,3 +3725,192 @@ a.cs__navItem {
     display: none;
   }
 }
+
+/* Held card: answers stay on one line each; the review has the rest. */
+.hd__answer dd {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ------------------------------------------------ reviewing a held one */
+
+.hr {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(19, 26, 23, 0.45);
+  backdrop-filter: blur(2px);
+}
+
+.hr__box {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 720px;
+  max-height: calc(100vh - 32px);
+  border-radius: 14px;
+  background: var(--white);
+  box-shadow: 0 24px 60px -20px rgba(19, 26, 23, 0.45);
+  overflow: hidden;
+}
+
+.hr__box:focus {
+  outline: none;
+}
+
+.hr__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.hr__eyebrow {
+  margin: 0;
+  font-family: var(--font-mono), monospace;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.hr__title {
+  margin: 4px 0 0;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.hr__when {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.hr__close {
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--white);
+  font-size: 20px;
+  line-height: 1;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+.hr__close:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: 2px;
+}
+
+.hr__why {
+  margin: 16px 24px 0;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--ochre-pale);
+  border: 1px solid var(--ochre-border);
+  font-size: 13.5px;
+  color: var(--ochre-text);
+}
+
+.hr__why ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+
+.hr__answers {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 24px;
+  margin: 0;
+  padding: 8px 24px 16px;
+  overflow-y: auto;
+}
+
+.hr__answer {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line-soft);
+  min-width: 0;
+}
+
+.hr__answer--wide {
+  grid-column: 1 / -1;
+}
+
+.hr__answer dt {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.hr__answer dd {
+  margin: 4px 0 0;
+  font-size: 14.5px;
+  line-height: 1.5;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.hr__actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 14px 24px;
+  border-top: 1px solid var(--line-soft);
+  background: var(--paper);
+}
+
+.hr__note {
+  margin: 0;
+  max-width: 360px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.hr__buttons {
+  display: flex;
+  gap: 10px;
+}
+
+@media (max-width: 600px) {
+  .hr__answers {
+    grid-template-columns: 1fr;
+  }
+  .hr__buttons {
+    width: 100%;
+  }
+  .hr__buttons .cs__btn {
+    flex: 1;
+  }
+}
+
+/* A repeating group on a record: its rows as a small table. */
+.rc__rows {
+  width: 100%;
+  margin-top: 2px;
+  border-collapse: collapse;
+  font-size: 13.5px;
+}
+
+.rc__rows th {
+  padding: 4px 10px 4px 0;
+  text-align: left;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  border-bottom: 1px solid var(--line);
+}
+
+.rc__rows td {
+  padding: 5px 10px 5px 0;
+  border-bottom: 1px solid var(--line-soft);
+  color: var(--ink);
+}

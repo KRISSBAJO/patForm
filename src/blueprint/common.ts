@@ -50,7 +50,22 @@ export type Expr =
   | { op: (typeof COMPARISONS)[number]; left: Operand; right: Operand }
   | { op: 'in' | 'not_in'; left: Operand; right: Operand[] }
   | { op: 'contains'; left: Operand; right: Operand }
-  | { op: 'is_empty' | 'is_present'; left: Operand };
+  | { op: 'is_empty' | 'is_present'; left: Operand }
+  | Quantifier;
+
+/**
+ * A condition over the rows of a repeating group: "any line item over £200",
+ * "every item has a receipt".
+ *
+ * Inside `where`, a field is either one of that group's own questions — read
+ * from the row being looked at — or an ordinary question from the rest of the
+ * form, which reads the same on every row. Field keys are unique across the
+ * whole process, groups included, so the two can never be confused.
+ *
+ * `all` over no rows is true, which is what "every item has a receipt" means
+ * of a claim with no items. A rule that needs rows should say so too.
+ */
+export type Quantifier = { op: 'any' | 'all'; over: string; where: Expr };
 
 export const Expr: z.ZodType<Expr> = z.lazy(() =>
   z.union([
@@ -60,6 +75,7 @@ export const Expr: z.ZodType<Expr> = z.lazy(() =>
     z.object({ op: z.enum(['in', 'not_in']), left: Operand, right: z.array(Operand).min(1) }).strict(),
     z.object({ op: z.literal('contains'), left: Operand, right: Operand }).strict(),
     z.object({ op: z.enum(['is_empty', 'is_present']), left: Operand }).strict(),
+    z.object({ op: z.enum(['any', 'all']), over: Key, where: Expr }).strict(),
   ]),
 );
 
@@ -107,6 +123,11 @@ export function fieldsInExpr(expr: Expr): string[] {
       case 'is_empty':
       case 'is_present':
         operand(e.left);
+        return;
+      case 'any':
+      case 'all':
+        out.push(e.over);
+        walk(e.where);
         return;
       default:
         operand(e.left);
@@ -166,6 +187,15 @@ export function evaluate(expr: Expr, ctx: EvalContext): boolean {
       return expr.operands.some((e) => evaluate(e, ctx));
     case 'not':
       return !evaluate(expr.operand, ctx);
+    case 'any':
+    case 'all': {
+      const rows = ctx.answers[expr.over];
+      const list = Array.isArray(rows) ? rows.filter((r): r is Answers => typeof r === 'object' && r !== null) : [];
+      // Each row is read with the rest of the form around it, so a condition
+      // can compare a row against an ordinary answer.
+      const test = (row: Answers) => evaluate(expr.where, { ...ctx, answers: { ...ctx.answers, ...row } });
+      return expr.op === 'any' ? list.some(test) : list.every(test);
+    }
     case 'is_empty':
       return isEmpty(resolve(expr.left, ctx));
     case 'is_present':

@@ -1154,7 +1154,12 @@ export function Builder() {
                       tasks: (blueprint.workflow.tasks ?? []).map((t) => ({ key: t.key, name: t.name })),
                       templates: (blueprint.communications?.email ?? []).map((e) => ({ key: e.key, name: e.name })),
                       documents: (blueprint.outputs?.documents ?? []).map((d) => ({ key: d.key, name: d.name })),
-                      fields: blueprint.data.fields.map((f) => ({ key: f.key, label: f.label, type: f.type })),
+                      fields: blueprint.data.fields.map((f) => ({
+                        key: f.key,
+                        label: f.label,
+                        type: f.type,
+                        ...(f.fields ? { fields: f.fields.map((c) => ({ key: c.key, label: c.label, type: c.type })) } : {}),
+                      })),
                       roles: blueprint.roles.map((r) => ({ key: r.key, name: r.name })),
                     }}
                     diagnostics={diagnostics}

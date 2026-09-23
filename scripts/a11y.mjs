@@ -193,20 +193,48 @@ async function main() {
   const onboarding = JSON.parse(readFileSync('processes/employee-onboarding.blueprint.json', 'utf8'));
   const happy = onboarding.tests.find((t) => t.kind === 'happy_path');
   const heldAnswers = { ...happy.steps.find((st) => st.step === 'submit').answers, personal_email: 'a11y.held@example.test' };
-  await fetch(`${BASE}/api/forms/employee_onboarding/submit`, {
+  /*
+   * Through this workspace's own form link. The key-only address answers 410
+   * once more than one workspace has the process, and it did so silently here:
+   * the submission never arrived, nothing was held, and the held queue went
+   * unscanned for as long as that was true.
+   */
+  const session = await (await page.request.get(`${BASE}/api/session`)).json();
+  const formId = (session.processes ?? []).find((p) => p.process_key === 'employee_onboarding')?.public_id;
+  const sent = await fetch(`${BASE}/api/forms/${formId}/submit`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ answers: heldAnswers }),
   });
+  if (!sent.ok) throw new Error(`the held-queue submission was refused: ${sent.status} ${await sent.text()}`);
   const heldNav = page.locator('button', { hasText: /^Held submissions/ }).first();
   if (await heldNav.count()) {
     await heldNav.click();
     await page.waitForTimeout(1500);
     const cards = await page.locator('.hd__item').count();
     all.push(...(await audit(page, `Held submissions (${cards} held)`)));
-    if (cards) {
-      page.once('dialog', (d) => d.accept());
-      await page.locator('.hd__item', { hasText: 'a11y.held@example.test' }).locator('button', { hasText: 'Discard' }).click();
+    /*
+     * Found by reference rather than by the address: the card shows a few
+     * short answers and the rest are in the review. Every one this scan ever
+     * held is discarded, so a run that stopped half way does not leave its
+     * submission in somebody's queue.
+     */
+    const listed = await (await page.request.get(`${BASE}/api/held`)).json();
+    const mine = (listed.held ?? []).filter((h) => h.answers.some((a) => a.value === 'a11y.held@example.test'));
+    for (const [i, h] of mine.entries()) {
+      const card = page.locator('.hd__item', { hasText: h.reference });
+      if (!(await card.count())) continue;
+      if (i === 0) {
+        await card.locator('button', { hasText: /^Review all/ }).click();
+        await page.waitForTimeout(700);
+        all.push(...(await audit(page, 'Reviewing a held submission')));
+        await page.locator('.hr button', { hasText: /^Discard$/ }).click();
+      } else {
+        await card.locator('button', { hasText: /^Discard$/ }).click();
+      }
+      await page.waitForTimeout(400);
+      if (i === 0) all.push(...(await audit(page, 'Confirming a discard')));
+      await page.locator('.cf__btn--danger').click();
       await page.waitForTimeout(1200);
     }
   }

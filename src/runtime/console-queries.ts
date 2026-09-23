@@ -1,4 +1,5 @@
 import type { Blueprint } from '../blueprint/index.js';
+import { answerText } from '../blueprint/display.js';
 import type { Client, Pool } from './db.js';
 import { inTransaction } from './db.js';
 import { authorize, redact, require_, type Principal } from './policy.js';
@@ -410,12 +411,29 @@ export async function recordDetail(pool: Pool, principal: Principal, instanceId:
       // latest one, so an old record reads the way it was decided.
       fields: bp.data.fields
         .filter((f) => f.type !== 'content')
-        .map((f) => ({
-          key: f.key,
-          label: f.label,
-          classification: f.classification,
-          value: visible[f.key] ?? null,
-        })),
+        .map((f) => {
+          const value = visible[f.key] ?? null;
+          const hidden = value === '[redacted]';
+          // The answer in words, and a repeating group as a small table, so
+          // the page shows "Receiving the money" and "£3,000.00" rather than
+          // the stored key and number.
+          const rows = f.type === 'repeating_group' && Array.isArray(value) ? (value as Record<string, unknown>[]) : null;
+          return {
+            key: f.key,
+            label: f.label,
+            classification: f.classification,
+            value,
+            text: hidden || value === null ? null : answerText(f, value),
+            ...(rows && f.fields
+              ? {
+                  table: {
+                    columns: f.fields.map((c) => c.label),
+                    rows: rows.map((r) => f.fields!.map((c) => answerText(c, r?.[c.key]))),
+                  },
+                }
+              : {}),
+          };
+        }),
       events: events.rows,
       approvals: approvals.rows,
       tasks: tasks.rows,

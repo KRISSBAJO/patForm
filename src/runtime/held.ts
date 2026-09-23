@@ -1,4 +1,6 @@
 import type { Blueprint } from '../blueprint/index.js';
+import { answerText } from '../blueprint/display.js';
+import { isSignature, type SignatureValue } from '../blueprint/signature.js';
 import { inTransaction, type Pool } from './db.js';
 import { Engine, appendEvent } from './engine.js';
 import { authorize, redact, require_, type Principal } from './policy.js';
@@ -31,8 +33,15 @@ export interface HeldRow {
   reasons: string[];
   /** Seconds from loading the form to submitting it, when that is known. */
   seconds: number | null;
-  /** Answers as this member's roles may see them. */
-  answers: { label: string; value: string }[];
+  /** Answers as this member's roles may see them, in words. */
+  answers: {
+    label: string;
+    value: string;
+    /** Long text, which the page lays out on its own line. */
+    long?: boolean;
+    /** A signature, so the page can show it rather than describe it. */
+    signature?: SignatureValue;
+  }[];
 }
 
 type Actor = Extract<Principal, { kind: 'actor' }>;
@@ -42,12 +51,6 @@ function actorOf(principal: Principal): Actor {
   return principal;
 }
 
-function shown(value: unknown): string {
-  if (value === null || value === undefined || value === '') return '—';
-  if (Array.isArray(value)) return value.map(shown).join(', ');
-  if (typeof value === 'object') return JSON.stringify(value);
-  return String(value);
-}
 
 /** Every open held submission this member may decide, newest first. */
 export async function listHeld(pool: Pool, principal: Principal): Promise<HeldRow[]> {
@@ -92,7 +95,15 @@ export async function listHeld(pool: Pool, principal: Principal): Promise<HeldRo
         seconds: row.elapsed_ms === null ? null : Math.round(row.elapsed_ms / 100) / 10,
         answers: row.blueprint.data.fields
           .filter((f) => f.key in visible)
-          .map((f) => ({ label: f.label, value: shown(visible[f.key]) })),
+          .map((f) => {
+            const value = visible[f.key];
+            return {
+              label: f.label,
+              value: answerText(f, value),
+              ...(f.type === 'long_text' ? { long: true } : {}),
+              ...(isSignature(value) ? { signature: value } : {}),
+            };
+          }),
       });
     }
   } finally {

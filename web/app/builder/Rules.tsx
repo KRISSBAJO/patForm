@@ -47,8 +47,16 @@ export interface RuleContext {
   tasks: { key: string; name: string }[];
   templates: { key: string; name: string }[];
   documents: { key: string; name: string }[];
-  fields: { key: string; label: string; type: string }[];
+  /** Top-level questions; a repeating group carries its own row questions. */
+  fields: RuleField[];
   roles: { key: string; name: string }[];
+}
+
+export interface RuleField {
+  key: string;
+  label: string;
+  type: string;
+  fields?: { key: string; label: string; type: string }[];
 }
 
 const TRIGGERS = [
@@ -102,6 +110,38 @@ function joined(t: Transition, ctx: RuleContext): string {
   return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
 }
 
+/** Every question, row questions included, for looking up a label. */
+function allFields(ctx: RuleContext): { key: string; label: string; type: string }[] {
+  return ctx.fields.flatMap((f) => [f, ...(f.fields ?? [])]);
+}
+
+function comparisonWords(e: Expr, ctx: RuleContext): string | null {
+  const op = String(e.op ?? '');
+  const left = (e.left as { field?: string } | undefined)?.field;
+  const c = COMPARISONS.find((x) => x.op === op);
+  if (!left || !c) return null;
+  const name = label(allFields(ctx), left);
+  if (op === 'is_present' || op === 'is_empty') return `${name} ${c.label}`;
+  const right = e.right as { literal?: unknown; field?: string } | undefined;
+  const value = right?.field ? label(allFields(ctx), right.field) : String(right?.literal ?? '');
+  return `${name} ${c.label} ${value}`;
+}
+
+/** A condition in words. Anything the editor cannot draw is "a condition". */
+export function conditionWords(e: Expr | undefined, ctx: RuleContext): string | null {
+  if (!e) return null;
+  const op = String(e.op ?? '');
+  if ((op === 'and' || op === 'or') && Array.isArray(e.operands)) {
+    return (e.operands as Expr[]).map((x) => conditionWords(x, ctx)).join(` ${op} `);
+  }
+  if (op === 'any' || op === 'all') {
+    const group = label(ctx.fields, String(e.over));
+    const inner = comparisonWords(e.where as Expr, ctx) ?? 'a condition holds';
+    return `${op === 'any' ? 'any' : 'every'} row of ${group} where ${inner}`;
+  }
+  return comparisonWords(e, ctx) ?? 'a condition holds';
+}
+
 /** A rule in a sentence, which is what somebody scans the list for. */
 export function ruleSentence(t: Transition, ctx: RuleContext): string {
   const trigger = t.trigger as Record<string, string | number>;
@@ -122,7 +162,8 @@ export function ruleSentence(t: Transition, ctx: RuleContext): string {
                 ? 'the record is edited'
                 : 'the form is submitted';
 
-  return `When ${when}, move to ${label(ctx.states, t.to)}`;
+  const condition = conditionWords(t.when, ctx);
+  return `When ${when}${condition ? `, if ${condition}` : ''}, move to ${label(ctx.states, t.to)}`;
 }
 
 export function RulesEditor({
@@ -600,10 +641,12 @@ function Rule({
 /**
  * The condition.
  *
- * One comparison, or none. The expression language nests — and/or/not over
- * further expressions — and an editor that exposed the whole tree would be a
- * worse JSON tab. A rule that needs more than one comparison is a rule that
- * wants splitting into two, which is also easier to read on the record.
+ * One comparison, or none — on an answer, or on the rows of a repeating
+ * group: "any row of Items claimed where Amount is more than 200". The
+ * expression language nests further (and/or/not), and an editor that exposed
+ * the whole tree would be a worse JSON tab. A rule that needs more than one
+ * comparison is a rule that wants splitting into two, which is also easier to
+ * read on the record.
  */
 function Condition({
   when,
@@ -614,12 +657,21 @@ function Condition({
   ctx: RuleContext;
   onChange: (next?: Expr) => void;
 }) {
-  const op = when ? String(when.op ?? '') : '';
-  const left = when?.left as { field?: string } | undefined;
-  const right = when?.right as { literal?: unknown } | undefined;
+  const outerOp = when ? String(when.op ?? '') : '';
+  const quantified = outerOp === 'any' || outerOp === 'all';
+  const group = quantified ? ctx.fields.find((f) => f.key === when!.over) : undefined;
+  const inner = (quantified ? (when!.where as Expr | undefined) : when) ?? undefined;
+
+  const op = inner ? String(inner.op ?? '') : '';
+  const left = inner?.left as { field?: string } | undefined;
+  const right = inner?.right as { literal?: unknown } | undefined;
   const fieldKey = left?.field ?? '';
-  const field = ctx.fields.find((f) => f.key === fieldKey);
-  const nested = when && ['and', 'or', 'not', 'in', 'not_in', 'contains'].includes(op);
+  const pool = quantified ? (group?.fields ?? []) : ctx.fields;
+  const field = pool.find((f) => f.key === fieldKey);
+
+  const drawable = (e?: Expr) =>
+    !e || !['and', 'or', 'not', 'in', 'not_in', 'contains', 'any', 'all'].includes(String(e.op ?? ''));
+  const nested = when && (quantified ? !group || !drawable(inner) : !drawable(when));
 
   if (nested) {
     // Something the JSON tab wrote that this editor would flatten. Shown
@@ -637,28 +689,70 @@ function Condition({
     );
   }
 
+  const groups = ctx.fields.filter((f) => f.type === 'repeating_group' && f.fields?.length);
+  const subject = quantified ? `${outerOp}:${group!.key}` : fieldKey ? `f:${fieldKey}` : '';
+
+  /** Wraps a comparison in the quantifier the subject asks for. */
+  const build = (subj: string, comparison: Expr | undefined): Expr | undefined => {
+    if (!comparison) return undefined;
+    const [kind, key] = subj.split(':');
+    return kind === 'any' || kind === 'all' ? { op: kind, over: key, where: comparison } : comparison;
+  };
+  const comparison = (key: string, nextOp: string, value?: unknown): Expr =>
+    nextOp === 'is_present' || nextOp === 'is_empty'
+      ? { op: nextOp, left: { field: key } }
+      : { op: nextOp, left: { field: key }, right: { literal: value ?? '' } };
+
   return (
     <div className="rl__row rl__row--condition">
       <span className="rl__word">If</span>
       <select
         className="bd__input"
         aria-label="Which answer the condition looks at"
-        value={fieldKey}
-        onChange={(e) =>
-          onChange(
-            e.target.value
-              ? { op: op || 'eq', left: { field: e.target.value }, right: { literal: '' } }
-              : undefined,
-          )
-        }
+        value={subject}
+        onChange={(e) => {
+          const next = e.target.value;
+          if (!next) return onChange(undefined);
+          const [kind, key] = next.split(':');
+          if (kind === 'f') return onChange(comparison(key!, op || 'eq', ''));
+          // A group: start on its first row question, so the rule is whole.
+          const first = ctx.fields.find((f) => f.key === key)?.fields?.[0];
+          onChange(first ? build(next, comparison(first.key, 'eq', '')) : undefined);
+        }}
       >
         <option value="">always — no condition</option>
-        {ctx.fields.map((f) => (
-          <option key={f.key} value={f.key}>
-            {f.label}
-          </option>
+        {ctx.fields
+          .filter((f) => f.type !== 'repeating_group')
+          .map((f) => (
+            <option key={f.key} value={`f:${f.key}`}>
+              {f.label}
+            </option>
+          ))}
+        {groups.map((g) => (
+          <optgroup key={g.key} label={g.label}>
+            <option value={`any:${g.key}`}>any row of {g.label}</option>
+            <option value={`all:${g.key}`}>every row of {g.label}</option>
+          </optgroup>
         ))}
       </select>
+
+      {quantified && (
+        <>
+          <span className="rl__word">where</span>
+          <select
+            className="bd__input"
+            aria-label={`Which question in each row of ${group!.label}`}
+            value={fieldKey}
+            onChange={(e) => onChange(build(subject, comparison(e.target.value, op || 'eq', right?.literal)))}
+          >
+            {(group!.fields ?? []).map((f) => (
+              <option key={f.key} value={f.key}>
+                {f.label}
+              </option>
+            ))}
+          </select>
+        </>
+      )}
 
       {fieldKey && (
         <>
@@ -666,14 +760,7 @@ function Condition({
             className="bd__input"
             aria-label="How to compare"
             value={op}
-            onChange={(e) => {
-              const next = e.target.value;
-              onChange(
-                next === 'is_present' || next === 'is_empty'
-                  ? { op: next, left: { field: fieldKey } }
-                  : { op: next, left: { field: fieldKey }, right: right ?? { literal: '' } },
-              );
-            }}
+            onChange={(e) => onChange(build(subject, comparison(fieldKey, e.target.value, right?.literal)))}
           >
             {COMPARISONS.filter(
               // Comparing a name against "more than" is a type error the
@@ -694,14 +781,12 @@ function Condition({
               onChange={(e) => {
                 const raw = e.target.value;
                 const asNumber = Number(raw);
-                onChange({
-                  op,
-                  left: { field: fieldKey },
-                  // A number typed into a numeric comparison is a number. The
-                  // compiler refuses `"1000"` against a currency field, and
-                  // quoting it here would be a type error nobody typed.
-                  right: { literal: raw !== '' && !Number.isNaN(asNumber) ? asNumber : raw },
-                });
+                // A number typed into a numeric comparison is a number. The
+                // compiler refuses `"1000"` against a currency field, and
+                // quoting it here would be a type error nobody typed.
+                onChange(
+                  build(subject, comparison(fieldKey, op, raw !== '' && !Number.isNaN(asNumber) ? asNumber : raw)),
+                );
               }}
             />
           )}

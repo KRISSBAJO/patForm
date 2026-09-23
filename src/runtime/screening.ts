@@ -40,8 +40,17 @@ export const MIN_FILL_MS = 3_000;
 /** A ticket from the future is a forged one; allow for clocks a little apart. */
 const FUTURE_SKEW_MS = 60_000;
 
-/** The name of the trap input. Plausible, so a script that skips obvious honeypots fills it. */
-export const TRAP_FIELD = 'website';
+/**
+ * The name of the trap input.
+ *
+ * It was "website", chosen to look plausible to a script. It also looked
+ * plausible to Chrome's autofill, which fills a field it recognises even when
+ * the page says `autocomplete="off"` and even when it is off-screen. A real
+ * person submitting a budget transfer was held for it. A name no autofill
+ * profile maps to anything still gets filled by a script that fills every
+ * input, which is the kind this catches.
+ */
+export const TRAP_FIELD = 'fm_extra_notes';
 
 export type HoldReason = 'no_ticket' | 'bad_ticket' | 'too_fast' | 'trap_filled';
 

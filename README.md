@@ -1269,13 +1269,10 @@ Everything below is a deliberate deferral:
 - **An effect log outside the database.** The idempotency ledger protects every
   effect the backup knows about and nothing inside the RPO window, so anything
   with an external effect in that window happens twice after a restore.
-- **Quantifiers over repeating groups** ("any line item over £200") — what is
-  left of the v0.2 list in [docs/failure-cases.md](docs/failure-cases.md).
-  Parallel task joins, separation of duties, date-relative timers and approval
-  quorums were on it and are now built. In each case the compiler refuses the
-  half-built version: a join that leaves a blocking task out, a bar on a
-  submitter the process never identifies, a deadline measured two ways at
-  once, and a quorum that could never be met.
+- **Nothing left on the v0.2 list** in [docs/failure-cases.md](docs/failure-cases.md).
+  Parallel task joins, separation of duties, date-relative timers, approval
+  quorums and rules over repeating groups ("any line item over £200") are all
+  built. In each case the compiler refuses the half-built version.
 - **A vote rather than a veto.** In every approval mode one rejection settles
   it. A board that decides by majority cannot say so yet.
 

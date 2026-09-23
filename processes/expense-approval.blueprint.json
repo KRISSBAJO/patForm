@@ -2,7 +2,7 @@
   "schemaVersion": "0.1",
   "key": "expense_approval",
   "name": "Expense Approval",
-  "description": "Hand-compiled from section 4.4. Exercises repeating groups, calculated totals, and threshold routing.",
+  "description": "Hand-compiled from section 4.4. Exercises repeating groups, calculated totals, threshold routing, and a rule over the rows of a group: any single item over £200 goes to finance, whatever the total.",
   "intent": {
     "outcome": "A claimed expense has been checked against its receipts, approved at the right level for its value, and handed to finance for payment.",
     "owner": "finance_ops",
@@ -495,13 +495,31 @@
           "decision": "approved"
         },
         "when": {
-          "op": "lte",
-          "left": {
-            "field": "expense_total"
-          },
-          "right": {
-            "literal": 1000
-          }
+          "op": "and",
+          "operands": [
+            {
+              "op": "lte",
+              "left": {
+                "field": "expense_total"
+              },
+              "right": {
+                "literal": 1000
+              }
+            },
+            {
+              "op": "all",
+              "over": "line_items",
+              "where": {
+                "op": "lte",
+                "left": {
+                  "field": "line_amount"
+                },
+                "right": {
+                  "literal": 200
+                }
+              }
+            }
+          ]
         },
         "actions": [
           {
@@ -537,13 +555,31 @@
           "decision": "approved"
         },
         "when": {
-          "op": "gt",
-          "left": {
-            "field": "expense_total"
-          },
-          "right": {
-            "literal": 1000
-          }
+          "op": "or",
+          "operands": [
+            {
+              "op": "gt",
+              "left": {
+                "field": "expense_total"
+              },
+              "right": {
+                "literal": 1000
+              }
+            },
+            {
+              "op": "any",
+              "over": "line_items",
+              "where": {
+                "op": "gt",
+                "left": {
+                  "field": "line_amount"
+                },
+                "right": {
+                  "literal": 200
+                }
+              }
+            }
+          ]
         },
         "actions": [
           {
@@ -992,6 +1028,88 @@
         "documents": [
           "claim_summary"
         ],
+        "instanceCount": 1
+      }
+    },
+    {
+      "key": "one_item_over_the_line",
+      "kind": "happy_path",
+      "name": "One item over £200 goes to finance even though the total is under £1000",
+      "steps": [
+        {
+          "step": "submit",
+          "answers": {
+            "claimant_name": "Sam Trent",
+            "employee_email": "sam@example.com",
+            "manager_email": "manager@example.com",
+            "expense_date": "2026-09-01",
+            "cost_centre": "eng",
+            "category": "training",
+            "business_purpose": "Team offsite supplies.",
+            "line_items": [
+              {
+                "line_description": "Monitor",
+                "line_amount": 260
+              },
+              {
+                "line_description": "Cables",
+                "line_amount": 40
+              }
+            ],
+            "receipt_reference": "EXP-2291 in the finance drive"
+          }
+        },
+        {
+          "step": "decide",
+          "approval": "manager_approval",
+          "as": "line_manager",
+          "decision": "approved",
+          "reason": "Fine."
+        }
+      ],
+      "expect": {
+        "state": "finance_review",
+        "instanceCount": 1
+      }
+    },
+    {
+      "key": "every_item_within_the_line",
+      "kind": "happy_path",
+      "name": "Under £1000 with every item at £200 or less, the manager alone approves",
+      "steps": [
+        {
+          "step": "submit",
+          "answers": {
+            "claimant_name": "Sam Trent",
+            "employee_email": "sam@example.com",
+            "manager_email": "manager@example.com",
+            "expense_date": "2026-09-01",
+            "cost_centre": "eng",
+            "category": "training",
+            "business_purpose": "Team offsite supplies.",
+            "line_items": [
+              {
+                "line_description": "Keyboard",
+                "line_amount": 200
+              },
+              {
+                "line_description": "Mouse",
+                "line_amount": 60
+              }
+            ],
+            "receipt_reference": "EXP-2291 in the finance drive"
+          }
+        },
+        {
+          "step": "decide",
+          "approval": "manager_approval",
+          "as": "line_manager",
+          "decision": "approved",
+          "reason": "Fine."
+        }
+      ],
+      "expect": {
+        "state": "approved",
         "instanceCount": 1
       }
     },
