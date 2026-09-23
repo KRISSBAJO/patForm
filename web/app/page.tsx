@@ -1,6 +1,8 @@
+import type { CSSProperties } from 'react';
 import Link from 'next/link';
 import { Footer } from '@/components/Footer';
 import { Nav } from '@/components/Nav';
+import { CountUp, InView, Typewriter } from '@/components/motion';
 import {
   ArrowRight,
   Clock,
@@ -18,6 +20,9 @@ import {
   Tick,
   Warn,
 } from '@/components/icons';
+
+/** A stagger index for the CSS to turn into a delay. */
+const nth = (i: number) => ({ '--i': i }) as CSSProperties;
 
 const TOOLCHAIN = ['Form tool', 'Spreadsheet', 'Email threads', 'Shared drive', 'E-signature', 'Calendar'];
 
@@ -217,7 +222,12 @@ export default function Home() {
             <span className="rule" aria-hidden="true" />
           </div>
 
-          <div className="shift">
+          {/*
+            * The chain lights up as the section arrives: Submitted, then the
+            * arrow, then Approved, and so on to Done. It is the sentence
+            * above it, played — a submission beginning a process.
+            */}
+          <InView className="shift">
             <article className="shiftCard shiftCard--before">
               <span className="shiftCard__tag">EVERY FORM TOOL</span>
               <h3>A form ends at submission.</h3>
@@ -242,18 +252,26 @@ export default function Home() {
                 work is in the system, not in someone’s inbox.
               </p>
               <div className="shiftCard__states">
-                {['Submitted', 'Approved', 'Provisioned'].map((state) => (
+                {['Submitted', 'Approved', 'Provisioned'].map((state, i) => (
                   <span key={state} style={{ display: 'contents' }}>
-                    <span className="chip chip--state">{state}</span>
-                    <span style={{ color: 'var(--green)', display: 'flex' }} aria-hidden="true">
+                    <span className="chip chip--state flow__step" style={nth(i)}>
+                      {state}
+                    </span>
+                    <span
+                      className="flow__arrow"
+                      style={{ ...nth(i), color: 'var(--green)', display: 'flex' }}
+                      aria-hidden="true"
+                    >
                       <FlowArrow />
                     </span>
                   </span>
                 ))}
-                <span className="chip chip--state chip--done">Done</span>
+                <span className="chip chip--state chip--done flow__step" style={nth(3)}>
+                  Done
+                </span>
               </div>
             </article>
-          </div>
+          </InView>
         </section>
 
         {/* ================================================== what gets built */}
@@ -307,7 +325,13 @@ export default function Home() {
               </div>
             </div>
 
-            <div className="window">
+            {/*
+              * The morning screen fills in the way a real one does: the four
+              * tiles first, their numbers counting up, then the queue, then
+              * the late badge landing last, then a question being typed. The
+              * copy says the screen answers four questions; this is it doing so.
+              */}
+            <InView className="window">
               <div className="window__bar">
                 <span className="window__dot" style={{ background: 'var(--red-border)' }} />
                 <span className="window__dot" style={{ background: 'var(--ochre-border)' }} />
@@ -318,22 +342,28 @@ export default function Home() {
               </div>
 
               <div className="tiles">
-                <div className="tile">
+                <div className="tile" style={nth(0)}>
                   <div className="tile__label">ARRIVED</div>
-                  <div className="tile__value">24</div>
+                  <div className="tile__value">
+                    <CountUp value={24} delay={250} />
+                  </div>
                   <div className="tile__meta">this month</div>
                 </div>
-                <div className="tile tile--needs">
+                <div className="tile tile--needs" style={nth(1)}>
                   <div className="tile__label">NEEDS YOU</div>
-                  <div className="tile__value">3</div>
+                  <div className="tile__value">
+                    <CountUp value={3} delay={350} />
+                  </div>
                   <div className="tile__meta">approvals waiting</div>
                 </div>
-                <div className="tile tile--late">
+                <div className="tile tile--late" style={nth(2)}>
                   <div className="tile__label">LATE</div>
-                  <div className="tile__value">2</div>
+                  <div className="tile__value">
+                    <CountUp value={2} delay={450} />
+                  </div>
                   <div className="tile__meta">past their SLA</div>
                 </div>
-                <div className="tile">
+                <div className="tile" style={nth(3)}>
                   <div className="tile__label">FAILED</div>
                   <div className="tile__value">0</div>
                   <div className="tile__meta">automations</div>
@@ -341,8 +371,8 @@ export default function Home() {
               </div>
 
               <div className="queue">
-                {QUEUE.map((row) => (
-                  <div className="queue__row" key={row.id}>
+                {QUEUE.map((row, i) => (
+                  <div className="queue__row" key={row.id} style={nth(i)}>
                     <span className="queue__id">{row.id}</span>
                     <span className="queue__name">{row.name}</span>
                     <span className="queue__stage">{row.stage}</span>
@@ -355,10 +385,12 @@ export default function Home() {
                 <span style={{ color: 'var(--green-mint)', display: 'flex' }}>
                   <Clock size={16} />
                 </span>
-                <span className="ask__q">Which onboardings are overdue, and who is holding them up?</span>
+                <span className="ask__q">
+                  <Typewriter text="Which onboardings are overdue, and who is holding them up?" delay={2100} />
+                </span>
                 <span className="ask__tag">ASK</span>
               </div>
-            </div>
+            </InView>
           </div>
         </section>
 
@@ -415,7 +447,12 @@ export default function Home() {
               </p>
             </div>
 
-            <div className="ai__demo">
+            {/*
+              * The proposal arrives, the arrow drops, and the three checks
+              * land one at a time — two ticks and then the amber one, which
+              * is the point: the platform found the gap the model left.
+              */}
+            <InView className="ai__demo">
               <div className="proposal">
                 <span className="proposal__tag">PROPOSED</span>
                 <p>Route claims over £1,000 to finance after the manager approves.</p>
@@ -427,22 +464,22 @@ export default function Home() {
               </div>
 
               <div className="checked">
-                <div className="checked__row">
+                <div className="checked__row" style={nth(0)}>
                   <Tick />
                   <span>Threshold reads a currency field, not a text one</span>
                 </div>
-                <div className="checked__row">
+                <div className="checked__row" style={nth(1)}>
                   <Tick />
                   <span>Someone with approval rights actually exists</span>
                 </div>
-                <div className="checked__row">
+                <div className="checked__row checked__row--warn" style={nth(2)}>
                   <Warn />
                   <span>
                     Claims between £100 and £1,000 have no route — <strong>needs your decision</strong>
                   </span>
                 </div>
               </div>
-            </div>
+            </InView>
           </div>
         </section>
 

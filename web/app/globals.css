@@ -2399,3 +2399,248 @@ html {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* ==================================================================== motion */
+
+/*
+ * Each section plays once as it arrives and then rests. See
+ * `components/motion.tsx` for what sets `data-motion`, and why the attribute
+ * is absent on the server: no attribute, no rule, final state — which is what
+ * a page without script, or with reduced motion, gets.
+ *
+ * `--i` is a stagger index set inline; the delays are computed from it here
+ * so the timing of a sequence is in one place.
+ */
+
+/*
+ * 01 — the state chain lights up left to right.
+ *
+ * Unlit is a colour, not an opacity. The first version dimmed the chips to
+ * 28% and axe failed them for contrast — rightly: a slow scroll, or an
+ * observer that never fires, leaves that text on screen. The unlit chip
+ * now wears the quiet chip's colours, which pass, and transitions to its
+ * own when the section arrives. The arrows are decorative and may fade.
+ */
+[data-motion='pending'] .flow__step {
+  background: var(--line-soft);
+  color: var(--muted);
+  transform: translateY(3px);
+}
+
+[data-motion='pending'] .flow__arrow {
+  opacity: 0;
+}
+
+[data-motion='in'] .flow__step {
+  transition:
+    background-color 0.45s ease-out,
+    color 0.45s ease-out,
+    transform 0.5s cubic-bezier(0.2, 0.7, 0.2, 1);
+  transition-delay: calc(0.25s + var(--i) * 0.55s);
+}
+
+[data-motion='in'] .chip--done.flow__step {
+  transition-timing-function: ease-out, ease-out, cubic-bezier(0.2, 0.8, 0.3, 1.3);
+}
+
+[data-motion='in'] .flow__arrow {
+  animation: motion-arrow 0.4s ease-out both;
+  animation-delay: calc(0.5s + var(--i) * 0.55s);
+}
+
+@keyframes motion-arrow {
+  from {
+    opacity: 0;
+    transform: translateX(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* 03 — the morning screen fills in: tiles, queue, the late badge, the question */
+[data-motion='pending'] .tile,
+[data-motion='pending'] .queue__row,
+[data-motion='pending'] .ask {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+[data-motion='in'] .tile {
+  animation: motion-rise 0.55s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  animation-delay: calc(0.1s + var(--i) * 0.1s);
+}
+
+[data-motion='in'] .queue__row {
+  animation: motion-rise 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  animation-delay: calc(0.9s + var(--i) * 0.18s);
+}
+
+[data-motion='in'] .ask {
+  animation: motion-rise 0.5s ease-out both;
+  animation-delay: 1.6s;
+}
+
+[data-motion='in'] .badge--late {
+  animation: motion-late 0.7s ease-out both;
+  animation-delay: 1.75s;
+}
+
+@keyframes motion-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes motion-late {
+  0% {
+    opacity: 0;
+    transform: scale(0.7);
+  }
+  55% {
+    opacity: 1;
+    transform: scale(1.12);
+    box-shadow: 0 0 0 5px rgba(155, 63, 56, 0.18);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+    box-shadow: 0 0 0 0 rgba(155, 63, 56, 0);
+  }
+}
+
+.type__caret {
+  display: inline-block;
+  width: 1px;
+  height: 1.05em;
+  margin-left: 1px;
+  vertical-align: -0.18em;
+  background: currentColor;
+  animation: motion-caret 0.9s steps(1) infinite;
+}
+
+@keyframes motion-caret {
+  50% {
+    opacity: 0;
+  }
+}
+
+/* 05 — the proposal, the arrow, then three checks, the last one amber */
+[data-motion='pending'] .proposal,
+[data-motion='pending'] .checked {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+[data-motion='pending'] .checked__arrow,
+[data-motion='pending'] .checked__row {
+  opacity: 0;
+}
+
+[data-motion='in'] .proposal {
+  animation: motion-rise 0.55s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+[data-motion='in'] .checked__arrow {
+  animation: motion-fade 0.4s ease-out both;
+  animation-delay: 0.5s;
+}
+
+[data-motion='in'] .checked__arrow svg {
+  animation: motion-drop 0.5s ease-out both;
+  animation-delay: 0.5s;
+}
+
+[data-motion='in'] .checked {
+  animation: motion-rise 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  animation-delay: 0.9s;
+}
+
+[data-motion='in'] .checked__row {
+  animation: motion-fade 0.4s ease-out both;
+  animation-delay: calc(1.3s + var(--i) * 0.6s);
+}
+
+[data-motion='in'] .checked__row svg {
+  animation: motion-pop 0.45s cubic-bezier(0.2, 0.8, 0.3, 1.3) both;
+  animation-delay: calc(1.35s + var(--i) * 0.6s);
+}
+
+[data-motion='in'] .checked__row--warn svg {
+  animation-name: motion-warn;
+  animation-timing-function: ease-out;
+  animation-duration: 0.7s;
+}
+
+@keyframes motion-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes motion-drop {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes motion-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes motion-warn {
+  0% {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  55% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
+  70% {
+    transform: translateX(-2px);
+  }
+  85% {
+    transform: translateX(2px);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/*
+ * Reduced motion: the component sets `in` straight away, and this makes the
+ * `in` animations instantaneous, so the final frame is all anyone sees.
+ */
+@media (prefers-reduced-motion: reduce) {
+  [data-motion],
+  [data-motion] * {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0ms !important;
+  }
+}
