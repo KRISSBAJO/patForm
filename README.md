@@ -89,7 +89,10 @@ questions, decision chain and completion message are tailored to the activity.
 The catalogue check refuses a new pack that omits its task description, evidence
 field or completion message. Category rules still supply the common escalation,
 retention and threshold controls; installers can change fields, people and rules
-in the builder. The three separately authored reference processes remain
+in the builder. Run `npm run packs:prove` against a separate
+`PROOF_DATABASE_URL` to execute every generated template's scenarios, or pass
+pack keys after `--` to test selected templates. The three separately authored
+reference processes remain
 separate. Existing installations do not change automatically when a built-in
 pack gets a new version.
 
