@@ -59,31 +59,48 @@ function Password({
   label,
   value,
   onChange,
+  hint = 'At least 12 characters.',
+  invalid = false,
 }: {
   id: string;
   label: string;
   value: string;
   onChange: (v: string) => void;
+  hint?: string;
+  invalid?: boolean;
 }) {
+  const [visible, setVisible] = useState(false);
   return (
     <>
       <label className="cs__label" htmlFor={id}>
         {label}
       </label>
-      <input
-        id={id}
-        className="cs__input"
-        type="password"
-        autoComplete="new-password"
-        minLength={12}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        required
-        // The rule is stated before they type rather than after they fail.
-        aria-describedby={`${id}-hint`}
-      />
+      <div className="cs__passwordField">
+        <input
+          id={id}
+          className="cs__input"
+          type={visible ? 'text' : 'password'}
+          autoComplete="new-password"
+          minLength={12}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          required
+          aria-invalid={invalid || undefined}
+          aria-describedby={`${id}-hint`}
+        />
+        <button
+          type="button"
+          className="cs__passwordToggle"
+          aria-label={`${visible ? 'Hide' : 'Show'} ${label.toLowerCase()}`}
+          aria-pressed={visible}
+          aria-controls={id}
+          onClick={() => setVisible((was) => !was)}
+        >
+          {visible ? 'Hide' : 'Show'}
+        </button>
+      </div>
       <p id={`${id}-hint`} className="cs__loginNote" style={{ marginTop: 6 }}>
-        At least 12 characters.
+        {hint}
       </p>
     </>
   );
@@ -104,6 +121,7 @@ export function JoinForm({ token }: { token: string }) {
   const [failed, setFailed] = useState<string | null>(null);
   const [displayName, setDisplayName] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -124,6 +142,10 @@ export function JoinForm({ token }: { token: string }) {
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (password !== confirmPassword) {
+      setError('The passwords do not match. Please check both entries.');
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -170,6 +192,11 @@ export function JoinForm({ token }: { token: string }) {
       <p className="cs__loginNote" style={{ marginTop: 0, marginBottom: 18 }}>
         Role: {preview.workspaceRole.replace(/_/g, ' ')}
       </p>
+      {preview.workspaceRole === 'approver' && (
+        <p className="cs__loginNote" style={{ marginTop: -10, marginBottom: 18 }}>
+          Approval access also depends on your role in a process and whether a record names you to decide.
+        </p>
+      )}
 
       <form onSubmit={submit}>
         <label className="cs__label" htmlFor="name">
@@ -187,6 +214,14 @@ export function JoinForm({ token }: { token: string }) {
         />
 
         <Password id="join-password" label="Choose a password" value={password} onChange={setPassword} />
+        <Password
+          id="join-confirm-password"
+          label="Confirm password"
+          value={confirmPassword}
+          onChange={setConfirmPassword}
+          hint="Enter the same password again."
+          invalid={confirmPassword.length > 0 && password !== confirmPassword}
+        />
 
         {error && (
           <p className="cs__loginError" role="alert">
@@ -263,12 +298,17 @@ export function VerifyPanel({ token }: { token: string }) {
 
 export function ResetForm({ token }: { token: string }) {
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (password !== confirmPassword) {
+      setError('The passwords do not match. Please check both entries.');
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -305,6 +345,14 @@ export function ResetForm({ token }: { token: string }) {
     <Card title="Choose a new password">
       <form onSubmit={submit}>
         <Password id="new-password" label="New password" value={password} onChange={setPassword} />
+        <Password
+          id="confirm-new-password"
+          label="Confirm new password"
+          value={confirmPassword}
+          onChange={setConfirmPassword}
+          hint="Enter the same password again."
+          invalid={confirmPassword.length > 0 && password !== confirmPassword}
+        />
         <p className="cs__loginNote">Using this link signs you out everywhere else.</p>
 
         {error && (
