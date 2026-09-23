@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import { createPool, describeTarget, type Pool } from '../runtime/db.js';
+import { applyUpgrades, createPool, describeTarget, type Pool } from '../runtime/db.js';
 import { Engine } from '../runtime/engine.js';
 import { AuthorizationError, requireWorkspaceCapability, WORKSPACE_GRANTS, type Principal } from '../runtime/policy.js';
 import type { Capability } from '../blueprint/roles.js';
@@ -1033,6 +1033,8 @@ async function main(): Promise<void> {
   // Nor without a key for two-factor secrets; see secret-box.ts.
   assertSecretKeyConfigured();
   const pool = createPool(12);
+  // A database made before a schema change gets it here, without a re-seed.
+  await applyUpgrades(pool);
   const engine = new Engine(pool);
 
   const server = createServer((req, res) => {

@@ -3852,3 +3852,180 @@ export async function proveBuilderPages({ pool, bp, record }: ProofCtx): Promise
       `Version 1's own ${run.total} scenarios ran again against today's engine and ${run.passed} passed.`,
   );
 }
+
+/**
+ * A vote, rather than a veto.
+ *
+ * Every other approval mode settles on the first "no". A board or a panel
+ * decides by majority, and until this could not say so. The proof runs real
+ * votes through the engine: one that passes over a dissent, one that fails
+ * once a majority is out of reach, a tie, a request for changes refused, the
+ * submitter left out of the count, and a roster change mid-vote that does not
+ * move the line.
+ */
+export async function proveMajorityVote({ pool, bp, T0, record, completeFor }: ProofCtx): Promise<void> {
+  const engine = new Engine(pool);
+  const as = (tenantId: string, actorId: string): Principal => ({ kind: 'actor', tenantId, actorId });
+  const voteBp = {
+    ...bp,
+    workflow: {
+      ...bp.workflow,
+      approvals: bp.workflow.approvals.map((a) =>
+        a.key === 'hr_approval'
+          ? { ...a, mode: 'majority' as const, allowRequestChanges: false, notTheSubmitter: true, approvers: [{ role: 'hr_approver' }] }
+          : a,
+      ),
+    },
+  } as Blueprint;
+
+  /** A workspace with `size` HR voters, one of whom may be the submitter. */
+  const panel = async (label: string, size: number, submitterIsVoter = false) => {
+    const tenant = await engine.createTenant(`proof:vote-${label}`);
+    const version = await engine.publish(tenant, voteBp, 'proof');
+    const manager = await engine.createActor(tenant, 'manager_email@example.test', 'Priya Manager');
+    await engine.grant({ tenantId: tenant, actorId: manager, processKey: bp.key, roleKey: 'hiring_manager' });
+    const voters: string[] = [];
+    for (let i = 0; i < size; i++) {
+      const email = submitterIsVoter && i === 0 ? `applicant.${label}@proof-vote.test` : `hr.${label}.${i}@proof-vote.test`;
+      const id = await engine.createActor(tenant, email, `HR ${i}`);
+      await engine.grant({ tenantId: tenant, actorId: id, processKey: bp.key, roleKey: 'hr_approver' });
+      voters.push(id);
+    }
+    const open = async (email = `applicant.${label}@proof-vote.test`) => {
+      const { instanceId } = await engine.submit({
+        version,
+        answers: completeFor(voteBp, { personal_email: email }) as never,
+        now: T0,
+      });
+      await engine.drain(T0, 'proof', tenant);
+      await engine.decide({ instanceId, approvalKey: 'manager_approval', decision: 'approved', principal: as(tenant, manager), now: T0 });
+      await engine.drain(T0, 'proof', tenant);
+      return instanceId;
+    };
+    const vote = async (id: string, who: string, decision: 'approved' | 'rejected' | 'changes_requested') => {
+      try {
+        const r = await engine.decide({
+          instanceId: id,
+          approvalKey: 'hr_approval',
+          decision,
+          principal: as(tenant, who),
+          reason: 'proof',
+          now: T0,
+        });
+        return r.progress ? `${r.progress.have} for, ${r.progress.against ?? 0} against` : r.applied ? 'settled' : 'no change';
+      } catch (err) {
+        return `refused: ${err instanceof AuthorizationError ? err.reason : err instanceof Error ? err.message : String(err)}`;
+      }
+    };
+    const state = async (id: string) => (await engine.instance(id)).state;
+    const request = async (id: string) =>
+      (
+        await pool.query<{ electorate: number; required: number }>(
+          `select electorate, required from approval_request where instance_id = $1 and approval_key = 'hr_approval'`,
+          [id],
+        )
+      ).rows[0]!;
+    return { tenant, voters, open, vote, state, request };
+  };
+
+  // ---- five voters: passes at three, over one dissent
+  const five = await panel('five', 5);
+  const a = await five.open();
+  const aCount = await five.request(a);
+  const aVotes = [
+    await five.vote(a, five.voters[0]!, 'approved'),
+    await five.vote(a, five.voters[1]!, 'rejected'),
+    await five.vote(a, five.voters[2]!, 'approved'),
+  ];
+  const aOpen = await five.state(a);
+  const aTwice = await five.vote(a, five.voters[1]!, 'approved');
+  const aLast = await five.vote(a, five.voters[3]!, 'approved');
+  const aState = await five.state(a);
+
+  // ---- five voters: fails when a majority is out of reach (the third "no")
+  const b = await five.open('applicant.five.b@proof-vote.test');
+  const bVotes = [
+    await five.vote(b, five.voters[0]!, 'rejected'),
+    await five.vote(b, five.voters[1]!, 'rejected'),
+  ];
+  const bOpenAfterTwo = await five.state(b);
+  const bThird = await five.vote(b, five.voters[2]!, 'rejected');
+  const bState = await five.state(b);
+  const c0 = await five.open('applicant.five.c@proof-vote.test');
+  const changesOpen = await five.vote(c0, five.voters[4]!, 'changes_requested');
+
+  // ---- four voters: a two-two tie is a no
+  const four = await panel('four', 4);
+  const t = await four.open();
+  const tCount = await four.request(t);
+  await four.vote(t, four.voters[0]!, 'approved');
+  await four.vote(t, four.voters[1]!, 'approved');
+  const tFirstNo = await four.vote(t, four.voters[2]!, 'rejected');
+  const tSecondNo = await four.vote(t, four.voters[3]!, 'rejected');
+  const tState = await four.state(t);
+
+  // ---- the submitter holds the role but is barred, so is not counted
+  const barred = await panel('barred', 4, true);
+  const s = await barred.open();
+  const sCount = await barred.request(s);
+  const sSelf = await barred.vote(s, barred.voters[0]!, 'approved');
+
+  // ---- somebody joins the role mid-vote: the line does not move
+  const late = await engine.createActor(five.tenant, 'hr.late@proof-vote.test', 'HR late');
+  await engine.grant({ tenantId: five.tenant, actorId: late, processKey: bp.key, roleKey: 'hr_approver' });
+  const cCount = await five.request(c0);
+
+  // ---- the compiler
+  const codesFor = (change: Record<string, unknown>) => {
+    const variant = {
+      ...bp,
+      workflow: {
+        ...bp.workflow,
+        approvals: bp.workflow.approvals.map((x) => (x.key === 'hr_approval' ? { ...x, ...change } : x)),
+      },
+    };
+    return validate(variant as Blueprint).items.filter((d) => d.code.startsWith('APR')).map((d) => d.code);
+  };
+  const withChanges = codesFor({ mode: 'majority', allowRequestChanges: true });
+  const withCount = codesFor({ mode: 'majority', allowRequestChanges: false, required: 3 });
+  const ofTwo = codesFor({ mode: 'majority', allowRequestChanges: false, approvers: [{ user: 'a@example.test' }, { user: 'b@example.test' }] });
+  const onRole = codesFor({ mode: 'majority', allowRequestChanges: false });
+
+  record(
+    'A majority vote passes over a dissent, fails when it cannot pass, and a tie is a no',
+    'Approval modes: a vote rather than a veto, for boards and panels.',
+    aCount.electorate === 5 &&
+      aCount.required === 3 &&
+      aVotes.join('|') === '1 for, 0 against|1 for, 1 against|2 for, 1 against' &&
+      aOpen === 'hr_review' &&
+      aTwice.startsWith('refused') &&
+      aLast === 'settled' &&
+      aState !== 'hr_review' &&
+      bVotes.join('|') === '0 for, 1 against|0 for, 2 against' &&
+      bOpenAfterTwo === 'hr_review' &&
+      bThird === 'settled' &&
+      bState === 'rejected' &&
+      changesOpen.startsWith('refused') &&
+      tCount.electorate === 4 &&
+      tCount.required === 3 &&
+      tFirstNo === '2 for, 1 against' &&
+      tSecondNo === 'settled' &&
+      tState === 'rejected' &&
+      sCount.electorate === 3 &&
+      sCount.required === 2 &&
+      sSelf.startsWith('refused') &&
+      cCount.electorate === 5 &&
+      withChanges.includes('APR004') &&
+      withCount.includes('APR001') &&
+      ofTwo.includes('APR005') &&
+      onRole.includes('APR003'),
+    `Five HR voters: the vote needed ${aCount.required}. It went ${aVotes.join(', then ')}, and the record stayed in HR review; ` +
+      `the dissenter voting again was ${aTwice.slice(0, 60)}; the fourth vote settled it and the record moved on to ${aState}. ` +
+      `On another record two "no" votes left it open (${bVotes[1]}), because three of the remaining could still carry it; the third "no" settled it as ${bState}. ` +
+      `Asking for changes on a vote was ${changesOpen.slice(0, 70)}. ` +
+      `Four voters: two for and two against settled it as ${tState}, at the second "no" — a tie is a no. ` +
+      `A submitter who holds the role was left out of the count (${sCount.electorate} voters, ${sCount.required} needed) and could not vote (${sSelf.slice(0, 50)}). ` +
+      `Somebody joining the role mid-vote left that record's count at ${cCount.electorate}. ` +
+      `The compiler refused a vote that allows changes (APR004) or sets a count (APR001), and warned on a vote of two (APR005) and one counted from a role (APR003).`,
+  );
+}

@@ -87,6 +87,18 @@ export async function resetSchema(pool: Pool): Promise<void> {
   }
 }
 
+/**
+ * Brings an existing database up to the current schema, without dropping it.
+ *
+ * Every statement in upgrades.sql is safe to repeat, so this runs on every
+ * start of the API and the worker. Before it, the only way to add a column to
+ * a running database was a re-seed, which signed everybody out.
+ */
+export async function applyUpgrades(pool: Pool): Promise<void> {
+  const sql = readFileSync(join(here, 'upgrades.sql'), 'utf8');
+  await pool.query(sql);
+}
+
 /** Postgres error code for a unique-constraint violation. */
 export const UNIQUE_VIOLATION = '23505';
 

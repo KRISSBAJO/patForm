@@ -254,7 +254,12 @@ export function Console() {
          * second director would send somebody to look for a step that has
          * not happened.
          */
-        const progress = (result as { progress?: { have: number; need: number } })?.progress;
+        const progress = (result as { progress?: { have: number; need: number; against?: number; of?: number } })
+          ?.progress;
+        // A vote: say the tally, whichever way this one went.
+        if (progress && progress.of !== undefined) {
+          return `Your vote is counted: ${progress.have} for, ${progress.against ?? 0} against, of ${progress.of}. It passes at ${progress.need} in favour.`;
+        }
         if (decision === 'approved' && progress) {
           const left = progress.need - progress.have;
           return `Approval recorded — ${progress.have} of ${progress.need}. It needs ${left === 1 ? 'one more person' : `${left} more people`}.`;

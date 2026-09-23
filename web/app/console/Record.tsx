@@ -45,7 +45,7 @@ export interface PendingApproval {
   waitingHours: number;
   late: boolean;
   summary: string;
-  progress?: { have: number; need: number } | null;
+  progress?: { have: number; need: number; against?: number; of?: number } | null;
 }
 
 export interface PendingTask {
@@ -103,6 +103,8 @@ export function RecordPage({
   const [showTrail, setShowTrail] = useState(false);
   const [reason, setReason] = useState('');
   const [rejecting, setRejecting] = useState(false);
+  // A majority vote reads as a vote: "Vote for", "Vote against".
+  const voting = approval?.progress?.of !== undefined;
 
   const working = busy !== null;
   const shown = record.fields.filter((f) => f.value !== '[redacted]');
@@ -152,18 +154,24 @@ export function RecordPage({
             <p>
               Waiting {approval.waitingHours}h{approval.late ? ' — past its service level' : ''}. {approval.summary}
             </p>
-            {approval.progress && (
+            {approval.progress && approval.progress.of !== undefined ? (
+              <p className="rc__progress">
+                A vote among {approval.progress.of}: {approval.progress.have} for, {approval.progress.against ?? 0}{' '}
+                against so far. It passes when {approval.progress.need} vote for it, and fails as soon as that can no
+                longer happen — a tie fails. You vote once.
+              </p>
+            ) : approval.progress ? (
               <p className="rc__progress">
                 {approval.progress.have} of {approval.progress.need} approved so far — your decision counts once, and
                 anyone who has decided already will not see this again.
               </p>
-            )}
+            ) : null}
           </div>
 
           {rejecting ? (
             <div className="rc__reason">
               <label className="rc__reasonLabel" htmlFor="reject-reason">
-                Why are you rejecting this? The applicant may be told.
+                {voting ? 'Why are you voting against?' : 'Why are you rejecting this? The applicant may be told.'}
               </label>
               <textarea
                 id="reject-reason"
@@ -183,7 +191,7 @@ export function RecordPage({
                   onClick={() => onDecide(record.instanceId, approval.approvalKey, 'rejected', reason.trim())}
                 >
                   <Icon name="reject" />
-                  Confirm rejection
+                  {voting ? 'Vote against' : 'Confirm rejection'}
                 </button>
               </div>
             </div>
@@ -191,7 +199,7 @@ export function RecordPage({
             <div className="rc__decisionActions">
               <button type="button" className="cs__btn" disabled={working} onClick={() => setRejecting(true)}>
                 <Icon name="reject" />
-                Reject
+                {voting ? 'Vote against' : 'Reject'}
               </button>
               <button
                 type="button"
@@ -200,7 +208,7 @@ export function RecordPage({
                 onClick={() => onDecide(record.instanceId, approval.approvalKey, 'approved', 'Approved in the console')}
               >
                 <Icon name="approve" />
-                Approve
+                {voting ? 'Vote for' : 'Approve'}
               </button>
             </div>
           )}

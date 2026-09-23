@@ -563,6 +563,42 @@ export function validate(bp: Blueprint): Diagnostics {
    * how many it needs.
    */
   const checkQuorum = (approval: (typeof bp.workflow.approvals)[number], at: string): void => {
+    if (approval.mode === 'majority') {
+      if (approval.required !== undefined) {
+        d.error(
+          'APR001',
+          at,
+          `Approval "${approval.key}" is a majority vote and also sets required.`,
+          'A majority is more than half of whoever may vote; remove required, or make it a quorum.',
+        );
+      }
+      if (approval.allowRequestChanges) {
+        d.error(
+          'APR004',
+          at,
+          `Approval "${approval.key}" is a vote but allows a request for changes.`,
+          'A vote is yes or no: one voter sending it back would settle what the others were still deciding. Set allowRequestChanges to false.',
+        );
+      }
+      const roles = approval.approvers.filter((p) => 'role' in p).map((p) => (p as { role: string }).role);
+      const people = new Set(approval.approvers.filter((p) => !('role' in p)).map((p) => JSON.stringify(p))).size;
+      if (roles.length) {
+        d.warn(
+          'APR003',
+          at,
+          `Approval "${approval.key}" is a vote among everybody holding ${roles.join(', ')} when it is asked.`,
+          'The number who may vote, and so the number needed, is counted then and kept for that record.',
+        );
+      } else if (people <= 2) {
+        d.warn(
+          'APR005',
+          at,
+          `Approval "${approval.key}" is a vote among ${people} ${people === 1 ? 'person' : 'people'}, which needs ${people === 1 ? 'that person' : 'both'} to approve.`,
+          people === 1 ? 'Say "single" instead.' : 'Say "sequential" or a quorum of 2, which mean the same and read more plainly.',
+        );
+      }
+      return;
+    }
     if (approval.mode !== 'quorum') {
       if (approval.required !== undefined) {
         d.error('APR001', at, `Approval "${approval.key}" sets required, which only a quorum uses.`, 'Set mode to "quorum", or remove required.');

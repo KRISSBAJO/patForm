@@ -105,7 +105,13 @@ function has(bp: Blueprint, control: Control, rules: CategoryRules): Finding {
 
       const reasons: string[] = [];
       // A quorum of two or more is two people by construction: one vote each.
-      const quorum = approvals.some((a) => a.mode === 'quorum' && (a.required ?? 0) >= 2);
+      // A vote among three or more named people needs at least two of them. A
+      // vote among a role's holders does not count: the role may have one.
+      const quorum = approvals.some(
+        (a) =>
+          (a.mode === 'quorum' && (a.required ?? 0) >= 2) ||
+          (a.mode === 'majority' && a.approvers.every((p) => !('role' in p)) && a.approvers.length >= 3),
+      );
       if (!quorum && approvals.length < 2) reasons.push(`only ${approvals.length} approval`);
       if (!quorum && parties.size < 2) reasons.push('every approval is addressed to the same party');
       if (!submitterBarred) reasons.push('the submitter is not barred from deciding');

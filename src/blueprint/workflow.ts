@@ -43,12 +43,19 @@ export const Approval = z
      * the one whose turn it is may decide, and every one must approve.
      * `quorum`: `required` *different people* among the named approvers must
      * approve — "any two directors".
+     * `majority`: a vote. Everybody the approval names may vote once, and it
+     * is approved when more than half of them have approved, or rejected as
+     * soon as enough have rejected that a majority can no longer be reached.
+     * A tie is a no. Who may vote is counted when the vote is asked: the
+     * named addresses, plus everybody who then holds a named role, less the
+     * submitter when they are barred from deciding. A vote is yes or no, so
+     * it cannot also allow a request for changes.
      *
-     * In every mode a rejection, or a request for changes, settles it at once.
-     * An approval exists to stop things; the cautious reading of one "no" among
-     * several "yes" is no, and a process that wants a vote can say so later.
+     * In every other mode a rejection, or a request for changes, settles it
+     * at once. An approval exists to stop things; the cautious reading of one
+     * "no" among several "yes" is no, unless the process says it is a vote.
      */
-    mode: z.enum(['single', 'sequential', 'any_of', 'quorum']),
+    mode: z.enum(['single', 'sequential', 'any_of', 'quorum', 'majority']),
     /** For `quorum`: how many different people must approve. */
     required: z.number().int().min(2).max(20).optional(),
     /** Section 6.5: approve, reject, request changes. */

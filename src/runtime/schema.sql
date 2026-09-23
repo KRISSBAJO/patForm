@@ -516,8 +516,11 @@ create table approval_request (
   reason        text,
   created_at    timestamptz not null,
   due_at        timestamptz,
-  -- For a quorum, how many different people must approve.
-  required      int
+  -- For a quorum, how many different people must approve; for a majority
+  -- vote, more than half of `electorate`.
+  required      int,
+  -- For a majority vote: how many people may vote, counted when it is asked.
+  electorate    int
 );
 
 create index approval_pending on approval_request (instance_id, approval_key) where status = 'pending';

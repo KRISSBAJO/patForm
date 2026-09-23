@@ -1273,8 +1273,6 @@ Everything below is a deliberate deferral:
   Parallel task joins, separation of duties, date-relative timers, approval
   quorums and rules over repeating groups ("any line item over £200") are all
   built. In each case the compiler refuses the half-built version.
-- **A vote rather than a veto.** In every approval mode one rejection settles
-  it. A board that decides by majority cannot say so yet.
 
 **Approvals that need more than one person.** An approval can be a
 **quorum** — `mode: "quorum"`, `required: 2` — meaning that many *different
@@ -1292,6 +1290,21 @@ quorum with no count, a count on anything but a quorum (`APR001`), and a
 quorum the named people can never meet (`APR002`); one addressed to a role
 warns that it depends on how many people hold it (`APR003`). A quorum of two
 satisfies the packs' two-person rule.
+
+**A vote rather than a veto.** An approval can be a **majority vote** —
+`mode: "majority"`. Everybody it names may vote once: the named addresses,
+plus everybody who holds a named role when the vote is asked, less the
+submitter when they are barred. It passes when more than half vote for it,
+and fails as soon as a majority is out of reach, so a tie is a no. The count
+is taken when the vote is asked and kept for that record. A vote is yes or no,
+so the compiler refuses one that allows a request for changes (`APR004`) or
+sets a count (`APR001`), and warns on a vote of two or fewer named people
+(`APR005`) and on one counted from a role (`APR003`). The console shows the
+tally and labels the buttons "Vote for" and "Vote against".
+
+**Schema changes without a re-seed.** `src/runtime/upgrades.sql` holds
+statements that bring an existing database up to date, each safe to repeat.
+The API and the worker run it on every start.
 
 Open a record as Priya and the payroll fields come back `hidden from your
 role` — the same `hiddenFields` the blueprint declares and the compiler

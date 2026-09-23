@@ -15,6 +15,7 @@ import {
 import type { Blueprint, Action, Party, Transition } from '../blueprint/index.js';
 import { evaluate, render, withCalculatedFields, type Answers } from './expr.js';
 import { inTransaction, isUniqueViolation, type Client, type Pool } from './db.js';
+import { InvalidInput } from './errors.js';
 import { ensurePublicForm } from './form-links.js';
 import {
   automationHealth,
@@ -294,15 +295,21 @@ export class Engine {
     principal: Principal;
     reason?: string;
     now: Date;
-  }): Promise<{ applied: boolean; progress?: { have: number; need: number } }> {
+  }): Promise<{ applied: boolean; progress?: { have: number; need: number; against?: number; of?: number } }> {
     return inTransaction(this.pool, async (client) => {
       const instance = await loadInstance(client, args.instanceId, { lock: true });
       const bp = await loadBlueprint(client, instance.process_version_id);
 
       // Read the pending request before deciding: holding the approve
       // capability is not the same as being named on this one.
-      const { rows: pending } = await client.query<{ id: string; approvers: string[]; mode: string; required: number | null }>(
-        `select id, approvers, mode, required from approval_request
+      const { rows: pending } = await client.query<{
+        id: string;
+        approvers: string[];
+        mode: string;
+        required: number | null;
+        electorate: number | null;
+      }>(
+        `select id, approvers, mode, required, electorate from approval_request
           where instance_id = $1 and approval_key = $2 and status = 'pending'
           order by id limit 1 for update`,
         [args.instanceId, args.approvalKey],
@@ -330,7 +337,13 @@ export class Engine {
           ? request.approvers.slice(approvedSoFar, approvedSoFar + 1)
           : request.approvers;
       const need =
-        request.mode === 'quorum' ? (request.required ?? 2) : request.mode === 'sequential' ? request.approvers.length : 1;
+        request.mode === 'quorum'
+          ? (request.required ?? 2)
+          : request.mode === 'sequential'
+            ? request.approvers.length
+            : request.mode === 'majority'
+              ? (request.required ?? 1)
+              : 1;
 
       await require_(client, {
         principal: args.principal,
@@ -347,6 +360,12 @@ export class Engine {
         // control silently off.
         barredApprover: declared?.notTheSubmitter ? submitterOf(bp, instance) : null,
       }, this.pool);
+
+      // A vote is yes or no. "Send it back for changes" from one voter would
+      // settle what the others were still deciding.
+      if (request.mode === 'majority' && args.decision === 'changes_requested') {
+        throw new InvalidInput('this approval is a vote — approve or reject');
+      }
 
       const actor = describePrincipal(args.principal);
       // One person, one decision. "Any two directors" is not one director twice.
@@ -372,6 +391,26 @@ export class Engine {
       );
 
       const have = approvedSoFar + (args.decision === 'approved' ? 1 : 0);
+      const against = votes.filter((v) => v.decision === 'rejected').length + (args.decision === 'rejected' ? 1 : 0);
+      /*
+       * A vote stays open on a "no" while a majority is still reachable: it is
+       * settled as rejected only when so many have said no that the rest
+       * could not carry it. With four voters, three must approve, so the
+       * second "no" settles it — and a two-two tie is a no.
+       */
+      const stillOpenOnNo =
+        request.mode === 'majority' && args.decision === 'rejected' && against <= (request.electorate ?? 0) - need;
+      if (stillOpenOnNo) {
+        await appendEvent(client, {
+          tenantId: instance.tenant_id,
+          instanceId: instance.id,
+          type: 'approval_vote',
+          payload: { approval: args.approvalKey, decision: args.decision, have, need, against, reason: args.reason ?? null },
+          actor,
+          now: args.now,
+        });
+        return { applied: false, progress: { have, need, against, of: request.electorate ?? 0 } };
+      }
       if (args.decision === 'approved' && have < need) {
         // Counted, and still open. The history says who and how far along.
         await appendEvent(client, {
@@ -382,7 +421,10 @@ export class Engine {
           actor,
           now: args.now,
         });
-        return { applied: false, progress: { have, need } };
+        return {
+          applied: false,
+          progress: request.mode === 'majority' ? { have, need, against, of: request.electorate ?? 0 } : { have, need },
+        };
       }
 
       const { rowCount } = await client.query(
@@ -1588,10 +1630,12 @@ async function performEffect(
     case 'request_approval': {
       const approval = bp.workflow.approvals.find((a) => a.key === action.approval)!;
       const approvers = approval.approvers.flatMap((p) => resolveParty(p, instance, bp));
+      const electorate =
+        approval.mode === 'majority' ? await countElectorate(client, instance, bp, approvers, approval.notTheSubmitter) : null;
       await client.query(
         `insert into approval_request
-           (tenant_id, instance_id, action_run_id, approval_key, approvers, mode, due_at, created_at, required)
-         values ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+           (tenant_id, instance_id, action_run_id, approval_key, approvers, mode, due_at, created_at, required, electorate)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
         [
           instance.tenant_id,
           instance.id,
@@ -1601,7 +1645,12 @@ async function performEffect(
           approval.mode,
           approval.dueInHours ? new Date(now.getTime() + approval.dueInHours * 3_600_000) : null,
           now,
-          approval.mode === 'quorum' ? (approval.required ?? null) : null,
+          approval.mode === 'quorum'
+            ? (approval.required ?? null)
+            : electorate !== null
+              ? Math.floor(electorate / 2) + 1
+              : null,
+          electorate,
         ],
       );
       return;
@@ -1871,6 +1920,43 @@ async function scheduleTimers(
       [instance.tenant_id, instance.id, candidate.key, stateKey, enteredAt, dueAt],
     );
   }
+}
+
+/**
+ * How many people may vote on a majority approval, counted as it is asked.
+ *
+ * The named addresses, and everybody active who holds a named role on this
+ * process, counted once each however they are named. The submitter is left
+ * out when the approval bars them: counting somebody who may not vote raises
+ * the bar for everybody who may.
+ *
+ * Counted now and kept, rather than recounted at every vote. People join and
+ * leave roles; a vote whose winning line moved while it was open would be a
+ * different vote from the one that was asked.
+ */
+async function countElectorate(
+  client: Client,
+  instance: InstanceRow,
+  bp: Blueprint,
+  approvers: string[],
+  barSubmitter: boolean,
+): Promise<number> {
+  const roles = approvers.filter((a) => a.startsWith('role:')).map((a) => a.slice(5));
+  const voters = new Set(approvers.filter((a) => !a.startsWith('role:')).map((a) => a.toLowerCase()));
+  if (roles.length) {
+    const { rows } = await client.query<{ email: string }>(
+      `select distinct lower(a.email) as email
+         from membership m join actor a on a.id = m.actor_id
+        where m.tenant_id = $1 and m.process_key = $2 and m.role_key = any($3::text[]) and a.active`,
+      [instance.tenant_id, instance.process_key, roles],
+    );
+    for (const r of rows) voters.add(r.email);
+  }
+  if (barSubmitter) {
+    const submitter = submitterOf(bp, instance);
+    if (submitter) voters.delete(submitter.toLowerCase());
+  }
+  return voters.size;
 }
 
 function resolveParty(party: Party, instance: InstanceRow, bp: Blueprint): string[] {

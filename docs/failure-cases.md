@@ -945,6 +945,14 @@ The accessibility scan was meant to cover this queue. It submitted its test entr
 
 **Generalisable:** a gate that sets up its own fixture must check the fixture arrived. "Nothing to scan" and "scanned, no problems" print the same green line.
 
+### 90. Every new column needed a re-seed
+
+`schema.sql` describes a database created from nothing, and there was no other way to change one. Each release that added a table or a column reached a running database only by dropping it and seeding again, which signed every member out and emptied the workspace — in development that was several times a day, and it was part of why somebody could not sign in. A deployed database had no path at all.
+
+**Fixed** with `upgrades.sql`: statements that bring an existing database up to date, each written to do nothing the second time (`add column if not exists`), run by the API and the worker on every start. The first is the majority vote's electorate column, which reached the development database on a restart with every session intact.
+
+**Generalisable:** the schema of a database that already holds data is a sequence of changes, not a description. A project that only has the description has chosen, without saying so, to throw the data away on every change.
+
 ---
 
 ## What the compiler structurally cannot catch

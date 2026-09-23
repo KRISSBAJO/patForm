@@ -31,7 +31,7 @@ export interface WorkSummary {
     late: boolean;
     summary: string;
     /** How far a sequence or a quorum has got. Null when one decision settles it. */
-    progress: { have: number; need: number } | null;
+    progress: { have: number; need: number; against?: number; of?: number } | null;
   }[];
   tasks: {
     instanceId: string;
@@ -137,11 +137,14 @@ export async function myWork(
       mode: string;
       approvers: string[];
       required: number | null;
+      electorate: number | null;
       voters: string[];
       approved: number;
+      against: number;
     }>(
       `select a.instance_id, a.approval_key, a.created_at, a.due_at, i.state, i.data,
-              a.mode, a.approvers, a.required,
+              a.mode, a.approvers, a.required, a.electorate,
+              (select count(*)::int from approval_vote v where v.request_id = a.id and v.decision = 'rejected') as against,
               coalesce((select array_agg(v.actor) from approval_vote v where v.request_id = a.id), '{}') as voters,
               (select count(*)::int from approval_vote v where v.request_id = a.id and v.decision = 'approved') as approved
          from approval_request a
@@ -181,9 +184,11 @@ export async function myWork(
       summary: summarise(bp, redact(bp, decision.roles, row.data)),
       /** How far a multi-person approval has got: "1 of 2 approved". */
       progress:
-        row.mode === 'quorum' || row.mode === 'sequential'
-          ? { have: row.approved, need: row.mode === 'quorum' ? (row.required ?? 2) : row.approvers.length }
-          : null,
+        row.mode === 'majority'
+          ? { have: row.approved, need: row.required ?? 1, against: row.against, of: row.electorate ?? 0 }
+          : row.mode === 'quorum' || row.mode === 'sequential'
+            ? { have: row.approved, need: row.mode === 'quorum' ? (row.required ?? 2) : row.approvers.length }
+            : null,
     }));
 
     // ---- and tasks I may complete, per each task's own rule

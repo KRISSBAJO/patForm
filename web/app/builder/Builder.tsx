@@ -74,7 +74,7 @@ interface BpApproval {
   key: string;
   name: string;
   approvers: Party[];
-  mode: 'single' | 'sequential' | 'any_of' | 'quorum';
+  mode: 'single' | 'sequential' | 'any_of' | 'quorum' | 'majority';
   /** For a quorum: how many different people must approve. */
   required?: number;
   allowRequestChanges?: boolean;
@@ -2571,6 +2571,8 @@ function ApprovalEditor({
               // `required` belongs to a quorum only; the compiler refuses it anywhere else.
               if (a.mode === 'quorum') a.required = a.required ?? 2;
               else delete a.required;
+              // A vote is yes or no; the compiler refuses one that can be sent back.
+              if (a.mode === 'majority') a.allowRequestChanges = false;
             })
           }
         >
@@ -2578,6 +2580,7 @@ function ApprovalEditor({
           <option value="sequential">each in turn, in the order listed</option>
           <option value="any_of">any one of them is enough</option>
           <option value="quorum">a number of them must approve</option>
+          <option value="majority">a vote — more than half must approve</option>
         </select>
       </Row>
       {approval.mode === 'quorum' && (
@@ -2638,9 +2641,10 @@ function ApprovalEditor({
               <input
                 type="checkbox"
                 checked={approval.allowRequestChanges ?? true}
+                disabled={approval.mode === 'majority'}
                 onChange={(e) => onChange((a) => void (a.allowRequestChanges = e.target.checked))}
               />
-              <span>may ask for changes</span>
+              <span>may ask for changes{approval.mode === 'majority' ? ' (not in a vote — it is yes or no)' : ''}</span>
             </label>
             {/*
               * Separation of duties. Worded as what it stops rather than as

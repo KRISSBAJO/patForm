@@ -1,4 +1,4 @@
-import { createPool, describeTarget } from './runtime/db.js';
+import { applyUpgrades, createPool, describeTarget } from './runtime/db.js';
 import { deliverBatch } from './runtime/webhooks.js';
 import { Engine, newWorkerId } from './runtime/engine.js';
 import { sweepExpiredTokens } from './runtime/retention.js';
@@ -28,6 +28,7 @@ const SWEEP_EVERY_MS = 60_000;
 
 async function main(): Promise<void> {
   const pool = createPool(8);
+  await applyUpgrades(pool);
   const engine = new Engine(pool);
   const id = newWorkerId();
 
