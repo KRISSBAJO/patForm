@@ -152,6 +152,7 @@ interface Blueprint {
   key: string;
   name: string;
   description?: string;
+  intent?: { outcome?: string; respondents?: string; [k: string]: unknown };
   roles: BpRole[];
   data: { fields: BpField[]; submitterField?: string; [k: string]: unknown };
   workflow: {
@@ -435,6 +436,7 @@ export function Builder() {
   const [publishable, setPublishable] = useState(false);
   const [tab, setTab] = useState<Tab>('fields');
   const [side, setSide] = useState<Side>('checks');
+  const [overview, setOverview] = useState(false);
   const [index, setIndex] = useState(0);
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [error, setError] = useState<string | null>(null);
@@ -505,6 +507,8 @@ export function Builder() {
         if (asked || draftId) window.history.replaceState(null, '', window.location.pathname);
         if (draftId && /^[0-9a-f-]{36}$/.test(draftId)) {
           adopt(await call<DraftDetail>(`/api/builder/drafts/${draftId}`));
+          setOverview(true);
+          setSide('preview');
         } else if (asked) {
           adopt(await call<DraftDetail>('/api/builder/open', { method: 'POST', body: JSON.stringify({ processKey: asked }) }));
           await refreshList();
@@ -523,6 +527,7 @@ export function Builder() {
     setPublishable(detail.publishable);
     setTab('fields');
     setSide('checks');
+    setOverview(false);
     setIndex(0);
     setTests(null);
     setImpact(null);
@@ -1046,7 +1051,10 @@ export function Builder() {
                 blueprint={blueprint}
                 tab={tab}
                 index={index}
+                overview={overview}
+                onOverview={() => setOverview(true)}
                 onSelect={(t, i) => {
+                  setOverview(false);
                   setTab(t);
                   setIndex(i);
                 }}
@@ -1055,6 +1063,22 @@ export function Builder() {
               />
 
               <section className="bd__editor">
+                {overview ? (
+                  <ProcessOverview
+                    blueprint={blueprint}
+                    onEditFields={() => {
+                      const firstSpecific = blueprint.data.fields.findIndex((field) =>
+                        field.setBy !== 'operator' && !['submitter_name', 'submitter_email', 'decision_note'].includes(field.key),
+                      );
+                      setOverview(false);
+                      setTab('fields');
+                      setIndex(Math.max(0, firstSpecific));
+                    }}
+                    onEditApprovals={() => { setOverview(false); setTab('approvals'); setIndex(0); }}
+                    onEditTasks={() => { setOverview(false); setTab('tasks'); setIndex(0); }}
+                  />
+                ) : (
+                <>
                 {/*
                   * A disabled fieldset turns every control inside it off at
                   * once, natively — keyboard, screen reader and pointer alike —
@@ -1185,6 +1209,8 @@ export function Builder() {
                 )}
                 {tab === 'json' && <JsonEditor blueprint={blueprint} onReplace={(bp) => replaceAll(bp)} />}
                 </fieldset>
+                </>
+                )}
               </section>
 
               {/*
@@ -1219,6 +1245,7 @@ export function Builder() {
                       errors={errors}
                       warnings={warnings}
                       onGo={(where) => {
+                        setOverview(false);
                         setTab(where.tab);
                         setIndex(where.index);
                       }}
@@ -1270,6 +1297,8 @@ export function Builder() {
             onCreated={async (detail) => {
               setCreating(false);
               adopt(detail);
+              setOverview(true);
+              setSide('preview');
               await refreshList();
             }}
           />
@@ -1921,10 +1950,100 @@ function Sketch({ kind }: { kind: 'process' | 'catalogue' | 'describe' | 'copy' 
   );
 }
 
+function ProcessOverview({
+  blueprint,
+  onEditFields,
+  onEditApprovals,
+  onEditTasks,
+}: {
+  blueprint: Blueprint;
+  onEditFields: () => void;
+  onEditApprovals: () => void;
+  onEditTasks: () => void;
+}) {
+  const questions = blueprint.data.fields.filter((field) => field.setBy !== 'operator');
+  const distinctiveQuestions = questions.filter((field) =>
+    !['submitter_name', 'submitter_email', 'decision_note'].includes(field.key),
+  );
+  const approvals = blueprint.workflow.approvals ?? [];
+  const tasks = blueprint.workflow.tasks ?? [];
+  const finish = blueprint.workflow.states.find((state) => state.outcome === 'success');
+  const conditionFor = (approvalKey: string) => {
+    const rule = blueprint.workflow.transitions.find((transition) =>
+      Array.isArray(transition.actions) && transition.actions.some((action: unknown) => {
+        const item = action as { do?: string; approval?: string };
+        return item.do === 'request_approval' && item.approval === approvalKey;
+      }) && transition.when,
+    );
+    if (!rule) return null;
+    const when = rule.when as { op?: string; left?: { field?: string }; right?: { literal?: unknown } };
+    const field = blueprint.data.fields.find((item) => item.key === when.left?.field);
+    if (when.op === 'gt' && field && typeof when.right?.literal === 'number') {
+      return `when ${field.label.toLowerCase()} is over ${when.right.literal.toLocaleString('en-GB')}`;
+    }
+    return 'when its rule applies';
+  };
+
+  return (
+    <div className="bd__overview">
+      <span className="bd__kind">Process overview</span>
+      <h2>{blueprint.name}</h2>
+      {blueprint.description && <p className="bd__overviewIntro">{blueprint.description}</p>}
+      {blueprint.intent?.outcome && <p className="bd__overviewOutcome"><strong>What this completes:</strong> {blueprint.intent.outcome}</p>}
+
+      <ol className="bd__flow">
+        <li>
+          <span className="bd__flowNumber">1</span>
+          <div>
+            <h3>Someone fills in the form</h3>
+            {blueprint.intent?.respondents && <p>{blueprint.intent.respondents}</p>}
+            <p>
+              {questions.length} questions
+              {distinctiveQuestions.length > 0 && `, including ${distinctiveQuestions.slice(0, 4).map((field) => field.label.toLowerCase()).join(', ')}${distinctiveQuestions.length > 4 ? '…' : '.'}`}
+            </p>
+            <button type="button" onClick={onEditFields}>Edit form fields →</button>
+          </div>
+        </li>
+        {approvals.length > 0 && (
+          <li>
+            <span className="bd__flowNumber">2</span>
+            <div>
+              <h3>Review and decide</h3>
+              <p>Approval steps are opened by the process rules when their conditions apply.</p>
+              <ul>{approvals.map((approval) => <li key={approval.key}>{approval.name}{conditionFor(approval.key) ? ` — ${conditionFor(approval.key)}` : ''}</li>)}</ul>
+              <button type="button" onClick={onEditApprovals}>Edit approvals →</button>
+            </div>
+          </li>
+        )}
+        {tasks.length > 0 && (
+          <li>
+            <span className="bd__flowNumber">{approvals.length > 0 ? 3 : 2}</span>
+            <div>
+              <h3>Complete the follow-up work</h3>
+              <ul>{tasks.map((task) => <li key={task.key}>{task.name}{task.description ? ` — ${task.description}` : ''}</li>)}</ul>
+              <button type="button" onClick={onEditTasks}>Edit tasks →</button>
+            </div>
+          </li>
+        )}
+        <li>
+          <span className="bd__flowNumber">{2 + Number(approvals.length > 0) + Number(tasks.length > 0)}</span>
+          <div>
+            <h3>{finish?.name ?? 'Finish'}</h3>
+            <p>The record reaches its completed state. Rejected or withdrawn records follow their own outcome.</p>
+          </div>
+        </li>
+      </ol>
+      <p className="bd__overviewHint">The form people fill in is shown in the Preview panel. Choose any item on the left to change this process.</p>
+    </div>
+  );
+}
+
 function Outline({
   blueprint,
   tab,
   index,
+  overview,
+  onOverview,
   onSelect,
   onAdd,
   readOnly = false,
@@ -1932,6 +2051,8 @@ function Outline({
   blueprint: Blueprint;
   tab: Tab;
   index: number;
+  overview: boolean;
+  onOverview: () => void;
   onSelect: (t: Tab, i: number) => void;
   onAdd: (t: Tab) => void;
   /** Somebody else has the draft: the list still navigates, it just cannot add. */
@@ -1992,6 +2113,13 @@ function Outline({
 
   return (
     <nav className="bd__outline">
+      <section className="bd__group">
+        <header className="bd__groupHead"><span>Start here</span></header>
+        <button className="bd__outlineItem" aria-current={overview ? 'true' : undefined} onClick={onOverview}>
+          <span className="bd__outlineName">Process overview</span>
+          <span className="bd__outlineNote">form, decisions and work</span>
+        </button>
+      </section>
       {groups.map((g) => (
         <section key={g.tab} className="bd__group">
           <header className="bd__groupHead">
@@ -2010,7 +2138,7 @@ function Outline({
             <button
               key={item.key + i}
               className="bd__outlineItem"
-              aria-current={tab === g.tab && index === i ? 'true' : undefined}
+              aria-current={!overview && tab === g.tab && index === i ? 'true' : undefined}
               onClick={() => onSelect(g.tab, i)}
             >
               <span className="bd__outlineName">{item.name}</span>
@@ -2026,7 +2154,7 @@ function Outline({
         </header>
         <button
           className="bd__outlineItem"
-          aria-current={tab === 'json' ? 'true' : undefined}
+          aria-current={!overview && tab === 'json' ? 'true' : undefined}
           onClick={() => onSelect('json', 0)}
         >
           <span className="bd__outlineName">Blueprint JSON</span>
