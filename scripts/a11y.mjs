@@ -177,6 +177,12 @@ async function main() {
     await health.click();
     await page.waitForTimeout(2000);
     all.push(...(await audit(page, 'Automation health and the suppression list')));
+    const missed = page.locator('button', { hasText: 'What it missed' }).first();
+    if (await missed.count()) {
+      await missed.click();
+      await page.waitForTimeout(1500);
+      all.push(...(await audit(page, 'What a reinstated address missed')));
+    }
   }
 
   /*

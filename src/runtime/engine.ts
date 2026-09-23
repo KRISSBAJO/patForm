@@ -75,7 +75,8 @@ const PLACEHOLDER = /\{\{\s*([A-Z0-9_]+)\s*\}\}/g;
  * waiting two weeks.
  */
 export class Engine {
-  private readonly email: EmailProvider;
+  /** Public so a resend after a suppression is lifted uses the provider every other send does. */
+  readonly email: EmailProvider;
 
   constructor(
     private readonly pool: Pool,
@@ -1308,8 +1309,8 @@ async function performEffect(
         if (unreachable.length || dropped.length) {
           await client.query(
             `insert into email_log
-               (tenant_id, instance_id, action_run_id, template_key, recipients, subject, body, provider, status, failure, sent_at)
-             values ($1, $2, $3, $4, $5, $6, '', 'none', 'skipped', $7, $8)`,
+               (tenant_id, instance_id, action_run_id, template_key, recipients, subject, body, provider, status, failure, sent_at, suppressed)
+             values ($1, $2, $3, $4, $5, $6, '', 'none', 'skipped', $7, $8, $9)`,
             [
               instance.tenant_id,
               instance.id,
@@ -1324,6 +1325,7 @@ async function performEffect(
                 .filter(Boolean)
                 .join('; '),
               now,
+              [...blocked.keys()],
             ],
           );
         }
@@ -1361,10 +1363,10 @@ async function performEffect(
       // longer thrown; see below.
       const { rows: logged } = await client.query<{ id: number }>(
         `insert into email_log
-           (tenant_id, instance_id, action_run_id, template_key, recipients, subject, body, status, provider, sent_at)
-         values ($1, $2, $3, $4, $5, $6, $7, 'queued', $8, $9)
+           (tenant_id, instance_id, action_run_id, template_key, recipients, subject, body, status, provider, sent_at, suppressed)
+         values ($1, $2, $3, $4, $5, $6, $7, 'queued', $8, $9, $10)
          returning id`,
-        [instance.tenant_id, instance.id, runId, template.key, deliverable, subject, body, args.email.name, now],
+        [instance.tenant_id, instance.id, runId, template.key, deliverable, subject, body, args.email.name, now, [...blocked.keys()]],
       );
 
       const delivery = await args.email.send({

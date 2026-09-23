@@ -380,3 +380,34 @@ test('a resolver it cannot reach is reported as unknown, never as missing', asyn
   const address = findings.find((f) => f.check.startsWith('MAIL_FROM'));
   assert.ok(address && address.outcome !== 'unknown', 'the address check never needs DNS');
 });
+
+test('a real provider never sees an address on a reserved domain', async () => {
+  const { isReservedAddress, ReservedDomainGuard } = await import('../src/runtime/email.js');
+  for (const a of ['x@example.test', 'x@proof.test', 'x@example.com', 'x@mail.example.org', 'x@localhost', 'x@a.invalid']) {
+    assert.equal(isReservedAddress(a), true, a);
+  }
+  for (const a of ['x@gmail.com', 'x@renviq.com', 'x@testing.com', 'x@example.co.uk', 'x@contest.io']) {
+    assert.equal(isReservedAddress(a), false, a);
+  }
+
+  const handed: string[][] = [];
+  const inner = {
+    name: 'relykit',
+    async send(email: { to: string[] }) {
+      handed.push(email.to);
+      return { providerMessageId: 'm1', status: 'queued' as const };
+    },
+  };
+  const guard = new ReservedDomainGuard(inner as never);
+  const base = { from: 'a@renviq.com', subject: 's', text: 't', idempotencyKey: 'k' };
+
+  const mixed = await guard.send({ ...base, to: ['real@gmail.com', 'fake@example.test'] });
+  assert.deepEqual(handed.at(-1), ['real@gmail.com']);
+  assert.equal(mixed.status, 'queued');
+  assert.match(mixed.warning ?? '', /fake@example\.test/);
+
+  const none = await guard.send({ ...base, to: ['only@example.test'] });
+  assert.equal(handed.length, 1, 'nothing reached the provider');
+  assert.equal(none.status, 'failed');
+  assert.equal(none.retryable, false);
+});

@@ -3,6 +3,7 @@ import { deliverBatch } from './runtime/webhooks.js';
 import { Engine, newWorkerId } from './runtime/engine.js';
 import { sweepExpiredTokens } from './runtime/retention.js';
 import { sweepHeld } from './runtime/held.js';
+import { checkSendingHealth } from './runtime/delivery-health.js';
 
 /**
  * The durable worker §10.1 asks for: "Queue-backed workers for email,
@@ -76,6 +77,18 @@ async function main(): Promise<void> {
         lastSweep = now.getTime();
         if (swept) console.log(`  ${now.toISOString()}  swept ${swept} expired token(s)`);
         if (held) console.log(`  ${now.toISOString()}  deleted ${held} held submission(s) past thirty days`);
+
+        // The rate the provider judges the account by. Quiet unless it
+        // crosses a threshold or recovers; see delivery-health.ts.
+        const sending = await checkSendingHealth(pool, now);
+        if (sending.change) {
+          const h = sending.health;
+          console.log(
+            `  ${now.toISOString()}  sending health ${sending.change}: ${h.level} — ` +
+              `${h.bounced} hard bounce(s), ${h.complained} complaint(s) in ${h.sent} sent over ${h.windowDays} days` +
+              (process.env.OPS_ALERT_EMAIL ? '' : ' (OPS_ALERT_EMAIL is not set, so nobody was emailed)'),
+          );
+        }
       }
     } catch (err) {
       // A worker that dies on one bad row stops every process in the

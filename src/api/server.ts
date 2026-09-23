@@ -34,6 +34,7 @@ import { requestPasswordReset, resetPassword, sendVerification, verifyEmail } fr
 import { DraftConflict } from '../runtime/errors.js';
 import { assertScreeningConfigured, issueTicket, screen, TRAP_FIELD } from '../runtime/screening.js';
 import { discardHeld, listHeld, releaseHeld } from '../runtime/held.js';
+import { resendSkipped, sendingHealth, skippedFor } from '../runtime/delivery-health.js';
 import {
   answerChallenge,
   beginEnrolment,
@@ -663,9 +664,57 @@ route('GET', /^\/api\/delivery\/suppressed$/, async ({ pool, principal }) => {
 
 route('POST', /^\/api\/delivery\/suppressed\/lift$/, async ({ pool, principal, actorId }, body) => {
   await requireWorkspaceCapability(pool, principal, 'administer', 'delivery');
+  if (principal.kind !== 'actor') throw new HttpError(403, 'signed-in members only');
   const { email } = body as { email?: string };
   if (!email) throw new HttpError(400, 'email is required');
+  /*
+   * Only an address this workspace has written to. The list is
+   * deployment-wide and the reading was already scoped this way; the lift was
+   * not, so one workspace could reinstate an address another had burned
+   * without ever being able to see it.
+   */
+  const mine = (await suppressionsFor(pool, principal.tenantId)).some(
+    (s: { email: string }) => s.email === email.trim().toLowerCase(),
+  );
+  if (!mine) throw new HttpError(404, 'this workspace has not written to that address');
   return lift(pool, { email, actorId });
+});
+
+/**
+ * This workspace's share of the sending account's health: hard bounces and
+ * complaints against what it sent, over the window the provider judges by.
+ */
+route('GET', /^\/api\/delivery\/health$/, async ({ pool, principal }) => {
+  await requireWorkspaceCapability(pool, principal, 'report', 'delivery');
+  if (principal.kind !== 'actor') throw new HttpError(403, 'signed-in members only');
+  return sendingHealth(pool, { tenantId: principal.tenantId });
+});
+
+/** What an address missed while it was suppressed. */
+route('GET', /^\/api\/delivery\/skipped$/, async ({ pool, principal, url }) => {
+  await requireWorkspaceCapability(pool, principal, 'administer', 'delivery');
+  if (principal.kind !== 'actor') throw new HttpError(403, 'signed-in members only');
+  const email = url.searchParams.get('email');
+  if (!email) throw new HttpError(400, 'email is required');
+  return { skipped: await skippedFor(pool, { tenantId: principal.tenantId, email }) };
+});
+
+/** Sends the ones somebody chose, now that the address is reinstated. */
+route('POST', /^\/api\/delivery\/resend$/, async ({ pool, engine, principal, actorId }, body) => {
+  await requireWorkspaceCapability(pool, principal, 'administer', 'delivery');
+  if (principal.kind !== 'actor') throw new HttpError(403, 'signed-in members only');
+  const { email, logIds } = body as { email?: string; logIds?: unknown };
+  if (!email) throw new HttpError(400, 'email is required');
+  if (!Array.isArray(logIds) || !logIds.length || !logIds.every((id) => /^\d+$/.test(String(id)))) {
+    throw new HttpError(400, 'choose at least one message');
+  }
+  const results = await resendSkipped(pool, engine.email, {
+    tenantId: principal.tenantId,
+    actorId,
+    email,
+    logIds: logIds.map(String),
+  });
+  return { results };
 });
 
 route('POST', /^\/api\/delivery\/suppressed$/, async ({ pool, principal }, body) => {

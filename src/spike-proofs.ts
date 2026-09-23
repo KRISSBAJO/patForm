@@ -74,6 +74,7 @@ import {
 import { DraftConflict } from './runtime/errors.js';
 import { issueTicket, screen } from './runtime/screening.js';
 import { discardHeld, listHeld, releaseHeld } from './runtime/held.js';
+import { checkSendingHealth, resendSkipped, sendingHealth, skippedFor } from './runtime/delivery-health.js';
 
 /**
  * Proofs for the gaps closed after the first spike: respondent scoping, a
@@ -926,6 +927,162 @@ export async function proveScreening({ pool, bp, T0, record, completeFor }: Proo
       `one that shared an address joined the existing record (duplicate: ${dup.duplicate}). Discarding cleared ` +
       `${Object.keys(gone[0]!.answers).length === 0 ? 'every' : 'not every'} answer, and a release afterwards was refused.`,
   );
+}
+
+/**
+ * The bounce rate is watched, and an address that comes back gets what it missed.
+ *
+ * Single bounces were handled; the rate was not, and the rate is what the
+ * provider suspends an account over — which would stop every message from
+ * every workspace. And reinstating an address let future mail through while
+ * the messages skipped in the meantime were simply gone.
+ */
+export async function proveSendingHealth({ pool, bp, T0, record, completeFor }: ProofCtx): Promise<void> {
+  const sent: { to: string[]; subject: string; key?: string }[] = [];
+  const provider = {
+    name: 'test',
+    async send(email: { to: string[]; subject: string; idempotencyKey?: string }) {
+      sent.push({ to: email.to, subject: email.subject, key: email.idempotencyKey });
+      return { providerMessageId: `msg-${sent.length}`, status: 'sent' as const };
+    },
+  };
+  const engine = new Engine(pool, provider);
+  const tenantId = await engine.createTenant('proof:sending-health');
+  const quiet = await engine.createTenant('proof:sending-health-quiet');
+  const version = await engine.publish(tenantId, bp, 'proof');
+  const admin = await engine.createActor(tenantId, 'admin@proof.test', 'An Admin', 'admin');
+
+  // Sixty people submit; each gets a receipt.
+  for (let i = 0; i < 60; i++) {
+    await engine.submit({
+      version,
+      answers: completeFor(bp, { personal_email: `person${i}@proof-health.test` }) as never,
+      now: T0,
+    });
+  }
+  await engine.drain(T0, 'proof', tenantId);
+
+  const { rows: receipts } = await pool.query<{ provider_message_id: string; to: string }>(
+    `select provider_message_id, recipients[1] as to from email_log
+      where tenant_id = $1 and template_key = 'submission_receipt' and status = 'sent' order by id`,
+    [tenantId],
+  );
+  let n = 0;
+  const bounceNext = async (count: number) => {
+    for (let i = 0; i < count; i++) {
+      const r = receipts[n++]!;
+      await ingest(pool, {
+        provider: 'relykit',
+        eventId: `evt-health-${n}`,
+        event: {
+          id: `evt-health-${n}`,
+          type: 'email.bounced',
+          created_at: T0.toISOString(),
+          data: { email_id: r.provider_message_id, recipient: r.to, bounce_type: 'hard', diagnostic_code: '550 user unknown' },
+        } as never,
+      });
+    }
+  };
+
+  const previous = process.env.OPS_ALERT_EMAIL;
+  process.env.OPS_ALERT_EMAIL = 'ops@proof-health.test';
+  try {
+    const clean = await checkSendingHealth(pool, T0);
+
+    await bounceNext(2);
+    const raised = await checkSendingHealth(pool, T0);
+    const repeated = await checkSendingHealth(pool, T0);
+
+    await bounceNext(3);
+    const escalated = await checkSendingHealth(pool, T0);
+
+    const mine = await sendingHealth(pool, { tenantId, now: T0 });
+    const theirs = await sendingHealth(pool, { tenantId: quiet, now: T0 });
+
+    // A week on, nothing new has been sent: the window has moved past it.
+    const cleared = await checkSendingHealth(pool, new Date(T0.getTime() + 8 * 86_400_000));
+
+    const { rows: alerts } = await pool.query<{ subject: string }>(
+      `select subject from platform_email where kind = 'delivery_alert' order by id`,
+    );
+
+    // ---- one of the bounced addresses turns out to be fine after all
+    const address = receipts[0]!.to;
+    // While it is still suppressed, the next message to it is skipped.
+    await engine.submit({
+      version,
+      answers: completeFor(bp, { personal_email: address, start_date: '2026-12-01' }) as never,
+      now: T0,
+    });
+    await engine.drain(T0, 'proof', tenantId);
+    const missed = await skippedFor(pool, { tenantId, email: address });
+    const stillBlocked = await resendSkipped(pool, provider, {
+      tenantId,
+      actorId: admin,
+      email: address,
+      logIds: missed.map((m) => m.logId),
+      now: T0,
+    });
+
+    await lift(pool, { email: address, actorId: admin });
+    const before = sent.length;
+    const first = await resendSkipped(pool, provider, {
+      tenantId,
+      actorId: admin,
+      email: address,
+      logIds: missed.map((m) => m.logId),
+      now: T0,
+    });
+    const second = await resendSkipped(pool, provider, {
+      tenantId,
+      actorId: admin,
+      email: address,
+      logIds: missed.map((m) => m.logId),
+      now: T0,
+    });
+    const after = await skippedFor(pool, { tenantId, email: address });
+    const delivered = sent.slice(before);
+    const { rows: trail } = await pool.query<{ type: string }>(
+      `select e.type from event e join email_log l on l.instance_id = e.instance_id where l.id = $1 order by e.seq`,
+      [missed[0]?.logId ?? 0],
+    );
+
+    record(
+      'The bounce rate is watched, and an address that comes back gets what it missed',
+      'Bounce-rate alerting against the provider\'s review thresholds, and re-sending after a suppression is lifted.',
+      clean.change === null &&
+        clean.health.level === 'ok' &&
+        raised.change === 'raised' &&
+        raised.health.level === 'watch' &&
+        repeated.change === null &&
+        escalated.change === 'escalated' &&
+        escalated.health.level === 'act' &&
+        mine.bounced === 5 &&
+        theirs.sent === 0 &&
+        cleared.change === 'cleared' &&
+        alerts.length === 3 &&
+        missed.length === 1 &&
+        stillBlocked.every((r) => !r.sent && r.reason === 'the address is still suppressed') &&
+        first.every((r) => r.sent) &&
+        second.every((r) => !r.sent && r.reason === 'already sent again') &&
+        delivered.length === 1 &&
+        delivered[0]!.to.join() === address &&
+        delivered[0]!.key === `resend:${missed[0]!.logId}:${address}` &&
+        after[0]!.resentAt !== null &&
+        trail.some((e) => e.type === 'email_resent'),
+    `${escalated.health.sent} messages went out. With none bouncing the check was silent; at ${raised.health.bounced} hard ` +
+      `bounces (${(raised.health.bounceRate * 100).toFixed(1)}%) it raised a watch alert, and asking again a moment later ` +
+      `raised nothing. At ${escalated.health.bounced} (${(escalated.health.bounceRate * 100).toFixed(1)}%) it escalated to act, ` +
+      `and a week later, with the bounces out of the window, it cleared — ${alerts.length} emails to the ops address in all: ` +
+      `${alerts.map((a) => `"${a.subject}"`).join(', ')}. This workspace's share counted ${mine.bounced} bounces; a quiet ` +
+      `workspace's counted ${theirs.sent} sent. A message to a suppressed address was recorded as missed (${missed.length}), ` +
+      `a resend while it was still suppressed was refused, and after reinstating it the resend went once — to that address, ` +
+      `under key ${delivered[0]?.key} — and a second press sent nothing ("${second[0]?.reason}").`,
+    );
+  } finally {
+    if (previous === undefined) delete process.env.OPS_ALERT_EMAIL;
+    else process.env.OPS_ALERT_EMAIL = previous;
+  }
 }
 
 /**

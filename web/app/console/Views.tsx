@@ -416,6 +416,15 @@ export function HealthView({ canAdminister }: { canAdminister: boolean }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  const [health, setHealth] = useState<SendingHealth | null>(null);
+  /** The address whose missed messages are open, after reinstating it. */
+  const [missed, setMissed] = useState<string | null>(null);
+
+  useEffect(() => {
+    call<SendingHealth>('/api/delivery/health')
+      .then(setHealth)
+      .catch(() => setHealth(null));
+  }, []);
 
   const load = useCallback(async () => {
     setError(null);
@@ -444,6 +453,7 @@ export function HealthView({ canAdminister }: { canAdminister: boolean }) {
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.reason ?? body.error ?? `HTTP ${res.status}`);
       setNote(`${email} will be written to again.`);
+      setMissed(canAdminister ? email : null);
       await load();
     } catch (err) {
       setNote(err instanceof Error ? err.message : String(err));
@@ -474,6 +484,8 @@ export function HealthView({ canAdminister }: { canAdminister: boolean }) {
   const past = rows.filter((r) => r.lifted_at);
 
   return (
+    <>
+    {health && <SendingHealthPanel health={health} />}
     <div className="cs__panel">
       <div className="cs__panelHead">
         <h2 className="cs__tab">Addresses we have stopped writing to</h2>
@@ -489,8 +501,9 @@ export function HealthView({ canAdminister }: { canAdminister: boolean }) {
 
       {!live.length ? (
         <div className="cs__empty">
-          Nothing is suppressed. Hard bounces and spam complaints land here, and this workspace has
-          had neither.
+          {past.length
+            ? 'Nothing is suppressed right now. Hard bounces and spam complaints land here.'
+            : 'Nothing is suppressed. Hard bounces and spam complaints land here, and this workspace has had neither.'}
         </div>
       ) : (
         <table className="vw__table">
@@ -532,13 +545,244 @@ export function HealthView({ canAdminister }: { canAdminister: boolean }) {
         </table>
       )}
 
+      {missed && <MissedMessages email={missed} onClose={() => setMissed(null)} />}
+
       {past.length > 0 && (
-        <p className="vw__note">
-          {past.length} {past.length === 1 ? 'address was' : 'addresses were'} reinstated earlier.
-          A fresh bounce puts one straight back — the mail server gets the last word.
-        </p>
+        <>
+          <p className="vw__note">
+            {past.length} {past.length === 1 ? 'address was' : 'addresses were'} reinstated earlier.
+            A fresh bounce puts one straight back — the mail server gets the last word.
+          </p>
+          {canAdminister && (
+            <ul className="mm__past">
+              {past.map((row) => (
+                <li key={row.email}>
+                  <span style={{ overflowWrap: 'anywhere' }}>{row.email}</span>
+                  <button type="button" className="mm__link" onClick={() => setMissed(row.email)}>
+                    What it missed
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
       )}
     </div>
+    </>
+  );
+}
+
+interface SendingHealth {
+  windowDays: number;
+  sent: number;
+  bounced: number;
+  complained: number;
+  bounceRate: number;
+  complaintRate: number;
+  level: 'ok' | 'watch' | 'act' | 'too_few';
+  thresholds: { bounce: { watch: number; act: number }; complaint: { watch: number; act: number } };
+}
+
+const HEALTH_WORDS: Record<SendingHealth['level'], string> = {
+  ok: 'Healthy',
+  watch: 'Watch',
+  act: 'Act now',
+  too_few: 'Too few sent to judge',
+};
+
+/**
+ * What the email provider will judge the account by, from this workspace's
+ * share of it.
+ *
+ * Shown as two rates against the point where the provider starts reviewing,
+ * because a bare "2.4%" means nothing to somebody who does not already know
+ * that 5% is where it gets serious.
+ */
+function SendingHealthPanel({ health }: { health: SendingHealth }) {
+  const pct = (n: number, d = 1) => `${(n * 100).toFixed(d)}%`;
+  const rows = [
+    {
+      label: 'Hard bounces',
+      count: health.bounced,
+      rate: health.bounceRate,
+      watch: health.thresholds.bounce.watch,
+      act: health.thresholds.bounce.act,
+      digits: 1,
+    },
+    {
+      label: 'Spam complaints',
+      count: health.complained,
+      rate: health.complaintRate,
+      watch: health.thresholds.complaint.watch,
+      act: health.thresholds.complaint.act,
+      digits: 2,
+    },
+  ];
+  return (
+    <div className="cs__panel" style={{ marginBottom: 16 }}>
+      <div className="cs__panelHead">
+        <h2 className="cs__tab">Sending health</h2>
+        <span className={`sh__level sh__level--${health.level}`}>{HEALTH_WORDS[health.level]}</span>
+      </div>
+      <p className="vw__note">
+        {health.sent} {health.sent === 1 ? 'message' : 'messages'} sent in the last {health.windowDays} days.
+        {health.level === 'too_few'
+          ? ' Too few for a rate to mean anything yet.'
+          : ' The email provider reviews an account at the thresholds below, and a paused account stops every message — including password resets.'}
+      </p>
+      <dl className="sh__rates">
+        {rows.map((r) => (
+          <div key={r.label} className="sh__rate">
+            <dt>{r.label}</dt>
+            <dd>
+              <strong>{pct(r.rate, r.digits)}</strong> <span className="sh__count">({r.count})</span>
+              <div
+                className="sh__bar"
+                role="img"
+                aria-label={`${pct(r.rate, r.digits)} against a review threshold of ${pct(r.act, r.digits)}`}
+              >
+                <span
+                  className={`sh__fill${r.rate >= r.act ? ' sh__fill--act' : r.rate >= r.watch ? ' sh__fill--watch' : ''}`}
+                  style={{ width: `${Math.min(100, (r.rate / r.act) * 100)}%` }}
+                />
+              </div>
+              <span className="sh__threshold">
+                watch at {pct(r.watch, r.digits)} · reviewed at {pct(r.act, r.digits)}
+              </span>
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
+}
+
+interface Skipped {
+  logId: string;
+  reference: string;
+  processName: string;
+  template: string;
+  subject: string;
+  skippedAt: string;
+  recordFinished: boolean;
+  resentAt: string | null;
+}
+
+/**
+ * The messages an address missed while it was blocked, and a way to send them.
+ *
+ * Nothing is ticked for a record that has finished: "your approval is
+ * waiting" about an approval given last week is worse than no email. Each
+ * one is rendered from the record as it is now, not as it was, and the list
+ * says so.
+ */
+function MissedMessages({ email, onClose }: { email: string; onClose: () => void }) {
+  const [rows, setRows] = useState<Skipped[] | null>(null);
+  const [chosen, setChosen] = useState<Set<string>>(new Set());
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    const body = await call<{ skipped: Skipped[] }>(`/api/delivery/skipped?email=${encodeURIComponent(email)}`);
+    setRows(body.skipped);
+    setChosen(new Set(body.skipped.filter((s) => !s.resentAt && !s.recordFinished).map((s) => s.logId)));
+  }, [email]);
+
+  useEffect(() => {
+    void load().catch((err) => setResult(err instanceof Error ? err.message : String(err)));
+  }, [load]);
+
+  const send = async () => {
+    setBusy(true);
+    setResult(null);
+    try {
+      const body = await post<{ results: { logId: string; sent: boolean; reason?: string }[] }>('/api/delivery/resend', {
+        email,
+        logIds: [...chosen],
+      });
+      const sent = body.results.filter((r) => r.sent).length;
+      const failed = body.results.filter((r) => !r.sent);
+      setResult(
+        `${sent} sent to ${email}.` +
+          (failed.length ? ` ${failed.length} not sent: ${[...new Set(failed.map((f) => f.reason))].join('; ')}.` : ''),
+      );
+      await load();
+    } catch (err) {
+      setResult(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const open = rows?.filter((r) => !r.resentAt) ?? [];
+
+  return (
+    <section className="mm" aria-labelledby="mm-title">
+      <div className="mm__head">
+        <h3 id="mm-title">What {email} missed</h3>
+        <button type="button" className="mm__link" onClick={onClose}>
+          Close
+        </button>
+      </div>
+      {!rows ? (
+        <p className="vw__note">Loading…</p>
+      ) : !rows.length ? (
+        <p className="vw__note">Nothing. No message from this workspace was held back from this address.</p>
+      ) : (
+        <>
+          <p className="vw__note">
+            These were not sent while the address was blocked. Sending one now uses the record as it is today, not as it
+            was — so a reminder about a record that has since finished is left unticked.
+          </p>
+          <ul className="mm__list">
+            {rows.map((r) => (
+              <li key={r.logId} className="mm__item">
+                <label className="mm__check">
+                  <input
+                    type="checkbox"
+                    disabled={Boolean(r.resentAt) || busy}
+                    checked={chosen.has(r.logId)}
+                    onChange={(e) =>
+                      setChosen((prev) => {
+                        const next = new Set(prev);
+                        if (e.target.checked) next.add(r.logId);
+                        else next.delete(r.logId);
+                        return next;
+                      })
+                    }
+                  />
+                  <span>
+                    <strong>{r.template}</strong> — {r.processName} {r.reference}
+                    <span className="mm__meta">
+                      {' '}
+                      skipped {new Date(r.skippedAt).toLocaleDateString()}
+                      {r.recordFinished ? ' · record has finished' : ''}
+                      {r.resentAt ? ` · sent again ${new Date(r.resentAt).toLocaleDateString()}` : ''}
+                    </span>
+                  </span>
+                </label>
+              </li>
+            ))}
+          </ul>
+          {open.length > 0 && (
+            <button
+              type="button"
+              className="cs__btn cs__btn--primary"
+              disabled={busy || chosen.size === 0}
+              onClick={() => void send()}
+              style={{ margin: '0 18px 16px' }}
+            >
+              {busy ? 'Sending…' : `Send ${chosen.size} now`}
+            </button>
+          )}
+        </>
+      )}
+      {result && (
+        <p className="vw__note vw__note--done" role="status">
+          {result}
+        </p>
+      )}
+    </section>
   );
 }
 

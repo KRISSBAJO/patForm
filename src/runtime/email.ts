@@ -69,6 +69,62 @@ export interface EmailProvider {
 }
 
 /**
+ * Domains that are reserved never to receive mail (RFC 2606, RFC 6761), and
+ * the three example domains, which publish a null MX (RFC 7505).
+ */
+const RESERVED_SUFFIXES = ['.test', '.example', '.invalid', '.localhost'];
+const RESERVED_EXACT = new Set(['localhost', 'example.com', 'example.net', 'example.org']);
+
+export function isReservedAddress(address: string): boolean {
+  const at = address.lastIndexOf('@');
+  if (at < 0) return false;
+  const domain = address.slice(at + 1).trim().toLowerCase().replace(/\.$/, '');
+  if (RESERVED_EXACT.has(domain)) return true;
+  for (const exact of RESERVED_EXACT) if (domain.endsWith(`.${exact}`)) return true;
+  return RESERVED_SUFFIXES.some((suffix) => domain.endsWith(suffix) || domain === suffix.slice(1));
+}
+
+/**
+ * Keeps addresses that cannot receive mail away from a provider that will try.
+ *
+ * Every seed, proof, demo and test in this repository uses `example.test`
+ * addresses, deliberately, so they can never reach a person. That promise
+ * held only while the provider was the console one. With a real provider
+ * configured — which is how the development API runs whenever `.env` names
+ * one — a test submission handed `script.two@example.test` to the real
+ * sending account, which could only bounce it. Each of those is a hard
+ * bounce on the account whose bounce rate decides whether it may keep
+ * sending.
+ *
+ * So every real provider is wrapped. A reserved recipient is dropped before
+ * the provider sees it, and said so: the message still goes to anybody else,
+ * with a warning on the record; if nobody is left it fails, not retryably,
+ * with the reason. The console provider is not wrapped, because it sends
+ * nothing and the dev log should look like production would.
+ */
+export class ReservedDomainGuard implements EmailProvider {
+  readonly name: string;
+
+  constructor(private readonly inner: EmailProvider) {
+    this.name = inner.name;
+  }
+
+  async send(email: OutgoingEmail): Promise<DeliveryResult> {
+    const dropped = [...email.to, ...(email.cc ?? [])].filter(isReservedAddress);
+    if (!dropped.length) return this.inner.send(email);
+
+    const to = email.to.filter((a) => !isReservedAddress(a));
+    const cc = (email.cc ?? []).filter((a) => !isReservedAddress(a));
+    const note = `not sent to ${dropped.join(', ')}: a reserved domain, which cannot receive mail`;
+    if (!to.length && !cc.length) {
+      return { providerMessageId: null, status: 'failed', retryable: false, detail: note };
+    }
+    const result = await this.inner.send({ ...email, to: to.length ? to : cc, cc: to.length ? cc : [] });
+    return { ...result, warning: [result.warning, note].filter(Boolean).join('; ') };
+  }
+}
+
+/**
  * The default. Records the message and delivers nothing.
  *
  * It exists so a local database and the test suite never send real mail to a
@@ -305,7 +361,7 @@ export function emailProviderFromEnv(): EmailProvider {
    * recipient's spam filter, and `queued` in our log either way.
    */
   assertCanSendAs(provider.name, mailFrom('Patform'));
-  return provider;
+  return provider.name === 'console' ? provider : new ReservedDomainGuard(provider);
 }
 
 function pickProvider(): EmailProvider {

@@ -454,6 +454,45 @@ A refused request is a `429` carrying `Retry-After` and the `x-ratelimit-*`
 headers, all of which are in `access-control-expose-headers` — a respondent's
 browser that cannot read why it was refused shows a form that looks broken.
 
+### Sending health
+
+Single bounces were already handled: a hard bounce or a complaint suppresses
+the address, and nothing is sent to it again. Nothing watched the **rate**,
+and the rate is what the provider suspends an account over. RelyKit sends
+through Amazon SES, which reviews an account at a 5% hard-bounce rate or a
+0.1% complaint rate — and a paused account stops every message from every
+workspace, password resets included.
+
+The worker now measures both over seven days, across process mail and the
+platform's own messages, because the provider sees one account. It raises an
+alert at **watch** (2% / 0.05%) and again at **act** (5% / 0.1%), once each,
+and says when it has recovered — an alert that repeated every minute would be
+muted by the day it mattered. Each change is a log line and, when
+`OPS_ALERT_EMAIL` is set, an email naming the templates and workspaces the
+problems came from. Below fifty messages it reports *too few to judge*
+unless there are five or more problems outright.
+
+Workspace admins see their own share on **Automation health**, as two rates
+against the thresholds, since "2.4%" means nothing without knowing where 5% is.
+
+**After reinstating an address**, the console lists what it missed while it
+was blocked — each message now records exactly which recipients it dropped,
+rather than a phrase in its failure note. Nothing is ticked for a record that
+has finished, each resend is rendered from the record as it is now, and each
+goes once: it has its own ledger row keyed to the original message and the
+address. A resend that fails is rolled back rather than marked sent. Lifting
+a suppression is limited to addresses the workspace has written to, which is
+also what it can see.
+
+**A real provider never sees a reserved address.** Every seed, proof and demo
+uses `example.test`, so none of it can reach a person — which only held while
+the provider was the console one. The development API runs with whatever
+`.env` names, and with RelyKit configured, a test submission handed a
+`.test` address to the real account: a guaranteed hard bounce on the number
+this section exists to protect. Real providers are now wrapped so that
+`.test`, `.example`, `.invalid`, `localhost` and the `example.*` domains are
+dropped before sending, with the reason on the record.
+
 ### Telling a person from a script
 
 A budget stops one caller making a thousand records. It does nothing about a
@@ -1017,8 +1056,6 @@ Everything below is a deliberate deferral:
 - **No trusted devices, and no step-up.** The second factor is asked for on
   every sign-in, and never asked for again — a destructive action inside a
   live session is not re-challenged.
-- **Bounce-rate alerting.** Individual bounces are handled (below); nothing
-  watches the *rate*, which is what a provider suspends an account over.
 - **CAPTCHA, IP reputation, and scoring what a submission says.** Public
   forms are screened with a signed ticket and a trap field, and a suspicious
   submission is held rather than acted on (above). Nothing challenges the
@@ -1055,13 +1092,11 @@ Everything below is a deliberate deferral:
   gets a document that says so rather than a silently incomplete one.
 - **Object storage for documents.** The bytes live in Postgres, which is fine
   at a packet's size and wrong at scale (§10.1).
-- **Re-sending after an address is reinstated.** Lifting a suppression lets
-  future mail through; the messages skipped while it was in force are not
-  retried, and an operator has to trigger the work again. Bounce and complaint
-  handling itself is built: RelyKit's Standard Webhooks are verified and
-  ingested, a hard bounce or a complaint suppresses the address, and a send to
-  a suppressed address is skipped with that reason on the record. What is not
-  built is the *rate* alerting, also above.
+- **Automatic re-sending after an address is reinstated.** An admin sees what
+  the address missed and chooses what to send (see *Sending health* above);
+  nothing goes by itself, because a reminder from a fortnight ago may no longer
+  be true. Messages to other workspaces' recipients, and the platform's own
+  invitations and resets, are not offered for re-sending.
 - **Bulk assignment and status changes.** The copilot's action schema names
   `assign` and `change_state`; the compiler refuses both with `ACT001`.
   Reminders are the only bulk action the runtime performs.

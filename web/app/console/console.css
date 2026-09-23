@@ -2761,3 +2761,154 @@ a.cs__navItem {
   display: flex;
   gap: 8px;
 }
+
+/* ----------------------------------------------------------- sending health */
+
+.sh__level {
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.sh__level--ok {
+  background: var(--green-pale);
+  color: var(--green-deep);
+}
+
+.sh__level--watch {
+  background: var(--ochre-pale);
+  color: var(--ochre-text);
+}
+
+.sh__level--act {
+  background: var(--red-pale);
+  color: var(--red-text);
+}
+
+.sh__level--too_few {
+  background: var(--line-soft);
+  color: var(--muted);
+}
+
+.sh__rates {
+  margin: 0;
+  padding: 0 18px 16px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 14px 24px;
+}
+
+.sh__rate dt {
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.sh__rate dd {
+  margin: 3px 0 0;
+  font-size: 14px;
+  color: var(--ink);
+}
+
+.sh__count,
+.sh__threshold {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.sh__bar {
+  margin: 6px 0 4px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--line-soft);
+  overflow: hidden;
+}
+
+.sh__fill {
+  display: block;
+  height: 100%;
+  background: var(--green);
+}
+
+.sh__fill--watch {
+  background: var(--ochre);
+}
+
+.sh__fill--act {
+  background: var(--red-text);
+}
+
+/* --------------------------------------------------------- missed messages */
+
+.mm {
+  margin: 0 18px 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--paper-3);
+}
+
+.mm__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 18px 0;
+}
+
+.mm__head h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.mm__list {
+  list-style: none;
+  margin: 0;
+  padding: 0 18px 12px;
+  display: grid;
+  gap: 8px;
+}
+
+.mm__check {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  font-size: 13.5px;
+  line-height: 1.45;
+}
+
+.mm__check input {
+  margin-top: 3px;
+  width: 16px;
+  height: 16px;
+}
+
+.mm__meta {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.mm__link {
+  padding: 0;
+  min-height: 24px;
+  border: 0;
+  background: none;
+  color: var(--green);
+  font: inherit;
+  font-size: 12.5px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.mm__past {
+  list-style: none;
+  margin: 0 18px 16px;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.mm__past li {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}

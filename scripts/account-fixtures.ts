@@ -74,6 +74,28 @@ if (process.argv[2] === 'restore') {
   await pool.query('update actor set email_verified_at = now() where id = $1', [spare[0]!.id]);
   const reset = await requestPasswordReset(pool, { email: spareRow[0]!.email });
 
+  // A reinstated address with a message it missed, so the scan can open
+  // "What it missed" — a panel that only exists after somebody lifts a
+  // suppression, which no seed ever does.
+  const { rows: mailed } = await pool.query<{ id: string; email: string }>(
+    `select id, recipients[1] as email from email_log
+      where tenant_id = $1 and array_length(recipients, 1) > 0 order by id limit 1`,
+    [scan.tenant_id],
+  );
+  if (mailed[0]) {
+    await pool.query(
+      `insert into suppressed_recipient (email, reason, detail, lifted_at)
+       values (lower($1), 'hard_bounce', 'fixture for the accessibility scan', now())
+       on conflict (email) do nothing`,
+      [mailed[0].email],
+    );
+    await pool.query(
+      `update email_log set suppressed = array_append(suppressed, lower($2))
+        where id = $1 and not (lower($2) = any(suppressed))`,
+      [mailed[0].id, mailed[0].email],
+    );
+  }
+
   // The banner only renders for an unverified account, so the scan needs one.
   await pool.query('update actor set email_verified_at = null where id = $1', [scan.id]);
 

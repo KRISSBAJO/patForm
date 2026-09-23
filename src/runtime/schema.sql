@@ -451,8 +451,15 @@ create table email_log (
   provider      text,
   provider_message_id text,
   failure       text,
-  sent_at       timestamptz not null
+  sent_at       timestamptz not null,
+  -- Recipients this message did not go to because they were suppressed.
+  -- A column, not a phrase in `failure`: reinstating an address has to find
+  -- every message it missed, and parsing prose back out of a log is how that
+  -- lookup quietly misses the ones worded differently.
+  suppressed    text[] not null default '{}'
 );
+
+create index email_log_suppressed on email_log using gin (suppressed);
 
 create table task (
   id            bigserial primary key,
@@ -886,7 +893,7 @@ create table platform_email (
   id           bigserial primary key,
   tenant_id    uuid references tenant(id),
   actor_id     uuid references actor(id),
-  kind         text not null check (kind in ('invitation', 'verify_email', 'password_reset')),
+  kind         text not null check (kind in ('invitation', 'verify_email', 'password_reset', 'delivery_alert')),
   recipient    text not null,
   subject      text not null,
   status       text not null default 'queued'
@@ -954,6 +961,40 @@ create table suppressed_recipient (
 );
 
 create index suppressed_recipient_live on suppressed_recipient (email) where lifted_at is null;
+
+-- A message sent again to an address after its suppression was lifted.
+--
+-- One row per (message, address), unique, so pressing "send" twice — or two
+-- people pressing it at once — sends once. The resend is its own effect with
+-- its own action_run and email_log row; the original skipped message is left
+-- exactly as it was, because it is the record of what happened at the time.
+create table email_resend (
+  id            bigserial primary key,
+  tenant_id     uuid not null references tenant(id),
+  email_log_id  bigint not null references email_log(id),
+  recipient     text not null,
+  resent_log_id bigint references email_log(id),
+  resent_by     uuid not null references actor(id),
+  resent_at     timestamptz not null default now(),
+  unique (email_log_id, recipient)
+);
+
+-- The sending account's health, as the provider will judge it.
+--
+-- One open alert at most (the partial unique index), so two workers noticing
+-- the same rate raise it once. A rise from `watch` to `act` closes the first
+-- and opens the second; recovering closes it. Each row is one notification.
+create table delivery_alert (
+  id             bigserial primary key,
+  level          text not null check (level in ('watch', 'act')),
+  sent           int not null,
+  bounced        int not null,
+  complained     int not null,
+  raised_at      timestamptz not null default now(),
+  cleared_at     timestamptz
+);
+
+create unique index delivery_alert_open on delivery_alert ((true)) where cleared_at is null;
 
 -- --------------------------------------------------- two-step verification
 --

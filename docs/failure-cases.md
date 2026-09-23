@@ -819,6 +819,22 @@ Two details decided the shape. A held submission is not an `instance` with a fla
 
 **Generalisable:** for anything a stranger can trigger, trace it to its side effects before deciding what the control is. The control belongs in front of the first effect that reaches someone outside, and here that was an email, not a row.
 
+### 76. Test data that could only bounce, sent through the real account
+
+Every seed, proof and demo uses `example.test` addresses, so that none of it can reach a person. That was true of the console provider. The development API reads `.env`, and `.env` names RelyKit — so testing the spam queue, I released a held submission and, by the code path, its receipt to `script.two@example.test` was handed to the real RelyKit account. What RelyKit did with it is not known here. A reserved domain has no mail server, so the best case is a refusal and the likely one a hard bounce, on the account whose bounce rate decides whether it may keep sending.
+
+Found while building the thing that watches that rate, by asking which provider the test I was about to run would use. The earlier sends could not be counted afterwards: the proof suite resets the database it shares with development, and took the log with it.
+
+**Fixed** at the provider rather than in each caller. Every real provider is wrapped, and a reserved recipient — `.test`, `.example`, `.invalid`, `localhost`, `example.com/.net/.org` — is dropped before the provider sees it, with the reason on the record. The console provider is left alone so development still looks like production. The end-to-end test for this change handed zero messages to the provider.
+
+**Generalisable:** "our test data cannot reach anyone" is a property of the whole path, not of the addresses. It has to be enforced where the path leaves the building, because every other layer can be configured around it by a `.env` file nobody is thinking about.
+
+### 77. A lift that reached further than the list
+
+A workspace sees only the suppressed addresses it has written to — the list is deployment-wide, and showing all of it would hand one customer another's contacts. The lift endpoint had no such limit. An admin could reinstate any address on the deployment by typing it, including one another workspace's mail had just hard-bounced.
+
+**Fixed** by applying the same scope to the lift as to the list. **Generalisable:** when reading is scoped, every write that names the same thing needs the same scope — the write is where it matters.
+
 ---
 
 ## What the compiler structurally cannot catch
