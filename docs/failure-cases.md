@@ -885,7 +885,7 @@ No shipped process used it, which is why nothing failed. It was found adding quo
 
 `delivery_event.email_log_id` referenced `email_log` with no `on delete`. Retention and privacy erasure both delete a record's email log. For any message the provider had sent a webhook about — delivered or bounced — the delete was blocked by the foreign key, and the whole run rolled back. With RelyKit webhooks configured, that is nearly every record in production.
 
-The retention proof deleted a record that had never received a provider event, so it passed. It was found when the new vote table's foreign key made the same mistake and a later proof tripped over it; reading every foreign key onto the tables retention deletes turned up this one, and the resend table added a day earlier had it too.
+The retention proof deleted a record that had never received a provider event, so it passed. It was found when the new vote table's foreign key made the same mistake and a later proof tripped over it; reading every foreign key onto the tables retention deletes turned up this one, and the resend table added earlier the same day had it too.
 
 **Fixed** with `on delete cascade` on all three — a provider's report about a message goes when the message does, which is also what erasure should do with a row holding the recipient's address. The retention proof now gives the record a delivery event, a resend and an approval vote before deleting it; run without the cascade, it fails with the original foreign-key error.
 
