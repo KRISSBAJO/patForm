@@ -714,12 +714,26 @@ export async function discardDraft(
   if (principal.kind !== 'actor') throw new Error('unreachable');
 
   // Not out from under somebody who is editing it.
-  const { rowCount } = await pool.query(
-    `delete from process_draft
-      where id = $1 and tenant_id = $2 and published_as is null
-        and (locked_by is null or locked_by = $3 or locked_until < now())`,
-    [args.draftId, principal.tenantId, principal.actorId],
-  );
+  const { rowCount } = await inTransaction(pool, async (client) => {
+    const removed = await client.query<{ process_key: string }>(
+      `delete from process_draft
+        where id = $1 and tenant_id = $2 and published_as is null
+          and (locked_by is null or locked_by = $3 or locked_until < now())
+        returning process_key`,
+      [args.draftId, principal.tenantId, principal.actorId],
+    );
+    if (removed.rowCount) {
+      await client.query('delete from pack_install where tenant_id = $1 and draft_id = $2', [principal.tenantId, args.draftId]);
+      // An unlaunched installation must not leave role grants behind for a
+      // later process that happens to reuse the same key.
+      await client.query(
+        `delete from membership where tenant_id = $1 and process_key = $2
+          and not exists (select 1 from process_version where tenant_id = $1 and process_key = $2)`,
+        [principal.tenantId, removed.rows[0]!.process_key],
+      );
+    }
+    return { rowCount: removed.rowCount };
+  });
   if (!rowCount) {
     const row = await lockRow(pool, principal, args.draftId);
     if (row && row.published_as === null) throw await conflictFor(pool, principal, args.draftId, row.revision);

@@ -452,7 +452,7 @@ export async function installPack(
 export async function listInstalls(pool: Pool, principal: Principal) {
   if (principal.kind !== 'actor') throw new Error('signed-in members only');
   const { rows } = await pool.query(
-    `select i.process_key, i.installed_at, i.installed_by, p.name as pack_name, p.pack_key, p.version,
+    `select i.process_key, i.draft_id, i.installed_at, i.installed_by, p.name as pack_name, p.pack_key, p.version,
             (select max(version) from pack p2
               where p2.pack_key = p.pack_key and p2.tenant_id is not distinct from p.tenant_id
                 and p2.withdrawn_at is null) as latest_version

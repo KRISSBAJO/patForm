@@ -73,9 +73,9 @@ export function PackPage({ packId }: { packId: string }) {
     try {
       const done = await call<{ draftId: string }>(`/api/packs/${pack.id}/install`, {
         method: 'POST',
-        body: JSON.stringify({ processKey, processName }),
+        body: JSON.stringify({ processKey, name: processName }),
       });
-      window.location.href = `/builder?draft=${done.draftId}`;
+      window.location.href = `/builder/launch?draft=${done.draftId}`;
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setBusy(false);
@@ -142,8 +142,7 @@ export function PackPage({ packId }: { packId: string }) {
           <div className="gl__sheetBox">
             <h2 id="name-title">Name it</h2>
             <p className="gl__sheetNote">
-              The key ends up in the public form link, so it is worth getting right — it cannot be changed once
-              anybody has the link.
+              This key identifies the process in your workspace. The public form gets its own link when you publish.
             </p>
 
             <label className="cs__label" htmlFor="pack-key">
@@ -156,9 +155,7 @@ export function PackPage({ packId }: { packId: string }) {
               onChange={(e) => setProcessKey(keyFrom(e.target.value))}
               aria-describedby="pack-key-hint"
             />
-            <p id="pack-key-hint" className="gl__sheetNote">
-              /f/{processKey || 'your_process'}
-            </p>
+            <p id="pack-key-hint" className="gl__sheetNote">Process key: {processKey || 'your_process'}</p>
 
             <label className="cs__label" htmlFor="pack-name">
               Name

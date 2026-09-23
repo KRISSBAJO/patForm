@@ -711,9 +711,7 @@ export function Builder() {
         method: 'POST',
         body: JSON.stringify({ revision: revision.current }),
       });
-      setPublished(res.version);
-      setImpact(null);
-      await refreshList();
+      window.location.href = `/builder/launch?draft=${draft.id}`;
     } catch (err) {
       if (err instanceof Conflict) {
         setImpact(null);
@@ -1021,6 +1019,7 @@ export function Builder() {
                 <FormLink formId={draft.formId} />
               </div>
               <div className="bd__actions">
+                <a className="bd__btn" href={`/builder/launch?draft=${draft.id}`}>Setup and sharing</a>
                 <button className="bd__btn" onClick={discard} disabled={busy !== null || frozen}>
                   Discard
                 </button>
@@ -3735,7 +3734,7 @@ function NewProcessDialog({
           method: 'POST',
           body: JSON.stringify({ processKey: key, name: name || undefined }),
         });
-        onCreated(await call<DraftDetail>(`/api/builder/drafts/${installed.draftId}`));
+        window.location.href = `/builder/launch?draft=${installed.draftId}`;
         return;
       }
       const detail = await call<DraftDetail>('/api/builder/create', {

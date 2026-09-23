@@ -103,7 +103,7 @@ export function Gallery() {
         method: 'POST',
         body: JSON.stringify({ processKey, name: processName || undefined }),
       });
-      window.location.href = `/builder?draft=${done.draftId}`;
+      window.location.href = `/builder/launch?draft=${done.draftId}`;
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setBusy(false);
@@ -263,8 +263,7 @@ export function Gallery() {
           <div className="gl__sheetBox">
             <h2 id="install-title">Name it</h2>
             <p className="gl__sheetNote">
-              The key ends up in the public form link, so it is worth getting right — it cannot be
-              changed once anybody has the link.
+              This key identifies the process in your workspace. The public form gets its own link when you publish.
             </p>
 
             <label className="cs__label" htmlFor="new-key">
@@ -277,9 +276,7 @@ export function Gallery() {
               onChange={(e) => setProcessKey(keyFrom(e.target.value))}
               aria-describedby="new-key-hint"
             />
-            <p id="new-key-hint" className="gl__sheetNote">
-              /f/{processKey || 'your_process'}
-            </p>
+            <p id="new-key-hint" className="gl__sheetNote">Process key: {processKey || 'your_process'}</p>
 
             <label className="cs__label" htmlFor="new-name">
               Name
@@ -304,7 +301,7 @@ export function Gallery() {
                 disabled={busy || processKey.length < 3}
                 onClick={() => void install()}
               >
-                {busy ? 'Installing…' : 'Install as a draft'}
+                {busy ? 'Installing…' : 'Continue to setup'}
               </button>
               <button type="button" className="cs__btn" onClick={() => setInstalling(null)}>
                 Cancel

@@ -526,6 +526,7 @@ interface ProcessRow {
  */
 interface Install {
   process_key: string;
+  draft_id: string;
   pack_name: string;
   pack_key: string;
   version: number;
@@ -544,9 +545,11 @@ interface RecordRow {
 export function ProcessesView({
   processes,
   onOpenRecord,
+  canAdminister,
 }: {
   processes: ProcessRow[];
   onOpenRecord: (id: string) => void;
+  canAdminister: boolean;
 }) {
   const [copied, setCopied] = useState<string | null>(null);
   const [installs, setInstalls] = useState<Install[]>([]);
@@ -694,10 +697,14 @@ export function ProcessesView({
                   <Icon name="list" />
                   {open === p.process_key ? 'Hide records' : 'Show the records'}
                 </button>
-                <a className="cs__btn" href="/builder">
+                {canAdminister && from && <a className="cs__btn" href={`/builder/launch?draft=${from.draft_id}&step=people`}>
+                  <Icon name="people" />
+                  Manage people
+                </a>}
+                {canAdminister && <a className="cs__btn" href={`/builder?process=${encodeURIComponent(p.process_key)}`}>
                   <Icon name="edit" />
                   Edit in the builder
-                </a>
+                </a>}
               </div>
 
               {open === p.process_key && (

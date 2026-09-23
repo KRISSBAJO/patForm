@@ -93,7 +93,7 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 export function Console() {
   const [session, setSession] = useState<SessionInfo | null>(null);
   const [checking, setChecking] = useState(true);
-  const [processKey, setProcessKey] = useState('employee_onboarding');
+  const [processKey, setProcessKey] = useState('');
   const [work, setWork] = useState<Work | null>(null);
   const [health, setHealth] = useState<Health | null>(null);
   const [record, setRecord] = useState<RecordDetail | null>(null);
@@ -141,7 +141,13 @@ export function Console() {
     try {
       const info = await call<SessionInfo>('/api/session');
       setSession(info);
-      if (info.processes[0]) setProcessKey((current) => current || info.processes[0]!.process_key);
+      const requested = new URLSearchParams(window.location.search).get('process');
+      setProcessKey((current) =>
+        info.processes.find((process) => process.process_key === requested)?.process_key
+        ?? info.processes.find((process) => process.process_key === current)?.process_key
+        ?? info.processes[0]?.process_key
+        ?? '',
+      );
     } catch {
       setSession(null);
     } finally {
@@ -635,6 +641,7 @@ export function Console() {
             ) : view === 'processes' ? (
               <ProcessesView
                 processes={session.processes}
+                canAdminister={['owner', 'admin', 'builder'].includes(me.workspace_role)}
                 onOpenRecord={(id) => {
                   void open(id);
                   setView('work');

@@ -923,6 +923,21 @@ What a generator cannot do is know somebody's process. These compile and run
 on day one, which is what a template is. The builder is where they stop being
 generic.
 
+### Launching an installed template
+
+Installing a pack opens `/builder/launch?draft=…`. The setup page first shows
+the form people will fill in, then asks who approves, completes tasks and
+receives overdue alerts. Existing workspace members can be assigned there;
+new people can be invited with that process role. The launch checks require
+those roles to have people, run the pack's sample records, and show the effects
+of publishing. After publishing, the page shows the actual public form link
+and opens the matching process in the console. The full builder remains
+available for changing the form and rules, with a link back to setup.
+
+Discarding an unpublished installation also removes its pack listing and any
+process role assignments, so a later process using the same key does not
+inherit its people.
+
 ### Editing the automation
 
 Fields, states, roles, approvals and tasks have had editors from the start,

@@ -61,6 +61,7 @@ import {
 } from '../runtime/delivery.js';
 import type { WorkspaceRole } from '../runtime/policy.js';
 import { installPack, listInstalls, listPacks, publishPack, readPack } from '../runtime/packs.js';
+import { assignProcessRole, inviteProcessMember, processSetup } from '../runtime/process-setup.js';
 import { authorize, denyRequest, describeRequest, listGrants, OAuthError, parseAuthorizeQuery, registerClient, revokeGrant } from './oauth.js';
 import {
   completeRotation,
@@ -284,6 +285,22 @@ route('POST', /^\/api\/builder\/drafts\/([0-9a-f-]{36})\/discard$/, async ({ poo
 route('GET', /^\/api\/builder\/drafts\/([0-9a-f-]{36})$/, async ({ pool, principal, url }) =>
   loadProcessDraft(pool, principal, url.pathname.split('/').pop()!),
 );
+
+route('GET', /^\/api\/builder\/drafts\/([0-9a-f-]{36})\/setup$/, async ({ pool, principal, url }) =>
+  processSetup(pool, principal, url.pathname.split('/')[4]!),
+);
+
+route('POST', /^\/api\/builder\/drafts\/([0-9a-f-]{36})\/setup\/assign$/, async ({ pool, principal, url }, body) => {
+  const { roleKey, actorId, assigned } = (body ?? {}) as { roleKey?: string; actorId?: string; assigned?: boolean };
+  if (!roleKey || !actorId || typeof assigned !== 'boolean') throw new HttpError(400, 'roleKey, actorId and assigned are required');
+  return assignProcessRole(pool, { principal, draftId: url.pathname.split('/')[4]!, roleKey, actorId, assigned });
+});
+
+route('POST', /^\/api\/builder\/drafts\/([0-9a-f-]{36})\/setup\/invite$/, async ({ pool, principal, url }, body) => {
+  const { roleKey, email } = (body ?? {}) as { roleKey?: string; email?: string };
+  if (!roleKey || !email) throw new HttpError(400, 'roleKey and email are required');
+  return inviteProcessMember(pool, { principal, draftId: url.pathname.split('/')[4]!, roleKey, email });
+});
 
 route('POST', /^\/api\/builder\/drafts\/([0-9a-f-]{36})\/save$/, async ({ pool, principal, url }, body) => {
   const draftId = url.pathname.split('/')[4]!;
