@@ -1771,7 +1771,7 @@ function Welcome({
                 </span>
                 <span className="bd__startCardName">From the catalogue</span>
                 <span className="bd__startCardMeta">
-                  88 processes with their approvals, reminders and retention already set
+                  Ready-made processes with their approvals, reminders and retention already set
                 </span>
               </a>
             </li>

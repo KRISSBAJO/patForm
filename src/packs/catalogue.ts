@@ -12,6 +12,7 @@
  */
 
 import type { PackSpec } from './generate.js';
+import { EXTRA_PACKS } from './catalogue-extra.js';
 
 const f = {
   text: (key: string, label: string, required = true) => ({
@@ -2784,4 +2785,5 @@ export const CATALOGUE: PackSpec[] = [
       { ...f.text('debrief_action_reference', 'Debrief action log reference', false), setBy: 'operator', help: 'Events team records the assigned actions.' },
     ],
   },
+  ...EXTRA_PACKS,
 ];

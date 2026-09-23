@@ -83,7 +83,7 @@ or journal reference that finishes the work. Refunds remain a Finance task; the
 Stripe and Paystack settings do not issue money from these processes. An existing
 draft or published process keeps its own version until it is changed in the builder.
 
-**Other catalogue templates.** All 90 catalogue packs now have a process-specific
+**Other catalogue templates.** All 118 catalogue packs now have a process-specific
 follow-up task and a required record reference before they can finish. Their
 questions, decision chain and completion message are tailored to the activity.
 The catalogue check refuses a new pack that omits its task description, evidence

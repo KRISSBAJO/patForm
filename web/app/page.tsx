@@ -541,7 +541,7 @@ export default function Home() {
             */}
           <p className="packs__more">
             <a className="btn btn--secondary" href="/builder/new">
-              Browse all 88 packs
+              Browse the templates
               <ArrowRight />
             </a>
             <span className="packs__moreNote">
