@@ -87,6 +87,8 @@ export interface PackSpec {
   /** Work somebody does after the decision, before it is finished. */
   task?: { key: string; name: string; byRole: string; description?: string; requiredFields?: string[]; dueInHours?: number; expireInHours?: number };
   fields: PackField[];
+  /** Optional respondent pages after the shared "About you" page. Each field must appear once. */
+  formSteps?: { key: string; title: string; fields: string[] }[];
   /** Days after completion. Null keeps the record forever, and says so. */
   retentionDays: number | null;
   sensitivityCeiling?: Sensitivity;
@@ -994,6 +996,20 @@ export function buildBlueprint(spec: PackSpec): unknown {
   const placed = fields.filter((f) => f.key !== 'decision_note' && f.setBy !== 'operator');
   const contextFields = placed.map((f) => f.key);
   const answers = sampleAnswers(placed);
+  const detailFields = [...respondentFields(spec), ...autoSignature(spec)];
+  if (spec.formSteps) {
+    const listed = spec.formSteps.flatMap((step) => step.fields);
+    const expected = detailFields.map((field) => field.key);
+    if (listed.length !== expected.length || new Set(listed).size !== listed.length || expected.some((key) => !listed.includes(key))) {
+      throw new Error(`${spec.key}: formSteps must place every respondent field exactly once`);
+    }
+  }
+  const detailPages = spec.formSteps
+    ? spec.formSteps.map((step) => {
+        const onStep = step.fields.map((key) => detailFields.find((field) => field.key === key)!);
+        return { key: step.key, title: step.title, sections: [{ key: step.key, fields: step.fields, ...widths(onStep) }] };
+      })
+    : [{ key: 'details', title: spec.name, sections: sectionsFor(detailFields) }];
 
   const ceiling =
     spec.sensitivityCeiling ??
@@ -1101,11 +1117,7 @@ export function buildBlueprint(spec: PackSpec): unknown {
             },
           ],
         },
-        {
-          key: 'details',
-          title: spec.name,
-          sections: sectionsFor([...respondentFields(spec), ...autoSignature(spec)]),
-        },
+        ...detailPages,
       ],
     },
     workflow: {

@@ -57,9 +57,21 @@ test('Church retention follows the process, not a blanket category minimum', () 
   assert.equal(pack('church_site_report').intent.retentionDays, 2555);
 });
 
-test('the connect card preview does not claim to hide data it never collects', () => {
+test('the connect card collects optional private prayer details without sharing them automatically', () => {
+  const bp = pack('church_connect_card');
+  const fields = new Map(bp.data.fields.map((field) => [field.key, field]));
+  assert.equal(fields.get('contact_phone')?.required, false);
+  assert.equal(fields.get('prayer_request')?.required, false);
+  assert.equal(fields.get('prayer_request')?.classification, 'restricted');
+  assert.equal(fields.get('other_information')?.required, false);
+  assert.equal(fields.get('other_information')?.classification, 'restricted');
+  const pageFields = bp.experience.pages.flatMap((page) => page.sections.flatMap((section) => section.fields));
+  for (const key of ['contact_phone', 'prayer_request', 'other_information']) assert.ok(pageFields.includes(key));
+  assert.deepEqual(bp.experience.pages.map((page) => page.title), [
+    'About you', 'Your visit', 'Interests and prayer', 'How we may contact you',
+  ]);
   const connect = describeContents(pack('church_connect_card'), 'Church');
   const pastoral = describeContents(pack('pastoral_care'), 'Church');
-  assert.ok(!connect.guarantees?.controls.some((control) => control.includes('restricted field')));
+  assert.ok(connect.guarantees?.controls.some((control) => control.includes('restricted field')));
   assert.ok(pastoral.guarantees?.controls.some((control) => control.includes('restricted field')));
 });
