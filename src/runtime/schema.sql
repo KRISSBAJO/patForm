@@ -243,6 +243,21 @@ create table process_draft (
 
 create index draft_open on process_draft (tenant_id, process_key) where published_as is null;
 
+-- ----------------------------------------------------------- public links
+
+-- One public link per (workspace, process), made at first publish and kept
+-- across versions. Process keys are unique only within a workspace, so the
+-- key alone never identified a form; see runtime/form-links.ts.
+create table public_form (
+  tenant_id    uuid not null references tenant(id),
+  process_key  text not null,
+  public_id    text not null unique,
+  created_at   timestamptz not null default now(),
+  primary key (tenant_id, process_key)
+);
+
+create index public_form_key on public_form (process_key);
+
 -- ------------------------------------------------------------ held intake
 
 -- Spam control (runtime/screening.ts). A public submission that fails

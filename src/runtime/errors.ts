@@ -37,3 +37,19 @@ export class DraftConflict extends Error {
     super(message);
   }
 }
+
+/**
+ * A public form link that names nothing, or no longer names one thing.
+ *
+ * `ambiguous` is the old `/f/<process_key>` link once a second workspace
+ * publishes the same key: answered with a message and 410, never by picking
+ * one of them. See form-links.ts.
+ */
+export class FormLinkError extends Error {
+  constructor(
+    readonly kind: 'not_found' | 'ambiguous',
+    message: string,
+  ) {
+    super(message);
+  }
+}

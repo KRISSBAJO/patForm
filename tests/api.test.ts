@@ -411,3 +411,22 @@ test('a real provider never sees an address on a reserved domain', async () => {
   assert.equal(none.status, 'failed');
   assert.equal(none.retryable, false);
 });
+
+test('a form reached by its public link keeps every intake rate limit', async () => {
+  const { newPublicId, PUBLIC_ID } = await import('../src/runtime/form-links.js');
+  const id = newPublicId();
+  assert.match(id, PUBLIC_ID);
+  assert.doesNotMatch('employee_onboarding', PUBLIC_ID, 'a process key is never mistaken for a link id');
+  // The routes were widened to accept a hyphen; the limits have to be too, or
+  // the new links would quietly have none.
+  for (const [method, path] of [
+    ['GET', `/api/forms/${id}`],
+    ['POST', `/api/forms/${id}/check`],
+    ['POST', `/api/forms/${id}/draft`],
+    ['GET', `/api/forms/${id}/draft`],
+    ['POST', `/api/forms/${id}/submit`],
+  ] as const) {
+    assert.notEqual(limitFor(method, path), null, `${method} ${path}`);
+  }
+  assert.equal(limitFor('POST', `/api/forms/${id}/submit`)?.perMinute, 5);
+});

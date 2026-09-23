@@ -40,7 +40,14 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
   return body as T;
 }
 
-export function Form({ processKey }: { processKey: string }) {
+export function Form({ processKey: fromUrl }: { processKey: string }) {
+  /*
+   * What every request names. It starts as whatever the URL said, and becomes
+   * the form's own public link as soon as the form loads — so a page opened
+   * through an old `/f/<process_key>` link moves itself onto the link that
+   * names one workspace's form, and the address bar says so.
+   */
+  const [processKey, setProcessKey] = useState(fromUrl);
   const [form, setForm] = useState<PublicForm | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [answers, setAnswers] = useState<Answers>({});
@@ -61,6 +68,10 @@ export function Form({ processKey }: { processKey: string }) {
     (async () => {
       try {
         const f = await api<PublicForm>(`/api/forms/${processKey}`);
+        if (f.publicId && f.publicId !== processKey) {
+          window.history.replaceState(null, '', `/f/${f.publicId}${window.location.search}`);
+          setProcessKey(f.publicId);
+        }
         setForm(f);
 
         const resume = new URLSearchParams(window.location.search).get('resume');

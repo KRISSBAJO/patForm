@@ -45,6 +45,8 @@ export interface DraftDetail extends DraftSummary {
   publishable: boolean;
   /** What a save or a publish must name, so it cannot land on work it has not seen. */
   revision: number;
+  /** The form's public link id, once the process has been published. */
+  formId: string | null;
   /** Who saved it last, by name. Null until somebody saves. */
   updatedBy: string | null;
   lock: DraftLock;
@@ -311,6 +313,13 @@ export async function loadDraft(pool: Pool, principal: Principal, draftId: strin
     diagnostics,
     publishable: compiled ? compiled.publishable : false,
     revision: lock.revision,
+    formId:
+      (
+        await pool.query<{ public_id: string }>(
+          'select public_id from public_form where tenant_id = $1 and process_key = $2',
+          [actor.tenantId, row.process_key],
+        )
+      ).rows[0]?.public_id ?? null,
     updatedBy: lock.updated_by_name,
     lock: lockOf(lock, actor),
   };

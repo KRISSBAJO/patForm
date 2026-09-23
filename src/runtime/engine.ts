@@ -15,6 +15,7 @@ import {
 import type { Blueprint, Action, Party, Transition } from '../blueprint/index.js';
 import { evaluate, render, withCalculatedFields, type Answers } from './expr.js';
 import { inTransaction, isUniqueViolation, type Client, type Pool } from './db.js';
+import { ensurePublicForm } from './form-links.js';
 import {
   automationHealth,
   listRecords,
@@ -174,6 +175,8 @@ export class Engine {
          returning id, tenant_id, process_key, version, blueprint`,
         [tenantId, blueprint.key, version, blueprint, publishedBy],
       );
+      // Its public link, the first time; every later version keeps it.
+      await ensurePublicForm(client, tenantId, blueprint.key);
       return rows[0]!;
     });
   }

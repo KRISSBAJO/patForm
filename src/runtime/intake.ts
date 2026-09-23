@@ -1,4 +1,5 @@
 import type { Screening } from './screening.js';
+import { resolveForm } from './form-links.js';
 import { createHash, randomBytes } from 'node:crypto';
 import type { Blueprint } from '../blueprint/index.js';
 import { validateAnswers, visibleFields, type Answers, type FieldError } from '../blueprint/answers.js';
@@ -52,6 +53,8 @@ export interface PublicField {
 
 export interface PublicForm {
   processKey: string;
+  /** The link to reach this form by: `/f/<publicId>`. */
+  publicId: string;
   processName: string;
   version: number;
   showProgress: boolean;
@@ -111,11 +114,12 @@ function publicField(field: Blueprint['data']['fields'][number]): PublicField {
  * server-side — a public endpoint that returned the whole blueprint would
  * hand a stranger the process's internal design and its data classifications.
  */
-export async function publicForm(pool: Pool, processKey: string): Promise<PublicForm | null> {
+export async function publicForm(pool: Pool, ref: string): Promise<PublicForm | null> {
+  const form = await resolveForm(pool, ref);
   const { rows } = await pool.query<{ blueprint: Blueprint; version: number }>(
     `select blueprint, version from process_version
-      where process_key = $1 order by version desc limit 1`,
-    [processKey],
+      where tenant_id = $1 and process_key = $2 order by version desc limit 1`,
+    [form.tenantId, form.processKey],
   );
   if (!rows.length) return null;
   const bp = rows[0]!.blueprint;
@@ -124,6 +128,10 @@ export async function publicForm(pool: Pool, processKey: string): Promise<Public
 
   return {
     processKey: bp.key,
+    // The link this form should be reached by. A page opened through an old
+    // `/f/<process_key>` link moves itself here, so every later request
+    // names the form unambiguously.
+    publicId: form.publicId,
     processName: bp.name,
     version: rows[0]!.version,
     showProgress: bp.experience.showProgress,
@@ -156,30 +164,55 @@ export interface DraftState {
   submittedInstanceId: string | null;
 }
 
-async function latestVersion(client: Client, processKey: string) {
+/**
+ * Which form, in which workspace.
+ *
+ * `processKey` is what the caller has: from a public URL it is a form link
+ * (`k7m2-q9x4-tbhw`, or an old bare key), resolved by form-links.ts. A caller
+ * that already knows its workspace — the public API, whose key belongs to
+ * one — passes `tenantId`, and the key is looked up inside it and nowhere
+ * else. Before either existed this took the highest version of the key in
+ * *any* workspace, which is how one organisation's form could file a record
+ * in another's.
+ */
+export interface FormTarget {
+  processKey: string;
+  tenantId?: string;
+}
+
+async function latestVersion(client: Client, target: FormTarget) {
+  const scoped = target.tenantId
+    ? { tenantId: target.tenantId, processKey: target.processKey }
+    : await resolveForm(client, target.processKey);
   const { rows } = await client.query<{ id: string; tenant_id: string; blueprint: Blueprint }>(
     `select id, tenant_id, blueprint from process_version
-      where process_key = $1 order by version desc limit 1`,
-    [processKey],
+      where tenant_id = $1 and process_key = $2 order by version desc limit 1`,
+    [scoped.tenantId, scoped.processKey],
   );
-  if (!rows.length) throw new Error(`no published version of "${processKey}"`);
+  if (!rows.length) throw new Error(`no published version of "${scoped.processKey}"`);
   return rows[0]!;
 }
 
 /** Creates a draft, or updates the one the token names. Autosave calls this. */
 export async function saveDraft(
   pool: Pool,
-  args: { processKey: string; token?: string; answers: Answers; page: number },
+  args: FormTarget & { token?: string; answers: Answers; page: number },
 ): Promise<DraftState> {
   return inTransaction(pool, async (client) => {
-    const version = await latestVersion(client, args.processKey);
+    const version = await latestVersion(client, args);
 
     if (args.token) {
+      // A token is only good for the form it was issued by. Matching on the
+      // token alone let one form's answers be written into a draft of another.
       const { rows } = await client.query<{ id: string; submitted_instance_id: string | null }>(
-        `update draft set answers = $1, page = $2, updated_at = now()
-          where token_hash = $3 and submitted_instance_id is null and expires_at > now()
-          returning id, submitted_instance_id`,
-        [JSON.stringify(args.answers), args.page, sha256(args.token)],
+        `update draft d set answers = $1, page = $2, updated_at = now()
+          where d.token_hash = $3 and d.submitted_instance_id is null and d.expires_at > now()
+            and d.tenant_id = $4
+            and d.process_version_id in (
+              select pv.id from process_version pv
+               where pv.tenant_id = $4 and pv.process_key = (select process_key from process_version where id = $5))
+          returning d.id, d.submitted_instance_id`,
+        [JSON.stringify(args.answers), args.page, sha256(args.token), version.tenant_id, version.id],
       );
       if (rows.length) {
         return { token: args.token, answers: args.answers, page: args.page, submittedInstanceId: null };
@@ -198,15 +231,20 @@ export async function saveDraft(
   });
 }
 
-export async function loadDraft(pool: Pool, token: string): Promise<DraftState | null> {
+export async function loadDraft(pool: Pool, token: string, form?: string): Promise<DraftState | null> {
+  // With a form named, only a draft of that form in that workspace comes back:
+  // a resume token opened on another form's page shows nothing, not its answers.
+  const scope = form ? await resolveForm(pool, form) : null;
   const { rows } = await pool.query<{
     answers: Answers;
     page: number;
     submitted_instance_id: string | null;
   }>(
-    `select answers, page, submitted_instance_id from draft
-      where token_hash = $1 and expires_at > now()`,
-    [sha256(token)],
+    `select d.answers, d.page, d.submitted_instance_id
+       from draft d join process_version pv on pv.id = d.process_version_id
+      where d.token_hash = $1 and d.expires_at > now()
+        and ($2::uuid is null or (d.tenant_id = $2 and pv.process_key = $3))`,
+    [sha256(token), scope?.tenantId ?? null, scope?.processKey ?? null],
   );
   const row = rows[0];
   if (!row) return null;
@@ -230,11 +268,11 @@ export interface CheckResult {
 
 export async function checkAnswers(
   pool: Pool,
-  args: { processKey: string; answers: Answers; pageIndex?: number },
+  args: FormTarget & { answers: Answers; pageIndex?: number },
 ): Promise<CheckResult> {
   const client = await pool.connect();
   try {
-    const version = await latestVersion(client, args.processKey);
+    const version = await latestVersion(client, args);
     const bp = version.blueprint;
     const withTotals = withCalculatedFields(bp.data.fields, args.answers);
 
@@ -283,8 +321,7 @@ export interface SubmitResult {
  */
 export async function submitForm(
   pool: Pool,
-  args: {
-    processKey: string;
+  args: FormTarget & {
     token?: string;
     answers: Answers;
     now?: Date;
@@ -302,7 +339,7 @@ export async function submitForm(
   const client = await pool.connect();
   let version: Awaited<ReturnType<typeof latestVersion>>;
   try {
-    version = await latestVersion(client, args.processKey);
+    version = await latestVersion(client, args);
   } finally {
     client.release();
   }
@@ -357,15 +394,17 @@ export async function submitForm(
 
   await inTransaction(pool, async (tx) => {
     if (args.token) {
+      // Only this form's draft, in this workspace — see saveDraft.
       await tx.query(
-        `update draft set submitted_instance_id = $1, updated_at = now() where token_hash = $2`,
-        [result.instanceId, sha256(args.token)],
+        `update draft set submitted_instance_id = $1, updated_at = now()
+          where token_hash = $2 and tenant_id = $3`,
+        [result.instanceId, sha256(args.token), version.tenant_id],
       );
       // Files uploaded against the draft now belong to the record.
       await tx.query(
         `update file set instance_id = $1
-          where draft_id = (select id from draft where token_hash = $2)`,
-        [result.instanceId, sha256(args.token)],
+          where draft_id = (select id from draft where token_hash = $2 and tenant_id = $3)`,
+        [result.instanceId, sha256(args.token), version.tenant_id],
       );
     }
   });

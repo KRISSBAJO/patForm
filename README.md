@@ -908,8 +908,8 @@ routes it exists to check — see entry 44 in
 
 Three things the console could not answer, all built and none of them linked:
 
-- **Processes & forms** — each published process serves a form at
-  `/f/<key>`. That link is the answer to "how does a record get created": send
+- **Processes & forms** — each published process serves a form at its own
+  link, `/f/<id>`. That link is the answer to "how does a record get created": send
   it to whoever fills it in, and every submission becomes a record routed by
   the process's own rules. Nobody needs an account to submit one.
 - **People** — invite, change a role, deactivate, revoke sessions. The
@@ -1046,9 +1046,23 @@ npm run db:up && npm run seed && npm run api && npm run worker
 npm --prefix web run dev
 ```
 
-`/f/employee_onboarding` is the public form: multi-page, conditional sections,
-autosave with a resume link in the address bar, and a status page at
-`/f/status?resume=…` where a respondent answers a request for changes.
+`/f/employee_onboarding` opens the public form, and moves itself to that
+form's own link: multi-page, conditional sections, autosave with a resume link
+in the address bar, and a status page at `/f/status?resume=…` where a
+respondent answers a request for changes.
+
+**Each form's link names one workspace's form.** A process key is unique only
+inside a workspace, and the public lookups used to take the highest version of
+a key across *all* of them — so two organisations that installed the same pack
+shared one URL, and one's applicants could become the other's records. The
+public API had the same lookup. Now every published process gets a link like
+`/f/k7m2-q9x4-tbhw` at its first publish, kept across versions: random, so it
+cannot be guessed and a workspace's forms cannot be listed by trying names. An
+old `/f/<process_key>` link still works while only one workspace has that key,
+and answers `410` with a message once two do, rather than choosing. The public
+API files into its key's own workspace. A draft token only reads and writes
+drafts of the form that issued it, and the spam ticket is signed for the form's
+link, not its key.
 
 Two properties worth knowing:
 

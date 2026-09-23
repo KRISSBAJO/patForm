@@ -835,6 +835,18 @@ A workspace sees only the suppressed addresses it has written to — the list is
 
 **Fixed** by applying the same scope to the lift as to the list. **Generalisable:** when reading is scoped, every write that names the same thing needs the same scope — the write is where it matters.
 
+### 78. A key that was unique in one workspace, used as though it were unique everywhere
+
+A process key is unique within a workspace: `unique (tenant_id, process_key, version)`. The public form lived at `/f/<process_key>`, and every lookup behind it — serving the form, checking answers, saving a draft, submitting — was `where process_key = $1 order by version desc limit 1`, with no workspace. Two workspaces that installed the same pack shared a URL. The one that had published more versions was served, and the other's applicants were filed as its records.
+
+The public API had the same lookup. `POST /v1/records` authenticates a key that belongs to one workspace, then passed only the process key on — so one customer's key could create a record in another customer's process of the same name, if that one was on a higher version.
+
+It was invisible in development, where there is one workspace, and in every proof, which reset the database between runs. It was noticed while adding spam control, by reading the query that served the form rather than the code that called it.
+
+**Fixed** with a public id per (workspace, process) — random, kept across versions, made at first publish — which is now the link. Every intake lookup resolves to one workspace before reading anything. The public API passes its key's workspace. An old key-only link still works while the key is unique and refuses with a `410` once it is not. A draft token only reaches drafts of the form that issued it, and the spam ticket is signed for the form's link. A proof puts the other workspace on the higher version and goes in through every door.
+
+**Generalisable:** a uniqueness constraint says what is unique *within what*. Every lookup by that value has to carry the "within" with it, and the ones that do not will work perfectly for as long as there is only one of the thing it was left out of.
+
 ---
 
 ## What the compiler structurally cannot catch

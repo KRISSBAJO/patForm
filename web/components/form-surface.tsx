@@ -57,6 +57,8 @@ export interface Branding {
 
 export interface PublicForm {
   processKey: string;
+  /** The link this form is reached by, `/f/<publicId>`. */
+  publicId?: string;
   processName: string;
   version: number;
   showProgress: boolean;

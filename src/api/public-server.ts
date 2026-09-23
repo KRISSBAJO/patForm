@@ -120,7 +120,10 @@ route('POST', /^\/v1\/records$/, 'POST /records', async ({ pool, engine, princip
   if (!processKey) throw apiErrors.validation('process is required');
 
   const result = await withIdempotency(pool, { tenantId: principal.tenantId, key: idempotencyKey, body }, async () => {
-    const outcome = await submitForm(pool, { processKey, answers: (data ?? {}) as never });
+    // Inside the key's own workspace. Without the tenant this took the highest
+    // version of the key anywhere, so one customer's key could file a record
+    // in another customer's process of the same name.
+    const outcome = await submitForm(pool, { processKey, tenantId: principal.tenantId, answers: (data ?? {}) as never });
     if (!outcome.ok) {
       throw apiErrors.validation('some answers are not acceptable', { problems: outcome.errors });
     }

@@ -76,6 +76,7 @@ export async function processesFor(pool: Pool, tenantId: string, actorId: string
     version: number;
     open_records: number;
     roles: string[];
+    public_id: string | null;
   }>(
     `with latest as (
        select distinct on (process_key) process_key, version, blueprint
@@ -88,7 +89,9 @@ export async function processesFor(pool: Pool, tenantId: string, actorId: string
             (select count(*)::int from instance i
               where i.tenant_id = $1 and i.process_key = l.process_key and i.completed_at is null) as open_records,
             coalesce((select array_agg(m.role_key) from membership m
-              where m.tenant_id = $1 and m.actor_id = $2 and m.process_key = l.process_key), '{}') as roles
+              where m.tenant_id = $1 and m.actor_id = $2 and m.process_key = l.process_key), '{}') as roles,
+            (select f.public_id from public_form f
+              where f.tenant_id = $1 and f.process_key = l.process_key) as public_id
        from latest l
        order by l.process_key`,
     [tenantId, actorId],

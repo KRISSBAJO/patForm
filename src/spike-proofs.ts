@@ -73,6 +73,8 @@ import {
 } from './runtime/builder.js';
 import { DraftConflict } from './runtime/errors.js';
 import { issueTicket, screen } from './runtime/screening.js';
+import { PUBLIC_ID, resolveForm } from './runtime/form-links.js';
+import { FormLinkError } from './runtime/errors.js';
 import { discardHeld, listHeld, releaseHeld } from './runtime/held.js';
 import { checkSendingHealth, resendSkipped, sendingHealth, skippedFor } from './runtime/delivery-health.js';
 
@@ -1236,6 +1238,116 @@ export async function proveBulkActions({ pool, bp, T0, record, completeFor }: Pr
       `("${moveRun.preview!.skipped[0]?.reason}"); an IT operator was refused ("${moveByOperator.preview!.refused[0]?.reason}"); ` +
       `a move into provisioning did not compile (ACT007), because nothing moves a record there by hand. The two ` +
       `withdrawn records each got the withdrawal notice the step sends — ${notices[0]!.n} in all.`,
+  );
+}
+
+/**
+ * Two workspaces with the same process each get their own form, and their own records.
+ *
+ * Process keys are unique only inside a workspace, and every public lookup
+ * took the highest version of a key across all of them. Two organisations
+ * that installed the same pack shared `/f/employee_onboarding`; whichever had
+ * published more versions was served; and the other's applicants became its
+ * records. The public API had the same lookup. This proof sets up exactly
+ * that — the other workspace on a higher version — and goes in every door.
+ */
+export async function proveFormLinks({ pool, bp, T0, record, completeFor }: ProofCtx): Promise<void> {
+  const engine = new Engine(pool);
+  const a = await engine.createTenant('proof:links-a');
+  const b = await engine.createTenant('proof:links-b');
+  await engine.publish(a, bp, 'proof');
+  const other = { ...bp, name: 'Somebody Else’s Onboarding' };
+  await engine.publish(b, other, 'proof');
+  await engine.publish(b, other, 'proof'); // b is now on version 2, a on version 1
+
+  const idOf = async (tenantId: string) =>
+    (await pool.query<{ public_id: string }>('select public_id from public_form where tenant_id = $1 and process_key = $2', [tenantId, bp.key]))
+      .rows[0]!.public_id;
+  const aId = await idOf(a);
+  const bId = await idOf(b);
+  const tenantOf = async (instanceId: string) =>
+    (await pool.query<{ tenant_id: string }>('select tenant_id from instance where id = $1', [instanceId])).rows[0]!.tenant_id;
+
+  // 1. Each link serves its own workspace's form.
+  const aForm = await publicForm(pool, aId);
+  const bForm = await publicForm(pool, bId);
+
+  // 2. Each link's submissions become that workspace's records.
+  const person = screen({ processKey: aId, ticket: issueTicket(aId, T0.getTime() - 60_000), trap: '', now: T0.getTime() });
+  const intoA = await submitForm(pool, {
+    processKey: aId,
+    answers: completeFor(bp, { personal_email: 'links.a@example.test' }) as never,
+    now: T0,
+    screening: person,
+  });
+  const intoB = await submitForm(pool, {
+    processKey: bId,
+    answers: completeFor(bp, { personal_email: 'links.b@example.test' }) as never,
+    now: T0,
+  });
+
+  // 3. The old link, now that two workspaces share the key, refuses rather than picks.
+  let oldLink = 'served';
+  try {
+    await publicForm(pool, bp.key);
+  } catch (err) {
+    oldLink = err instanceof FormLinkError ? err.kind : String(err);
+  }
+
+  // 4. The public API files into the key's own workspace, not the higher version elsewhere.
+  const viaApi = await submitForm(pool, {
+    processKey: bp.key,
+    tenantId: a,
+    answers: completeFor(bp, { personal_email: 'links.api@example.test' }) as never,
+    now: T0,
+  });
+
+  // 5. A ticket is good for the form that issued it, not a form with the same key.
+  const crossTicket = screen({ processKey: bId, ticket: issueTicket(aId, T0.getTime() - 60_000), now: T0.getTime() });
+
+  // 6. A draft token from one workspace's form writes nothing into, and reads nothing from, the other's.
+  const draftA = await saveDraft(pool, { processKey: aId, answers: { full_name: 'Draft In A' }, page: 0 });
+  const onB = await saveDraft(pool, { processKey: bId, token: draftA.token, answers: { full_name: 'Written Via B' }, page: 0 });
+  const stillA = await loadDraft(pool, draftA.token, aId);
+  const readFromB = await loadDraft(pool, draftA.token, bId);
+
+  // 7. A new version keeps the link; a key only one workspace has still resolves by name.
+  await engine.publish(a, bp, 'proof');
+  const aIdAfter = await idOf(a);
+  const solo = { ...bp, key: 'links_only_in_a', name: 'Only in A' };
+  await engine.publish(a, solo, 'proof');
+  const soloByName = await resolveForm(pool, 'links_only_in_a');
+
+  record(
+    'Two workspaces with the same process each get their own form and their own records',
+    'Public form links name one workspace’s form; the old key-only link refuses once it is shared; the public API is scoped to its key’s workspace.',
+    PUBLIC_ID.test(aId) &&
+      PUBLIC_ID.test(bId) &&
+      aId !== bId &&
+      aForm?.processName === bp.name &&
+      aForm?.version === 1 &&
+      bForm?.processName === other.name &&
+      intoA.ok &&
+      !intoA.held &&
+      (await tenantOf(intoA.instanceId!)) === a &&
+      intoB.ok &&
+      (await tenantOf(intoB.instanceId!)) === b &&
+      oldLink === 'ambiguous' &&
+      viaApi.ok &&
+      (await tenantOf(viaApi.instanceId!)) === a &&
+      crossTicket.reasons.includes('bad_ticket') &&
+      onB.token !== draftA.token &&
+      stillA?.answers.full_name === 'Draft In A' &&
+      readFromB === null &&
+      aIdAfter === aId &&
+      soloByName.tenantId === a,
+    `Workspace A published once and B twice, which is the case that used to hand A's applicants to B. ` +
+      `A's link (${aId}) served A's form at version ${aForm?.version}; B's (${bId}) served B's. A submission through ` +
+      `each landed in its own workspace. The old /f/${bp.key} link, now shared, answered "${oldLink}" instead of ` +
+      `choosing. The public API, given A's workspace, filed into A despite B's higher version. A ticket from A's form ` +
+      `was refused on B's (${crossTicket.reasons.join(', ')}). A's draft token used on B's form started a new draft ` +
+      `and left A's reading "${stillA?.answers.full_name}"; read through B's form it returned nothing. Publishing A ` +
+      `again kept its link, and a key only A has still resolves by name.`,
   );
 }
 

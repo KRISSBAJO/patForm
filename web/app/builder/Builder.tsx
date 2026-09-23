@@ -193,6 +193,7 @@ interface DraftDetail {
   diagnostics: Diagnostic[];
   publishable: boolean;
   revision: number;
+  formId: string | null;
   updatedBy: string | null;
   lock: DraftLock;
   decision?: string;
@@ -980,7 +981,7 @@ export function Builder() {
                   * the link it *will* have, greyed, because the key is being
                   * chosen now and it cannot change afterwards.
                   */}
-                <FormLink processKey={draft.processKey} live={draft.basedOnVersion !== null} />
+                <FormLink formId={draft.formId} />
               </div>
               <div className="bd__actions">
                 <button className="bd__btn" onClick={discard} disabled={busy !== null || frozen}>
@@ -1476,9 +1477,17 @@ function SaveState({ status }: { status: string }) {
  * is a memory test, and Viva's works because every icon has its word under it.
  */
 /** Where the form lives, and whether it is live yet. */
-function FormLink({ processKey, live }: { processKey: string; live: boolean }) {
+/*
+ * The form's link is a random id, made when the process is first published —
+ * a process key is only unique within one workspace, so it never named a
+ * form on its own. Before the first publish there is no link yet, and this
+ * says so rather than showing one that will not work.
+ */
+function FormLink({ formId }: { formId: string | null }) {
   const [copied, setCopied] = useState(false);
-  const url = typeof window === 'undefined' ? '' : `${window.location.origin}/f/${processKey}`;
+  const live = formId !== null;
+  const path = live ? `/f/${formId}` : '/f/…';
+  const url = typeof window === 'undefined' || !live ? '' : `${window.location.origin}${path}`;
 
   return (
     <p className={`bd__formLink${live ? '' : ' bd__formLink--pending'}`}>
@@ -1498,22 +1507,24 @@ function FormLink({ processKey, live }: { processKey: string; live: boolean }) {
       </svg>
       {live ? (
         <a href={url} target="_blank" rel="noreferrer">
-          /f/{processKey}
+          {path}
         </a>
       ) : (
-        <span>/f/{processKey}</span>
+        <span>{path}</span>
       )}
-      <button
-        type="button"
-        className="bd__formCopy"
-        onClick={() => {
-          void navigator.clipboard?.writeText(url);
-          setCopied(true);
-        }}
-      >
-        {copied ? 'Copied' : 'Copy'}
-      </button>
-      {!live && <span className="bd__formNote">once you publish</span>}
+      {live && (
+        <button
+          type="button"
+          className="bd__formCopy"
+          onClick={() => {
+            void navigator.clipboard?.writeText(url);
+            setCopied(true);
+          }}
+        >
+          {copied ? 'Copied' : 'Copy'}
+        </button>
+      )}
+      {!live && <span className="bd__formNote">the link is made when you first publish</span>}
     </p>
   );
 }

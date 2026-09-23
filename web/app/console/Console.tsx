@@ -66,7 +66,7 @@ interface RecordDetail {
 
 interface SessionInfo {
   actor: Me;
-  processes: { process_key: string; name: string; version: number; open_records: number; roles: string[] }[];
+  processes: { process_key: string; name: string; version: number; open_records: number; roles: string[]; public_id: string }[];
   devices: { id: string; user_agent: string | null; last_seen_at: string }[];
 }
 

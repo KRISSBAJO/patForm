@@ -77,11 +77,11 @@ export interface IntakeLimit {
  * the one worth being mean about.
  */
 export const INTAKE_LIMITS: { test: RegExp; method: string; limit: IntakeLimit }[] = [
-  { method: 'POST', test: /^\/api\/forms\/[a-z0-9_]+\/submit$/, limit: { scope: 'submit', perMinute: 5, perHour: 20 } },
-  { method: 'POST', test: /^\/api\/forms\/[a-z0-9_]+\/draft$/, limit: { scope: 'draft', perMinute: 30 } },
-  { method: 'POST', test: /^\/api\/forms\/[a-z0-9_]+\/check$/, limit: { scope: 'check', perMinute: 120 } },
-  { method: 'GET', test: /^\/api\/forms\/[a-z0-9_]+\/draft$/, limit: { scope: 'resume', perMinute: 60 } },
-  { method: 'GET', test: /^\/api\/forms\/[a-z0-9_]+$/, limit: { scope: 'read', perMinute: 60 } },
+  { method: 'POST', test: /^\/api\/forms\/[a-z0-9_-]+\/submit$/, limit: { scope: 'submit', perMinute: 5, perHour: 20 } },
+  { method: 'POST', test: /^\/api\/forms\/[a-z0-9_-]+\/draft$/, limit: { scope: 'draft', perMinute: 30 } },
+  { method: 'POST', test: /^\/api\/forms\/[a-z0-9_-]+\/check$/, limit: { scope: 'check', perMinute: 120 } },
+  { method: 'GET', test: /^\/api\/forms\/[a-z0-9_-]+\/draft$/, limit: { scope: 'resume', perMinute: 60 } },
+  { method: 'GET', test: /^\/api\/forms\/[a-z0-9_-]+$/, limit: { scope: 'read', perMinute: 60 } },
 ];
 
 export function limitFor(method: string, pathname: string): IntakeLimit | null {

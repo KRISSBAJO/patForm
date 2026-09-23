@@ -456,13 +456,15 @@ interface ProcessRow {
   version: number;
   open_records: number;
   roles: string[];
+  /** Made when the process is first published, so every row here has one. */
+  public_id: string;
 }
 
 /**
  * Where records come from.
  *
  * The answer was in the product the whole time — a published process serves a
- * public form at `/f/<key>`, and a submission to it creates the record — and
+ * public form at its own link, `/f/<id>`, and a submission to it creates the record — and
  * the console never said so or linked to it. Somebody could approve records
  * all day without ever seeing where they arrive from.
  */
@@ -552,7 +554,9 @@ export function ProcessesView({
       </div>
 
       {processes.map((p) => {
-        const url = `${origin}/f/${p.process_key}`;
+        // Each workspace's form has its own link; the key alone is shared by
+        // every workspace that installed the same pack.
+        const url = `${origin}/f/${p.public_id}`;
         const from = installs.find((i) => i.process_key === p.process_key);
         return (
           <div className="cs__panel mg__process" key={p.process_key}>

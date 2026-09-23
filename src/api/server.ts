@@ -33,6 +33,8 @@ import {
 import { requestPasswordReset, resetPassword, sendVerification, verifyEmail } from '../runtime/account.js';
 import { DraftConflict } from '../runtime/errors.js';
 import { assertScreeningConfigured, issueTicket, screen, TRAP_FIELD } from '../runtime/screening.js';
+import { resolveForm } from '../runtime/form-links.js';
+import { FormLinkError } from '../runtime/errors.js';
 import { discardHeld, listHeld, releaseHeld } from '../runtime/held.js';
 import { resendSkipped, sendingHealth, skippedFor } from '../runtime/delivery-health.js';
 import {
@@ -141,38 +143,39 @@ function route(method: string, pattern: RegExp, handler: Handler): void {
 // form, keep a draft, validate, and submit. Nothing here reads a record: the
 // status page needs a resume token, handled in the resume branch below.
 
-route('GET', /^\/api\/forms\/([a-z0-9_]+)$/, async ({ pool, url }) => {
+route('GET', /^\/api\/forms\/([a-z0-9_-]+)$/, async ({ pool, url }) => {
   const key = url.pathname.split('/').pop()!;
   const form = await publicForm(pool, key);
   if (!form) throw new HttpError(404, 'no such form');
-  // The ticket that says this form was loaded, and when. See screening.ts.
-  return { ...form, ticket: issueTicket(key), trap: TRAP_FIELD };
+  // The ticket that says this form was loaded, and when. Signed for the
+  // form's public id — one workspace's form — not for whatever the URL said.
+  return { ...form, ticket: issueTicket(form.publicId), trap: TRAP_FIELD };
 });
 
-route('POST', /^\/api\/forms\/([a-z0-9_]+)\/check$/, async ({ pool, url }, body) => {
+route('POST', /^\/api\/forms\/([a-z0-9_-]+)\/check$/, async ({ pool, url }, body) => {
   const key = url.pathname.split('/')[3]!;
   const { answers, pageIndex } = body as { answers?: Answers; pageIndex?: number };
   return checkAnswers(pool, { processKey: key, answers: answers ?? {}, pageIndex });
 });
 
-route('POST', /^\/api\/forms\/([a-z0-9_]+)\/draft$/, async ({ pool, url }, body) => {
+route('POST', /^\/api\/forms\/([a-z0-9_-]+)\/draft$/, async ({ pool, url }, body) => {
   const key = url.pathname.split('/')[3]!;
   const { token, answers, page } = body as { token?: string; answers?: Answers; page?: number };
   return saveDraft(pool, { processKey: key, token, answers: answers ?? {}, page: page ?? 0 });
 });
 
-route('GET', /^\/api\/forms\/([a-z0-9_]+)\/draft$/, async ({ pool, url }) => {
+route('GET', /^\/api\/forms\/([a-z0-9_-]+)\/draft$/, async ({ pool, url }) => {
   const token = url.searchParams.get('token');
   if (!token) throw new HttpError(400, 'token is required');
-  const draft = await loadDraft(pool, token);
+  const draft = await loadDraft(pool, token, url.pathname.split('/')[3]!);
   if (!draft) throw new HttpError(404, 'that link has expired');
   return draft;
 });
 
-route('POST', /^\/api\/forms\/([a-z0-9_]+)\/submit$/, async ({ pool, engine, url }, body) => {
+route('POST', /^\/api\/forms\/([a-z0-9_-]+)\/submit$/, async ({ pool, engine, url }, body) => {
   const key = url.pathname.split('/')[3]!;
   const { token, answers, ticket, trap } = body as { token?: string; answers?: Answers; ticket?: unknown; trap?: unknown };
-  const screening = screen({ processKey: key, ticket, trap });
+  const screening = screen({ processKey: (await resolveForm(pool, key)).publicId, ticket, trap });
   const { held, ...result } = await submitForm(pool, { processKey: key, token, answers: answers ?? {}, screening });
   if (held) {
     // The reasons, never the answers: a log line is not where unvetted
@@ -1292,6 +1295,10 @@ async function main(): Promise<void> {
               ? err.status
               : err instanceof DraftConflict
                 ? 409
+                : err instanceof FormLinkError
+                  ? err.kind === 'ambiguous'
+                    ? 410
+                    : 404
                 : err instanceof InvalidInput
                   ? 400
                   : 500;
@@ -1312,6 +1319,9 @@ async function main(): Promise<void> {
           return send(res, 403, { error: 'refused', action: err.action, reason: err.reason });
         }
         if (err instanceof HttpError) return send(res, err.status, { error: err.message });
+        if (err instanceof FormLinkError) {
+          return send(res, err.kind === 'ambiguous' ? 410 : 404, { error: err.message });
+        }
         if (err instanceof DraftConflict) {
           return send(res, 409, { error: 'conflict', kind: err.kind, reason: err.message, ...err.detail });
         }
