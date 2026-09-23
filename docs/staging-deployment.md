@@ -3,8 +3,8 @@
 This staging setup uses one Render Free web service for the API and worker,
 Vercel Hobby for the Next.js app, and a **new empty Renviq database**. It is for
 synthetic data and internal testing. Do not connect the existing `patform` or
-`launch-validation` database. Leave `patforms.com` unassigned until the
-production launch.
+`launch-validation` database. The staging site currently uses `patforms.com`
+at the owner's request. Do not put customer data on this free deployment.
 
 ## Database
 
@@ -43,8 +43,18 @@ Import this repository into the personal Hobby account as `patform-staging`.
 Set the Root Directory to `web`, Framework Preset to Next.js, and Build Command
 to `npx next build` so Vercel uses its normal `.next` output directory. Set the
 server-side environment variable `API_URL` to the Render service HTTPS URL.
-Deploy the project. Then set Render's `APP_URL` and `CONSOLE_ORIGIN` to the
-resulting Vercel URL and redeploy the Render service.
+Deploy the project. Set Render's `APP_URL` and `CONSOLE_ORIGIN` to
+`https://patforms.com` and redeploy the Render service. The default Vercel
+address remains available for checks while custom-domain DNS propagates.
+
+## Domain
+
+The Vercel project has `patforms.com` connected to Production and
+`www.patforms.com` configured as a temporary redirect to the apex. At GoDaddy,
+the apex A record points to `216.198.79.1` and the `www` CNAME points to
+`cca4c78da1e9d3dd.vercel-dns-017.com.`. These targets came from Vercel's
+project-specific domain instructions. Recheck those instructions before any
+future DNS change. DNS and HTTPS certificate issuance can take time to settle.
 
 ## Check
 
