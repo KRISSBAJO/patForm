@@ -83,7 +83,7 @@ or journal reference that finishes the work. Refunds remain a Finance task; the
 Stripe and Paystack settings do not issue money from these processes. An existing
 draft or published process keeps its own version until it is changed in the builder.
 
-**Other catalogue templates.** All 88 catalogue packs now have a process-specific
+**Other catalogue templates.** All 90 catalogue packs now have a process-specific
 follow-up task and a required record reference before they can finish. Their
 questions, decision chain and completion message are tailored to the activity.
 The catalogue check refuses a new pack that omits its task description, evidence
@@ -92,6 +92,14 @@ retention and threshold controls; installers can change fields, people and rules
 in the builder. The three separately authored reference processes remain
 separate. Existing installations do not change automatically when a built-in
 pack gets a new version.
+
+**Church templates.** The catalogue includes a generic Church connect card and
+a Church site and ministry report. The latter adapts the facilities, attendance,
+finance and ministry sections of a church station report for branch pastors,
+accounts staff and administrators. It leaves pastor family details out of the
+operational report. The pastoral, hardship and connect-card packs suppress
+automatic submitter emails when the person chooses phone or no contact. The
+church forms now record the actual follow-up before marking work complete.
 
 **Finance receipts.** Expense claims, petty cash and invoice approvals accept a
 PDF, PNG or JPEG up to 5 MB, or an external document reference. Uploads go to the

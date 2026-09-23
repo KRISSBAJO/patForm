@@ -25,6 +25,7 @@
  */
 
 import type { Blueprint } from '../blueprint/index.js';
+import type { Expr } from '../blueprint/common.js';
 import { rulesFor, type CategoryRules } from './rules.js';
 
 export type Sensitivity = 'public' | 'internal' | 'confidential' | 'restricted';
@@ -79,6 +80,10 @@ export interface PackSpec {
   decision?: { question: string; provisionally: string };
   /** What a successful finish means in the message to the submitter. */
   completionMessage?: string;
+  /** Neutral confirmation for processes that may not be allowed to contact the submitter. */
+  confirmationMessage?: string;
+  /** Suppress every automatic message to the submitter when contact would be unsafe or unwanted. */
+  suppressSubmitterEmailWhen?: Expr;
   /** Work somebody does after the decision, before it is finished. */
   task?: { key: string; name: string; byRole: string; description?: string; requiredFields?: string[]; dueInHours?: number; expireInHours?: number };
   fields: PackField[];
@@ -711,6 +716,7 @@ function emails(spec: PackSpec, rules: CategoryRules) {
       cc: [],
       subject: `We have your ${spec.name.toLowerCase()}`,
       body: `Hello {{submitter_name}},\n\nWe have what you sent and it is with ${firstDecider(spec)} now. You will hear from us when there is a decision.\n\nYou do not need to do anything.`,
+      ...(spec.suppressSubmitterEmailWhen ? { skipWhen: spec.suppressSubmitterEmailWhen } : {}),
     },
     {
       key: 'reminder',
@@ -750,6 +756,7 @@ Open it in the console — it is still decidable, and it closes itself if nobody
       cc: [],
       subject: 'Approved',
       body: `Hello {{submitter_name}},\n\n${spec.completionMessage ?? 'This has been approved and is complete. Nothing further is needed from you.'}`,
+      ...(spec.suppressSubmitterEmailWhen ? { skipWhen: spec.suppressSubmitterEmailWhen } : {}),
     },
     {
       key: 'rejected',
@@ -759,6 +766,7 @@ Open it in the console — it is still decidable, and it closes itself if nobody
       cc: [],
       subject: 'Not approved',
       body: `Hello {{submitter_name}},\n\nThis was not approved. If you think that is wrong, reply to this message and somebody will look again.`,
+      ...(spec.suppressSubmitterEmailWhen ? { skipWhen: spec.suppressSubmitterEmailWhen } : {}),
     },
     {
       key: 'expired',
@@ -768,6 +776,7 @@ Open it in the console — it is still decidable, and it closes itself if nobody
       cc: [],
       subject: 'Closed without a decision',
       body: `Hello {{submitter_name}},\n\nThis was closed because nobody decided it in time. That is our failing rather than yours — send it again, or reply and we will look into it.`,
+      ...(spec.suppressSubmitterEmailWhen ? { skipWhen: spec.suppressSubmitterEmailWhen } : {}),
     },
   ];
 }
@@ -1077,7 +1086,7 @@ export function buildBlueprint(spec: PackSpec): unknown {
       saveAndResume: true,
       locales: ['en-GB'],
       confirmation: {
-        message: 'Thank you. We have what you sent and will be in touch.',
+        message: spec.confirmationMessage ?? 'Thank you. We have what you sent and will be in touch.',
         showStatusLink: true,
       },
       pages: [

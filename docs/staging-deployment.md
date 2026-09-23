@@ -19,7 +19,7 @@ at the owner's request. Do not put customer data on this free deployment.
 3. Create a staging workspace through `/signup` after the site is deployed.
    Use test accounts and test records only.
 
-Staging startup publishes the 88 generated process packs and three hand-built
+Staging startup publishes the 90 generated process packs and three hand-built
 reference packs into the catalogue. It compares each with the current built-in
 version before publishing, so restarts do not create duplicate versions or
 change an installed process. The development `npm run seed` is never used in
