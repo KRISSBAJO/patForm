@@ -114,43 +114,7 @@ export async function authorize(
   args: { request: AuthorizeRequest; tenantId: string; actorId: string },
 ): Promise<{ code: string; redirectTo: string; granted: Capability[] }> {
   const { request } = args;
-
-  if (request.codeChallengeMethod !== 'S256') {
-    // `plain` is permitted by the RFC and is worth nothing: the verifier and
-    // the challenge are identical, so anybody who sees one has the other.
-    throw new OAuthError(400, 'invalid_request', 'code_challenge_method must be S256');
-  }
-  if (!request.codeChallenge || request.codeChallenge.length < 43) {
-    throw new OAuthError(400, 'invalid_request', 'code_challenge is missing or too short');
-  }
-
-  const { rows } = await pool.query<{ redirect_uris: string[]; tenant_id: string }>(
-    'select redirect_uris, tenant_id from oauth_client where client_id = $1',
-    [request.clientId],
-  );
-  const client = rows[0];
-  if (!client) throw new OAuthError(400, 'invalid_client', 'no such client');
-  if (client.tenant_id !== args.tenantId) {
-    throw new OAuthError(400, 'invalid_client', 'that client belongs to another workspace');
-  }
-
-  // Exact match. Prefix matching is how an open redirect becomes a stolen
-  // token, and "it is on our domain" is exactly the assumption that fails.
-  if (!client.redirect_uris.includes(request.redirectUri)) {
-    throw new OAuthError(400, 'invalid_redirect_uri', 'redirect_uri does not match a registered one exactly');
-  }
-
-  const { rows: actors } = await pool.query<{ workspace_role: WorkspaceRole }>(
-    'select workspace_role from actor where id = $1 and tenant_id = $2 and active',
-    [args.actorId, args.tenantId],
-  );
-  if (!actors[0]) throw new OAuthError(403, 'access_denied', 'no active member to grant this');
-
-  const held = WORKSPACE_GRANTS[actors[0].workspace_role] as readonly Capability[];
-  const granted = request.scopes.filter((s) => held.includes(s));
-  if (!granted.length) {
-    throw new OAuthError(403, 'access_denied', 'you hold none of the requested scopes');
-  }
+  const { granted } = await checkRequest(pool, args);
 
   const code = randomBytes(32).toString('base64url');
   await pool.query(
@@ -174,6 +138,146 @@ export async function authorize(
   if (request.state) redirect.searchParams.set('state', request.state);
 
   return { code, redirectTo: redirect.toString(), granted };
+}
+
+/** The scopes a client can ask for: the workspace capabilities, and nothing else. */
+export const OAUTH_SCOPES = ['view', 'report', 'edit', 'operate', 'administer'] as const;
+
+/**
+ * Parses what an integration put in the URL, strictly.
+ *
+ * `response_type` must be `code` — there is no implicit grant — and `scope`
+ * is the standard space-separated list, each one a capability this system
+ * has. An unknown scope is an error the consent screen shows, not something
+ * quietly dropped: the integration's author needs to find out, and the person
+ * consenting should never be shown a shorter list than was asked for.
+ */
+export function parseAuthorizeQuery(q: URLSearchParams): AuthorizeRequest {
+  if (q.get('response_type') !== 'code') {
+    throw new OAuthError(400, 'unsupported_response_type', 'response_type must be "code"');
+  }
+  const scopes = (q.get('scope') ?? '').split(/\s+/).filter(Boolean);
+  if (!scopes.length) throw new OAuthError(400, 'invalid_scope', 'the integration did not say what it wants access to');
+  const unknown = scopes.filter((sc) => !(OAUTH_SCOPES as readonly string[]).includes(sc));
+  if (unknown.length) throw new OAuthError(400, 'invalid_scope', `unknown scope: ${unknown.join(', ')}`);
+  return {
+    clientId: q.get('client_id') ?? '',
+    redirectUri: q.get('redirect_uri') ?? '',
+    scopes: [...new Set(scopes)] as Capability[],
+    state: q.get('state') ?? undefined,
+    codeChallenge: q.get('code_challenge') ?? '',
+    codeChallengeMethod: q.get('code_challenge_method') ?? '',
+  };
+}
+
+export interface ConsentView {
+  client: { name: string; registeredAt: string };
+  workspace: string;
+  member: { name: string; email: string };
+  /** Asked for and held, so granted if allowed. */
+  granted: Capability[];
+  /** Asked for and not held, so not granted whatever happens. */
+  withheld: Capability[];
+  /** Where the browser goes afterwards — the host, shown so a lookalike stands out. */
+  returnsTo: string;
+}
+
+/**
+ * Everything the consent screen shows, after every check the grant itself makes.
+ *
+ * The screen is only drawn for a request that would succeed if allowed: a
+ * wrong client, a redirect address not registered exactly, a weak PKCE
+ * challenge — each is an error page, and none of them ever redirects. An
+ * unverified redirect is exactly where an authorization code would leak to.
+ */
+export async function describeRequest(
+  pool: Pool,
+  args: { request: AuthorizeRequest; tenantId: string; actorId: string },
+): Promise<ConsentView> {
+  const { granted, withheld, client } = await checkRequest(pool, args);
+  const { rows } = await pool.query<{ workspace: string; name: string; email: string }>(
+    `select t.name as workspace, a.display_name as name, a.email
+       from actor a join tenant t on t.id = a.tenant_id where a.id = $1`,
+    [args.actorId],
+  );
+  return {
+    client: { name: client.name, registeredAt: client.created_at.toISOString() },
+    workspace: rows[0]!.workspace,
+    member: { name: rows[0]!.name, email: rows[0]!.email },
+    granted,
+    withheld,
+    returnsTo: new URL(args.request.redirectUri).host,
+  };
+}
+
+/**
+ * Sends the person back saying no (RFC 6749 §4.1.2.1).
+ *
+ * Only to a redirect address the client registered exactly — the same check
+ * as allowing — so "deny" cannot be used to bounce somebody to an arbitrary
+ * site with this domain's reputation behind the link.
+ */
+export async function denyRequest(
+  pool: Pool,
+  args: { request: AuthorizeRequest; tenantId: string },
+): Promise<{ redirectTo: string }> {
+  await clientFor(pool, args.request, args.tenantId);
+  const redirect = new URL(args.request.redirectUri);
+  redirect.searchParams.set('error', 'access_denied');
+  redirect.searchParams.set('error_description', 'The member declined.');
+  if (args.request.state) redirect.searchParams.set('state', args.request.state);
+  return { redirectTo: redirect.toString() };
+}
+
+async function clientFor(pool: Pool, request: AuthorizeRequest, tenantId: string) {
+  const { rows } = await pool.query<{ redirect_uris: string[]; tenant_id: string; name: string; created_at: Date }>(
+    'select redirect_uris, tenant_id, name, created_at from oauth_client where client_id = $1',
+    [request.clientId],
+  );
+  const client = rows[0];
+  if (!client) throw new OAuthError(400, 'invalid_client', 'no such client');
+  if (client.tenant_id !== tenantId) {
+    throw new OAuthError(400, 'invalid_client', 'that client belongs to another workspace');
+  }
+  // Exact match. Prefix matching is how an open redirect becomes a stolen
+  // token, and "it is on our domain" is exactly the assumption that fails.
+  if (!client.redirect_uris.includes(request.redirectUri)) {
+    throw new OAuthError(400, 'invalid_redirect_uri', 'redirect_uri does not match a registered one exactly');
+  }
+  return client;
+}
+
+/** The checks shared by showing the screen and acting on it, so the two can never disagree. */
+async function checkRequest(
+  pool: Pool,
+  args: { request: AuthorizeRequest; tenantId: string; actorId: string },
+): Promise<{ granted: Capability[]; withheld: Capability[]; client: { name: string; created_at: Date } }> {
+  const { request } = args;
+
+  if (request.codeChallengeMethod !== 'S256') {
+    // `plain` is permitted by the RFC and is worth nothing: the verifier and
+    // the challenge are identical, so anybody who sees one has the other.
+    throw new OAuthError(400, 'invalid_request', 'code_challenge_method must be S256');
+  }
+  if (!request.codeChallenge || request.codeChallenge.length < 43) {
+    throw new OAuthError(400, 'invalid_request', 'code_challenge is missing or too short');
+  }
+
+  const client = await clientFor(pool, request, args.tenantId);
+
+  const { rows: actors } = await pool.query<{ workspace_role: WorkspaceRole }>(
+    'select workspace_role from actor where id = $1 and tenant_id = $2 and active',
+    [args.actorId, args.tenantId],
+  );
+  if (!actors[0]) throw new OAuthError(403, 'access_denied', 'no active member to grant this');
+
+  const held = WORKSPACE_GRANTS[actors[0].workspace_role] as readonly Capability[];
+  const granted = request.scopes.filter((sc) => held.includes(sc));
+  if (!granted.length) {
+    throw new OAuthError(403, 'access_denied', 'you hold none of the requested scopes');
+  }
+  const withheld = request.scopes.filter((sc) => !held.includes(sc));
+  return { granted, withheld, client };
 }
 
 // ------------------------------------------------------------------- tokens

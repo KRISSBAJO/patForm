@@ -264,13 +264,36 @@ async function main() {
     }
   }
 
-  // The OAuth consent screen, which an application sends somebody to. It had
-  // no page at all until the authorize route was wired.
-  await page.goto(
-    `${BASE}/authorize?client_id=demo&redirect_uri=https%3A%2F%2Fexample.test%2Fcb&scope=view%20report&code_challenge=abc&state=s1`,
-    { waitUntil: 'networkidle' },
-  );
-  all.push(...(await audit(page, 'Allow an application')));
+  /*
+   * The OAuth consent screen, with a real registered application — the screen
+   * is only drawn for a request that would work, so a made-up client_id now
+   * shows the error page. Both are audited.
+   */
+  const registered = await page.evaluate(async () => {
+    const res = await fetch('/api/oauth/clients', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Accessibility Scan', redirectUris: ['https://integration.example.com/cb'] }),
+    });
+    return res.ok ? (await res.json()).clientId : null;
+  });
+  if (registered) {
+    const consent = new URLSearchParams({
+      response_type: 'code',
+      client_id: registered,
+      redirect_uri: 'https://integration.example.com/cb',
+      scope: 'view report administer',
+      state: 's1',
+      code_challenge: 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM',
+      code_challenge_method: 'S256',
+    });
+    await page.goto(`${BASE}/oauth/authorize?${consent}`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(1200);
+    all.push(...(await audit(page, 'Allow an application')));
+  }
+  await page.goto(`${BASE}/oauth/authorize?response_type=code&client_id=made-up&scope=view`, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(1000);
+  all.push(...(await audit(page, 'An application request that cannot go ahead')));
   await page.goto(`${BASE}/console`, { waitUntil: 'networkidle' });
   await page.waitForTimeout(3000);
 

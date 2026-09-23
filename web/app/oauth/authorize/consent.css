@@ -1,0 +1,130 @@
+.oc {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 32px 16px;
+  background: var(--paper);
+}
+
+.oc__card {
+  width: 100%;
+  max-width: 480px;
+  padding: 28px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--white);
+  box-shadow: 0 20px 50px -30px rgba(19, 26, 23, 0.35);
+}
+
+.oc__brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-display), Georgia, serif;
+  font-weight: 600;
+  color: var(--green);
+}
+
+.oc__title {
+  margin: 18px 0 8px;
+  font-size: 22px;
+  line-height: 1.25;
+  color: var(--ink);
+}
+
+.oc__title strong {
+  font-weight: 700;
+}
+
+.oc__lede {
+  margin: 0 0 16px;
+  font-size: 14.5px;
+  line-height: 1.55;
+  color: var(--ink-soft);
+}
+
+.oc__section {
+  margin: 18px 0 8px;
+  font-family: var(--font-body), system-ui, sans-serif;
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.oc__scopes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.oc__scopes li {
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: 9px;
+  background: var(--green-tint);
+  border: 1px solid var(--green-border);
+  font-size: 13.5px;
+}
+
+.oc__scopes strong {
+  color: var(--ink);
+}
+
+.oc__scopes span {
+  color: var(--ink-soft);
+}
+
+.oc__scopes--withheld li {
+  background: var(--paper-3);
+  border-color: var(--line);
+}
+
+.oc__quiet {
+  margin: 16px 0 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+.oc__host {
+  font-family: var(--font-mono), monospace;
+  color: var(--ink);
+}
+
+.oc__actions {
+  margin-top: 20px;
+  display: flex;
+  gap: 10px;
+}
+
+.oc__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  padding: 0 20px;
+  border-radius: 9px;
+  border: 1px solid var(--line-strong);
+  background: var(--white);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.oc__btn--primary {
+  background: var(--green);
+  border-color: var(--green);
+  color: var(--white);
+}
+
+.oc__btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}

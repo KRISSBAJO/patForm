@@ -56,7 +56,7 @@ import {
 } from '../runtime/delivery.js';
 import type { WorkspaceRole } from '../runtime/policy.js';
 import { installPack, listInstalls, listPacks, publishPack, readPack } from '../runtime/packs.js';
-import { authorize, listGrants, registerClient, revokeGrant } from './oauth.js';
+import { authorize, denyRequest, describeRequest, listGrants, OAuthError, parseAuthorizeQuery, registerClient, revokeGrant } from './oauth.js';
 import {
   completeRotation,
   listDeliveries,
@@ -530,9 +530,23 @@ route('POST', /^\/api\/oauth\/clients$/, async ({ pool, principal }, body) => {
   return registerClient(pool, { tenantId: principal.tenantId, name, redirectUris, confidential });
 });
 
-// The consent decision itself. A real deployment puts a screen in front of
-// this showing the client's name and the scopes; the endpoint is the part that
-// must be right either way.
+/*
+ * The consent screen's questions. It passes the integration's query string
+ * through untouched; every check the grant makes is made here first, so the
+ * screen is only ever drawn for a request that would work if allowed.
+ */
+route('GET', /^\/api\/oauth\/consent$/, async ({ pool, principal, actorId, url }) => {
+  if (principal.kind !== 'actor') throw new HttpError(401, 'sign in first');
+  return describeRequest(pool, { tenantId: principal.tenantId, actorId, request: parseAuthorizeQuery(url.searchParams) });
+});
+
+route('POST', /^\/api\/oauth\/deny$/, async ({ pool, principal }, body) => {
+  if (principal.kind !== 'actor') throw new HttpError(401, 'sign in first');
+  const { query } = body as { query?: string };
+  return denyRequest(pool, { tenantId: principal.tenantId, request: parseAuthorizeQuery(new URLSearchParams(query ?? '')) });
+});
+
+// The consent decision itself, posted by the consent screen at /oauth/authorize.
 route('POST', /^\/api\/oauth\/authorize$/, async ({ pool, principal, actorId }, body) => {
   if (principal.kind !== 'actor') throw new HttpError(401, 'sign in first');
   const b = body as {
@@ -1299,6 +1313,8 @@ async function main(): Promise<void> {
                   ? err.kind === 'ambiguous'
                     ? 410
                     : 404
+                  : err instanceof OAuthError
+                    ? err.status
                 : err instanceof InvalidInput
                   ? 400
                   : 500;
@@ -1321,6 +1337,15 @@ async function main(): Promise<void> {
         if (err instanceof HttpError) return send(res, err.status, { error: err.message });
         if (err instanceof FormLinkError) {
           return send(res, err.kind === 'ambiguous' ? 410 : 404, { error: err.message });
+        }
+        /*
+         * An OAuth refusal is the integration's mistake or the member's
+         * answer, not an outage. It used to reach the catch-all and come back
+         * as "internal error" — so an integration author with a mistyped
+         * redirect address was told the server had broken.
+         */
+        if (err instanceof OAuthError) {
+          return send(res, err.status, { error: err.code, reason: err.message });
         }
         if (err instanceof DraftConflict) {
           return send(res, 409, { error: 'conflict', kind: err.kind, reason: err.message, ...err.detail });

@@ -624,6 +624,27 @@ password grant makes the integration handle the customer's password.
   demoted this morning cannot leave an integration acting with yesterday's
   authority.
 
+**The consent screen** is at `/oauth/authorize`, taking the standard query
+string. It asks the server the same questions the grant asks before drawing
+anything, so it only ever shows a request that would work: a made-up client,
+another workspace's client, a redirect address not registered exactly, plain
+PKCE or an unknown scope is an error page, and **nothing redirects**. A valid
+request is shown in words — the application's name, the workspace, what it
+will be able to do, what it asked for that the member does not hold and so
+will not get, and the host the browser goes to next. Signed out, it asks you
+to sign in and brings you back. **Deny** returns `access_denied` with the
+state, to the registered address only; **Allow** returns the code. The page
+cannot be framed by another site (`frame-ancestors 'none'`, and the console and
+builder get the same), and sends no referrer.
+
+The first screen here drew a consent page for any request and sent Refuse to
+whatever `redirect_uri` the link carried — an open redirect under this domain.
+`/authorize` now forwards to the new screen. See entry 79 in
+[docs/failure-cases.md](docs/failure-cases.md). A proof covers the flow end to
+end: consent, PKCE, a replayed code revoking what it produced, refresh
+rotation and reuse as theft, and a demoted member's integration losing what
+they lost. Nothing tested OAuth before it.
+
 ### Rate limits (§10.1)
 
 `REDIS_URL` gives a counter shared across processes; without it the limit is
@@ -1171,9 +1192,6 @@ Everything below is a deliberate deferral:
   declarable without it.
 - **Native mobile.** Out of scope for this repository. The public API is what
   would make it possible.
-- **A consent screen for OAuth.** The authorize endpoint is correct and takes
-  the granting member's session; a real deployment puts a page in front of it
-  showing the client's name and the scopes.
 - **Dynamic client registration, and token introspection/revocation
   endpoints.** Clients are registered through the console.
 - **Privacy terms, a DPIA, consent capture, and a subject access export.**

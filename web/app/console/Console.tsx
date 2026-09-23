@@ -960,7 +960,26 @@ function NavIcon({
   }
 }
 
-function SignIn({ onSignedIn, signedOut }: { onSignedIn: () => void; signedOut?: boolean }) {
+/**
+ * Where to go after signing in, when somebody arrived from elsewhere.
+ *
+ * Only the consent screen, and only as a path on this site. A sign-in page
+ * that followed any `next` would be an open redirect with this domain's name
+ * on it — the link a phishing email wants.
+ */
+function returnPath(): string | null {
+  if (typeof window === 'undefined') return null;
+  const next = new URLSearchParams(window.location.search).get('next');
+  if (!next || !next.startsWith('/oauth/authorize?') || next.startsWith('//')) return null;
+  return next;
+}
+
+function SignIn({ onSignedIn: signedIn, signedOut }: { onSignedIn: () => void; signedOut?: boolean }) {
+  const onSignedIn = () => {
+    const next = returnPath();
+    if (next) window.location.assign(next);
+    else signedIn();
+  };
   const [mode, setMode] = useState<'signin' | 'forgot' | 'sent' | 'code'>('signin');
   const [challengeToken, setChallengeToken] = useState('');
   const [code, setCode] = useState('');

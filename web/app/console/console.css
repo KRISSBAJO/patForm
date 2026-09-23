@@ -1937,29 +1937,6 @@ a.cs__navItem {
   color: var(--ink);
 }
 
-/* ------------------------------------------------------- the consent screen */
-
-.cn__scopes {
-  margin: 0 0 16px;
-  padding-left: 20px;
-  list-style: disc;
-  font-size: 14px;
-  line-height: 1.65;
-  color: var(--ink);
-}
-
-.cn__actions {
-  display: flex;
-  gap: 10px;
-  margin-top: 18px;
-}
-
-.cn__actions .cs__btn {
-  flex: 1;
-  height: 44px;
-  justify-content: center;
-}
-
 /* ------------------------------------------------ icons on the actions */
 /*
  * Icons beside labels, never instead of them. An icon gives a button a shape

@@ -847,6 +847,18 @@ It was invisible in development, where there is one workspace, and in every proo
 
 **Generalisable:** a uniqueness constraint says what is unique *within what*. Every lookup by that value has to carry the "within" with it, and the ones that do not will work perfectly for as long as there is only one of the thing it was left out of.
 
+### 79. A Refuse button that went wherever the link said
+
+The OAuth consent page at `/authorize` read the request from the query string and drew itself — no call to the server first. Its Allow posted to the authorize endpoint, which checks the client and the redirect address exactly. Its Refuse did not post anything: it built `redirect_uri?error=access_denied` in the browser and went there.
+
+So `/authorize?client_id=anything&code_challenge=x&redirect_uri=https://anywhere` drew a Patform-branded "Allow access?" for an application that did not exist, and one click on the safe-looking button sent the visitor to any site the link's author chose. An open redirect is the part of a phishing link that makes it look trustworthy, and this one was on the button people are told to press when unsure.
+
+The same page listed every requested scope as though it would be granted, including ones the member did not hold, and could be framed by another site. The README, meanwhile, said there was no consent screen at all; this session set out to build one on that basis and found the page only through the accessibility gate's list of flows.
+
+**Fixed** by replacing it. The new screen asks the server to validate the request before drawing anything, shows only a request that would work, and Deny goes through the server, which redirects only to an address the client registered exactly. `/authorize` forwards to it. A proof covers the whole OAuth flow, which had no test of any kind before.
+
+**Generalisable:** the safe-looking choice gets the same scrutiny as the dangerous one. Here the Allow path was checked on the server and the Refuse path was not checked anywhere, because refusing felt like it could not hurt.
+
 ---
 
 ## What the compiler structurally cannot catch

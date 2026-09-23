@@ -26,7 +26,7 @@ import {
   sendVerification,
   verifyEmail,
 } from './runtime/account.js';
-import { createHmac } from 'node:crypto';
+import { createHash, createHmac, randomBytes } from 'node:crypto';
 import {
   blockedRecipients,
   ingest,
@@ -75,6 +75,17 @@ import { DraftConflict } from './runtime/errors.js';
 import { issueTicket, screen } from './runtime/screening.js';
 import { PUBLIC_ID, resolveForm } from './runtime/form-links.js';
 import { FormLinkError } from './runtime/errors.js';
+import {
+  authorize as oauthAuthorize,
+  denyRequest,
+  describeRequest,
+  exchangeCode,
+  OAuthError,
+  parseAuthorizeQuery,
+  refresh as oauthRefresh,
+  registerClient,
+  resolveAccessToken,
+} from './api/oauth.js';
 import { discardHeld, listHeld, releaseHeld } from './runtime/held.js';
 import { checkSendingHealth, resendSkipped, sendingHealth, skippedFor } from './runtime/delivery-health.js';
 
@@ -1411,6 +1422,154 @@ export async function proveFormLinks({ pool, bp, T0, record, completeFor }: Proo
       `was refused on B's (${crossTicket.reasons.join(', ')}). A's draft token used on B's form started a new draft ` +
       `and left A's reading "${stillA?.answers.full_name}"; read through B's form it returned nothing. Publishing A ` +
       `again kept its link, and a key only A has still resolves by name.`,
+  );
+}
+
+/**
+ * An integration asks, a member sees what it wants and says yes or no, and the grant behaves.
+ *
+ * OAuth had a correct endpoint and nothing in front of it: no page an app
+ * could send somebody to, and no test of any of it. This goes from the
+ * query string an integration builds, through the consent screen's own
+ * checks, to tokens, rotation and revocation — and through each way a request
+ * should be refused without anybody being redirected.
+ */
+export async function proveOAuthConsent({ pool, record }: ProofCtx): Promise<void> {
+  const engine = new Engine(pool);
+  const tenantId = await engine.createTenant('proof:oauth');
+  const other = await engine.createTenant('proof:oauth-other');
+  const admin = await engine.createActor(tenantId, 'admin@proof-oauth.test', 'Ada Admin', 'admin');
+  const operator = await engine.createActor(tenantId, 'op@proof-oauth.test', 'Obi Operator', 'operator');
+
+  const redirectUri = 'https://integration.example.com/callback';
+  const client = await registerClient(pool, { tenantId, name: 'Payroll Sync', redirectUris: [redirectUri] });
+  const foreign = await registerClient(pool, { tenantId: other, name: 'Someone Else', redirectUris: [redirectUri] });
+
+  const verifier = randomBytes(32).toString('base64url');
+  const challenge = createHash('sha256').update(verifier).digest('base64url');
+  const query = (over: Record<string, string> = {}) =>
+    new URLSearchParams({
+      response_type: 'code',
+      client_id: client.clientId,
+      redirect_uri: redirectUri,
+      scope: 'view report administer',
+      state: 'xyz-123',
+      code_challenge: challenge,
+      code_challenge_method: 'S256',
+      ...over,
+    });
+  const refusal = async (fn: () => Promise<unknown>) => {
+    try {
+      await fn();
+      return 'allowed';
+    } catch (err) {
+      return err instanceof OAuthError ? err.code : String(err);
+    }
+  };
+
+  // ---- 1. What the screen shows: an operator asked for administer does not get it, and is told
+  const operatorView = await describeRequest(pool, { request: parseAuthorizeQuery(query()), tenantId, actorId: operator });
+  const adminView = await describeRequest(pool, { request: parseAuthorizeQuery(query()), tenantId, actorId: admin });
+
+  // ---- 2. Requests the screen refuses outright, before drawing anything or redirecting anywhere
+  const implicit = await refusal(async () => parseAuthorizeQuery(query({ response_type: 'token' })));
+  const madeUpScope = await refusal(async () => parseAuthorizeQuery(query({ scope: 'view everything' })));
+  const lookalike = await refusal(() =>
+    describeRequest(pool, { request: parseAuthorizeQuery(query({ redirect_uri: 'https://integration.example.com.evil.test/callback' })), tenantId, actorId: admin }),
+  );
+  const plainPkce = await refusal(() =>
+    describeRequest(pool, { request: parseAuthorizeQuery(query({ code_challenge_method: 'plain' })), tenantId, actorId: admin }),
+  );
+  const otherWorkspace = await refusal(() =>
+    describeRequest(pool, { request: parseAuthorizeQuery(query({ client_id: foreign.clientId })), tenantId, actorId: admin }),
+  );
+
+  // ---- 3. Deny goes back with access_denied, and only to the registered address
+  const denied = await denyRequest(pool, { request: parseAuthorizeQuery(query()), tenantId });
+  const denyElsewhere = await refusal(() =>
+    denyRequest(pool, { request: parseAuthorizeQuery(query({ redirect_uri: 'https://evil.test/' })), tenantId }),
+  );
+  const deniedUrl = new URL(denied.redirectTo);
+
+  // ---- 4. Allow: a code, the right verifier for tokens, the wrong one refused
+  const allowed = await oauthAuthorize(pool, { request: parseAuthorizeQuery(query()), tenantId, actorId: operator });
+  const back = new URL(allowed.redirectTo);
+  const code = back.searchParams.get('code')!;
+  const wrongVerifier = await refusal(() =>
+    exchangeCode(pool, { code, clientId: client.clientId, redirectUri, codeVerifier: randomBytes(32).toString('base64url') }),
+  );
+  const allowed2 = await oauthAuthorize(pool, { request: parseAuthorizeQuery(query()), tenantId, actorId: operator });
+  const code2 = new URL(allowed2.redirectTo).searchParams.get('code')!;
+  const tokens = await exchangeCode(pool, { code: code2, clientId: client.clientId, redirectUri, codeVerifier: verifier });
+  const acting = await resolveAccessToken(pool, tokens.access_token);
+
+  // ---- 5. Rotation, and a reused refresh token treated as theft
+  const rotated = await oauthRefresh(pool, { refreshToken: tokens.refresh_token, clientId: client.clientId });
+  const reused = await refusal(() => oauthRefresh(pool, { refreshToken: tokens.refresh_token, clientId: client.clientId }));
+  const afterTheft = await resolveAccessToken(pool, rotated.access_token);
+
+  // ---- 5b. A code presented twice: the second is refused, and what the first
+  //          produced is revoked — a replayed code means somebody else has it
+  //          (RFC 6749 §4.1.2).
+  const replayGrant = await oauthAuthorize(pool, { request: parseAuthorizeQuery(query()), tenantId, actorId: operator });
+  const code4 = new URL(replayGrant.redirectTo).searchParams.get('code')!;
+  const firstUse = await exchangeCode(pool, { code: code4, clientId: client.clientId, redirectUri, codeVerifier: verifier });
+  const replayedCode = await refusal(() =>
+    exchangeCode(pool, { code: code4, clientId: client.clientId, redirectUri, codeVerifier: verifier }),
+  );
+  const afterReplay = await resolveAccessToken(pool, firstUse.access_token);
+
+  // ---- 6. A member demoted after granting: the integration loses what they lost
+  const second = await oauthAuthorize(pool, {
+    request: parseAuthorizeQuery(query({ scope: 'view operate' })),
+    tenantId,
+    actorId: operator,
+  });
+  const code3 = new URL(second.redirectTo).searchParams.get('code')!;
+  const t3 = await exchangeCode(pool, { code: code3, clientId: client.clientId, redirectUri, codeVerifier: verifier });
+  const before = await resolveAccessToken(pool, t3.access_token);
+  await engine.setWorkspaceRole(operator, 'read_only');
+  const afterDemotion = await resolveAccessToken(pool, t3.access_token);
+
+  record(
+    'An integration asks, the member sees exactly what it wants, and the grant keeps its word',
+    'OAuth 2.0 consent (§11.1): the screen shows only a request that would work, deny and allow both go back only to the registered address, and PKCE, rotation and live scopes hold.',
+    operatorView.granted.join(' ') === 'view report' &&
+      operatorView.withheld.join(' ') === 'administer' &&
+      adminView.granted.join(' ') === 'view report administer' &&
+      adminView.client.name === 'Payroll Sync' &&
+      adminView.returnsTo === 'integration.example.com' &&
+      implicit === 'unsupported_response_type' &&
+      madeUpScope === 'invalid_scope' &&
+      lookalike === 'invalid_redirect_uri' &&
+      plainPkce === 'invalid_request' &&
+      otherWorkspace === 'invalid_client' &&
+      deniedUrl.origin + deniedUrl.pathname === redirectUri &&
+      deniedUrl.searchParams.get('error') === 'access_denied' &&
+      deniedUrl.searchParams.get('state') === 'xyz-123' &&
+      denyElsewhere === 'invalid_redirect_uri' &&
+      back.searchParams.get('state') === 'xyz-123' &&
+      allowed.granted.join(' ') === 'view report' &&
+      wrongVerifier === 'invalid_grant' &&
+      replayedCode === 'invalid_grant' &&
+      afterReplay === null &&
+      acting?.actorId === operator &&
+      acting?.scopes.join(' ') === 'view report' &&
+      rotated.refresh_token !== tokens.refresh_token &&
+      reused === 'invalid_grant' &&
+      afterTheft === null &&
+      before?.scopes.includes('operate') === true &&
+      afterDemotion?.scopes.join(' ') === 'view',
+    `Asked for view, report and administer: the operator's screen offered view and report and said administer ` +
+      `would not be given; an admin's offered all three, for "${adminView.client.name}", returning to ` +
+      `${adminView.returnsTo}. Refused before any screen: an implicit grant (${implicit}), a made-up scope ` +
+      `(${madeUpScope}), a lookalike redirect address (${lookalike}), plain PKCE (${plainPkce}), and another ` +
+      `workspace's client (${otherWorkspace}). Deny went back to the registered address with access_denied and the ` +
+      `state; deny to anywhere else was ${denyElsewhere}. Allow granted ${allowed.granted.join(' ')}; the wrong ` +
+      `verifier was ${wrongVerifier}; a code presented twice was ${replayedCode} and the tokens its first use produced ` +
+      `stopped working. Refreshing rotated the token, reusing the ` +
+      `old one was treated as theft and the rotated access token stopped working. A member demoted after granting ` +
+      `took the integration down with them: ${before?.scopes.join(' ')} became ${afterDemotion?.scopes.join(' ')}.`,
   );
 }
 

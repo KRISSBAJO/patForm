@@ -20,6 +20,30 @@ const nextConfig = {
    * Four times in one session before it was worth fixing.
    */
   distDir: process.env.NEXT_DIST_DIR || '.next',
+
+  /*
+   * No other site may put these pages in a frame.
+   *
+   * The consent screen above all: framed invisibly under something the
+   * visitor means to click, "Allow" is a click they never chose to make. The
+   * console and the builder have buttons with the same property — confirm a
+   * bulk action, publish a process — so they get the same header. Public
+   * forms are left framable, because embedding a form on an organisation's
+   * own site is what some of them will want.
+   */
+  async headers() {
+    const noFraming = [
+      { key: 'X-Frame-Options', value: 'DENY' },
+      { key: 'Content-Security-Policy', value: "frame-ancestors 'none'" },
+    ];
+    return [
+      { source: '/oauth/:path*', headers: [...noFraming, { key: 'Referrer-Policy', value: 'no-referrer' }] },
+      { source: '/console', headers: noFraming },
+      { source: '/console/:path*', headers: noFraming },
+      { source: '/builder', headers: noFraming },
+      { source: '/builder/:path*', headers: noFraming },
+    ];
+  },
 };
 
 export default nextConfig;

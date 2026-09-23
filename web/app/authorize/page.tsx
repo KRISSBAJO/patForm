@@ -1,31 +1,25 @@
-import { Consent } from './Consent';
+import { redirect } from 'next/navigation';
 
 export const dynamic = 'force-dynamic';
 
 /**
- * Where an application sends somebody to approve it.
+ * The old address of the consent screen, kept so a link already given out
+ * still arrives. The screen itself is at /oauth/authorize.
  *
- * The parameters come from the query string because that is what the OAuth
- * authorization-code flow specifies. Nothing here is trusted: the server
- * matches the redirect URI exactly against what the client registered, so a
- * tampered one is refused rather than followed.
+ * The page that lived here drew a consent screen for any request, and its
+ * Refuse button sent the browser to whatever redirect address the link
+ * carried — unchecked, so a link under this site's name could bounce anybody
+ * anywhere. The replacement asks the server first and only redirects to an
+ * address the application registered exactly.
  */
-export default async function AuthorizePage({
+export default async function OldAuthorize({
   searchParams,
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const q = await searchParams;
-  const one = (k: string) => (Array.isArray(q[k]) ? q[k][0] : q[k]) ?? '';
-
-  return (
-    <Consent
-      clientId={one('client_id')}
-      redirectUri={one('redirect_uri')}
-      scopes={one('scope').split(' ').filter(Boolean)}
-      state={one('state')}
-      codeChallenge={one('code_challenge')}
-      codeChallengeMethod={one('code_challenge_method') || 'S256'}
-    />
-  );
+  const q = new URLSearchParams();
+  for (const [k, v] of Object.entries(await searchParams)) {
+    for (const one of Array.isArray(v) ? v : v === undefined ? [] : [v]) q.append(k, one);
+  }
+  redirect(`/oauth/authorize?${q}`);
 }
