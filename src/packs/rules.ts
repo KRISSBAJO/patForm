@@ -110,6 +110,15 @@ export const DEFAULT_RULES: CategoryRules = {
 };
 
 export const RULES: Record<string, CategoryRules> = {
+  Safeguarding: {
+    decideWithinHours: 24,
+    escalateTo: 'safeguarding_director',
+    escalationHours: 48,
+    retentionFloorDays: 2555,
+    requires: ['records_when', 'restricted_hidden', 'decided_quickly', 'kept_long_enough', 'escalates'],
+    monitors: [...WATCH_BASICS, ...WATCH_DECISIONS, ...WATCH_COMPLETION],
+    says: 'A safeguarding lead reviews concerns promptly, with private details kept out of routine notifications.',
+  },
   /*
    * Health & safety. The clock is the control: a hazard nobody looked at for
    * a week is the thing the inspector asks about, and records outlive the

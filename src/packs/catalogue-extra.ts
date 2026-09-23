@@ -274,6 +274,48 @@ export const EXTRA_PACKS: PackSpec[] = [
     fields: [f.text('property_reference', 'Property reference'), f.text('tenancy_reference', 'Current agreement reference'), f.date('current_end', 'Current end date'), f.date('preferred_end', 'Preferred new end date'), f.choice('request_kind', 'What is requested?', ['renew_same_terms', 'change_terms', 'end_at_expiry']), f.notes('requested_changes', 'Changes requested', false), f.recorded('renewal_document_reference', 'Renewal document reference')],
   },
 
+  // Safeguarding
+  {
+    key: 'safeguarding_concern', name: 'Safeguarding concern', category: 'Safeguarding',
+    summary: 'A concern about someone’s safety sent privately to the safeguarding lead for prompt action.',
+    audience: 'For churches, schools and charities receiving welfare concerns.', outcome: 'A trained lead assesses the concern and records a secure case reference.',
+    respondents: 'A staff member, volunteer or person raising a concern.', ownerName: 'Safeguarding team',
+    approvals: [{ key: 'lead', name: 'Safeguarding lead review', byRole: 'safeguarding_lead', dueInHours: 4 }],
+    task: { key: 'record_action', name: 'Record the safeguarding action', byRole: 'safeguarding_lead', description: 'Assess immediate safety, follow the local safeguarding procedure, make any necessary referral and record the secure case reference.', requiredFields: ['safeguarding_case_reference'] },
+    completionMessage: 'The safeguarding team has reviewed the concern.', notes: ['If anyone is in immediate danger, use the emergency route instead of waiting for this form.', 'Do not include the private concern in routine email notifications.'], retentionDays: 2555, sensitivityCeiling: 'restricted',
+    fields: [f.person('person_at_risk', 'Person the concern is about'), f.date('noticed_on', 'When did this happen or become known?'), f.choice('concern_type', 'What kind of concern?', ['safety', 'conduct', 'neglect', 'disclosure', 'other']), f.private('concern_detail', 'What happened? Record facts and exact words where possible.', 'Safeguarding details are restricted to the safeguarding team.', true), f.yesNo('immediate_danger', 'Is someone in immediate danger now?'), f.text('others_informed', 'Who has already been told?', false), f.recorded('safeguarding_case_reference', 'Secure case reference')],
+  },
+  {
+    key: 'safeguarding_allegation', name: 'Allegation against a worker', category: 'Safeguarding',
+    summary: 'An allegation about a worker routed confidentially to an independent safeguarding decision maker.',
+    audience: 'For organisations that need a separate route for concerns about staff or volunteers.', outcome: 'The allegation is triaged and referred through the organisation’s formal procedure.',
+    respondents: 'The person reporting the allegation.', ownerName: 'Safeguarding team',
+    approvals: [{ key: 'designated_lead', name: 'Designated safeguarding review', byRole: 'safeguarding_lead', dueInHours: 4 }],
+    task: { key: 'allegation_route', name: 'Record referral and protective steps', byRole: 'safeguarding_lead', description: 'Keep the allegation away from the person named; follow the required external and internal referral route and record a secure reference.', requiredFields: ['allegation_case_reference'] },
+    completionMessage: 'The designated safeguarding lead has reviewed the report.', notes: ['Do not investigate or notify the person named through an automatic message.', 'Use the emergency route for immediate danger.'], retentionDays: 2555, sensitivityCeiling: 'restricted',
+    fields: [f.person('worker_name', 'Worker named in the allegation'), f.text('worker_role', 'Their role', false), f.date('incident_date', 'When did this happen or become known?'), f.private('allegation_detail', 'Describe what was reported', 'Allegations are restricted to the designated safeguarding team.', true), f.yesNo('immediate_danger', 'Is someone in immediate danger now?'), f.text('existing_reference', 'Existing report reference', false), f.recorded('allegation_case_reference', 'Secure allegation case reference')],
+  },
+  {
+    key: 'safeguarding_training', name: 'Safeguarding training record', category: 'Safeguarding',
+    summary: 'Required training checked before someone starts a role and renewal followed up.',
+    audience: 'For teams tracking safeguarding training for staff and volunteers.', outcome: 'A training record and its next review date are verified.',
+    respondents: 'A staff member, volunteer or team leader.', ownerName: 'Safeguarding team',
+    approvals: [{ key: 'lead', name: 'Training verification', byRole: 'safeguarding_lead', dueInHours: 72 }],
+    task: { key: 'update_training_register', name: 'Update the training register', byRole: 'safeguarding_lead', description: 'Verify the course completion with the approved source and record the register reference and renewal date.', requiredFields: ['training_register_reference'] },
+    completionMessage: 'The safeguarding training record has been verified.', retentionDays: 2555,
+    fields: [f.person('worker_name', 'Worker name'), f.text('worker_role', 'Role or team'), f.text('course_name', 'Training course'), f.date('completed_on', 'Date completed'), f.text('certificate_reference', 'Certificate or provider reference', false), { ...f.date('renewal_due', 'Renewal due date', false), setBy: 'operator' }, f.recorded('training_register_reference', 'Training register reference')],
+  },
+  {
+    key: 'safeguarding_clearance', name: 'Role clearance review', category: 'Safeguarding',
+    summary: 'A person’s checks, references and training reviewed before they enter a protected role.',
+    audience: 'For organisations assigning people to work with children or vulnerable adults.', outcome: 'A named lead records clearance or a reason not to start.',
+    respondents: 'A team leader requesting role clearance.', ownerName: 'Safeguarding team',
+    approvals: [{ key: 'lead', name: 'Safeguarding clearance', byRole: 'safeguarding_lead', dueInHours: 72 }],
+    task: { key: 'record_clearance', name: 'Record the role decision', byRole: 'safeguarding_lead', description: 'Check the required screening, references, training and local policy; record the decision by reference without uploading certificate copies.', requiredFields: ['clearance_decision_reference'] },
+    completionMessage: 'The role clearance decision has been recorded.', notes: ['A request does not authorise the person to start. Screening requirements depend on the role and jurisdiction.'], retentionDays: 2555, sensitivityCeiling: 'restricted',
+    fields: [f.person('worker_name', 'Person to be cleared'), f.text('proposed_role', 'Proposed role'), f.date('planned_start', 'Planned start date'), f.choice('contact_group', 'Who will the role involve?', ['children', 'vulnerable_adults', 'both', 'other']), f.text('screening_reference', 'Existing screening reference', false), f.text('training_reference', 'Training reference', false), f.private('review_notes', 'Anything the safeguarding lead should know?', 'Role clearance details are restricted to the safeguarding team.'), f.recorded('clearance_decision_reference', 'Clearance decision reference')],
+  },
+
   // Sales
   {
     key: 'demo_request', name: 'Product demo request', category: 'Sales',

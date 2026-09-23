@@ -5,7 +5,7 @@ import { publishPack } from '../runtime/packs.js';
 import { CATALOGUE } from './catalogue.js';
 import { buildBlueprint } from './generate.js';
 
-const REFERENCES = [
+export const REFERENCES = [
   {
     file: 'employee-onboarding.blueprint.json',
     key: 'employee_onboarding',
