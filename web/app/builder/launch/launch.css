@@ -22,6 +22,7 @@
 .la__panel .la__secondary { background: white !important; color: #104632 !important; }
 .la__actions { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; margin-top: 26px; }
 .la__actions a { color: #19583e; }
+.la__actions .la__actionLink { color: #fff; }
 .la__actions button:first-of-type:last-child { margin-left: auto; }
 .la__preview { max-height: 520px; overflow: auto; border: 1px solid #e5e5df; border-radius: 9px; }
 .la__preview .sp__body { padding: 0; }
