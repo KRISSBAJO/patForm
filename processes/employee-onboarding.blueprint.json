@@ -59,7 +59,7 @@
       "hiddenFields": [
         "accessibility_notes",
         "bank_account",
-        "id_document",
+        "right_to_work_reference",
         "national_id"
       ]
     },
@@ -75,7 +75,7 @@
         "accessibility_notes",
         "bank_account",
         "emergency_contact_phone",
-        "id_document",
+        "right_to_work_reference",
         "national_id"
       ]
     },
@@ -241,21 +241,13 @@
         "collectionReason": "Payroll setup. Exported to the payroll system and never displayed in messages."
       },
       {
-        "key": "id_document",
-        "type": "file",
-        "label": "Photograph of your right-to-work document",
+        "key": "right_to_work_reference",
+        "type": "short_text",
+        "label": "Right-to-work share code or document reference",
         "required": true,
         "classification": "confidential",
-        "collectionReason": "Statutory right-to-work check.",
-        "constraints": {
-          "accept": [
-            "application/pdf",
-            "image/jpeg",
-            "image/png"
-          ],
-          "maxSizeMb": 10,
-          "maxFiles": 2
-        }
+        "help": "The share code or reference only. Do not send the document itself — HR checks it against the Home Office service.",
+        "collectionReason": "Lets HR complete the statutory right-to-work check against the Home Office service without this platform holding a copy of the identity document."
       },
       {
         "key": "equipment_needs",
@@ -389,7 +381,7 @@
             "fields": [
               "national_id",
               "bank_account",
-              "id_document"
+              "right_to_work_reference"
             ],
             "widths": {
               "national_id": "half",
@@ -528,7 +520,7 @@
           "full_name",
           "start_date",
           "employment_type",
-          "id_document",
+          "right_to_work_reference",
           "policy_ack"
         ],
         "dueInHours": 48
@@ -1059,7 +1051,7 @@
             "emergency_contact_phone": "+44 7700 900999",
             "national_id": "QQ123456C",
             "bank_account": "12-34-56 / 12345678",
-            "id_document": "passport.pdf",
+            "right_to_work_reference": "W1234 5678 9012",
             "equipment_needs": [
               "laptop",
               "monitor"
@@ -1281,7 +1273,7 @@
             "emergency_contact_phone": "+44 7700 900999",
             "national_id": "QQ123456C",
             "bank_account": "12-34-56 / 12345678",
-            "id_document": "passport.pdf",
+            "right_to_work_reference": "W1234 5678 9012",
             "equipment_needs": [
               "laptop",
               "monitor"

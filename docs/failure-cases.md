@@ -739,6 +739,20 @@ Scoping forty-odd `drain` calls was done with a regex that attached the nearest 
 
 **Generalisable:** a mechanical edit needs a mechanical check. The fix was to print every call site with its function and its argument and read the list — thirty seconds, and it is the only reason the wrong one was found.
 
+### 69. A field that collected a filename and looked like evidence
+
+The `file` field type rendered a file picker, accepted a drop, listed what you chose, and marked itself required. What it sent was `[...e.target.files].map(f => f.name)`. The bytes never left the browser.
+
+So employee onboarding — a process whose whole point includes a statutory right-to-work check — stored `"right-to-work.pdf"` and nothing else. Expense approval stored `"lunch.jpg"`. HR opens the record, sees a filename where the document should be, and has no reason to think it is not there.
+
+This is worse than a missing control. A missing control is absent; this one was present, visible, and wrong. It was found while starting on "malware scanning and upload quarantine" — you cannot scan uploads you do not accept, and the premise of the task turned out to be the bug.
+
+**Fixed** by refusing it. `SEC013` is an error, not a warning, because warnings do not block a publish and the thing it prevents is a published process making a claim about evidence it has not got. The builder no longer offers the type, and the respondent form says out loud what the control does for any version published before this.
+
+The two fields became references — a right-to-work share code, and where the receipts are — which is **D1** in this document, already settled and already used by the church process for safeguarding. The pattern was right there. Nothing generalised it to the other two processes because nothing had asked the question that makes it obvious: *what is actually in the record?*
+
+**Generalisable:** a control that looks like it worked is worse than one that visibly failed, and the difference is invisible from the code that renders it. The test is not "does the field accept input" but "what is in the row afterwards" — which is one `select` away and nobody had run it.
+
 ---
 
 ## What the compiler structurally cannot catch

@@ -330,3 +330,43 @@ test('the expense claim bars the claimant from approving it', () => {
   assert.ok(manager?.notTheSubmitter, 'the manager approval bars the submitter');
   assert.equal(bp.data.submitterField, 'employee_email');
 });
+
+test('a file field is refused, because the platform does not accept uploads', () => {
+  /*
+   * The respondent's browser reads `e.target.files` and sends `f.name`. The
+   * bytes never leave the machine. A process that says it collected a
+   * right-to-work photograph and holds the string "right-to-work.pdf" is not
+   * a weak compliance record — it is not a compliance record, and the person
+   * opening it would believe otherwise.
+   */
+  const codes = codesFor((b) => {
+    b.data.fields.push({
+      key: 'some_upload',
+      type: 'file',
+      label: 'Send us the document',
+      required: true,
+      classification: 'confidential',
+      collectionReason: 'Because we said so.',
+    });
+  });
+  assert.ok(codes.includes('SEC013'), `expected SEC013, got ${codes.join(', ') || 'nothing'}`);
+});
+
+test('the two processes that asked for a document now ask where it is', () => {
+  // docs/failure-cases.md D1: record that a check happened and where to verify
+  // it, rather than storing the evidence. That was already the pattern here —
+  // the church process used it for safeguarding — and it is now the only one.
+  for (const file of ['employee-onboarding.blueprint.json', 'expense-approval.blueprint.json']) {
+    const bp = load(file);
+    assert.equal(
+      bp.data.fields.filter((f) => f.type === 'file').length,
+      0,
+      `${file} still asks for an upload it cannot receive`,
+    );
+  }
+
+  const onboarding = load('employee-onboarding.blueprint.json');
+  const ref = onboarding.data.fields.find((f) => f.key === 'right_to_work_reference');
+  assert.ok(ref, 'the right-to-work check is recorded by reference');
+  assert.ok(ref!.collectionReason, 'and says why it is collected');
+});

@@ -344,6 +344,36 @@ export function validate(bp: Blueprint): Diagnostics {
     );
   }
 
+  /*
+   * A file field collects a name, not a file.
+   *
+   * The respondent's browser reads `e.target.files` and sends `f.name`. The
+   * bytes never leave the machine, nothing stores them, and the record ends up
+   * holding the string "right-to-work.pdf". A process that says it collected a
+   * right-to-work photograph and holds a filename is not a weak compliance
+   * record — it is not a compliance record, and HR opening it would believe
+   * otherwise.
+   *
+   * An error rather than a warning. Warnings do not block a publish, and the
+   * thing this prevents is a published process making a claim about evidence
+   * it has not got.
+   *
+   * The fix is the pattern this codebase already settled on for exactly this
+   * (docs/failure-cases.md D1): record *that* a check happened and where to
+   * verify it, rather than storing the evidence. It keeps the process below a
+   * sensitivity ceiling it would otherwise blow through, which is why it was
+   * the right answer before uploads were the reason.
+   */
+  for (const [i, field] of bp.data.fields.entries()) {
+    if (field.type !== 'file') continue;
+    d.error(
+      'SEC013',
+      `data.fields[${i}]`,
+      `"${field.key}" is a file field, and this platform does not accept uploads — it would record the file's name and nothing else.`,
+      'Ask for a reference to the document and a confirmation that somebody checked it, so the record says what is true.',
+    );
+  }
+
   if (bp.workflow.approvals.length && !bp.roles.some((r) => r.capabilities.includes('approve'))) {
     d.error('SEC005', 'roles', 'The process has approvals but no role may approve.');
   }

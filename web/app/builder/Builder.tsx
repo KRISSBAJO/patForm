@@ -240,10 +240,19 @@ interface PackDetail extends Pack {
   warnings: { code: string; message: string }[];
 }
 
+/*
+ * `file` is missing on purpose.
+ *
+ * The platform does not accept uploads — the browser sends the file's name and
+ * the bytes never leave the machine — so a file field records a string like
+ * "right-to-work.pdf" and the record reads as though a document were held.
+ * SEC013 refuses to publish one; offering it here would be offering a field
+ * whose only outcome is a compile error.
+ */
 const FIELD_TYPES = [
   'short_text', 'long_text', 'email', 'phone', 'number', 'currency', 'url', 'address',
   'date', 'time', 'single_choice', 'multi_choice', 'dropdown', 'yes_no', 'rating',
-  'matrix', 'file', 'signature_ack', 'content', 'hidden', 'calculated', 'repeating_group',
+  'matrix', 'signature_ack', 'content', 'hidden', 'calculated', 'repeating_group',
 ];
 const CHOICE_TYPES = new Set(['single_choice', 'multi_choice', 'dropdown', 'matrix']);
 const CLASSES = ['public', 'internal', 'confidential', 'restricted'];

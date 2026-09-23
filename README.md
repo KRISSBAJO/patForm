@@ -967,7 +967,16 @@ Everything below is a deliberate deferral:
   fabricated one. A budget stops one caller making a thousand records. It
   does not stop a thousand callers making one each, and nothing here
   challenges, scores or reputation-checks a submission.
-- **Malware scanning and upload quarantine** (§12.1). Files are metadata only.
+- **Uploads at all** (§12.1), and therefore malware scanning and quarantine.
+  The `file` field type looked like an upload and was not: the browser sent
+  the file's *name* and the bytes never left the machine, so a record that
+  said it held a right-to-work photograph held the string
+  `"right-to-work.pdf"`. `SEC013` now refuses to publish a process with one,
+  and the two that had them ask for a reference instead — the D1 pattern in
+  [docs/failure-cases.md](docs/failure-cases.md), which the church process was
+  already using for safeguarding. Accepting real files means storage,
+  size and type limits, a quarantine state and a scanner, none of which
+  exists; until it does, nothing pretends otherwise.
 - **A verified sending domain.** Delivery needs two switches to leave the
   machine: `EMAIL_PROVIDER` naming a provider *and* that provider's
   credentials. Without both, everything is logged and nothing is sent.

@@ -454,6 +454,20 @@ function FileField({
           onChange(max > 1 ? picked : (picked[0] ?? null));
         }}
       />
+      {/*
+        * Said out loud, because the control does not do what a file input
+        * looks like it does: the browser hands over the file's name and the
+        * bytes stay on the machine. A respondent who believes they have sent
+        * their passport, and a reviewer who believes they have received it,
+        * are both wrong and neither would find out.
+        *
+        * SEC013 refuses to publish a new process with one of these, so this
+        * only renders for a version published before that existed.
+        */}
+      <p className="fm__fileWarn">
+        The document itself is not sent — only its name is recorded. If somebody needs to see it, send it the way
+        they asked you to.
+      </p>
       {names.length > 0 && (
         <ul className="fm__files">
           {names.map((name) => (

@@ -679,3 +679,16 @@ textarea.fm__input {
     height: 104px;
   }
 }
+
+/* The file control does not upload. Saying so where somebody about to rely on
+   it will read it, rather than in a document nobody opens. */
+.fm__fileWarn {
+  margin: 7px 0 0;
+  padding: 8px 10px;
+  border: 1px solid #edd9b4;
+  background: #fdf8ee;
+  border-radius: 6px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: #7a5a17;
+}

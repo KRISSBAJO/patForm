@@ -61,7 +61,7 @@
       ],
       "editableFields": [
         "business_purpose",
-        "receipt",
+        "receipt_reference",
         "line_items",
         "claim_note"
       ]
@@ -215,22 +215,13 @@
         }
       },
       {
-        "key": "receipt",
-        "type": "file",
-        "label": "Receipts",
+        "key": "receipt_reference",
+        "type": "short_text",
+        "label": "Where the receipts are",
         "required": true,
         "classification": "confidential",
-        "collectionReason": "Evidence required by the finance policy and by HMRC.",
-        "constraints": {
-          "accept": [
-            "application/pdf",
-            "image/jpeg",
-            "image/png",
-            "image/heic"
-          ],
-          "maxSizeMb": 15,
-          "maxFiles": 10
-        }
+        "help": "The expense-system reference, or where a manager can see the receipts. Do not send images here.",
+        "collectionReason": "Finance and HMRC need to be able to find the evidence; holding it here would make this platform the system of record for it."
       },
       {
         "key": "claim_note",
@@ -305,7 +296,7 @@
             "key": "evidence",
             "title": "Receipts",
             "fields": [
-              "receipt",
+              "receipt_reference",
               "claim_note"
             ]
           }
@@ -381,7 +372,7 @@
           "expense_total",
           "category",
           "business_purpose",
-          "receipt"
+          "receipt_reference"
         ],
         "dueInHours": 72,
         "notTheSubmitter": true
@@ -402,7 +393,7 @@
           "expense_total",
           "cost_centre",
           "line_items",
-          "receipt"
+          "receipt_reference"
         ],
         "dueInHours": 72
       }
@@ -930,7 +921,7 @@
                 "line_amount": 64.5
               }
             ],
-            "receipt": "lunch.jpg"
+            "receipt_reference": "EXP-2291 in the finance drive"
           }
         }
       ],
@@ -974,7 +965,7 @@
                 "line_amount": 240
               }
             ],
-            "receipt": "conference.pdf"
+            "receipt_reference": "EXP-2291 in the finance drive"
           }
         },
         {
@@ -1085,7 +1076,7 @@
                 "line_amount": 400
               }
             ],
-            "receipt": "blurry.jpg"
+            "receipt_reference": "EXP-2291 in the finance drive"
           }
         },
         {
@@ -1127,7 +1118,7 @@
                 "line_amount": 64.5
               }
             ],
-            "receipt": "lunch.jpg"
+            "receipt_reference": "EXP-2291 in the finance drive"
           }
         },
         {
@@ -1143,7 +1134,7 @@
                 "line_amount": 64.5
               }
             ],
-            "receipt": "lunch.jpg"
+            "receipt_reference": "EXP-2291 in the finance drive"
           }
         }
       ],
@@ -1175,7 +1166,7 @@
                 "line_amount": 400
               }
             ],
-            "receipt": "r.jpg"
+            "receipt_reference": "EXP-2291 in the finance drive"
           }
         },
         {
