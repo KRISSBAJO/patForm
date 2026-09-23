@@ -74,6 +74,8 @@ The threshold case is currently handled by splitting into two transitions with d
 
 **Recommendation:** do not add quorum for MVP. Do confirm with design partners that nobody needs it, because retrofitting it touches the approval runtime.
 
+**Built** after all, with `mode: "quorum"` and `required`. Retrofitting it did touch the approval runtime, as predicted — and found that the runtime had never implemented `sequential` either (entry 81).
+
 ### G3. The expression model cannot reach into repeating groups
 
 `sum` and `count` over a repeating group work. Anything else does not: "any line item over £200", "more than three items", "any item in a restricted category" are all inexpressible.
@@ -868,6 +870,26 @@ It was found testing something else. The new "confirm it is you" prompt answered
 In the same run the gate failed the page for the first time, because the test had left a revoked key in the table and nobody had ever scanned a row of it: revoked keys, and deactivated members on People, were faded to 60% opacity, which put their text under the contrast minimum. The state is said in words on the row; it now uses the muted text colour instead, and the gate's own setup makes a revoked key so the row is always checked.
 
 **Fixed** by offering the scopes the server checks, with what each lets a key do. **Generalisable:** a form's options are a claim about the server. When they are typed in by hand on the client, the only test of the claim is using it — and a page that only ever renders empty is a page whose rows have never been checked.
+
+### 81. Three approval modes, one behaviour
+
+The schema offered `single`, `sequential` and `any_of`, documented `sequential` as "runs approvers in the order listed", and the builder offered it as "each in turn, in the order listed". The runtime put every approver's address into one list, let anybody on it decide, and settled the request on the first decision. So a sequential approval of manager then HR could be settled by HR alone, before the manager had seen it — the same behaviour as any-of, under a name that promised a control.
+
+No shipped process used it, which is why nothing failed. It was found adding quorums, which need the same thing sequential needed all along: a request that counts decisions and stays open until its mode is satisfied.
+
+**Fixed** by making each decision a vote, one per person, with the request settled only when its mode is. In a sequence only the approver whose turn it is may decide. A proof runs a manager-then-HR sequence and shows HR refused out of turn and absent from their queue until the manager has approved.
+
+**Generalisable:** an enum value is a promise, and a runtime that switches on some values and falls through on the rest keeps the promise for those it names. Search for every place the enum is consumed, not only where it is declared.
+
+### 82. Retention that failed on any record an email provider had reported on
+
+`delivery_event.email_log_id` referenced `email_log` with no `on delete`. Retention and privacy erasure both delete a record's email log. For any message the provider had sent a webhook about — delivered or bounced — the delete was blocked by the foreign key, and the whole run rolled back. With RelyKit webhooks configured, that is nearly every record in production.
+
+The retention proof deleted a record that had never received a provider event, so it passed. It was found when the new vote table's foreign key made the same mistake and a later proof tripped over it; reading every foreign key onto the tables retention deletes turned up this one, and the resend table added a day earlier had it too.
+
+**Fixed** with `on delete cascade` on all three — a provider's report about a message goes when the message does, which is also what erasure should do with a row holding the recipient's address. The retention proof now gives the record a delivery event, a resend and an approval vote before deleting it; run without the cascade, it fails with the original foreign-key error.
+
+**Generalisable:** a deletion job is tested by the richest record it will meet, not the simplest. Every table added later is a new way for it to fail, and the only place that shows is a proof whose record has one of everything.
 
 ---
 

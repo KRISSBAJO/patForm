@@ -3136,3 +3136,9 @@ a.cs__navItem {
   min-height: 36px;
   resize: vertical;
 }
+
+.rc__progress {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--green-deep);
+}

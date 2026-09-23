@@ -208,11 +208,11 @@ export function Console() {
     return () => clearTimeout(t);
   }, [toast]);
 
-  const act = async (key: string, fn: () => Promise<unknown>, success: string) => {
+  const act = async (key: string, fn: () => Promise<unknown>, success: string | ((result: unknown) => string)) => {
     setBusy(key);
     try {
-      await fn();
-      setToast({ message: success });
+      const result = await fn();
+      setToast({ message: typeof success === 'function' ? success(result) : success });
       setRecord(null);
       await load();
     } catch (err) {
@@ -244,7 +244,20 @@ export function Console() {
           method: 'POST',
           body: JSON.stringify({ approvalKey, decision, reason }),
         }),
-      decision === 'approved' ? 'Approved. The process moved on.' : 'Rejected. The record is closed.',
+      (result) => {
+        /*
+         * An approval that needs more than one person is counted, not
+         * settled. Saying "the process moved on" when it is waiting for a
+         * second director would send somebody to look for a step that has
+         * not happened.
+         */
+        const progress = (result as { progress?: { have: number; need: number } })?.progress;
+        if (decision === 'approved' && progress) {
+          const left = progress.need - progress.have;
+          return `Approval recorded — ${progress.have} of ${progress.need}. It needs ${left === 1 ? 'one more person' : `${left} more people`}.`;
+        }
+        return decision === 'approved' ? 'Approved. The process moved on.' : 'Rejected. The record is closed.';
+      },
     );
 
   const completeTask = (instanceId: string, taskKey: string) =>

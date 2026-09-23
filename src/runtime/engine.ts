@@ -25,6 +25,7 @@ import {
   replayAction,
 } from './console-queries.js';
 import {
+  AuthorizationError,
   authorize,
   describe as describePrincipal,
   redact,
@@ -293,21 +294,43 @@ export class Engine {
     principal: Principal;
     reason?: string;
     now: Date;
-  }): Promise<{ applied: boolean }> {
+  }): Promise<{ applied: boolean; progress?: { have: number; need: number } }> {
     return inTransaction(this.pool, async (client) => {
       const instance = await loadInstance(client, args.instanceId, { lock: true });
       const bp = await loadBlueprint(client, instance.process_version_id);
 
       // Read the pending request before deciding: holding the approve
       // capability is not the same as being named on this one.
-      const { rows: pending } = await client.query<{ approvers: string[] }>(
-        `select approvers from approval_request
+      const { rows: pending } = await client.query<{ id: string; approvers: string[]; mode: string; required: number | null }>(
+        `select id, approvers, mode, required from approval_request
           where instance_id = $1 and approval_key = $2 and status = 'pending'
-          order by id limit 1`,
+          order by id limit 1 for update`,
         [args.instanceId, args.approvalKey],
       );
       if (!pending.length) return { applied: false };
+      const request = pending[0]!;
       const declared = bp.workflow.approvals.find((a) => a.key === args.approvalKey);
+
+      /*
+       * Who may decide now, and how many approvals settle it.
+       *
+       * This used to be "anyone named, and the first decision settles it",
+       * for every mode — so a sequential approval behaved exactly like
+       * any-of, and there was nowhere for a quorum to count. Each person's
+       * decision is now a vote, and the request stays open until its mode is
+       * satisfied. In a sequence only the approver whose turn it is is named.
+       */
+      const { rows: votes } = await client.query<{ actor: string; decision: string }>(
+        'select actor, decision from approval_vote where request_id = $1 order by id',
+        [request.id],
+      );
+      const approvedSoFar = votes.filter((v) => v.decision === 'approved').length;
+      const named =
+        request.mode === 'sequential'
+          ? request.approvers.slice(approvedSoFar, approvedSoFar + 1)
+          : request.approvers;
+      const need =
+        request.mode === 'quorum' ? (request.required ?? 2) : request.mode === 'sequential' ? request.approvers.length : 1;
 
       await require_(client, {
         principal: args.principal,
@@ -316,7 +339,7 @@ export class Engine {
         processKey: instance.process_key,
         blueprint: bp,
         instanceId: instance.id,
-        namedApprovers: pending[0]!.approvers,
+        namedApprovers: named,
         // Only when the approval asks for it. `submitterOf` returns nothing
         // when the blueprint never said which field holds the address, and a
         // bar on nobody bars nobody — the compiler refuses that combination
@@ -326,11 +349,47 @@ export class Engine {
       }, this.pool);
 
       const actor = describePrincipal(args.principal);
+      // One person, one decision. "Any two directors" is not one director twice.
+      if (votes.some((v) => v.actor === actor)) {
+        await recordDenial(
+          client,
+          {
+            principal: args.principal,
+            action: 'approve',
+            tenantId: instance.tenant_id,
+            processKey: instance.process_key,
+            blueprint: bp,
+            instanceId: instance.id,
+          },
+          'already decided this approval',
+        );
+        throw new AuthorizationError('approve', 'you have already decided this one — it needs somebody else');
+      }
+      await client.query(
+        `insert into approval_vote (request_id, tenant_id, actor, decision, reason, decided_at)
+         values ($1, $2, $3, $4, $5, $6)`,
+        [request.id, instance.tenant_id, actor, args.decision, args.reason ?? null, args.now],
+      );
+
+      const have = approvedSoFar + (args.decision === 'approved' ? 1 : 0);
+      if (args.decision === 'approved' && have < need) {
+        // Counted, and still open. The history says who and how far along.
+        await appendEvent(client, {
+          tenantId: instance.tenant_id,
+          instanceId: instance.id,
+          type: 'approval_vote',
+          payload: { approval: args.approvalKey, decision: args.decision, have, need, reason: args.reason ?? null },
+          actor,
+          now: args.now,
+        });
+        return { applied: false, progress: { have, need } };
+      }
+
       const { rowCount } = await client.query(
         `update approval_request
             set status = 'decided', decision = $1, decided_by = $2, decided_at = $3, reason = $4
-          where instance_id = $5 and approval_key = $6 and status = 'pending'`,
-        [args.decision, actor, args.now, args.reason ?? null, args.instanceId, args.approvalKey],
+          where id = $5 and status = 'pending'`,
+        [args.decision, actor, args.now, args.reason ?? null, request.id],
       );
       if (!rowCount) return { applied: false };
 
@@ -349,7 +408,13 @@ export class Engine {
         instance,
         transition,
         eventType: 'approval_decided',
-        payload: { approval: args.approvalKey, decision: args.decision, reason: args.reason ?? null },
+        payload: {
+          approval: args.approvalKey,
+          decision: args.decision,
+          reason: args.reason ?? null,
+          // Everybody whose decision settled it, not only the last.
+          by: [...votes.map((v) => v.actor), actor],
+        },
         actor: describePrincipal(args.principal),
         now: args.now,
       });
@@ -1525,8 +1590,8 @@ async function performEffect(
       const approvers = approval.approvers.flatMap((p) => resolveParty(p, instance, bp));
       await client.query(
         `insert into approval_request
-           (tenant_id, instance_id, action_run_id, approval_key, approvers, mode, due_at, created_at)
-         values ($1, $2, $3, $4, $5, $6, $7, $8)`,
+           (tenant_id, instance_id, action_run_id, approval_key, approvers, mode, due_at, created_at, required)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
         [
           instance.tenant_id,
           instance.id,
@@ -1536,6 +1601,7 @@ async function performEffect(
           approval.mode,
           approval.dueInHours ? new Date(now.getTime() + approval.dueInHours * 3_600_000) : null,
           now,
+          approval.mode === 'quorum' ? (approval.required ?? null) : null,
         ],
       );
       return;

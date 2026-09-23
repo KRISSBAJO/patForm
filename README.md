@@ -1253,12 +1253,32 @@ Everything below is a deliberate deferral:
 - **An effect log outside the database.** The idempotency ledger protects every
   effect the backup knows about and nothing inside the RPO window, so anything
   with an external effect in that window happens twice after a restore.
-- **Approval quorums and quantifiers over repeating groups** — what is left of
-  the v0.2 list in [docs/failure-cases.md](docs/failure-cases.md). Parallel
-  task joins, separation of duties and date-relative timers were on it and are
-  now built. In each case the compiler refuses the half-built version: a join
-  that leaves a blocking task out, a bar on a submitter the process never
-  identifies, and a deadline measured two ways at once.
+- **Quantifiers over repeating groups** ("any line item over £200") — what is
+  left of the v0.2 list in [docs/failure-cases.md](docs/failure-cases.md).
+  Parallel task joins, separation of duties, date-relative timers and approval
+  quorums were on it and are now built. In each case the compiler refuses the
+  half-built version: a join that leaves a blocking task out, a bar on a
+  submitter the process never identifies, a deadline measured two ways at
+  once, and a quorum that could never be met.
+- **A vote rather than a veto.** In every approval mode one rejection settles
+  it. A board that decides by majority cannot say so yet.
+
+**Approvals that need more than one person.** An approval can be a
+**quorum** — `mode: "quorum"`, `required: 2` — meaning that many *different
+people* among the named approvers must approve: "any two directors". It can
+also be **sequential**, each approver in the order listed, and that is now
+what it does: until this change the first decision by anybody named settled
+every approval whatever its mode, so a sequence behaved exactly like "any one
+of them". Each person's decision is now a vote; the request stays open until
+its mode is satisfied, one person cannot vote twice, and in a sequence only
+the approver whose turn it is may decide. One rejection or request for changes
+settles it at once, in every mode. Queues show a request only to people who
+can act on it now, with how far it has got ("1 of 2 approved"), and the
+decision records everybody whose vote settled it. The compiler refuses a
+quorum with no count, a count on anything but a quorum (`APR001`), and a
+quorum the named people can never meet (`APR002`); one addressed to a role
+warns that it depends on how many people hold it (`APR003`). A quorum of two
+satisfies the packs' two-person rule.
 
 Open a record as Priya and the payroll fields come back `hidden from your
 role` — the same `hiddenFields` the blueprint declares and the compiler

@@ -36,6 +36,7 @@ export interface PendingApproval {
   waitingHours: number;
   late: boolean;
   summary: string;
+  progress?: { have: number; need: number } | null;
 }
 
 export interface PendingTask {
@@ -142,6 +143,12 @@ export function RecordPage({
             <p>
               Waiting {approval.waitingHours}h{approval.late ? ' — past its service level' : ''}. {approval.summary}
             </p>
+            {approval.progress && (
+              <p className="rc__progress">
+                {approval.progress.have} of {approval.progress.need} approved so far — your decision counts once, and
+                anyone who has decided already will not see this again.
+              </p>
+            )}
           </div>
 
           {rejecting ? (

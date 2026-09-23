@@ -1,6 +1,8 @@
 import type { Blueprint } from './blueprint/index.js';
 import { Blueprint as BlueprintSchema } from './blueprint/index.js';
 import { readFileSync } from 'node:fs';
+import { myWork } from './runtime/console-queries.js';
+import { validate } from './compiler/validate.js';
 import type { Pool } from './runtime/db.js';
 import { Engine, newWorkerId } from './runtime/engine.js';
 import { AuthorizationError, type Principal } from './runtime/policy.js';
@@ -238,6 +240,37 @@ export async function proveRetention({ pool, bp, T0, record, completeFor }: Proo
   });
   await engine.drain(T0, 'proof', tenantId);
 
+  /*
+   * What a real record has hanging off it by the time it is old: a report
+   * from the email provider about its receipt, a message sent again after a
+   * suppression was lifted, and a vote on its approval. Each is a row that
+   * points at something retention deletes, and the first of them blocked the
+   * delete outright until it cascaded — so retention failed on any record a
+   * provider had reported on, which in production is nearly all of them. The
+   * proof used to delete a record that had none of these.
+   */
+  const { rows: mailed } = await pool.query<{ id: string }>(
+    'select id from email_log where instance_id = $1 order by id limit 1',
+    [instanceId],
+  );
+  await pool.query(
+    `insert into delivery_event (event_id, provider, type, provider_message_id, recipient, payload, email_log_id, occurred_at)
+     values ('evt-retention-1', 'relykit', 'email.delivered', 'msg-retention-1', 'old@example.test', '{}', $1, $2)`,
+    [mailed[0]!.id, T0],
+  );
+  await pool.query(
+    `insert into email_resend (tenant_id, email_log_id, recipient, resent_by) values ($1, $2, 'old@example.test', $3)`,
+    [tenantId, mailed[0]!.id, adminId],
+  );
+  const { rows: request } = await pool.query<{ id: string }>(
+    'select id from approval_request where instance_id = $1 order by id limit 1',
+    [instanceId],
+  );
+  await pool.query(
+    `insert into approval_vote (request_id, tenant_id, actor, decision, decided_at) values ($1, $2, 'actor:someone', 'approved', $3)`,
+    [request[0]!.id, tenantId, T0],
+  );
+
   // Finished long enough ago to be past the blueprint's retention period.
   const ancient = new Date(T0.getTime() - 4000 * 86_400_000);
   await pool.query(
@@ -278,6 +311,11 @@ export async function proveRetention({ pool, bp, T0, record, completeFor }: Proo
     'select count(*)::int as count from instance where id = $1',
     [keep.instanceId],
   );
+  const { rows: dependents } = await pool.query<{ n: number }>(
+    `select (select count(*) from delivery_event where event_id = 'evt-retention-1')
+          + (select count(*) from email_resend where recipient = 'old@example.test')
+          + (select count(*) from approval_vote where actor = 'actor:someone') as n`,
+  );
 
   // And the door closed behind it: a delete aimed at a record that is NOT
   // past retention is refused by the trigger, exactly as before.
@@ -296,6 +334,7 @@ export async function proveRetention({ pool, bp, T0, record, completeFor }: Proo
       afterPreview[0]!.count === 1 &&
       done.instances === 1 &&
       afterRun[0]!.count === 0 &&
+      Number(dependents[0]!.n) === 0 &&
       runs[0]?.instances_deleted === 1 &&
       survivor[0]!.count === 1 &&
       stillAppendOnly,
@@ -1928,6 +1967,159 @@ export async function proveBulkLists({ pool, bp, T0, record, completeFor }: Proo
 
 function answerCount(v: unknown): string {
   return typeof v === 'number' ? `£${v.toFixed(2)}` : String(v);
+}
+
+/**
+ * "Any two" means two different people, "in turn" means in turn, and one "no" stops it.
+ *
+ * An approval request was settled by its first decision whatever its mode
+ * said, so a sequential approval behaved exactly like any-of and a quorum
+ * had nowhere to count. This runs a quorum of two HR approvers and a
+ * manager-then-HR sequence through the real engine, and every way to get
+ * either wrong.
+ */
+export async function proveApprovalModes({ pool, bp, T0, record, completeFor }: ProofCtx): Promise<void> {
+  const engine = new Engine(pool);
+  const as = (tenantId: string, actorId: string): Principal => ({ kind: 'actor', tenantId, actorId });
+  const attempt = async (fn: () => Promise<{ applied: boolean; progress?: { have: number; need: number } }>) => {
+    try {
+      const r = await fn();
+      return r.progress ? `counted ${r.progress.have} of ${r.progress.need}` : r.applied ? 'settled' : 'no change';
+    } catch (err) {
+      return err instanceof AuthorizationError ? `refused: ${err.reason}` : `error: ${String(err)}`;
+    }
+  };
+
+  // ---------------------------------------------------------------- a quorum
+  const quorumBp = {
+    ...bp,
+    workflow: {
+      ...bp.workflow,
+      approvals: bp.workflow.approvals.map((a) =>
+        a.key === 'hr_approval' ? { ...a, mode: 'quorum' as const, required: 2, approvers: [{ role: 'hr_approver' }] } : a,
+      ),
+    },
+  } as Blueprint;
+  const q = await engine.createTenant('proof:quorum');
+  const qv = await engine.publish(q, quorumBp, 'proof');
+  const manager = await engine.createActor(q, 'manager_email@example.test', 'Priya Manager');
+  await engine.grant({ tenantId: q, actorId: manager, processKey: bp.key, roleKey: 'hiring_manager' });
+  const hr: string[] = [];
+  for (const n of ['one', 'two', 'three']) {
+    const id = await engine.createActor(q, `hr.${n}@proof-quorum.test`, `HR ${n}`);
+    await engine.grant({ tenantId: q, actorId: id, processKey: bp.key, roleKey: 'hr_approver' });
+    hr.push(id);
+  }
+  const intoHrReview = async (email: string) => {
+    const { instanceId } = await engine.submit({ version: qv, answers: completeFor(quorumBp, { personal_email: email }) as never, now: T0 });
+    await engine.drain(T0, 'proof', q);
+    await engine.decide({ instanceId, approvalKey: 'manager_approval', decision: 'approved', principal: as(q, manager), now: T0 });
+    await engine.drain(T0, 'proof', q);
+    return instanceId;
+  };
+  const decideHr = (id: string, who: string, decision: 'approved' | 'rejected') =>
+    attempt(() => engine.decide({ instanceId: id, approvalKey: 'hr_approval', decision, principal: as(q, who), now: T0 }));
+  const stateOf = async (id: string) => (await engine.instance(id)).state;
+  const queueHas = async (who: string, id: string) =>
+    (await myWork(pool, { principal: as(q, who), actorId: who, processKey: bp.key })).approvals.some((a) => a.instanceId === id);
+
+  const r1 = await intoHrReview('quorum.one@example.test');
+  const first = await decideHr(r1, hr[0]!, 'approved');
+  const stillWaiting = await stateOf(r1);
+  const again = await decideHr(r1, hr[0]!, 'approved');
+  const queueFirst = await queueHas(hr[0]!, r1);
+  const queueSecond = await queueHas(hr[1]!, r1);
+  const second = await decideHr(r1, hr[1]!, 'approved');
+  const settled = await stateOf(r1);
+  const { rows: decidedEvent } = await pool.query<{ payload: { by?: string[] } }>(
+    `select payload from event where instance_id = $1 and type = 'approval_decided' and payload->>'approval' = 'hr_approval'`,
+    [r1],
+  );
+
+  const r2 = await intoHrReview('quorum.two@example.test');
+  await decideHr(r2, hr[0]!, 'approved');
+  const veto = await decideHr(r2, hr[2]!, 'rejected');
+  const vetoed = await stateOf(r2);
+
+  // ---------------------------------------------------------------- a sequence
+  const seqBp = {
+    ...bp,
+    workflow: {
+      ...bp.workflow,
+      approvals: bp.workflow.approvals.map((a) =>
+        a.key === 'manager_approval'
+          ? { ...a, mode: 'sequential' as const, approvers: [{ field: 'manager_email' }, { role: 'hr_approver' }] }
+          : a,
+      ),
+    },
+  } as Blueprint;
+  const t = await engine.createTenant('proof:sequence');
+  const tv = await engine.publish(t, seqBp, 'proof');
+  const tManager = await engine.createActor(t, 'manager_email@example.test', 'Priya Manager');
+  await engine.grant({ tenantId: t, actorId: tManager, processKey: bp.key, roleKey: 'hiring_manager' });
+  const tHr = await engine.createActor(t, 'hr@proof-sequence.test', 'Sam HR');
+  await engine.grant({ tenantId: t, actorId: tHr, processKey: bp.key, roleKey: 'hr_approver' });
+  const { instanceId: s1 } = await engine.submit({ version: tv, answers: completeFor(seqBp, { personal_email: 'seq@example.test' }) as never, now: T0 });
+  await engine.drain(T0, 'proof', t);
+  const decideSeq = (who: string) =>
+    attempt(() => engine.decide({ instanceId: s1, approvalKey: 'manager_approval', decision: 'approved', principal: as(t, who), now: T0 }));
+  const outOfTurn = await decideSeq(tHr);
+  const hrQueueBefore = (await myWork(pool, { principal: as(t, tHr), actorId: tHr, processKey: bp.key })).approvals.length;
+  const managerFirst = await decideSeq(tManager);
+  const midSequence = (await engine.instance(s1)).state;
+  const hrQueueAfter = (await myWork(pool, { principal: as(t, tHr), actorId: tHr, processKey: bp.key })).approvals.length;
+  const hrSecond = await decideSeq(tHr);
+  const afterSequence = (await engine.instance(s1)).state;
+
+  // ---------------------------------------------------------------- the compiler
+  const codesFor = (change: Record<string, unknown>) => {
+    const variant = {
+      ...bp,
+      workflow: {
+        ...bp.workflow,
+        approvals: bp.workflow.approvals.map((a) => (a.key === 'hr_approval' ? { ...a, ...change } : a)),
+      },
+    };
+    return validate(variant as Blueprint).items.filter((d) => d.code.startsWith('APR')).map((d) => `${d.code}:${d.severity}`);
+  };
+  const noCount = codesFor({ mode: 'quorum', required: undefined });
+  const countOnSingle = codesFor({ mode: 'single', required: 2 });
+  const impossible = codesFor({ mode: 'quorum', required: 3, approvers: [{ user: 'a@example.test' }, { user: 'b@example.test' }] });
+  const onRole = codesFor({ mode: 'quorum', required: 2, approvers: [{ role: 'hr_approver' }] });
+
+  record(
+    'Any two means two different people, in turn means in turn, and one no stops it',
+    'Approval quorums (§6.5, "any two directors"), and sequential approval enforced at runtime rather than only named in the schema.',
+    first === 'counted 1 of 2' &&
+      stillWaiting === 'hr_review' &&
+      again.startsWith('refused') &&
+      !queueFirst &&
+      queueSecond &&
+      second === 'settled' &&
+      settled === 'provisioning' &&
+      (decidedEvent[0]?.payload.by ?? []).length === 2 &&
+      veto === 'settled' &&
+      vetoed === 'rejected' &&
+      outOfTurn.startsWith('refused') &&
+      hrQueueBefore === 0 &&
+      managerFirst === 'counted 1 of 2' &&
+      midSequence === 'manager_review' &&
+      hrQueueAfter === 1 &&
+      hrSecond === 'settled' &&
+      afterSequence === 'hr_review' &&
+      noCount.includes('APR001:error') &&
+      countOnSingle.includes('APR001:error') &&
+      impossible.includes('APR002:error') &&
+      onRole.includes('APR003:warning'),
+    `A quorum of two HR approvers: the first approval was ${first} and the record stayed in HR review; the same ` +
+      `person approving again was ${again.split(':')[0]}, and it left their queue while staying in a colleague's. The ` +
+      `second person ${second} it and the record moved to ${settled}, with both names on the decision. On another ` +
+      `record one approval then one rejection ${veto} it as ${vetoed}. In a manager-then-HR sequence, HR going first ` +
+      `was ${outOfTurn.split(':')[0]} and HR's queue was empty; the manager's approval was ${managerFirst}, the record ` +
+      `stayed with the manager, HR's queue then held it, and HR's approval moved it on to ${afterSequence}. The ` +
+      `compiler refused a quorum with no count and a count on a single approval (APR001), refused three from two ` +
+      `named people (APR002), and warned that a role-addressed quorum depends on the roster (APR003).`,
+  );
 }
 
 /**

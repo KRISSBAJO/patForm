@@ -515,10 +515,32 @@ create table approval_request (
   decided_at    timestamptz,
   reason        text,
   created_at    timestamptz not null,
-  due_at        timestamptz
+  due_at        timestamptz,
+  -- For a quorum, how many different people must approve.
+  required      int
 );
 
 create index approval_pending on approval_request (instance_id, approval_key) where status = 'pending';
+
+-- Each person's decision on a request, one each.
+--
+-- A request used to be settled by its first decision, whatever the mode said,
+-- so "sequential" behaved exactly like "any one of them" and a quorum had
+-- nowhere to count. The request now stays pending until its mode is
+-- satisfied, and this is the count. Unique per person, so nobody is two of
+-- "any two directors".
+create table approval_vote (
+  id          bigserial primary key,
+  -- Deleted with its request: retention and erasure delete requests, and a
+  -- vote on nothing is not evidence of anything.
+  request_id  bigint not null references approval_request(id) on delete cascade,
+  tenant_id   uuid not null,
+  actor       text not null,
+  decision    text not null check (decision in ('approved', 'rejected', 'changes_requested')),
+  reason      text,
+  decided_at  timestamptz not null,
+  unique (request_id, actor)
+);
 
 -- Section 6.6: generated output is stored with template version, record
 -- version, checksum, actor, and timestamp.
@@ -954,7 +976,11 @@ create table delivery_event (
   payload      jsonb not null,
   -- Which log row it matched, if any. Null means the message was not ours:
   -- a shared provider account also carries mail this deployment did not send.
-  email_log_id bigint references email_log(id),
+  -- Deleted with the message it is about. It holds the recipient's address,
+  -- so when retention or an erasure removes the message, this has to go too;
+  -- and without the cascade it blocked that delete for any message a provider
+  -- had reported on — which in production is nearly every one.
+  email_log_id bigint references email_log(id) on delete cascade,
   platform_email_id bigint references platform_email(id),
   occurred_at  timestamptz not null,
   received_at  timestamptz not null default now()
@@ -994,9 +1020,9 @@ create index suppressed_recipient_live on suppressed_recipient (email) where lif
 create table email_resend (
   id            bigserial primary key,
   tenant_id     uuid not null references tenant(id),
-  email_log_id  bigint not null references email_log(id),
+  email_log_id  bigint not null references email_log(id) on delete cascade,
   recipient     text not null,
-  resent_log_id bigint references email_log(id),
+  resent_log_id bigint references email_log(id) on delete cascade,
   resent_by     uuid not null references actor(id),
   resent_at     timestamptz not null default now(),
   unique (email_log_id, recipient)

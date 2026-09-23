@@ -72,7 +72,9 @@ interface BpApproval {
   key: string;
   name: string;
   approvers: Party[];
-  mode: 'single' | 'sequential' | 'any_of';
+  mode: 'single' | 'sequential' | 'any_of' | 'quorum';
+  /** For a quorum: how many different people must approve. */
+  required?: number;
   allowRequestChanges?: boolean;
   reasonRequired?: boolean;
   /** Separation of duties: the person who submitted may not decide this. */
@@ -2525,12 +2527,36 @@ function ApprovalEditor({
       </Row>
 
       <Row label="How it clears" hint="the threshold">
-        <select className="bd__input" value={approval.mode} onChange={(e) => onChange((a) => void (a.mode = e.target.value as BpApproval['mode']))}>
+        <select
+          className="bd__input"
+          value={approval.mode}
+          onChange={(e) =>
+            onChange((a) => {
+              a.mode = e.target.value as BpApproval['mode'];
+              // `required` belongs to a quorum only; the compiler refuses it anywhere else.
+              if (a.mode === 'quorum') a.required = a.required ?? 2;
+              else delete a.required;
+            })
+          }
+        >
           <option value="single">one approver decides</option>
           <option value="sequential">each in turn, in the order listed</option>
           <option value="any_of">any one of them is enough</option>
+          <option value="quorum">a number of them must approve</option>
         </select>
       </Row>
+      {approval.mode === 'quorum' && (
+        <Row label="How many must approve" hint="different people; one no from anyone stops it">
+          <input
+            className="bd__input"
+            type="number"
+            min={2}
+            max={20}
+            value={approval.required ?? 2}
+            onChange={(e) => onChange((a) => void (a.required = num(e.target.value)))}
+          />
+        </Row>
+      )}
 
       <fieldset className="bd__fieldset">
         <legend>Approvers</legend>

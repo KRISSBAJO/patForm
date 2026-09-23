@@ -29,6 +29,8 @@ export interface WorkSummary {
     dueAt: string | null;
     late: boolean;
     summary: string;
+    /** How far a sequence or a quorum has got. Null when one decision settles it. */
+    progress: { have: number; need: number } | null;
   }[];
   tasks: {
     instanceId: string;
@@ -124,15 +126,23 @@ export async function myWork(
     const stateName = (key: string) => bp.workflow.states.find((s) => s.key === key)?.name ?? key;
 
     // ---- what requires me: approvals this record actually names me on
-    const { rows: approvalRows } = await client.query<{
+    const { rows: pendingRows } = await client.query<{
       instance_id: string;
       approval_key: string;
       created_at: Date;
       due_at: Date | null;
       state: string;
       data: Record<string, unknown>;
+      mode: string;
+      approvers: string[];
+      required: number | null;
+      voters: string[];
+      approved: number;
     }>(
-      `select a.instance_id, a.approval_key, a.created_at, a.due_at, i.state, i.data
+      `select a.instance_id, a.approval_key, a.created_at, a.due_at, i.state, i.data,
+              a.mode, a.approvers, a.required,
+              coalesce((select array_agg(v.actor) from approval_vote v where v.request_id = a.id), '{}') as voters,
+              (select count(*)::int from approval_vote v where v.request_id = a.id and v.decision = 'approved') as approved
          from approval_request a
          join instance i on i.id = a.instance_id
         where a.tenant_id = $1
@@ -142,6 +152,19 @@ export async function myWork(
         order by a.created_at`,
       [tenantId, args.processKey, addresses],
     );
+
+    /*
+     * Only what I can act on now. In a sequence that is the approver whose
+     * turn it is; in a quorum it is anybody named who has not decided yet. A
+     * queue that listed a record I cannot decide — because it is not my turn,
+     * or because I already have — sends me to a button that refuses.
+     */
+    const me = `actor:${args.actorId}`;
+    const approvalRows = pendingRows.filter((row) => {
+      if (row.voters.includes(me)) return false;
+      if (row.mode === 'sequential') return addresses.includes(row.approvers[row.approved] ?? '');
+      return true;
+    });
 
     const now = Date.now();
     const approvals = approvalRows.map((row) => ({
@@ -155,6 +178,11 @@ export async function myWork(
       dueAt: row.due_at?.toISOString() ?? null,
       late: Boolean(row.due_at && row.due_at.getTime() < now),
       summary: summarise(bp, redact(bp, decision.roles, row.data)),
+      /** How far a multi-person approval has got: "1 of 2 approved". */
+      progress:
+        row.mode === 'quorum' || row.mode === 'sequential'
+          ? { have: row.approved, need: row.mode === 'quorum' ? (row.required ?? 2) : row.approvers.length }
+          : null,
     }));
 
     // ---- and tasks I may complete, per each task's own rule

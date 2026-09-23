@@ -35,8 +35,22 @@ export const Approval = z
     key: Key,
     name: z.string().min(1),
     approvers: z.array(Party).min(1),
-    /** `sequential` runs approvers in the order listed (section 6.5). */
-    mode: z.enum(['single', 'sequential', 'any_of']),
+    /**
+     * How the request is settled (section 6.5).
+     *
+     * `single` and `any_of`: the first named approver to decide settles it.
+     * `sequential`: each approver in the order listed, one after another; only
+     * the one whose turn it is may decide, and every one must approve.
+     * `quorum`: `required` *different people* among the named approvers must
+     * approve — "any two directors".
+     *
+     * In every mode a rejection, or a request for changes, settles it at once.
+     * An approval exists to stop things; the cautious reading of one "no" among
+     * several "yes" is no, and a process that wants a vote can say so later.
+     */
+    mode: z.enum(['single', 'sequential', 'any_of', 'quorum']),
+    /** For `quorum`: how many different people must approve. */
+    required: z.number().int().min(2).max(20).optional(),
     /** Section 6.5: approve, reject, request changes. */
     allowRequestChanges: z.boolean().default(true),
     reasonRequired: z.boolean().default(false),

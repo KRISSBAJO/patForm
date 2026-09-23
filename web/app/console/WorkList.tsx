@@ -27,6 +27,7 @@ export interface WorkApproval {
   waitingHours: number;
   late: boolean;
   summary: string;
+  progress?: { have: number; need: number } | null;
 }
 
 export interface WorkTask {
@@ -211,6 +212,7 @@ export function WorkList({
                   <div className="cs__rowTitle">{row.item.summary}</div>
                   <div className="cs__rowMeta">
                     {row.item.approvalName} · waiting {row.item.waitingHours}h
+                    {row.item.progress ? ` · ${row.item.progress.have} of ${row.item.progress.need} approved` : ''}
                     {row.item.late ? ' · past its SLA' : ''}
                   </div>
                 </div>

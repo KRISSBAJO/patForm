@@ -104,8 +104,10 @@ function has(bp: Blueprint, control: Control, rules: CategoryRules): Finding {
       const submitterBarred = approvals.every((a) => a.notTheSubmitter);
 
       const reasons: string[] = [];
-      if (approvals.length < 2) reasons.push(`only ${approvals.length} approval`);
-      if (parties.size < 2) reasons.push('every approval is addressed to the same party');
+      // A quorum of two or more is two people by construction: one vote each.
+      const quorum = approvals.some((a) => a.mode === 'quorum' && (a.required ?? 0) >= 2);
+      if (!quorum && approvals.length < 2) reasons.push(`only ${approvals.length} approval`);
+      if (!quorum && parties.size < 2) reasons.push('every approval is addressed to the same party');
       if (!submitterBarred) reasons.push('the submitter is not barred from deciding');
 
       return {

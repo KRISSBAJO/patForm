@@ -467,6 +467,44 @@ export function validate(bp: Blueprint): Diagnostics {
     outgoing.set(t.from, list);
   }
 
+  /*
+   * A quorum that cannot be met is a record that can never leave its state.
+   * People named by address can be counted, so "three of these two" is an
+   * error. A role cannot be counted from here — it is however many people
+   * hold it on the day — so a quorum that leans on one is a warning that says
+   * how many it needs.
+   */
+  const checkQuorum = (approval: (typeof bp.workflow.approvals)[number], at: string): void => {
+    if (approval.mode !== 'quorum') {
+      if (approval.required !== undefined) {
+        d.error('APR001', at, `Approval "${approval.key}" sets required, which only a quorum uses.`, 'Set mode to "quorum", or remove required.');
+      }
+      return;
+    }
+    if (approval.required === undefined) {
+      d.error('APR001', at, `Approval "${approval.key}" is a quorum but does not say how many must approve.`, 'Set required to 2 or more.');
+      return;
+    }
+    const roles = approval.approvers.filter((p) => 'role' in p);
+    const people = new Set(approval.approvers.filter((p) => !('role' in p)).map((p) => JSON.stringify(p))).size;
+    if (!roles.length && people < approval.required) {
+      d.error(
+        'APR002',
+        at,
+        `Approval "${approval.key}" needs ${approval.required} people to approve but names only ${people}.`,
+        'It could never be met, and every record would wait in this state for ever.',
+      );
+    } else if (roles.length && people < approval.required) {
+      d.warn(
+        'APR003',
+        at,
+        `Approval "${approval.key}" needs ${approval.required} different people; it depends on enough of them holding ${roles
+          .map((p) => (p as { role: string }).role)
+          .join(', ')}.`,
+      );
+    }
+  };
+
   const checkAction = (action: Action, at: string): void => {
     switch (action.do) {
       case 'set_state':
@@ -495,6 +533,7 @@ export function validate(bp: Blueprint): Diagnostics {
         if (approval.mode === 'sequential' && approval.approvers.length < 2) {
           d.warn('OPS003', at, `Approval "${approval.key}" is sequential but has only one approver.`);
         }
+        checkQuorum(approval, at);
         return;
       }
       case 'send_email': {

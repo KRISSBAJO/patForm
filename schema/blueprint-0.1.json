@@ -442,6 +442,9 @@
               "items": {
                 "$ref": "#/definitions/ProcessBlueprint/properties/key"
               }
+            },
+            "submitterField": {
+              "$ref": "#/definitions/ProcessBlueprint/properties/key"
             }
           },
           "required": [
@@ -487,6 +490,21 @@
                             "$ref": "#/definitions/ProcessBlueprint/properties/key"
                           },
                           "minItems": 1
+                        },
+                        "widths": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "string",
+                            "enum": [
+                              "full",
+                              "half",
+                              "third"
+                            ]
+                          },
+                          "propertyNames": {
+                            "pattern": "^[a-z][a-z0-9_]*$",
+                            "maxLength": 64
+                          }
                         },
                         "visibleWhen": {
                           "anyOf": [
@@ -733,6 +751,36 @@
               "default": [
                 "en"
               ]
+            },
+            "branding": {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "tagline": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "logoUrl": {
+                  "type": "string",
+                  "format": "uri"
+                },
+                "bannerUrl": {
+                  "type": "string",
+                  "format": "uri"
+                },
+                "accent": {
+                  "type": "string",
+                  "pattern": "^#[0-9a-fA-F]{6}$"
+                },
+                "footer": {
+                  "type": "string",
+                  "maxLength": 300
+                }
+              },
+              "additionalProperties": false
             }
           },
           "required": [
@@ -881,16 +929,42 @@
                         "properties": {
                           "on": {
                             "type": "string",
+                            "const": "tasks_completed"
+                          },
+                          "tasks": {
+                            "type": "array",
+                            "items": {
+                              "$ref": "#/definitions/ProcessBlueprint/properties/key"
+                            },
+                            "minItems": 2
+                          }
+                        },
+                        "required": [
+                          "on",
+                          "tasks"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "on": {
+                            "type": "string",
                             "const": "timer"
                           },
                           "afterHoursInState": {
                             "type": "number",
                             "exclusiveMinimum": 0
+                          },
+                          "relativeTo": {
+                            "$ref": "#/definitions/ProcessBlueprint/properties/key"
+                          },
+                          "offsetHours": {
+                            "type": "number"
                           }
                         },
                         "required": [
-                          "on",
-                          "afterHoursInState"
+                          "on"
                         ],
                         "additionalProperties": false
                       },
@@ -1222,14 +1296,24 @@
                     "enum": [
                       "single",
                       "sequential",
-                      "any_of"
+                      "any_of",
+                      "quorum"
                     ]
+                  },
+                  "required": {
+                    "type": "integer",
+                    "minimum": 2,
+                    "maximum": 20
                   },
                   "allowRequestChanges": {
                     "type": "boolean",
                     "default": true
                   },
                   "reasonRequired": {
+                    "type": "boolean",
+                    "default": false
+                  },
+                  "notTheSubmitter": {
                     "type": "boolean",
                     "default": false
                   },
