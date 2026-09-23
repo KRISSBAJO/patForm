@@ -11,9 +11,11 @@ production launch.
 1. Create a separate Renviq database named `patform-staging` within the existing
    account's included capacity. Save its connection URL as `DATABASE_URL` in a
    local `.env` file. Do not commit or print that URL.
-2. Run `npm run db:init-empty -- --confirm-empty-staging-db` **once** against that
-   new database. The command refuses a database with an existing public table
-   or other public relation. Do not use `npm run seed`: it drops the schema.
+2. On first start, the staging service initializes the schema if the database
+   has no public tables or other public relations. It leaves existing schemas
+   alone. The same guarded operation is available manually with
+   `npm run db:init-empty -- --confirm-empty-staging-db`. Do not use `npm run seed`:
+   it drops the schema.
 3. Create a staging workspace through `/signup` after the site is deployed.
    Use test accounts and test records only.
 

@@ -87,6 +87,31 @@ export async function resetSchema(pool: Pool): Promise<void> {
   }
 }
 
+/** Install the schema only when the public schema has no relations at all. */
+export async function initializeEmptySchema(pool: Pool): Promise<boolean> {
+  const client = await pool.connect();
+  try {
+    await client.query('begin');
+    const result = await client.query<{ count: string }>(`
+      select count(*)::text as count from pg_class
+      where relnamespace = 'public'::regnamespace
+        and relkind in ('r', 'p', 'v', 'm', 'f', 'S')
+    `);
+    if (Number(result.rows[0]?.count) !== 0) {
+      await client.query('rollback');
+      return false;
+    }
+    await client.query(readFileSync(join(here, 'schema.sql'), 'utf8'));
+    await client.query('commit');
+    return true;
+  } catch (error) {
+    await client.query('rollback').catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 /**
  * Brings an existing database up to the current schema, without dropping it.
  *
