@@ -120,11 +120,116 @@ export async function listMembers(pool: Pool, principal: Principal) {
             (select count(*)::int from session s
               where s.actor_id = a.id and s.revoked_at is null and s.expires_at > now()) as sessions,
             (select count(*)::int from membership m where m.actor_id = a.id) as process_roles,
+            (select max(s.last_seen_at) from session s where s.actor_id = a.id) as last_seen_at,
             (select array_agg(i.provider) from actor_identity i where i.actor_id = a.id) as identities
        from actor a where a.tenant_id = $1 order by a.active desc, a.display_name`,
     [principal.tenantId],
   );
   return rows;
+}
+
+export interface InviteRow {
+  email: string;
+  role: string;
+}
+
+export interface InviteRowResult {
+  email: string;
+  role: string;
+  status: 'ready' | 'sent' | 'skipped' | 'failed';
+  /** Why a row will not go, or something worth knowing about one that will. */
+  note?: string;
+}
+
+/** Most at once. A mistake in a pasted list should cost a hundred emails at worst, not a thousand. */
+export const MAX_INVITES = 100;
+
+/**
+ * Many invitations at once — typed, pasted or from a spreadsheet.
+ *
+ * Checked in full before anything is sent, and the same checks run again as
+ * each one goes: a list is where typos, duplicates and people who are already
+ * here turn up, and one bad row should be a line in the result, not a reason
+ * to stop the other forty. `dryRun` answers row by row without sending, which
+ * is what the page shows before anybody presses Send.
+ *
+ * Each row that goes out is an ordinary `invite`, so nothing here can grant
+ * more than one invitation can: the role must be one this person may hand
+ * out, and their own address must be confirmed.
+ */
+export async function inviteMany(
+  pool: Pool,
+  args: { principal: Principal; rows: InviteRow[]; message?: string; dryRun: boolean },
+): Promise<{ rows: InviteRowResult[] }> {
+  await requireWorkspaceCapability(pool, args.principal, 'administer', 'invitations');
+  const principal = args.principal;
+  if (principal.kind !== 'actor') throw new Error('unreachable');
+  if (!args.rows.length) throw new InvalidInput('add at least one address');
+  if (args.rows.length > MAX_INVITES) {
+    throw new InvalidInput(`at most ${MAX_INVITES} invitations at once — split the list`);
+  }
+  if (!(await isVerified(pool, principal.actorId))) {
+    throw new InvalidInput(
+      'confirm your own email address first — we sent you a link when you created the workspace, and invitations go out under your name',
+    );
+  }
+
+  const grantable = grantableRoles(await inTransaction(pool, (c) => roleOf(c, principal.actorId)));
+  const emails = args.rows.map((r) => r.email.trim().toLowerCase());
+  const { rows: members } = await pool.query<{ email: string; active: boolean }>(
+    'select lower(email) as email, active from actor where tenant_id = $1 and lower(email) = any($2::text[])',
+    [principal.tenantId, emails],
+  );
+  const { rows: pending } = await pool.query<{ email: string }>(
+    `select lower(email) as email from invitation
+      where tenant_id = $1 and lower(email) = any($2::text[])
+        and accepted_at is null and revoked_at is null and expires_at > now()`,
+    [principal.tenantId, emails],
+  );
+  const memberOf = new Map(members.map((m) => [m.email, m.active]));
+  const invited = new Set(pending.map((p) => p.email));
+
+  const seen = new Set<string>();
+  const checked: InviteRowResult[] = args.rows.map((row) => {
+    const email = row.email.trim().toLowerCase();
+    const role = row.role.trim().toLowerCase().replace(/[\s-]+/g, '_');
+    const out = (status: InviteRowResult['status'], note?: string): InviteRowResult => ({ email, role, status, note });
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return out('skipped', 'not an email address');
+    if (seen.has(email)) return out('skipped', 'already further up the list');
+    seen.add(email);
+    if (!(role in WORKSPACE_GRANTS)) return out('skipped', `"${row.role}" is not a role`);
+    if (!grantable.includes(role as WorkspaceRole)) return out('skipped', `you cannot give the ${role.replace(/_/g, ' ')} role`);
+    if (memberOf.get(email) === true) return out('skipped', 'already in this workspace');
+    if (memberOf.get(email) === false) return out('skipped', 'a deactivated member — reactivate them instead');
+    if (invited.has(email)) return out('ready', 'already invited; sending replaces the old link');
+    return out('ready');
+  });
+
+  if (args.dryRun) return { rows: checked };
+
+  const results: InviteRowResult[] = [];
+  for (const row of checked) {
+    if (row.status !== 'ready') {
+      results.push(row);
+      continue;
+    }
+    try {
+      const sent = await invite(pool, {
+        principal,
+        email: row.email,
+        workspaceRole: row.role as WorkspaceRole,
+        message: args.message,
+      });
+      results.push(
+        sent.delivered === 'failed'
+          ? { ...row, status: 'failed', note: 'invitation made, but the email did not send' }
+          : { ...row, status: 'sent', note: undefined },
+      );
+    } catch (err) {
+      results.push({ ...row, status: 'failed', note: err instanceof Error ? err.message : String(err) });
+    }
+  }
+  return { rows: results };
 }
 
 /**

@@ -891,6 +891,16 @@ The retention proof deleted a record that had never received a provider event, s
 
 **Generalisable:** a deletion job is tested by the richest record it will meet, not the simplest. Every table added later is a new way for it to fail, and the only place that shows is a proof whose record has one of everything.
 
+### 83. "I can't sign in," while the proofs were running
+
+The proof suite drops and recreates the schema before every proof. It read the same `DATABASE_URL` as the app, so running it during development emptied the workspace the console was using: every session vanished, the seeded accounts went with them, and somebody signing in was told their password was wrong. Re-seeding afterwards put the accounts back and signed everybody out a second time.
+
+Nothing failed, which is why it took a person to notice. The suite was doing exactly what it should, against the wrong database.
+
+**Fixed** with `PROOF_DATABASE_URL`: when it is set, the spike runs there and nowhere else, and it prints which database it is about to drop so the target is on screen before anything happens. The local setup uses a second database on the same container.
+
+**Generalisable:** a command that destroys data should not share a setting with a command that serves it. One variable for both means the safe choice depends on remembering, every time, which one you are about to run.
+
 ---
 
 ## What the compiler structurally cannot catch

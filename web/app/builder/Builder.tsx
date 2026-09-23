@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { RulesEditor } from './Rules';
+import { BootScreen } from '../../components/boot-screen';
 import './builder.css';
 import { FormPreview, TestsPanel, Versions, type VersionRow } from './SidePanel';
 import { useDialog } from '../useDialog';
@@ -489,6 +490,15 @@ export function Builder() {
         await call('/api/session');
         setSignedIn(true);
         await refreshList();
+        // Arriving from the Preview, Versions or Tests page with a process
+        // named: open it, then take the name off the address so a reload
+        // does not reopen it after somebody has moved on.
+        const asked = new URLSearchParams(window.location.search).get('process');
+        if (asked) {
+          window.history.replaceState(null, '', window.location.pathname);
+          adopt(await call<DraftDetail>('/api/builder/open', { method: 'POST', body: JSON.stringify({ processKey: asked }) }));
+          await refreshList();
+        }
       } catch (err) {
         if (err instanceof Unauthenticated) setSignedIn(false);
         else setError(err instanceof Error ? err.message : String(err));
@@ -721,7 +731,7 @@ export function Builder() {
   const errors = useMemo(() => diagnostics.filter((d) => d.severity === 'error'), [diagnostics]);
   const warnings = useMemo(() => diagnostics.filter((d) => d.severity === 'warning'), [diagnostics]);
 
-  if (signedIn === null) return <div className="bd__boot">Loading…</div>;
+  if (signedIn === null) return <BootScreen where="builder" label="Opening the builder" />;
   if (signedIn === false) {
     return (
       <div className="bd__gate">
@@ -810,28 +820,26 @@ export function Builder() {
         </a>
 
         {/*
-          * Three destinations rather than three buttons hidden in a header.
-          * They are disabled with nothing open because there is genuinely
-          * nothing to preview, version or test — a control that does nothing
-          * is worse than one that is not there.
+          * Three pages, not three panels. They were greyed out until a draft
+          * was open, which put three dead buttons on the builder's front
+          * door. Each is now a full-width page that works for any process
+          * and any version; with a draft open it lands on that process's
+          * draft. The same three stay as tabs beside the editor for a quick
+          * look while typing.
           */}
         <span className="bd__railRule" aria-hidden="true" />
 
         {SIDES.filter((s2) => s2.key !== 'checks').map((s2) => (
-          <button
-            type="button"
+          <a
             key={s2.key}
-            className={`bd__railItem${side === s2.key && draft ? ' bd__railItem--on' : ''}`}
-            disabled={!draft}
-            aria-pressed={side === s2.key && Boolean(draft)}
-            onClick={() => {
-              setSide(s2.key);
-              if (s2.key === 'tests' && !tests && publishable) void runTests();
-            }}
+            className="bd__railItem"
+            href={`/builder/${s2.key}${
+              draft ? `?process=${encodeURIComponent(draft.processKey)}${s2.key === 'versions' ? '' : '&v=draft'}` : ''
+            }`}
           >
             <RailIcon name={s2.icon} />
             <span>{s2.label}</span>
-          </button>
+          </a>
         ))}
 
         <span className="bd__railSpacer" />
@@ -1552,7 +1560,7 @@ function widthFor(bp: Blueprint, key: string | undefined): string | undefined {
   return key ? sectionHolding(bp, key)?.widths?.[key] : undefined;
 }
 
-function RailIcon({
+export function RailIcon({
   name,
 }: {
   name: 'processes' | 'new' | 'catalogue' | 'console' | 'checks' | 'preview' | 'versions' | 'tests';

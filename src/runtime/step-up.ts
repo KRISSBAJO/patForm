@@ -105,6 +105,12 @@ export const STEP_UP: { method: string; test: RegExp; when?: (body: unknown) => 
   { method: 'POST', test: /^\/api\/webhooks\/[0-9a-f-]{36}\/rotate$/, what: 'issue a new webhook secret' },
   { method: 'POST', test: /^\/api\/oauth\/clients$/, what: 'register an application' },
   { method: 'POST', test: /^\/api\/invitations$/, what: 'invite somebody' },
+  {
+    method: 'POST',
+    test: /^\/api\/invitations\/bulk$/,
+    when: (body) => (body as { dryRun?: boolean })?.dryRun !== true,
+    what: 'invite these people',
+  },
   { method: 'POST', test: /^\/api\/members\/[0-9a-f-]{36}\/role$/, what: "change somebody's role" },
   { method: 'POST', test: /^\/api\/members\/[0-9a-f-]{36}\/reactivate$/, what: 'let somebody back in' },
   { method: 'POST', test: /^\/api\/account\/mfa\/begin$/, what: 'set up a new authenticator' },

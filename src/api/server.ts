@@ -23,6 +23,7 @@ import {
   createWorkspace,
   grantableRoles,
   invite,
+  inviteMany,
   listInvitations,
   listMembers,
   readInvitation,
@@ -101,6 +102,8 @@ import {
   publishImpact,
   saveDraft as saveProcessDraft,
   testDraft,
+  testVersion,
+  viewProcess,
   type NewProcess,
   versionHistory,
 } from '../runtime/builder.js';
@@ -227,6 +230,25 @@ route('GET', /^\/api\/builder\/processes$/, async ({ pool, principal }) =>
 route('GET', /^\/api\/builder\/processes\/([A-Za-z0-9_.-]+)\/versions$/, async ({ pool, principal, url }) =>
   versionHistory(pool, principal, decodeURIComponent(url.pathname.split('/')[4]!)),
 );
+
+/**
+ * A process as the Preview, Versions and Tests pages show it: `?which=draft`,
+ * `latest` (the default), or a version number.
+ */
+route('GET', /^\/api\/builder\/processes\/([A-Za-z0-9_.-]+)\/view$/, async ({ pool, principal, url }) => {
+  const raw = url.searchParams.get('which') ?? 'latest';
+  const which = raw === 'draft' || raw === 'latest' ? raw : Number(raw);
+  if (typeof which === 'number' && !(Number.isInteger(which) && which > 0)) {
+    throw new HttpError(400, 'which is draft, latest, or a version number');
+  }
+  return viewProcess(pool, principal, decodeURIComponent(url.pathname.split('/')[4]!), which);
+});
+
+/** Runs one published version's scenarios again, against the engine as it is now. */
+route('POST', /^\/api\/builder\/processes\/([A-Za-z0-9_.-]+)\/versions\/(\d+)\/test$/, async ({ pool, principal, url }) => {
+  const parts = url.pathname.split('/');
+  return testVersion(pool, { principal, processKey: decodeURIComponent(parts[4]!), version: Number(parts[6]) });
+});
 
 route('POST', /^\/api\/builder\/open$/, async ({ pool, principal }, body) => {
   const { processKey } = body as { processKey?: string };
@@ -649,6 +671,21 @@ route('POST', /^\/api\/members\/([0-9a-f-]{36})\/revoke-sessions$/, async ({ poo
 });
 
 route('GET', /^\/api\/invitations$/, async ({ pool, principal }) => listInvitations(pool, principal));
+
+/**
+ * Many invitations at once: `dryRun` checks every row and sends nothing, which
+ * is what the invite page shows before Send; without it, the ready rows go.
+ */
+route('POST', /^\/api\/invitations\/bulk$/, async ({ pool, principal }, body) => {
+  const { rows, message, dryRun } = body as { rows?: { email?: unknown; role?: unknown }[]; message?: string; dryRun?: boolean };
+  if (!Array.isArray(rows)) throw new HttpError(400, 'rows is required');
+  return inviteMany(pool, {
+    principal,
+    rows: rows.map((r) => ({ email: String(r.email ?? ''), role: String(r.role ?? '') })),
+    message: typeof message === 'string' ? message.slice(0, 1000) : undefined,
+    dryRun: dryRun === true,
+  });
+});
 
 route('POST', /^\/api\/invitations$/, async ({ pool, principal }, body) => {
   const { email, workspaceRole, processRoles, message } = body as {

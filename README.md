@@ -73,6 +73,11 @@ or point `DATABASE_URL` in `.env` at a [Renviq](https://renviq.com) connection
 string and run `npm run spike` against managed Postgres. Nothing in the runtime
 is specific to either.
 
+The spike drops and recreates the schema before every proof. If the app is
+running against the same database, that signs everybody out and empties the
+workspace. Set `PROOF_DATABASE_URL` to a second database (on the local
+container, `create database patform_proofs`) and the spike uses that instead.
+
 ## The runtime spike
 
 Section 23 week 3 asks for a spike of workflow state, timers, idempotent email,

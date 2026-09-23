@@ -6,6 +6,8 @@ import { Engine, newWorkerId } from './runtime/engine.js';
 import { AuthorizationError, type Principal } from './runtime/policy.js';
 import {
   proveBuilderRoundTrip,
+  proveBuilderPages,
+  proveBulkInvite,
   proveDraftLocking,
   proveScreening,
   proveSendingHealth,
@@ -910,8 +912,15 @@ function completeFor(bp: Blueprint, overrides: Record<string, unknown>): Record<
 
 async function main(): Promise<void> {
   suppressDelivery('the proof suite must not deliver to real inboxes');
-  const pool = createPool(16);
-  console.log(`\n${BOLD}Runtime spike${OFF} ${DIM}- ${describeTarget()}${OFF}`);
+  /*
+   * Its own database when one is named. Every proof starts by dropping the
+   * schema, so running it against the database the app is using signs every
+   * member out and empties the workspace — which is exactly what happened to
+   * somebody trying to sign in while it ran.
+   */
+  const target = process.env.PROOF_DATABASE_URL || undefined;
+  const pool = createPool(16, target);
+  console.log(`\n${BOLD}Runtime spike${OFF} ${DIM}- ${describeTarget(target)}${OFF}`);
 
   const { rows: server } = await pool.query<{ version: string }>('select version()');
   console.log(`${DIM}${server[0]!.version.split(',')[0]}${OFF}\n`);
@@ -931,6 +940,8 @@ async function main(): Promise<void> {
     ['respondent scope', () => proveRespondentScope(ctx)],
     ['builder round trip', () => proveBuilderRoundTrip(ctx)],
     ['draft locking', () => proveDraftLocking(ctx)],
+    ['builder pages', () => proveBuilderPages(ctx)],
+    ['bulk invite', () => proveBulkInvite(ctx)],
     ['spam screening', () => proveScreening(ctx)],
     ['sending health', () => proveSendingHealth(ctx)],
     ['bulk actions', () => proveBulkActions(ctx)],

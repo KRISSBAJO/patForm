@@ -124,6 +124,8 @@ interface Member {
   provisioned_by: string;
   sessions: number;
   process_roles: number;
+  /** When any of their sessions was last used; null if they have never signed in. */
+  last_seen_at: string | null;
 }
 
 interface Invitation {
@@ -136,28 +138,17 @@ interface Invitation {
   revoked_at: string | null;
 }
 
-/** What each workspace role actually lets somebody do, in a sentence. */
-const ROLE_MEANS: Record<string, string> = {
-  owner: 'Everything, including billing and removing other owners.',
-  admin: 'Everything except being the last owner.',
-  builder: 'Designs and publishes processes. Cannot approve or operate.',
-  operator: 'Runs the work: tasks, records, reports.',
-  approver: 'Sees records. Approving is granted per process, not here.',
-  analyst: 'Reads records and reports. Changes nothing.',
-  read_only: 'Reads records. Nothing else.',
-};
-
-export function PeopleView({ canAdminister }: { canAdminister: boolean }) {
+export function PeopleView({ canAdminister, onInvite }: { canAdminister: boolean; onInvite: () => void }) {
   const [members, setMembers] = useState<Member[] | null>(null);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [grantable, setGrantable] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
-
-  const [email, setEmail] = useState('');
-  const [role, setRole] = useState('read_only');
-  const [message, setMessage] = useState('');
+  const [query, setQuery] = useState('');
+  const [roleFilter, setRoleFilter] = useState('all');
+  const [showInactive, setShowInactive] = useState(false);
+  const [tab, setTab] = useState<'members' | 'waiting'>('members');
 
   const load = useCallback(async () => {
     try {
@@ -169,7 +160,6 @@ export function PeopleView({ canAdminister }: { canAdminister: boolean }) {
         ]);
         setInvitations(inv);
         setGrantable(gr.roles);
-        setRole((current) => (gr.roles.includes(current) ? current : (gr.roles[0] ?? 'read_only')));
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -194,176 +184,198 @@ export function PeopleView({ canAdminister }: { canAdminister: boolean }) {
   };
 
   if (error) return <Refused error={error} />;
-  if (!members) {
-    return (
-      <div className="cs__panel">
-        <div className="cs__empty">Loading…</div>
-      </div>
-    );
-  }
+  if (!members) return <PanelSkeleton rows={5} />;
 
   const open = invitations.filter((i) => !i.accepted_at && !i.revoked_at && new Date(i.expires_at) > new Date());
+  const active = members.filter((m) => m.active);
+  const inactive = members.length - active.length;
+  const roles = [...new Set(members.map((m) => m.workspace_role))];
+  const q = query.trim().toLowerCase();
+  const shown = members.filter(
+    (m) =>
+      (showInactive || m.active) &&
+      (roleFilter === 'all' || m.workspace_role === roleFilter) &&
+      (!q || m.display_name.toLowerCase().includes(q) || m.email.toLowerCase().includes(q)),
+  );
 
   return (
     <>
-      {canAdminister && (
-        <div className="cs__panel" style={{ marginBottom: 18 }}>
-          <div className="cs__panelHead">
-            <h2 className="cs__tab">Invite somebody</h2>
-          </div>
-          <form
-            className="mg__invite"
-            onSubmit={(e) => {
-              e.preventDefault();
-              void act('invite', async () => {
-                const sent = await post<{ delivered: string }>('/api/invitations', {
-                  email,
-                  workspaceRole: role,
-                  message,
-                });
-                setEmail('');
-                setMessage('');
-                // `delivered` is what the endpoint returns instead of the
-                // token: the link is emailed, and showing it here would let
-                // anybody who can invite mint one for an address whose owner
-                // never sees it.
-                return sent.delivered === 'failed'
-                  ? 'The invitation was created but the email did not send. Check deliverability.'
-                  : 'Invitation sent. The link works once and expires in seven days.';
-              });
-            }}
-          >
-            <div className="mg__field">
-              <label className="cs__label" htmlFor="invite-email">
-                Their email
-              </label>
-              <input
-                id="invite-email"
-                className="cs__input"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-              />
-            </div>
-            <div className="mg__field">
-              <label className="cs__label" htmlFor="invite-role">
-                Role
-              </label>
-              <select
-                id="invite-role"
-                className="cs__input"
-                value={role}
-                onChange={(e) => setRole(e.target.value)}
-                aria-describedby="invite-role-hint"
-              >
-                {grantable.map((r) => (
-                  <option key={r} value={r}>
-                    {r.replace(/_/g, ' ')}
-                  </option>
-                ))}
-              </select>
-              {/* The list is what the server will accept from THIS person, so
-                  the interface cannot offer a role it would refuse. */}
-              <p id="invite-role-hint" className="mg__hint">
-                {ROLE_MEANS[role] ?? ''}
-              </p>
-            </div>
-            <div className="mg__field mg__field--wide">
-              <label className="cs__label" htmlFor="invite-message">
-                A note, if you want one (optional)
-              </label>
-              <input
-                id="invite-message"
-                className="cs__input"
-                type="text"
-                value={message}
-                onChange={(e) => setMessage(e.target.value)}
-              />
-            </div>
-            <div className="mg__actions">
-              <button type="submit" className="cs__btn cs__btn--primary" disabled={busy === 'invite'}>
-                {busy === 'invite' ? 'Sending…' : 'Send invitation'}
+      <section className="pp__head">
+        <div>
+          <h2 className="pp__title">Your workspace</h2>
+          <p className="pp__stats">
+            <span>
+              <strong>{active.length}</strong> {active.length === 1 ? 'member' : 'members'}
+            </span>
+            {canAdminister && open.length > 0 && (
+              <button type="button" className="pp__statLink" onClick={() => setTab('waiting')}>
+                <strong>{open.length}</strong> {open.length === 1 ? 'invitation' : 'invitations'} waiting
               </button>
-            </div>
-          </form>
-          {note && (
-            <p className="vw__note" role="status">
-              {note}
-            </p>
-          )}
+            )}
+            {inactive > 0 && (
+              <span>
+                <strong>{inactive}</strong> deactivated
+              </span>
+            )}
+          </p>
         </div>
-      )}
+        {canAdminister && (
+          <button type="button" className="cs__btn cs__btn--primary pp__invite" onClick={onInvite}>
+            <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+              <circle cx="8" cy="7" r="3" />
+              <path d="M2.5 16.5c0-3 2.5-5 5.5-5s5.5 2 5.5 5M15.5 6v5M13 8.5h5" />
+            </svg>
+            Invite people
+          </button>
+        )}
+      </section>
 
-      {open.length > 0 && (
-        <div className="cs__panel" style={{ marginBottom: 18 }}>
-          <div className="cs__panelHead">
-            <h2 className="cs__tab">Waiting to be accepted</h2>
-            <span className="cs__sort">{open.length}</span>
-          </div>
-          <table className="vw__table">
-            <thead>
-              <tr>
-                <th scope="col">Email</th>
-                <th scope="col">Role</th>
-                <th scope="col">Invited by</th>
-                <th scope="col">Expires</th>
-                <th scope="col">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {open.map((i) => (
-                <tr key={i.id}>
-                  <td style={{ overflowWrap: 'anywhere' }}>{i.email}</td>
-                  <td>{i.workspace_role.replace(/_/g, ' ')}</td>
-                  <td>{i.invited_by}</td>
-                  <td>{new Date(i.expires_at).toLocaleDateString()}</td>
-                  <td>
-                    <button
-                      type="button"
-                      className="cs__btn"
-                      disabled={busy === i.id}
-                      onClick={() =>
-                        void act(i.id, async () => {
-                          await post(`/api/invitations/${i.id}/revoke`);
-                          return 'Invitation revoked. That link no longer works.';
-                        })
-                      }
-                    >
-                      Revoke
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+      {note && (
+        <p className="pp__note" role="status">
+          {note}
+        </p>
       )}
 
       <div className="cs__panel">
-        <div className="cs__panelHead">
-          <h2 className="cs__tab">People</h2>
-          <span className="cs__sort">{members.filter((m) => m.active).length} active</span>
+        <div className="pp__tabs" role="tablist" aria-label="People in this workspace">
+          <button
+            type="button"
+            role="tab"
+            id="pp-tab-members"
+            aria-selected={tab === 'members'}
+            aria-controls="pp-panel"
+            className="pp__tab"
+            onClick={() => setTab('members')}
+          >
+            Members <span className="pp__count">{active.length}</span>
+          </button>
+          {canAdminister && (
+            <button
+              type="button"
+              role="tab"
+              id="pp-tab-waiting"
+              aria-selected={tab === 'waiting'}
+              aria-controls="pp-panel"
+              className="pp__tab"
+              onClick={() => setTab('waiting')}
+            >
+              Waiting to accept <span className="pp__count">{open.length}</span>
+            </button>
+          )}
+          {tab === 'members' && (
+            <span className="cs__sort pp__shown">
+              {shown.length} of {showInactive ? members.length : active.length} shown
+            </span>
+          )}
         </div>
-        <table className="vw__table">
+
+        <div id="pp-panel" role="tabpanel" aria-labelledby={tab === 'waiting' ? 'pp-tab-waiting' : 'pp-tab-members'}>
+        {tab === 'waiting' ? (
+          open.length ? (
+          <ul className="pp__invites">
+            {open.map((i) => {
+              const days = Math.max(0, Math.ceil((new Date(i.expires_at).getTime() - Date.now()) / 86_400_000));
+              return (
+                <li key={i.id} className="pp__invitation">
+                  <span className="pp__avatar pp__avatar--pending" aria-hidden="true">
+                    {initials(i.email)}
+                  </span>
+                  <span className="pp__who">
+                    <span className="pp__name">{i.email}</span>
+                    <span className="pp__meta">
+                      {roleName(i.workspace_role)} · invited by {i.invited_by} · expires {days === 0 ? 'today' : `in ${days} day${days === 1 ? '' : 's'}`}
+                    </span>
+                  </span>
+                  <button
+                    type="button"
+                    className="cs__btn"
+                    disabled={busy === i.id}
+                    onClick={() =>
+                      void act(i.id, async () => {
+                        await post(`/api/invitations/${i.id}/revoke`);
+                        return `The invitation to ${i.email} is revoked. That link no longer works.`;
+                      })
+                    }
+                  >
+                    Revoke
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+          ) : (
+            <div className="cs__empty pp__empty">
+              <strong>Nobody is waiting.</strong>
+              <div style={{ marginTop: 6, fontSize: 13 }}>Invitations that have not been accepted yet show here until they are used, revoked, or expire.</div>
+              <button type="button" className="cs__btn cs__btn--primary" style={{ marginTop: 14 }} onClick={onInvite}>
+                Invite people
+              </button>
+            </div>
+          )
+        ) : (
+        <>
+        <div className="wk__controls">
+          <div className="wk__search">
+            <svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" aria-hidden="true" className="mg__icon">
+              <circle cx="9" cy="9" r="5.5" />
+              <path d="m13.2 13.2 3.6 3.6" />
+            </svg>
+            <input
+              className="wk__searchInput"
+              type="search"
+              value={query}
+              placeholder="Search by name or email"
+              aria-label="Search people"
+              onChange={(e) => setQuery(e.target.value)}
+            />
+          </div>
+          <label className="wk__pick">
+            <span className="cs__srOnly">Role</span>
+            <svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" aria-hidden="true" className="mg__icon">
+              <path d="M3.5 5h13M6 10h8M8.5 15h3" />
+            </svg>
+            <select className="wk__select" value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)}>
+              <option value="all">Every role</option>
+              {roles.map((r) => (
+                <option key={r} value={r}>
+                  {roleName(r)}
+                </option>
+              ))}
+            </select>
+          </label>
+          {inactive > 0 && (
+            <label className="pp__toggle">
+              <input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} />
+              Show deactivated
+            </label>
+          )}
+        </div>
+
+        <table className="vw__table pp__table">
           <thead>
             <tr>
-              <th scope="col">Name</th>
+              <th scope="col">Person</th>
               <th scope="col">Role</th>
-              <th scope="col">Sessions</th>
+              <th scope="col">Last active</th>
               {canAdminister && <th scope="col">Actions</th>}
             </tr>
           </thead>
           <tbody>
-            {members.map((m) => (
+            {shown.map((m) => (
               <tr key={m.id} className={m.active ? undefined : 'vw__rowOff'}>
-                <th scope="row" style={{ fontWeight: 600 }}>
-                  {m.display_name}
-                  <span className="mg__sub">{m.email}</span>
-                  {/* Said as words, not only as a dimmed row: state carried by
-                      opacity alone is state nobody is told about. */}
-                  {!m.active && <span className="mg__tag">deactivated</span>}
-                  {m.provisioned_by === 'scim' && <span className="mg__tag">managed by your directory</span>}
+                <th scope="row">
+                  <span className="pp__person">
+                    <span className="pp__avatar" aria-hidden="true">
+                      {initials(m.display_name)}
+                    </span>
+                    <span className="pp__who">
+                      <span className="pp__name">{m.display_name}</span>
+                      <span className="pp__meta">{m.email}</span>
+                      {/* Said as words, not only as a quieter row. */}
+                      {!m.active && <span className="mg__tag">deactivated</span>}
+                      {m.provisioned_by === 'scim' && <span className="mg__tag">managed by your directory</span>}
+                    </span>
+                  </span>
                 </th>
                 <td>
                   {canAdminister && m.provisioned_by !== 'scim' ? (
@@ -379,22 +391,29 @@ export function PeopleView({ canAdminister }: { canAdminister: boolean }) {
                         onChange={(e) =>
                           void act(m.id, async () => {
                             await post(`/api/members/${m.id}/role`, { workspaceRole: e.target.value });
-                            return `${m.display_name} is now ${e.target.value.replace(/_/g, ' ')}.`;
+                            return `${m.display_name} is now ${roleName(e.target.value)}.`;
                           })
                         }
                       >
                         {[...new Set([...grantable, m.workspace_role])].map((r) => (
                           <option key={r} value={r}>
-                            {r.replace(/_/g, ' ')}
+                            {roleName(r)}
                           </option>
                         ))}
                       </select>
                     </>
                   ) : (
-                    m.workspace_role.replace(/_/g, ' ')
+                    <span className="pp__role">{roleName(m.workspace_role)}</span>
                   )}
                 </td>
-                <td>{m.sessions}</td>
+                <td>
+                  <span className="pp__seen">{lastSeen(m.last_seen_at)}</span>
+                  {m.sessions > 0 && (
+                    <span className="pp__meta">
+                      {m.sessions} signed-in {m.sessions === 1 ? 'device' : 'devices'}
+                    </span>
+                  )}
+                </td>
                 {canAdminister && (
                   <td>
                     <div className="mg__rowActions">
@@ -433,10 +452,55 @@ export function PeopleView({ canAdminister }: { canAdminister: boolean }) {
                 )}
               </tr>
             ))}
+            {!shown.length && (
+              <tr>
+                <td colSpan={canAdminister ? 4 : 3} className="ask__empty">
+                  Nobody matches that.
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
+        </>
+        )}
+        </div>
       </div>
     </>
+  );
+}
+
+const roleName = (r: string) => r.replace(/_/g, ' ');
+
+function initials(name: string): string {
+  const base = name.includes('@') ? name.split('@')[0]!.replace(/[._-]+/g, ' ') : name;
+  const parts = base.trim().split(/\s+/).filter(Boolean);
+  return ((parts[0]?.[0] ?? '') + (parts.length > 1 ? parts[parts.length - 1]![0] : (parts[0]?.[1] ?? ''))).toUpperCase();
+}
+
+function lastSeen(at: string | null): string {
+  if (!at) return 'Never signed in';
+  const minutes = Math.round((Date.now() - new Date(at).getTime()) / 60_000);
+  if (minutes < 2) return 'Just now';
+  if (minutes < 60) return `${minutes} minutes ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours} hour${hours === 1 ? '' : 's'} ago`;
+  const days = Math.round(hours / 24);
+  if (days < 30) return `${days} day${days === 1 ? '' : 's'} ago`;
+  return new Date(at).toLocaleDateString();
+}
+
+/** A panel's shape while it loads, instead of the word "Loading". */
+export function PanelSkeleton({ rows = 4 }: { rows?: number }) {
+  return (
+    <div className="cs__panel sk" aria-busy="true" aria-label="Loading">
+      <div className="sk__line sk__line--title" />
+      {Array.from({ length: rows }, (_, i) => (
+        <div key={i} className="sk__row">
+          <div className="sk__dot" />
+          <div className="sk__line" style={{ width: `${55 - i * 6}%` }} />
+        </div>
+      ))}
+    </div>
   );
 }
 

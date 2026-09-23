@@ -242,7 +242,7 @@ async function main() {
   // in". Both existed as endpoints with nothing calling them.
   for (const [name, label] of [
     ['Processes and forms', 'Processes & forms'],
-    ['People, with the invitation form', 'People'],
+    ['People', 'People'],
   ]) {
     const item = page.locator('button', { hasText: new RegExp(`^${label.replace('&', '&')}`) }).first();
     if (await item.count()) {
@@ -250,6 +250,33 @@ async function main() {
       await page.waitForTimeout(2000);
       all.push(...(await audit(page, name)));
     }
+  }
+
+  /*
+   * People's second tab, and the invite page in each of its three modes plus
+   * the checked list — a table of status chips is where colour starts carrying
+   * meaning on its own. Checking sends nothing: it is a dry run, and every
+   * address is on a reserved domain anyway.
+   */
+  const waiting = page.locator('[role=tab]', { hasText: /Waiting to accept/ }).first();
+  if (await waiting.count()) {
+    await waiting.click();
+    await page.waitForTimeout(700);
+    all.push(...(await audit(page, 'People, invitations waiting to be accepted')));
+  }
+  const invite = page.locator('button', { hasText: /^Invite people$/ }).first();
+  if (await invite.count()) {
+    await invite.click();
+    await page.waitForTimeout(1500);
+    all.push(...(await audit(page, 'Invite people, one person')));
+    await page.locator('[role=tab]', { hasText: 'Upload a spreadsheet' }).click();
+    await page.waitForTimeout(400);
+    all.push(...(await audit(page, 'Invite people, from a spreadsheet')));
+    await page.locator('[role=tab]', { hasText: 'Paste a list' }).click();
+    await page.fill('textarea', 'a11y.one@example.test\na11y.two@example.test, operator\nnot-an-email');
+    await page.locator('button', { hasText: /^Check/ }).click();
+    await page.waitForTimeout(2000);
+    all.push(...(await audit(page, 'Invite people, the checked list')));
   }
 
   for (const [name, label] of [
@@ -391,6 +418,32 @@ async function main() {
     await tab.click();
     await page.waitForTimeout(1500);
     all.push(...(await audit(page, label)));
+  }
+
+  // Preview, Versions and Tests as pages of their own, which is where the
+  // rail sends people now. Tests is scanned after a run, with results showing.
+  for (const [label, path] of [
+    ['Preview page', '/builder/preview?process=employee_onboarding'],
+    ['Versions page', '/builder/versions?process=employee_onboarding'],
+    ['Tests page', '/builder/tests?process=employee_onboarding'],
+  ]) {
+    await page.goto(`${BASE}${path}`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(2000);
+    if (label === 'Tests page') {
+      const run = page.locator('button', { hasText: 'Run the scenarios' }).first();
+      if (await run.count()) {
+        await run.click();
+        await page.waitForSelector('.ts__summary', { timeout: 90000 }).catch(() => {});
+      }
+    }
+    all.push(...(await audit(page, label)));
+  }
+  await page.goto(`${BASE}/builder`, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(2000);
+  const reopen = page.locator('button', { hasText: /Employee Onboarding/ }).first();
+  if (await reopen.count()) {
+    await reopen.click();
+    await page.waitForTimeout(2500);
   }
 
   // The header editor, which is a form inside a preview of a form. Back to

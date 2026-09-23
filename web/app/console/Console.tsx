@@ -5,6 +5,8 @@ import './console.css';
 import { Ask } from './Ask';
 import { DashboardView, HealthView, HeldView, RecordsView, SecurityView } from './Views';
 import { PeopleView, ProcessesView } from './Manage';
+import { InviteView } from './Invite';
+import { BootScreen } from '../../components/boot-screen';
 import { DataView, IntegrationsView } from './Settings';
 import { RecordTrail } from './Trail';
 import { RecordPage } from './Record';
@@ -103,6 +105,7 @@ export function Console() {
     | 'health'
     | 'security'
     | 'people'
+    | 'invite'
     | 'processes'
     | 'integrations'
     | 'data'
@@ -335,7 +338,7 @@ export function Console() {
     setHealth(null);
   };
 
-  if (checking) return <div className="cs__boot">Checking your session…</div>;
+  if (checking) return <BootScreen where="console" label="Opening the console" />;
   if (!session) return <SignIn onSignedIn={() => void refreshSession()} signedOut={wasSignedOut} />;
 
   const me = session.actor;
@@ -441,7 +444,7 @@ export function Console() {
           <button
             type="button"
             className="cs__navItem"
-            aria-current={view === 'people' ? 'page' : undefined}
+            aria-current={view === 'people' || view === 'invite' ? 'page' : undefined}
             onClick={() => setView('people')}
           >
             <NavIcon name="people" />
@@ -574,6 +577,8 @@ export function Console() {
                       ? 'Your account'
                       : view === 'people'
                         ? 'People'
+                        : view === 'invite'
+                          ? 'Invite people'
                         : view === 'processes'
                           ? 'Processes & forms'
                           : view === 'integrations'
@@ -612,7 +617,12 @@ export function Console() {
             ) : view === 'data' ? (
               <DataView processes={session.processes} />
             ) : view === 'people' ? (
-              <PeopleView canAdminister={['owner', 'admin', 'builder'].includes(me.workspace_role)} />
+              <PeopleView
+                canAdminister={['owner', 'admin', 'builder'].includes(me.workspace_role)}
+                onInvite={() => setView('invite')}
+              />
+            ) : view === 'invite' ? (
+              <InviteView onBack={() => setView('people')} />
             ) : view === 'processes' ? (
               <ProcessesView
                 processes={session.processes}
@@ -737,6 +747,8 @@ export function Console() {
                   ? 'What the automation did, and who it can no longer reach. A hard bounce or a spam complaint stops this deployment writing to that address — the record will say "skipped" and this is the page that says why.'
                   : view === 'people'
                     ? 'Who is in this workspace and what they may do. An invitation is emailed, works once, and expires in seven days — the link is never shown here, because anybody who can invite could otherwise mint one for an address whose owner never sees it.'
+                  : view === 'invite'
+                    ? 'One person, a pasted list, or a spreadsheet. Every row is checked before anything is sent: typos, duplicates, people already here and roles you cannot give are set aside, and only the rest go. Each invitation works once and expires in seven days.'
                   : view === 'processes'
                     ? 'Where records come from. Each published process serves a form at its own link; every submission becomes a record, routed by that process’s own rules. Nobody needs an account to submit one.'
                   : view === 'integrations'

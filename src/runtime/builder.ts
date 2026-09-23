@@ -3,7 +3,7 @@ import { validate } from '../compiler/validate.js';
 import type { Diagnostic } from '../compiler/diagnostics.js';
 import { inTransaction, type Pool } from './db.js';
 import { require_, requireWorkspaceCapability, type Principal } from './policy.js';
-import { DraftConflict } from './errors.js';
+import { DraftConflict, InvalidInput } from './errors.js';
 import { runScenarios, type ScenarioResult } from './scenarios.js';
 import { Engine } from './engine.js';
 import {
@@ -815,6 +815,105 @@ function changesBetween(before: Blueprint | null, after: Blueprint): string[] {
 function list(keys: string[]): string {
   if (keys.length <= 3) return keys.join(', ');
   return `${keys.slice(0, 3).join(', ')} and ${keys.length - 3} more`;
+}
+
+// ------------------------------------------------------- whole-page views
+
+export interface ProcessView {
+  processKey: string;
+  name: string;
+  /** Every published version, newest first. */
+  versions: number[];
+  /** The open draft, if there is one. */
+  draftId: string | null;
+  source: 'draft' | 'published';
+  /** The version shown, or the one the draft started from. */
+  version: number | null;
+  blueprint: Blueprint;
+  /** A published version always is; a draft is when it compiles. */
+  publishable: boolean;
+}
+
+/**
+ * One process as a page shows it: the open draft, the latest published
+ * version, or a particular one.
+ *
+ * The builder's side panel could only show the draft that was open, so there
+ * was no way to look at what respondents are actually getting today, or at
+ * version 2 when somebody asks what the form said in March. Same bar as
+ * opening a draft: administering the process.
+ */
+export async function viewProcess(
+  pool: Pool,
+  principal: Principal,
+  processKey: string,
+  which: 'draft' | 'latest' | number,
+): Promise<ProcessView> {
+  const actor = actorOf(principal);
+  await requireDraftAdmin(pool, actor, processKey);
+
+  const { rows: versions } = await pool.query<{ version: number }>(
+    'select version from process_version where tenant_id = $1 and process_key = $2 order by version desc',
+    [actor.tenantId, processKey],
+  );
+  const { rows: drafts } = await pool.query<{ id: string }>(
+    `select id from process_draft
+      where tenant_id = $1 and process_key = $2 and published_as is null
+      order by updated_at desc limit 1`,
+    [actor.tenantId, processKey],
+  );
+  const draftId = drafts[0]?.id ?? null;
+  const all = versions.map((v) => v.version);
+
+  // Asked for the draft, or nothing is published yet: the draft is all there is.
+  if (which === 'draft' || !all.length) {
+    if (!draftId) throw new InvalidInput(`"${processKey}" has no open draft`);
+    const draft = await loadDraft(pool, principal, draftId);
+    return {
+      processKey,
+      name: draft.blueprint?.name ?? processKey,
+      versions: all,
+      draftId,
+      source: 'draft',
+      version: draft.basedOnVersion ?? null,
+      blueprint: draft.blueprint,
+      publishable: draft.publishable,
+    };
+  }
+
+  const version = which === 'latest' ? all[0]! : which;
+  const { rows } = await pool.query<{ blueprint: Blueprint }>(
+    'select blueprint from process_version where tenant_id = $1 and process_key = $2 and version = $3',
+    [actor.tenantId, processKey, version],
+  );
+  if (!rows[0]) throw new InvalidInput(`"${processKey}" has no version ${version}`);
+  return {
+    processKey,
+    name: rows[0].blueprint.name,
+    versions: all,
+    draftId,
+    source: 'published',
+    version,
+    blueprint: rows[0].blueprint,
+    publishable: true,
+  };
+}
+
+/**
+ * A published version's own scenarios, run again against today's engine.
+ *
+ * Worth doing because the engine moves and the version does not: a version
+ * that passed when it was published and fails now is an engine change that
+ * altered what a live process does, which is exactly what nobody would
+ * otherwise notice until a record went the wrong way.
+ */
+export async function testVersion(
+  pool: Pool,
+  args: { principal: Principal; processKey: string; version: number },
+): Promise<{ results: ScenarioResult[]; passed: number; total: number }> {
+  const view = await viewProcess(pool, args.principal, args.processKey, args.version);
+  const results = await runScenarios(pool, view.blueprint);
+  return { results, passed: results.filter((r) => r.passed).length, total: results.length };
 }
 
 /**

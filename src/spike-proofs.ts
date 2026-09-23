@@ -20,6 +20,7 @@ import {
   createWorkspace,
   grantableRoles,
   invite,
+  inviteMany,
   linkIdentity,
   readInvitation,
   setMemberActive,
@@ -74,6 +75,8 @@ import {
   publishImpact,
   releaseDraft,
   saveDraft as saveBuilderDraft,
+  testVersion,
+  viewProcess,
 } from './runtime/builder.js';
 import { DraftConflict } from './runtime/errors.js';
 import { issueTicket, screen } from './runtime/screening.js';
@@ -3665,5 +3668,187 @@ export async function proveSecondFactor({ pool, record }: ProofCtx): Promise<voi
       `A phone two minutes fast still signed in, because rejecting clock drift is how a second factor becomes a support queue. ` +
       `A recovery code worked once and left ${used.recoveryCodesLeft}; the same one again was refused. Searching for a plaintext recovery code found ${stored[0]!.count} rows. ` +
       `Turning it off with a valid authenticator code was refused ("${withCode}") — somebody holding the phone but not the password is exactly who must not remove the factor — and the password turned it off.`,
+  );
+}
+
+/**
+ * Many invitations at once.
+ *
+ * A pasted list is where the mistakes are: a typo, the same person twice,
+ * somebody already here, a role written the way a person writes it. The
+ * check has to say so row by row without sending anything, and the send has
+ * to go only to the rows that passed — never granting more than a single
+ * invitation could, which for a builder means never an owner.
+ */
+export async function proveBulkInvite({ pool, record }: ProofCtx): Promise<void> {
+  const created = await createWorkspace(pool, {
+    workspaceName: 'Proof Bulk Invite',
+    ownerEmail: 'owner@proof-bulk.test',
+    ownerName: 'An Owner',
+    password: 'a-long-enough-password',
+  });
+  const owner: Principal = { kind: 'actor', tenantId: created.tenantId, actorId: created.actorId };
+  const verification = await sendVerification(pool, { actorId: created.actorId });
+  await verifyEmail(pool, verification.token!);
+
+  // Somebody already invited, so the list can meet a pending invitation.
+  await invite(pool, { principal: owner, email: 'pending@proof-bulk.test', workspaceRole: 'analyst' });
+  const invitations = async () =>
+    (await pool.query<{ n: number }>(
+      'select count(*)::int as n from invitation where tenant_id = $1 and revoked_at is null',
+      [created.tenantId],
+    )).rows[0]!.n;
+
+  const rows = [
+    { email: 'ada@proof-bulk.test', role: 'operator' },
+    { email: 'BEN@proof-bulk.test', role: 'Read only' },
+    { email: 'ada@proof-bulk.test', role: 'operator' },
+    { email: 'not-an-email', role: 'analyst' },
+    { email: 'owner@proof-bulk.test', role: 'analyst' },
+    { email: 'pending@proof-bulk.test', role: 'analyst' },
+    { email: 'cara@proof-bulk.test', role: 'wizard' },
+  ];
+
+  const before = await invitations();
+  const checked = await inviteMany(pool, { principal: owner, rows, dryRun: true });
+  const afterCheck = await invitations();
+  const status = checked.rows.map((r) => r.status);
+
+  const sent = await inviteMany(pool, { principal: owner, rows, dryRun: false });
+  const afterSend = await invitations();
+  const { rows: roles } = await pool.query<{ email: string; workspace_role: string }>(
+    `select lower(email) as email, workspace_role from invitation
+      where tenant_id = $1 and revoked_at is null and accepted_at is null order by email`,
+    [created.tenantId],
+  );
+
+  // A builder may invite, but not an owner — the same rule as one at a time.
+  const joining = await invite(pool, { principal: owner, email: 'builder@proof-bulk.test', workspaceRole: 'builder' });
+  const joined = await acceptInvitation(pool, {
+    token: joining.token,
+    displayName: 'A Builder',
+    password: 'builder-long-password',
+  });
+  const builder: Principal = { kind: 'actor', tenantId: joined.tenantId, actorId: joined.actorId };
+  const escalation = await inviteMany(pool, {
+    principal: builder,
+    rows: [{ email: 'boss@proof-bulk.test', role: 'owner' }],
+    dryRun: true,
+  });
+
+  let tooMany: string | null = null;
+  try {
+    await inviteMany(pool, {
+      principal: owner,
+      rows: Array.from({ length: 101 }, (_, i) => ({ email: `p${i}@proof-bulk.test`, role: 'analyst' })),
+      dryRun: true,
+    });
+  } catch (err) {
+    tooMany = err instanceof Error ? err.message : String(err);
+  }
+
+  const checkAsks = stepUpFor('POST', '/api/invitations/bulk', { rows: [], dryRun: true });
+  const sendAsks = stepUpFor('POST', '/api/invitations/bulk', { rows: [] });
+
+  const expected = ['ready', 'ready', 'skipped', 'skipped', 'skipped', 'ready', 'skipped'];
+  record(
+    'A list of people is checked row by row, and only the rows that pass are invited',
+    'IAM-01 at scale: a pasted list or spreadsheet, with nothing sent until it has been checked.',
+    JSON.stringify(status) === JSON.stringify(expected) &&
+      checked.rows[1]!.email === 'ben@proof-bulk.test' &&
+      checked.rows[1]!.role === 'read_only' &&
+      afterCheck === before &&
+      sent.rows.filter((r) => r.status === 'sent').length === 3 &&
+      sent.rows.filter((r) => r.status === 'skipped').length === 4 &&
+      afterSend === 3 &&
+      roles.find((r) => r.email === 'ada@proof-bulk.test')?.workspace_role === 'operator' &&
+      roles.find((r) => r.email === 'ben@proof-bulk.test')?.workspace_role === 'read_only' &&
+      escalation.rows[0]!.status === 'skipped' &&
+      tooMany !== null &&
+      checkAsks === null &&
+      sendAsks !== null,
+    `Seven rows came back ${status.join(', ')}: a repeat, a non-address, a current member and a role that does not exist were set aside with a reason each; ` +
+      `"BEN@…" with "Read only" became ben@… as read_only; the pending invitation was ready, with the note "${checked.rows[5]!.note}". ` +
+      `Checking created nothing (${before} invitation before, ${afterCheck} after). Sending invited the three ready rows and left the other four alone, ` +
+      `with ${afterSend} open invitations after, because the re-sent one replaced the old link. ` +
+      `A builder listing an owner was told "${escalation.rows[0]!.note}". A hundred and one rows were refused ("${tooMany?.slice(0, 50)}"). ` +
+      `Checking needs no fresh sign-in; sending does.`,
+  );
+}
+
+/**
+ * The builder's Preview, Versions and Tests pages read a process without a
+ * draft open, at any version. That is a new way in, so it gets the same bar
+ * as opening a draft: an operator is refused, a version that does not exist
+ * is refused, and a past version is what was published then — not the
+ * present with a different number on it.
+ */
+export async function proveBuilderPages({ pool, bp, record }: ProofCtx): Promise<void> {
+  const engine = new Engine(pool);
+  const tenantId = await engine.createTenant('proof:builder-pages');
+  await engine.publish(tenantId, bp, 'proof');
+  const renamed = structuredClone(bp);
+  renamed.name = 'Onboarding, second edition';
+  await engine.publish(tenantId, renamed, 'proof');
+
+  const builder = await engine.createActor(tenantId, 'builder@proof-pages.test', 'A Builder', 'builder');
+  const operator = await engine.createActor(tenantId, 'operator@proof-pages.test', 'An Operator', 'operator');
+  const as = (actorId: string): Principal => ({ kind: 'actor', tenantId, actorId });
+
+  const latest = await viewProcess(pool, as(builder), bp.key, 'latest');
+  const first = await viewProcess(pool, as(builder), bp.key, 1);
+
+  let noDraft: string | null = null;
+  try {
+    await viewProcess(pool, as(builder), bp.key, 'draft');
+  } catch (err) {
+    noDraft = err instanceof Error ? err.message : String(err);
+  }
+  const opened = await openDraft(pool, { principal: as(builder), processKey: bp.key });
+  const draft = await viewProcess(pool, as(builder), bp.key, 'draft');
+
+  let missing: string | null = null;
+  try {
+    await viewProcess(pool, as(builder), bp.key, 9);
+  } catch (err) {
+    missing = err instanceof Error ? err.message : String(err);
+  }
+  let operatorRefused: string | null = null;
+  try {
+    await viewProcess(pool, as(operator), bp.key, 'latest');
+  } catch (err) {
+    operatorRefused = err instanceof AuthorizationError ? err.reason : `unexpected: ${String(err)}`;
+  }
+  let operatorTests: string | null = null;
+  try {
+    await testVersion(pool, { principal: as(operator), processKey: bp.key, version: 1 });
+  } catch (err) {
+    operatorTests = err instanceof AuthorizationError ? err.reason : `unexpected: ${String(err)}`;
+  }
+
+  const run = await testVersion(pool, { principal: as(builder), processKey: bp.key, version: 1 });
+
+  record(
+    'Preview, Versions and Tests read any version of a process, and only for people who may build it',
+    'BLD-05 and §9.2: a published version is looked at and tested as it was published.',
+    latest.source === 'published' &&
+      latest.version === 2 &&
+      latest.name === 'Onboarding, second edition' &&
+      JSON.stringify(latest.versions) === '[2,1]' &&
+      first.version === 1 &&
+      first.name === bp.name &&
+      noDraft !== null &&
+      draft.source === 'draft' &&
+      draft.draftId === opened.id &&
+      missing !== null &&
+      operatorRefused !== null &&
+      operatorTests !== null &&
+      run.total === (bp.tests?.length ?? 0) &&
+      run.total > 0 &&
+      run.passed === run.total,
+    `The latest was v${latest.version} ("${latest.name}") and v1 still read "${first.name}". ` +
+      `Asking for a draft before one existed was refused ("${noDraft}"); after opening one it came back as that draft. ` +
+      `Version 9 was refused ("${missing}"). An operator could neither look ("${operatorRefused}") nor run the tests. ` +
+      `Version 1's own ${run.total} scenarios ran again against today's engine and ${run.passed} passed.`,
   );
 }

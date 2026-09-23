@@ -1,0 +1,233 @@
+/* The start-up outline. See boot-screen.tsx. */
+
+.bt {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background: #f4f3f0;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+.bt__sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.bt__top {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 48px;
+  padding: 0 16px;
+  background: var(--green-deep, #0f4e30);
+  color: #ffffff;
+  overflow: hidden;
+}
+
+.bt__brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: #ffffff;
+}
+
+.bt__brand svg {
+  color: var(--green-mint, #8fd2a9);
+}
+
+/* The tick draws itself, over and over, while the page is on its way. */
+.bt__tick {
+  stroke-dasharray: 20;
+  stroke-dashoffset: 20;
+  animation: bt-tick 1.6s ease-in-out infinite;
+}
+
+/* A thin bar running along the bottom of the top bar. */
+.bt__bar {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 2px;
+  width: 30%;
+  background: var(--green-mint, #8fd2a9);
+  animation: bt-bar 1.3s ease-in-out infinite;
+}
+
+.bt__body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.bt__rail {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 12px;
+  background: #ffffff;
+  border-right: 1px solid #e6e4df;
+}
+
+.bt--console .bt__rail {
+  width: 244px;
+}
+
+.bt--builder .bt__rail {
+  width: 68px;
+  align-items: center;
+}
+
+.bt__railItem {
+  display: block;
+  height: 14px;
+  border-radius: 6px;
+}
+
+.bt--console .bt__railItem {
+  width: 70%;
+  height: 16px;
+  margin: 6px 0;
+}
+
+.bt--builder .bt__railItem {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+}
+
+.bt__main {
+  flex: 1;
+  min-width: 0;
+  padding: 28px 28px 0;
+}
+
+.bt__title {
+  display: block;
+  width: 220px;
+  height: 22px;
+  margin-bottom: 22px;
+  border-radius: 7px;
+}
+
+.bt__cards {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  gap: 18px;
+}
+
+.bt__card {
+  display: grid;
+  gap: 16px;
+  align-content: start;
+  padding: 20px;
+  border-radius: 12px;
+  background: #ffffff;
+  border: 1px solid #e4e2dd;
+}
+
+.bt__row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.bt__line {
+  display: block;
+  height: 12px;
+  border-radius: 6px;
+}
+
+.bt__dot {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+}
+
+.bt__shine {
+  background: linear-gradient(90deg, #efebe2 0%, #f8f6f1 45%, #efebe2 90%);
+  background-size: 220% 100%;
+  animation: bt-shine 1.5s ease-in-out infinite;
+}
+
+.bt__caption {
+  position: absolute;
+  left: 50%;
+  bottom: 28px;
+  transform: translateX(-50%);
+  padding: 7px 14px;
+  border-radius: 999px;
+  background: #ffffff;
+  border: 1px solid #e4e2dd;
+  box-shadow: 0 6px 18px -10px rgba(19, 26, 23, 0.3);
+  font-size: 13px;
+  color: #5a6159;
+}
+
+@keyframes bt-shine {
+  from {
+    background-position: 120% 0;
+  }
+  to {
+    background-position: -120% 0;
+  }
+}
+
+@keyframes bt-bar {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(340%);
+  }
+}
+
+@keyframes bt-tick {
+  0% {
+    stroke-dashoffset: 20;
+  }
+  45%,
+  80% {
+    stroke-dashoffset: 0;
+  }
+  100% {
+    stroke-dashoffset: -20;
+  }
+}
+
+@media (max-width: 760px) {
+  .bt--console .bt__rail {
+    display: none;
+  }
+  .bt__cards {
+    grid-template-columns: 1fr;
+  }
+  .bt__card--side {
+    display: none;
+  }
+  .bt__main {
+    padding: 20px 16px 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bt__shine,
+  .bt__bar,
+  .bt__tick {
+    animation: none;
+  }
+  .bt__tick {
+    stroke-dashoffset: 0;
+  }
+  .bt__bar {
+    display: none;
+  }
+}
