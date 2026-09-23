@@ -2050,7 +2050,7 @@ export const CATALOGUE: PackSpec[] = [
   },
   {
     key: 'ministry_application',
-    name: 'Ministry team application',
+    name: 'Safeguarded ministry team application',
     category: 'Church',
     summary: 'Somebody joining a team, with the safeguarding check and references before they start.',
     audience: 'For a church placing volunteers with children, youth or vulnerable adults.',
@@ -2067,11 +2067,11 @@ export const CATALOGUE: PackSpec[] = [
       requiredFields: ['safeguarding_clearance_reference', 'volunteer_placement_reference'],
     },
     completionMessage: 'The volunteer placement and induction are recorded. The team leader will confirm your first shift.',
-    notes: ['A self-reported check reference is not proof of clearance. The safeguarding lead must verify the current result before placement.'],
+    notes: ['For roles involving children or vulnerable adults. A self-reported check reference is not proof of clearance; the safeguarding lead verifies the current result before placement. Use a different volunteer process for roles that do not require this check.'],
     retentionDays: 1825,
     sensitivityCeiling: 'restricted',
     fields: [
-      f.many('team_wanted', 'Which team', ['children', 'youth', 'worship', 'welcome', 'tech', 'catering', 'prayer']),
+      f.many('team_wanted', 'Which team', ['children', 'youth', 'vulnerable_adult_support']),
       f.notes('experience', 'Relevant experience', false),
       f.yesNo('works_with_children', 'Would this involve children or vulnerable adults?'),
       f.sensitive(
@@ -2117,7 +2117,7 @@ export const CATALOGUE: PackSpec[] = [
     key: 'mission_trip',
     name: 'Mission trip application',
     category: 'Church',
-    summary: 'An application with references, medical needs and safeguarding handled before travel is booked.',
+    summary: 'An application with references, private health planning and safeguarding handled before travel is booked.',
     audience: 'For a church or charity sending teams overseas.',
     outcome: 'A participant is approved, checked and prepared before anything is booked.',
     respondents: 'Somebody applying to go.',
@@ -2163,7 +2163,7 @@ export const CATALOGUE: PackSpec[] = [
       requiredFields: ['pledge_register_reference'],
     },
     completionMessage: 'Your pledge has been recorded and acknowledged. This does not mean a payment has been taken.',
-    notes: ['Gift Aid eligibility needs the applicable declaration and local tax rules. A yes answer on this form is not itself a completed declaration.'],
+    notes: ['Requesting Gift Aid information does not create a Gift Aid declaration. The treasurer handles any declaration separately under the applicable rules.'],
     retentionDays: 2555,
     sensitivityCeiling: 'restricted',
     fields: [
