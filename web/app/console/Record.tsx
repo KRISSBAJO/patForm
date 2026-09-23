@@ -351,29 +351,25 @@ export function RecordPage({
             <p className="rc__next">{record.nextAction}</p>
           </div>
 
-          <div className="cs__card">
+          <div className={`cs__card rc__trailCard${showTrail ? ' rc__trailCard--open' : ''}`}>
             <span className="cs__cardLabel">THE TRAIL</span>
-            <p className="rc__sideNote">
-              Every event, job, attempt and result for this record — what ran, in what order, and what failed.
-            </p>
-            <button type="button" className="cs__btn" aria-expanded={showTrail} onClick={() => setShowTrail((w) => !w)}>
+            {!showTrail && (
+              <p className="rc__sideNote">
+                Every event, job, attempt and result for this record — what ran, in what order, and what failed.
+              </p>
+            )}
+            <button type="button" className="cs__btn" aria-expanded={showTrail} aria-controls="record-trail" onClick={() => setShowTrail((w) => !w)}>
               <Icon name={showTrail ? 'hide' : 'trail'} />
               {showTrail ? 'Hide the trail' : 'Show the trail'}
             </button>
+            {showTrail && (
+              <div id="record-trail" className="rc__trailContent" role="region" aria-label="The trail">
+                <RecordTrail instanceId={record.instanceId} />
+              </div>
+            )}
           </div>
         </aside>
       </div>
-
-      {showTrail && (
-        <div className="cs__panel rc__trail">
-          <div className="cs__panelHead">
-            <h2 className="cs__tab">The trail</h2>
-          </div>
-          <div style={{ padding: '14px 18px' }}>
-            <RecordTrail instanceId={record.instanceId} />
-          </div>
-        </div>
-      )}
     </div>
   );
 }
