@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import pg from 'pg';
+import { X509Certificate, timingSafeEqual } from 'node:crypto';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -49,13 +50,41 @@ export function describeTarget(url = connectionString()): string {
  * into a scratch database on the same server and has to talk to both.
  */
 export function createPool(max = 10, url = connectionString()): Pool {
+  const pinnedCertificatePath = process.env.DATABASE_TLS_CERT_PATH;
+  let connectionUrl = url;
+  let ssl: { rejectUnauthorized: boolean; ca?: string; checkServerIdentity?: (host: string, cert: { raw?: Buffer }) => Error | undefined } | undefined;
+  if (pinnedCertificatePath) {
+    const parsed = new URL(url);
+    if (parsed.searchParams.get('sslmode') !== 'require') {
+      throw new Error('DATABASE_TLS_CERT_PATH requires sslmode=require in DATABASE_URL');
+    }
+    // node-postgres replaces the explicit ssl object when sslmode is in the URL.
+    parsed.searchParams.delete('sslmode');
+    connectionUrl = parsed.toString();
+    const pem = readFileSync(pinnedCertificatePath, 'utf8');
+    const pinned = new X509Certificate(pem).raw;
+    ssl = {
+      rejectUnauthorized: true,
+      ca: pem,
+      // Renviq's current database certificate names its host, not its public
+      // db.renviq.com endpoint. Accept only this exact certificate instead.
+      checkServerIdentity: (_host, cert) =>
+        cert.raw && cert.raw.length === pinned.length && timingSafeEqual(cert.raw, pinned)
+          ? undefined
+          : new Error('Database TLS certificate differs from the pinned certificate'),
+    };
+  } else if (url.includes('sslmode=require')) {
+    // Retain the existing local/development behavior until those connections
+    // have a pinned certificate or a provider-signed CA chain.
+    ssl = { rejectUnauthorized: false };
+  }
   return new pg.Pool({
-    connectionString: url,
+    connectionString: connectionUrl,
     max,
     // A managed provider usually terminates TLS for you; when the URL asks for
     // TLS without pinning a CA, accept the provider's chain rather than failing
     // closed on a self-signed intermediate.
-    ssl: url.includes('sslmode=require') ? { rejectUnauthorized: false } : undefined,
+    ssl,
     application_name: 'patform-spike',
   });
 }

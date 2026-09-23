@@ -12,6 +12,8 @@ services:
         value: production
       - key: STAGING_COMBINED_SERVICE
         value: 'true'
+      - key: DATABASE_TLS_CERT_PATH
+        value: certs/renviq-staging.pem
       - key: DATABASE_URL
         sync: false
       - key: APP_URL
