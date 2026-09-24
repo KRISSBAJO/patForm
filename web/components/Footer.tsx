@@ -2,7 +2,7 @@ import { Mark } from './icons';
 
 /*
  * Every link in the Developers and Trust columns used to point at
- * `#reliability` or `#how` — marketing sections on the home page — while the
+ * marketing sections on the home page while the
  * repository held a data map, a subprocessor table and an explicit list of
  * what is not met. The content existed; nobody outside the repository could
  * read it.
@@ -11,7 +11,7 @@ import { Mark } from './icons';
  * home page that exists and says what the label says.
  */
 const COLUMNS = [
-  { head: 'Platform', links: [['/#how', 'How it works'], ['/#packs', 'Process packs'], ['/#reliability', 'Reliability'], ['/signup', 'Create a workspace']] },
+  { head: 'Platform', links: [['/#demo', 'How it works'], ['/#packs', 'Process packs'], ['/reliability', 'Reliability'], ['/signup', 'Create a workspace']] },
   { head: 'Developers', links: [['/developers#api', 'API'], ['/developers#webhooks', 'Webhooks'], ['/developers#export', 'Data export']] },
   { head: 'Company', links: [['/#lighthouse', 'Lighthouse program'], ['/console', 'Sign in']] },
   { head: 'Trust', links: [['/security', 'Security'], ['/privacy', 'Privacy'], ['/subprocessors', 'Subprocessors']] },
@@ -48,9 +48,9 @@ export function Footer() {
 
         {/* On a phone the four columns collapse to one honest row of links. */}
         <div className="footer__links">
-          <a href="/#how">How it works</a>
+          <a href="/#demo">How it works</a>
           <a href="/#packs">Process packs</a>
-          <a href="/#reliability">Reliability</a>
+          <a href="/reliability">Reliability</a>
           <a href="/security">Security</a>
           <a href="/privacy">Privacy</a>
         </div>

@@ -2,12 +2,12 @@ import type { CSSProperties } from 'react';
 import Link from 'next/link';
 import { Footer } from '@/components/Footer';
 import { Nav } from '@/components/Nav';
+import { ProcessDemo } from '@/components/ProcessDemo';
 import { CountUp, InView, Typewriter } from '@/components/motion';
 import {
   ArrowRight,
   Clock,
   DownArrow,
-  FlowArrow,
   IconDashboard,
   IconData,
   IconDocuments,
@@ -16,15 +16,12 @@ import {
   IconPermissions,
   IconTests,
   IconWorkflow,
-  Paperclip,
   Tick,
   Warn,
 } from '@/components/icons';
 
 /** A stagger index for the CSS to turn into a delay. */
 const nth = (i: number) => ({ '--i': i }) as CSSProperties;
-
-const TOOLCHAIN = ['Form tool', 'Spreadsheet', 'Email threads', 'Shared drive', 'E-signature', 'Calendar'];
 
 const BUILT = [
   { Icon: IconData, title: 'Data model', copy: 'Typed fields, constraints, and a sensitivity class on every one of them.' },
@@ -34,25 +31,6 @@ const BUILT = [
   { Icon: IconDocuments, title: 'The documents', copy: 'Packets and certificates, generated once, stored with a checksum and a version.' },
   { Icon: IconDashboard, title: 'The dashboard', copy: 'Intake, cycle time, what is aging and what failed — defined once, versioned.' },
   { Icon: IconPermissions, title: 'The permissions', copy: 'Who may submit, see, edit, approve and report — down to individual fields.' },
-];
-
-const RELIABILITY = [
-  {
-    title: 'Actions run once, even when everything retries',
-    copy: 'Every email, document and payment hand-off carries a key tied to the occurrence that caused it. A reminder that should fire twice does. A delivery retried three times does not.',
-  },
-  {
-    title: 'A finished record keeps the rules it was decided under',
-    copy: 'Published versions cannot be edited — not by an admin, not by a support engineer, not by a migration script. Change the process tomorrow and last year’s decision still reads correctly.',
-  },
-  {
-    title: 'History is added to, never overwritten',
-    copy: 'A correction is a new entry beside the old one. When someone asks why a decision was made, the answer is in the record rather than in somebody’s memory.',
-  },
-  {
-    title: 'Your data leaves as easily as it arrived',
-    copy: 'Responses, files, schemas and audit history export in standard formats. Built on managed PostgreSQL, with no proprietary database layer to unpick.',
-  },
 ];
 
 const QUEUE = [
@@ -77,24 +55,19 @@ export default function Home() {
 
             <h1>Describe the process. Launch the whole operation.</h1>
 
-            <p className="hero__sub">
-              The intake form, the approvals, the reminders, the documents and the dashboard — created together from
-              one description, then <em>run together</em> for as long as you need them.
-            </p>
+            <p className="hero__sub">Describe the work once. PatForm drafts the form, approvals and follow-up as one process you can review before it goes live.</p>
 
             <div className="hero__cta">
-              <a className="btn btn--primary" href="#lighthouse">
-                Join the lighthouse program
-              </a>
-              <a className="btn btn--secondary" href="#how">
-                Watch a process run
+              <a className="btn btn--primary" href="#demo">
+                See a process in action
                 <ArrowRight />
+              </a>
+              <a className="btn btn--secondary" href="#lighthouse">
+                Join the lighthouse program
               </a>
             </div>
 
-            <p className="hero__note">
-              Eight to twelve organizations. We build your first process with you, not for you to figure out alone.
-            </p>
+            <p className="hero__note">Built for the work after someone presses Submit.</p>
           </div>
 
           {/*
@@ -126,158 +99,12 @@ export default function Home() {
           </div>
         </section>
 
-        {/* =================================================== problem */}
-        <section className="band">
-          <div className="shell band__grid">
-            <div className="band__copy">
-              <h2>
-                Nobody needs a form.
-                <br />
-                They need the outcome.
-              </h2>
-              <p>
-                Onboard the employee. Approve the expense. Register the member. Certify the participant. Today that
-                outcome is assembled across six tools and a lot of chasing.
-              </p>
-              <p>
-                What you get back is fragmented ownership, duplicated data, missed handoffs — and no trustworthy record
-                of why a decision was made.
-              </p>
-            </div>
-
-            {/*
-              * The tangle, and what replaces it.
-              *
-              * The words are inside the artwork now — the tool names, "Chasing
-              * it all", "Outcome Platform", the three signed outcomes. That
-              * makes these pictures of text, not decoration, so each one
-              * carries alt text that says what it says. Without it a screen
-              * reader gets a section whose entire right half is silence, and
-              * the six tools the copy mentions are named nowhere it can reach.
-              *
-              * Served at half width below 900px: a phone pulling a 2043px
-              * render to show it at 350 is most of the page's weight for none
-              * of its meaning.
-              */}
-            {/*
-              * The green half gets the wider column.
-              *
-              * Its words are inside the picture, so they do not reflow — at the
-              * narrower share "Outcome Platform" and each "Signed" rendered at
-              * about seven pixels. Text in artwork can only be made readable by
-              * making the artwork bigger, which is the cost of baking it in.
-              */}
-            <div className="band__art grid items-start gap-3 xl:grid-cols-[1fr_1.1fr]">
-              <div className="mx-auto w-full max-w-[520px]">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src="/images/form-chaos-red.webp"
-                  srcSet="/images/form-chaos-red@half.webp 709w, /images/form-chaos-red.webp 1418w"
-                  sizes="(max-width: 900px) 92vw, 370px"
-                  width={1418}
-                  height={1109}
-                  loading="lazy"
-                  className="block h-auto w-full"
-                  alt="Six tools — a form tool, a spreadsheet, email threads, a shared drive, e-signature and a calendar — joined by tangled red arrows that cross and double back, ending at one person chasing it all."
-                />
-              </div>
-
-              {/*
-                * In the design the green flow starts under the tangle's
-                * figure, ninety pixels left of the quote, and its top arrow
-                * runs level with the lede — the lede sits in the flow's empty
-                * top-left corner, not above it. So the flow hangs out of its
-                * column to the left and the lede is placed over it.
-                */}
-              <div className="band__answer">
-                <blockquote className="pullquote">
-                  <p>
-                    “Where is this one, and who has it?” should not be a question that takes forty minutes to answer.
-                  </p>
-                </blockquote>
-
-                <div className="band__outcome">
-                  <p className="band__lede">Get answers instantly, not in forty minutes.</p>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src="/images/outcome-flow-green.webp"
-                    srcSet="/images/outcome-flow-green@half.webp 1021w, /images/outcome-flow-green.webp 2043w"
-                    sizes="(max-width: 900px) 92vw, 500px"
-                    width={2043}
-                    height={770}
-                    loading="lazy"
-                    className="band__flow block h-auto"
-                    alt="Three inputs converging on one outcome platform and leaving as three finished, signed results: employee onboarded, expense approved, member registered."
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* ===================================================== shift */}
-        <section className="shell section" id="how">
-          <div className="sectionHead">
-            <span className="eyebrow">01 — The shift</span>
-            <span className="rule" aria-hidden="true" />
-          </div>
-
-          {/*
-            * The chain lights up as the section arrives: Submitted, then the
-            * arrow, then Approved, and so on to Done. It is the sentence
-            * above it, played — a submission beginning a process.
-            */}
-          <InView className="shift">
-            <article className="shiftCard shiftCard--before">
-              <span className="shiftCard__tag">EVERY FORM TOOL</span>
-              <h3>A form ends at submission.</h3>
-              <p>
-                You get rows. Everything that makes the rows matter — the routing, the decision, the document, the
-                follow-up — is yours to arrange somewhere else.
-              </p>
-              <div className="shiftCard__dead">
-                <span className="chip chip--quiet" style={{ background: 'var(--line-soft)', color: 'var(--muted)' }}>
-                  Submitted
-                </span>
-                <span aria-hidden="true">·</span>
-                <span>nothing further</span>
-              </div>
-            </article>
-
-            <article className="shiftCard shiftCard--here">
-              <span className="shiftCard__tag">HERE</span>
-              <h3>A submission begins a process.</h3>
-              <p>
-                The same moment creates a case with a state, an owner, a deadline, an audit trail and a next action. The
-                work is in the system, not in someone’s inbox.
-              </p>
-              <div className="shiftCard__states">
-                {['Submitted', 'Approved', 'Provisioned'].map((state, i) => (
-                  <span key={state} style={{ display: 'contents' }}>
-                    <span className="chip chip--state flow__step" style={nth(i)}>
-                      {state}
-                    </span>
-                    <span
-                      className="flow__arrow"
-                      style={{ ...nth(i), color: 'var(--green)', display: 'flex' }}
-                      aria-hidden="true"
-                    >
-                      <FlowArrow />
-                    </span>
-                  </span>
-                ))}
-                <span className="chip chip--state chip--done flow__step" style={nth(3)}>
-                  Done
-                </span>
-              </div>
-            </article>
-          </InView>
-        </section>
+        <ProcessDemo />
 
         {/* ================================================== what gets built */}
         <section className="shell section">
           <div className="sectionHead">
-            <span className="eyebrow">02 — From one description</span>
+            <span className="eyebrow">01 — From one description</span>
             <span className="rule" aria-hidden="true" />
           </div>
           <h2>Seven things get built at once, and they already agree with each other.</h2>
@@ -303,7 +130,7 @@ export default function Home() {
           <div className="shell console__grid">
             <div className="console__copy">
               <span className="eyebrow" style={{ color: 'var(--on-dark-5)' }}>
-                03 — After it launches
+                02 — After it launches
               </span>
               <h2>The morning screen answers four questions.</h2>
               <p className="console__lede">
@@ -397,53 +224,27 @@ export default function Home() {
         {/* =============================================== reliability */}
         <section className="shell section" id="reliability">
           <div className="sectionHead">
-            <span className="eyebrow">04 — The unglamorous part</span>
+            <span className="eyebrow">03 — Built to hold up</span>
             <span className="rule" aria-hidden="true" />
           </div>
-
-          <div className="reliability__grid">
-            <div className="reliability__copy">
-              <h2>A duplicated offer letter is worse than no software at all.</h2>
-              <p>
-                Most of the engineering here is not the drag-and-drop editor. It is making sure that when something goes
-                wrong — a crash, a retry, two people clicking at once — the outcome happens exactly once and the record
-                says why.
-              </p>
-              <p>We treat that as a feature, because your trust depends on it.</p>
-            </div>
-
-            <div className="rows">
-              {RELIABILITY.map((item, i) => (
-                <div className="row" key={item.title}>
-                  <span className="row__num">{String(i + 1).padStart(2, '0')}</span>
-                  <div>
-                    <h3>{item.title}</h3>
-                    <p>{item.copy}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+          <div className="landingReliability"><div><h2>Reliable after launch, too.</h2><p>A process has to survive retries, changing rules, and handoffs. PatForm keeps decisions tied to the version used and records what happened along the way.</p><Link className="btn btn--secondary" href="/reliability">How reliability works <ArrowRight /></Link></div><div className="landingReliability__points"><span>✓ &nbsp; Actions are safe to retry</span><span>✓ &nbsp; Published versions stay traceable</span><span>✓ &nbsp; History remains available to inspect</span></div></div>
         </section>
 
         {/* ================================================== where AI */}
         <section className="ai" id="ai">
           <div className="shell ai__grid">
             <div className="ai__copy">
-              <span className="eyebrow">05 — Where AI sits</span>
+              <span className="eyebrow">04 — Where AI sits</span>
               <h2>
                 AI proposes.
                 <br />
                 The platform decides.
               </h2>
               <p>
-                Generating questions is table stakes — your existing form tool probably does it already. The difference
-                is what happens to the proposal next.
+                AI helps draft the process. PatForm checks the proposal before it can run.
               </p>
               <p>
-                Everything a model suggests is checked against the rules before it can run: references resolved,
-                permissions verified, unreachable steps rejected, sensitive fields caught. Nothing it writes is
-                executable, and nothing reaches your records without a person saying yes.
+                References, permissions, paths and sensitive fields are checked. You review the draft and decide when to publish it.
               </p>
             </div>
 
@@ -486,7 +287,7 @@ export default function Home() {
         {/* ==================================================== packs */}
         <section className="shell section" id="packs">
           <div className="sectionHead">
-            <span className="eyebrow">06 — Start from a pack</span>
+            <span className="eyebrow">05 — Start from a pack</span>
             <span className="rule" aria-hidden="true" />
           </div>
           <h2>Two places we know the work cold.</h2>
@@ -570,7 +371,7 @@ export default function Home() {
                 <Link className="btn btn--primary" href="/signup">
                   Create a workspace
                 </Link>
-                <a className="btn btn--secondary" href="#how">
+                <a className="btn btn--secondary" href="#demo">
                   Read the approach
                 </a>
               </div>
