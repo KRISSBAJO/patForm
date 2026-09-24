@@ -1324,7 +1324,7 @@
   background: var(--rail);
   border-right: 1px solid var(--rail-line);
   padding: 16px 12px;
-  gap: 22px;
+  gap: 18px;
 }
 
 .cs__brand {
@@ -1356,20 +1356,23 @@
 }
 
 .cs__process .cs__dot {
-  width: 18px;
-  height: 18px;
-  flex: 0 0 18px;
-  display: grid;
-  place-items: center;
-  background: none;
-}
-
-.cs__process .cs__dot::before {
-  content: '';
   width: 6px;
   height: 6px;
-  border-radius: 50%;
+  flex: 0 0 6px;
   background: var(--green);
+}
+
+.cs__processList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cs__process {
+  min-height: 34px;
+  padding-block: 4px;
+  font-size: 13.5px;
+  line-height: 1.25;
 }
 
 .cs__navItem:hover,

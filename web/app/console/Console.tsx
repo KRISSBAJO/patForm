@@ -520,7 +520,7 @@ export function Console() {
           </button>
         </nav>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div className="cs__processList">
           <span className="cs__sectionLabel">PROCESSES</span>
           {session.processes.map((p) => (
             <button
