@@ -122,3 +122,14 @@ verification under **Your account**. The supplied example password is not used
 as a seed credential; existing passwords remain unchanged. Remove the
 bootstrap setting after both grants have been confirmed, so later accounts
 cannot gain site access through it.
+
+## AI provider
+
+PatForm can use DeepSeek for process generation, rule proposals, and Ask. Set
+`DEEPSEEK_API_KEY` in the Render service Environment settings; enter the key
+there yourself. `DEEPSEEK_MODEL` defaults to `deepseek-flash`. When more than
+one AI provider key is configured, DeepSeek is selected first. PatForm sends
+the process description or question and process schema to the provider, then
+validates returned JSON before any workflow is accepted or action is run.
+DeepSeek's prices vary by model, time and cache status, so cost reporting is
+left blank unless a rate is explicitly configured.

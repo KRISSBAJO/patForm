@@ -236,7 +236,7 @@ async function main(): Promise<void> {
   suppressDelivery('evaluation runs blueprints that name invented people');
   const available = availableProviders();
   if (!available.length) {
-    console.error('No API key is set. Put ANTHROPIC_API_KEY or OPENAI_API_KEY in .env');
+    console.error('No API key is set. Put DEEPSEEK_API_KEY, ANTHROPIC_API_KEY or OPENAI_API_KEY in .env');
     process.exit(2);
   }
 

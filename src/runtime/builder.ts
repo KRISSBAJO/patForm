@@ -667,7 +667,7 @@ export async function createDraft(
     if (!input.description?.trim()) throw new InvalidInput('describe the process, or name one to copy');
     const available = availableProviders();
     if (!available.length) {
-      throw new Error('no AI provider is configured — set ANTHROPIC_API_KEY or OPENAI_API_KEY, or copy an existing process');
+      throw new Error('no AI provider is configured — set DEEPSEEK_API_KEY, ANTHROPIC_API_KEY or OPENAI_API_KEY, or copy an existing process');
     }
     const provider = providerFor(input.provider ?? available[0]!);
     // The pool is passed so a clean blueprint also has to pass its own

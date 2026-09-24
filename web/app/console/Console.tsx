@@ -767,7 +767,7 @@ export function Console() {
                     <p className="cs__failureBody">
                       {f.reference} · {f.transitionKey} · {f.lastError}
                     </p>
-                    <button
+                    {f.outboxId > 0 ? <button
                       type="button"
                       className="cs__btn cs__btn--danger"
                       style={{ marginTop: 11 }}
@@ -775,7 +775,7 @@ export function Console() {
                       onClick={() => void replay(f.outboxId)}
                     >
                       Replay this action
-                    </button>
+                    </button> : <p className="cs__failureBody">This email failed outside the retry queue. Check its address and provider, then use a new test request.</p>}
                   </div>
                 ))}
               </div>

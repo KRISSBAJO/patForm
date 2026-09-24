@@ -14,7 +14,7 @@ const OFF = '\x1b[0m';
 function usage(): never {
   console.error(`usage: npm run generate -- "<process description>" [options]
 
-  --provider <anthropic|openai>   default: the first one with a key set
+  --provider <deepseek|anthropic|openai>   default: the first one with a key set
   --model <id>                    override the provider's default model
   --pack <name>                   bias the proposal towards a process pack
   --run                           also run the blueprint's scenarios against Postgres

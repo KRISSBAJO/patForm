@@ -340,7 +340,7 @@ route('POST', /^\/api\/builder\/drafts\/([0-9a-f-]{36})\/rule$/, async ({ pool, 
 
   const available = availableProviders();
   if (!available.length) {
-    throw new HttpError(503, 'no AI provider is configured — set ANTHROPIC_API_KEY or OPENAI_API_KEY');
+    throw new HttpError(503, 'no AI provider is configured — set DEEPSEEK_API_KEY, ANTHROPIC_API_KEY or OPENAI_API_KEY');
   }
 
   // Read through the same permission-checked path the builder uses, so this
@@ -381,7 +381,7 @@ route('POST', /^\/api\/copilot\/ask$/, async ({ pool, principal }, body) => {
 
   const available = availableProviders();
   if (!available.length) {
-    throw new HttpError(503, 'no AI provider is configured — set ANTHROPIC_API_KEY or OPENAI_API_KEY');
+    throw new HttpError(503, 'no AI provider is configured — set DEEPSEEK_API_KEY, ANTHROPIC_API_KEY or OPENAI_API_KEY');
   }
   return ask(pool, askerFor(providerFor(available[0]!)), { principal, processKey, question });
 });
@@ -1040,8 +1040,9 @@ route('GET', /^\/api\/automation$/, async ({ engine, principal, url }) => {
   return engine.automationHealth({ principal, processKey });
 });
 
-route('POST', /^\/api\/automation\/(\d+)\/replay$/, async ({ engine, principal, url }) => {
+route('POST', /^\/api\/automation\/(-?\d+)\/replay$/, async ({ engine, principal, url }) => {
   const outboxId = Number(url.pathname.split('/')[3]);
+  if (outboxId <= 0) throw new HttpError(400, 'This is a failed email send, not a replayable job. Check the address and provider, then submit a new test request.');
   return engine.replayAction({ principal, outboxId, now: new Date() });
 });
 
