@@ -2677,6 +2677,18 @@ html {
 .processDemo__mock { padding:24px; }
 .processDemo__mock > small { color:#2a7652; font:10px var(--font-mono),monospace; letter-spacing:.1em; }
 .processDemo__prompt { min-height:146px; margin-top:16px; padding:17px 18px; border:1px solid #d5e3d9; border-radius:8px; color:#253a2e; background:#fff; font-size:14px; line-height:1.55; }
+.processDemo__route { margin-top:12px; padding:12px 14px 11px; border:1px solid #d5e9dc; border-radius:9px; background:linear-gradient(115deg,#f8fcf9,#f2faf5); }
+.processDemo__routeHead { display:flex; justify-content:space-between; gap:12px; margin-bottom:12px; }
+.processDemo__routeHead strong { color:#1f5d3e; font-size:11px; }
+.processDemo__routeHead > span { color:#788d7f; font:9px var(--font-mono),monospace; text-transform:uppercase; letter-spacing:.04em; }
+.processDemo__routeSteps { position:relative; display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:0; }
+.processDemo__routeLine { position:absolute; z-index:0; top:6px; left:12.5%; right:12.5%; height:2px; background:#bddac6; }
+.processDemo__routeLine i { position:absolute; top:-4px; left:0; width:10px; height:10px; border:2px solid #fff; border-radius:50%; background:#1e9b60; box-shadow:0 0 0 4px #33aa6a25; animation:demoRouteTravel 5s ease-in-out infinite; }
+.processDemo__routeStop { position:relative; z-index:1; display:flex; align-items:center; flex-direction:column; gap:6px; min-width:0; text-align:center; }
+.processDemo__routeStop > span { width:14px; height:14px; border:3px solid #f6fbf7; border-radius:50%; background:#92bfa1; box-shadow:0 0 0 1px #bddac6; }
+.processDemo__routeStop > span.is-start { background:#176346; box-shadow:0 0 0 1px #176346; }
+.processDemo__routeStop small { color:#4f6757; font-size:10px; line-height:1.2; }
+@keyframes demoRouteTravel { 0% { left:0; opacity:0; } 8% { opacity:1; } 88% { opacity:1; } 100% { left:calc(100% - 10px); opacity:0; } }
 .processDemo__mockFoot { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:13px; color:#667a6b; font-size:12px; }
 .processDemo__mockButton { padding:8px 13px; border:0; border-radius:7px; background:#176346; color:#fff; font:600 12px var(--font-sans),sans-serif; cursor:pointer; }
 .processDemo__draft { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:18px; }
@@ -2703,7 +2715,7 @@ html {
 .processDemo__timeline div { display:flex; align-items:center; gap:9px; padding:9px 0; border-bottom:1px solid #ecf0ec; font-size:11px; }
 .processDemo__timeline b { display:grid; place-items:center; width:18px; height:18px; border-radius:50%; background:#d9f0e1; color:#176346; }.processDemo__timeline small { margin-left:auto; color:#829083; }
 @keyframes demoNodeIn { from { transform:scale(.75); } to { transform:scale(1); } }
-@media(prefers-reduced-motion:reduce) { .processDemo__tabs button.is-active span { animation:none; } }
+@media(prefers-reduced-motion:reduce) { .processDemo__tabs button.is-active span,.processDemo__routeLine i { animation:none; } }
 @media(max-width:800px) { .processDemo { padding:54px 0; } .processDemo__intro { align-items:start; flex-direction:column; gap:14px; } .processDemo__body { grid-template-columns:1fr; gap:27px; } .processDemo__copy { padding:0; } }
 @media(max-width:560px) { .processDemo { padding:45px 0; } .processDemo__intro h2 { font-size:31px; } .processDemo__tabs button { flex-direction:column; justify-content:center; gap:5px; min-height:62px; padding:6px 2px; } .processDemo__tabs button strong { font-size:11px; } .processDemo__tabs button span { width:21px; height:21px; font-size:9px; } .processDemo__body { min-height:0; padding:20px 16px; } .processDemo__copy h3 { font-size:26px; } .processDemo__screen { min-height:0; } .processDemo__mock { padding:16px; } .processDemo__draft { gap:8px; } .processDemo__draft div { padding:11px; } .processDemo__draft span { font-size:10px; } .processDemo__task { gap:7px; padding:9px; } .processDemo__task b { font-size:9px; } .processDemo__end { align-items:flex-start; flex-direction:column; } }
 .landingReliability { display:grid; grid-template-columns:1.15fr .85fr; align-items:center; gap:70px; }
