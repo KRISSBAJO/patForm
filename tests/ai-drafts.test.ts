@@ -2,8 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import type { Pool } from '../src/runtime/db.js';
-import { aiDraftStatus, queueAiDraft } from '../src/runtime/ai-drafts.js';
-import { generateBlueprint } from '../src/ai/pipeline.js';
+import { aiDraftStatus, queueAiDraft, revisionCandidate } from '../src/runtime/ai-drafts.js';
+import { generateBlueprint, type GenerationOutcome } from '../src/ai/pipeline.js';
 import { blueprintSchema } from '../src/ai/index.js';
 import type { Provider } from '../src/ai/provider.js';
 
@@ -77,4 +77,13 @@ test('AI revision receives the selected blueprint and a request to preserve exis
     description: 'Add a finance review above 2500', sourceBlueprint: source, maxRepairs: 0,
   });
   assert.ok(seen);
+});
+
+test('revision fallback prefers a checked blueprint to one with compiler errors', () => {
+  const blueprint = JSON.parse(readFileSync(new URL('../processes/expense-approval.blueprint.json', import.meta.url), 'utf8'));
+  const editable = revisionCandidate({ editable: { blueprint, errors: [{ code: 'FLOW004', severity: 'error', at: 'workflow.states', message: 'Invalid transition' }] } } as GenerationOutcome);
+  const checked = revisionCandidate({ blueprint } as GenerationOutcome);
+  assert.ok(editable);
+  assert.ok(checked);
+  assert.ok(checked.score > editable.score);
 });

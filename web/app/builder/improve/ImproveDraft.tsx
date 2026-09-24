@@ -6,7 +6,7 @@ import './improve.css';
 type Blueprint = { key: string; name: string; roles?: { key: string; name: string }[]; data?: { fields?: { key: string; label: string }[] }; workflow?: { states?: { key: string; name: string }[]; transitions?: { key: string; name?: string }[]; tasks?: { key: string; name: string }[]; approvals?: { key: string; name: string }[] }; communications?: { email?: { key: string; name: string }[] }; outputs?: { documents?: { key: string; name: string }[] }; tests?: { key: string }[]; experience?: { pages?: { key: string; title: string }[] } };
 type Draft = { id: string; processName: string; blueprint: Blueprint; revision: number };
 type Diagnostic = { code: string; severity: 'error' | 'warning'; message: string };
-type Job = { id: string; status: 'queued' | 'running' | 'ready' | 'failed'; stage: string; error?: string | null; source_revision: number; source_blueprint: Blueprint; proposal?: Blueprint | null; review?: { diagnostics: Diagnostic[]; tests: { passed: number; total: number; failures: { name: string; failures: string[] }[] } } | null; applied_at?: string | null };
+type Job = { id: string; status: 'queued' | 'running' | 'ready' | 'failed'; stage: string; error?: string | null; source_revision: number; source_blueprint: Blueprint; proposal?: Blueprint | null; review?: { provider?: string; diagnostics: Diagnostic[]; tests: { passed: number; total: number; failures: { name: string; failures: string[] }[] } } | null; applied_at?: string | null };
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, { credentials: 'same-origin', cache: 'no-store', headers: { 'content-type': 'application/json' }, ...init });
@@ -112,11 +112,12 @@ export function ImproveDraft() {
           <div className="improve__diff">{diff.map((item) => <div key={item.label}><strong>{item.label}</strong><span>{item.before} → {item.after}</span>{item.added.length > 0 && <small>Added: {item.added.join(', ')}</small>}{item.changed.length > 0 && <small>Changed: {item.changed.join(', ')}</small>}{item.removed.length > 0 && <small className="improve__removed">Removed: {item.removed.join(', ')}</small>}</div>)}</div>
           <details><summary>Review complete proposed blueprint</summary><pre>{JSON.stringify(job.proposal, null, 2)}</pre></details>
         </section>
-        <section className="improve__card"><h2>Workflow checks</h2><p>{errors.length} errors · {warnings.length} warnings · {errors.length ? 'Tests wait until errors are fixed' : `${job.review?.tests.passed ?? 0} of ${job.review?.tests.total ?? 0} tests passed`}</p>
+        <section className="improve__card"><h2>Workflow checks</h2><p>{errors.length} errors · {warnings.length} warnings · {errors.length ? 'Tests wait until errors are fixed' : `${job.review?.tests.passed ?? 0} of ${job.review?.tests.total ?? 0} tests passed`}{job.review?.provider ? ` · Proposed by ${job.review.provider}` : ''}</p>
+          {(errors.length > 0 || !!job.review?.tests.failures.length) && <p>This proposal needs more work. You can describe the change differently to get a new proposal, or apply it privately and fix the listed issues in Builder.</p>}
           {errors.map((item, index) => <p className="improve__issue improve__issue--error" key={`e${index}`}><strong>{item.code}</strong> {item.message}</p>)}
           {job.review?.tests.failures.map((item) => <p className="improve__issue improve__issue--error" key={item.name}><strong>{item.name}</strong> {item.failures.join('; ')}</p>)}
           {warnings.length > 0 && <details><summary>Read {warnings.length} warnings</summary>{warnings.map((item, index) => <p className="improve__issue" key={`w${index}`}><strong>{item.code}</strong> {item.message}</p>)}</details>}
-          <div className="improve__foot"><span>{job.applied_at ? 'Applied to your private draft' : 'The live process has not changed.'}</span><button disabled={busy || !!job.applied_at} onClick={() => void apply()}>{busy ? 'Applying…' : errors.length || job.review?.tests.failures.length ? 'Apply to draft for fixes' : 'Apply to private draft'}</button></div>
+          <div className="improve__foot"><span>{job.applied_at ? 'Applied to your private draft' : 'The live process has not changed.'}</span><div className="improve__actions"><a href={`/builder/improve?draft=${draftId}`}>Create another proposal</a><button disabled={busy || !!job.applied_at} onClick={() => void apply()}>{busy ? 'Applying…' : errors.length || job.review?.tests.failures.length ? 'Apply to draft for fixes' : 'Apply to private draft'}</button></div></div>
         </section>
       </>}
     </div>

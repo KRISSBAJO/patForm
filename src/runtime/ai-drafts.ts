@@ -5,6 +5,7 @@ import { requireWorkspaceCapability, type Principal } from './policy.js';
 import { Blueprint } from '../blueprint/index.js';
 import { validate } from '../compiler/validate.js';
 import { availableProviders, blueprintSchema, generateBlueprint, providerFor } from '../ai/index.js';
+import type { GenerationOutcome } from '../ai/pipeline.js';
 import { runScenarios, type ScenarioResult } from './scenarios.js';
 
 /** Queue AI generation outside the short-lived web request. The worker owns the expensive model calls. */
@@ -73,6 +74,17 @@ export async function applyAiRevision(pool: Pool, principal: Principal, jobId: s
   return { draftId: job.source_draft_id, ...result };
 }
 
+/** Keep the strongest reviewable result while trying configured providers in order. */
+export function revisionCandidate(result: GenerationOutcome): { blueprint: Blueprint; scenarios?: ScenarioResult[]; score: number } | undefined {
+  if (result.blueprint) return { blueprint: result.blueprint, scenarios: result.scenarios, score: 1_000_000 };
+  if (result.reviewable) return { blueprint: result.reviewable.blueprint,
+    scenarios: result.reviewable.scenarios,
+    score: 100_000 - result.reviewable.scenarios.filter((item) => !item.passed).length };
+  if (result.editable) return { blueprint: result.editable.blueprint,
+    score: 10_000 - result.editable.errors.length };
+  return undefined;
+}
+
 export async function processNextAiDraft(pool: Pool): Promise<boolean> {
   const claimed = await pool.query<{ id: string; tenant_id: string; actor_id: string; process_key: string; process_name: string | null; description: string; source_draft_id: string | null; source_blueprint: unknown }>(
     `update ai_draft_job j set status = 'running', stage = 'generating', started_at = now(), heartbeat_at = now(), attempts = attempts + 1, error = null
@@ -92,8 +104,8 @@ export async function processNextAiDraft(pool: Pool): Promise<boolean> {
   try {
     if (job.source_draft_id) {
       const source = Blueprint.parse(job.source_blueprint);
-      let candidate: Blueprint | undefined;
-      let checkedScenarios: ScenarioResult[] | undefined;
+      let best: ReturnType<typeof revisionCandidate>;
+      let bestProvider = '';
       let error = 'The AI could not return a usable revision.';
       for (const name of availableProviders()) {
         try {
@@ -101,26 +113,28 @@ export async function processNextAiDraft(pool: Pool): Promise<boolean> {
             description: job.description, sourceBlueprint: source, pool,
             onProgress: async (stage) => { await pool.query('update ai_draft_job set stage = $2 where id = $1', [job.id, stage]); },
           });
-          candidate = result.blueprint ?? result.reviewable?.blueprint ?? result.editable?.blueprint;
-          if (candidate) {
-            checkedScenarios = result.scenarios ?? result.reviewable?.scenarios;
-            break;
+          const option = revisionCandidate(result);
+          if (option && (!best || option.score > best.score)) {
+            best = option;
+            bestProvider = name;
           }
-          error = `${name} could not make a valid revision.`;
+          if (result.blueprint) break;
+          error = `${name} could not make a fully checked revision.`;
         } catch (cause) {
           error = `${name} could not complete generation.`;
           console.warn('AI revision provider failed:', name, cause instanceof Error ? cause.message : String(cause));
         }
       }
-      if (!candidate) throw new InvalidInput(error);
+      if (!best) throw new InvalidInput(error);
       // The process identity is not part of the change request.
-      const proposal = Blueprint.parse({ ...candidate, key: source.key });
+      const proposal = Blueprint.parse({ ...best.blueprint, key: source.key });
       const diagnostics = validate(proposal);
       await pool.query('update ai_draft_job set stage = $2 where id = $1', [job.id, 'checking']);
       const scenarios = diagnostics.publishable
-        ? proposal.key === candidate.key && checkedScenarios ? checkedScenarios : await runScenarios(pool, proposal)
+        ? proposal.key === best.blueprint.key && best.scenarios ? best.scenarios : await runScenarios(pool, proposal)
         : [];
       const review = {
+        provider: bestProvider,
         diagnostics: diagnostics.items,
         tests: { passed: scenarios.filter((item) => item.passed).length, total: scenarios.length,
           failures: scenarios.filter((item) => !item.passed).map((item) => ({ name: item.test, failures: item.failures })) },
