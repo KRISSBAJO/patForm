@@ -165,14 +165,17 @@ export function Console() {
     void refreshSession();
   }, [refreshSession]);
 
-  useEffect(() => {
-    if (!session) { setSiteAdmin(false); return; }
-    let active = true;
-    void fetch('/api/platform/me', { credentials: 'same-origin' }).then((r) => {
-      if (active) setSiteAdmin(r.ok);
-    }).catch(() => { if (active) setSiteAdmin(false); });
-    return () => { active = false; };
+  const checkSiteAdmin = useCallback(async () => {
+    if (!session?.actor.id) { setSiteAdmin(false); return; }
+    try {
+      const response = await fetch('/api/platform/me', { credentials: 'same-origin' });
+      setSiteAdmin(response.ok);
+    } catch {
+      setSiteAdmin(false);
+    }
   }, [session?.actor.id]);
+
+  useEffect(() => { void checkSiteAdmin(); }, [checkSiteAdmin]);
 
   /*
    * A record in the address bar is opened on arrival, and the browser's back
@@ -675,7 +678,7 @@ export function Console() {
                 }}
               />
             ) : view === 'security' ? (
-              <SecurityView />
+              <SecurityView onAccessChange={() => void checkSiteAdmin()} />
             ) : view === 'held' ? (
               <HeldView onChanged={setHeldCount} />
             ) : !processKey && ['work', 'records', 'dashboard', 'ask'].includes(view) ? (

@@ -865,7 +865,7 @@ const post = postJson;
  * QR generation stays in the browser. The provisioning URI must never be sent
  * to an image service because it contains the second-factor secret.
  */
-export function SecurityView() {
+export function SecurityView({ onAccessChange }: { onAccessChange?: () => void }) {
   const [status, setStatus] = useState<MfaStatus | null>(null);
   const [setup, setSetup] = useState<{ secret: string; uri: string } | null>(null);
   const [qr, setQr] = useState<string | null>(null);
@@ -1004,6 +1004,7 @@ export function SecurityView() {
               setSetup(null);
               setCode('');
               setCodes(done.recoveryCodes);
+              onAccessChange?.();
             });
           }}
         >
@@ -1114,6 +1115,7 @@ export function SecurityView() {
                     setPassword('');
                     setNote('Two-step verification is off.');
                     await load();
+                    onAccessChange?.();
                   })
                 }
               >
