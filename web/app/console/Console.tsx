@@ -98,6 +98,7 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 export function Console() {
   const [session, setSession] = useState<SessionInfo | null>(null);
   const [siteAdmin, setSiteAdmin] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [checking, setChecking] = useState(true);
   const [processKey, setProcessKey] = useState('');
   const [work, setWork] = useState<Work | null>(null);
@@ -397,6 +398,9 @@ export function Console() {
         * which read as two brands rather than one application.
         */}
       <header className="cs__top">
+        <button type="button" className="cs__menuToggle" aria-label="Open menu" aria-expanded={mobileNavOpen} aria-controls="console-navigation" onClick={() => setMobileNavOpen(true)}>
+          <span aria-hidden="true">☰</span>
+        </button>
         <span className="cs__topBrand">
           <svg width="20" height="20" viewBox="0 0 26 26" fill="none" aria-hidden="true">
             <rect x="1.5" y="1.5" width="23" height="23" rx="6" stroke="var(--green-mint)" strokeWidth="1.8" />
@@ -410,7 +414,11 @@ export function Console() {
 
       <ReauthDialog />
       <div className="cs__shell">
-      <aside className="cs__side">
+      {mobileNavOpen && <button type="button" className="cs__navBackdrop" aria-label="Close menu" onClick={() => setMobileNavOpen(false)} />}
+      <aside id="console-navigation" className={`cs__side${mobileNavOpen ? ' cs__side--open' : ''}`} onClick={(event) => {
+        if ((event.target as HTMLElement).closest('button, a')) setMobileNavOpen(false);
+      }}>
+        <div className="cs__mobileNavHead"><strong>Menu</strong><button type="button" aria-label="Close menu" onClick={() => setMobileNavOpen(false)}>×</button></div>
         <nav className="cs__nav" aria-label="Console">
           <button
             type="button"
