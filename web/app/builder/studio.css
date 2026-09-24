@@ -77,6 +77,46 @@
   .bd__outline--open { max-height: 62vh !important; overflow-y: auto !important; }
 }
 
+/* One workspace header, with navigation and live draft state together. */
+.bd .bd__head { display: grid; grid-template-columns: minmax(190px, 1fr) minmax(180px, 300px) auto; gap: 8px 16px; align-items: center; }
+.bd__headIdentity { min-width: 0; }
+.bd__headSearch input { width: 100%; min-height: 32px; border: 1px solid #d3e3d7; border-radius: 6px; background: white; padding: 0 10px; font: 12px var(--ui); color: #17372a; }
+.bd__headSearch input:focus-visible { outline: 2px solid #66b988; outline-offset: 1px; }
+.bd__headMetrics { display: flex; grid-column: 1 / -1; flex-wrap: wrap; gap: 8px 15px; align-items: center; border-top: 1px solid #e4ede6; padding-top: 7px; font: 10px var(--ui); color: #496a52; }
+.bd__headMetrics > span { display: inline-flex; align-items: center; gap: 5px; }
+.bd__headMetrics .bd__statusDot { display: inline-block; }
+.bd__mapModes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 3px; padding: 0 10px 11px; border-bottom: 1px solid #e4ede6; }
+.bd__mapModes button { border: 1px solid transparent; border-radius: 6px; background: transparent; padding: 7px 2px; color: #536d5e; font: 700 11px var(--ui); cursor: pointer; }
+.bd__mapModes button[aria-pressed='true'] { border-color: #c4dfce; background: #eaf6ee; color: #115a39; }
+.bd__fieldTools { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 12px; }
+.bd__fieldTools button, .bd__insightAction { min-height: 28px; border: 1px solid #c9dfd0; border-radius: 6px; background: #fff; color: #176b43; padding: 5px 9px; font: 700 11px var(--ui); cursor: pointer; }
+.bd__fieldTools button:hover, .bd__insightAction:hover { background: #eaf6ee; }
+.bd__fieldTools button:disabled { opacity: .5; cursor: default; }
+.bd__schemaState { margin-left: auto; border-radius: 5px; background: #e5f5e9; color: #155c39; padding: 6px 8px; font: 700 10px var(--ui); }
+.bd__schemaState--bad { background: #fff1ed; color: #a14335; }
+.bd__fieldHistory { max-height: 190px; overflow-y: auto; margin-top: 11px; padding: 11px; border: 1px solid #dce8df; border-radius: 8px; background: #f8fbf8; font-size: 11px; }
+.bd__fieldHistory > strong { display: block; margin-bottom: 6px; }
+.bd__fieldHistory > div { display: grid; gap: 2px; padding: 7px 0; border-top: 1px solid #e4ece5; }
+.bd__fieldHistory span, .bd__fieldHistory small { color: #63796a; }
+.bd__privacyPanel, .bd__playground { margin: 0 0 15px; padding: 12px; border: 1px solid #dce9e0; border-radius: 8px; background: #f8fcf9; }
+.bd__privacyPanel > strong, .bd__playground > strong { font-size: 12px; }
+.bd__privacyPanel p, .bd__playground p { margin: 3px 0 9px; color: #64786a; font-size: 11px; line-height: 1.45; }
+.bd__maskRoles { display: flex; flex-wrap: wrap; gap: 7px 13px; }
+.bd__maskRoles label { display: inline-flex; gap: 5px; align-items: center; font-size: 11px; cursor: pointer; }
+.bd__maskRoles input { accent-color: #176b43; }
+.bd__playground > div { display: flex; gap: 7px; }
+.bd__playground .bd__input { flex: 1; min-width: 0; }
+.bd__playground .bd__btn { flex: 0 0 auto; }
+.bd__sampleGood { color: #176b43 !important; font-weight: 700; }
+.bd__sampleBad { color: #a14335 !important; font-weight: 700; }
+.bd .bd__diagItem header strong { color: #234a32; font: 700 11px var(--ui); }
+.bd .bd__diagItem header code { display: none; }
+.bd__insightAction { margin-top: 7px; }
+.bd__insightDetail { margin-top: 7px; color: #6b7d6f; font-size: 10px; }
+.bd__insightDetail summary { cursor: pointer; }
+@media (max-width: 1180px) { .bd .bd__head { grid-template-columns: minmax(180px, 1fr) minmax(160px, 260px); } .bd .bd__actions { grid-column: 1 / -1; justify-content: flex-start; } }
+@media (max-width: 640px) { .bd .bd__head { display: flex; flex-direction: column; align-items: stretch; } .bd__headSearch { width: 100%; } .bd .bd__actions { margin-top: 0; } .bd__headMetrics { width: 100%; } .bd__playground > div { flex-wrap: wrap; } }
+
 /* PatForm Studio: the reference's compact control layout in our light palette. */
 .bd .bd__head { align-items: center; gap: 18px; padding: 12px 22px; background: #fbfdfb; }
 .bd .bd__head > div:first-child { min-width: 0; }

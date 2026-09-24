@@ -50,6 +50,8 @@ export const Intent = z
             statement: z.string().min(5),
             /** Where in the blueprint it took effect, so it can be checked. */
             affects: z.string().min(1),
+            /** Explicitly confirmed by an editor; the draft revision records who and when. */
+            confirmed: z.boolean().optional(),
           })
           .strict(),
       )

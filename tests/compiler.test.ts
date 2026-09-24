@@ -36,6 +36,19 @@ for (const file of realProcesses) {
   });
 }
 
+test('a reviewed assumption clears only its own builder warning', () => {
+  const bp = load(realProcesses[0]!);
+  bp.intent.assumptions = [
+    { statement: 'The process owner reviews new submissions', affects: 'workflow.approvals' },
+    { statement: 'The request is kept for one year', affects: 'intent.retentionDays' },
+  ];
+  assert.equal(validate(bp).items.filter((d) => d.code === 'BLD001').length, 2);
+  bp.intent.assumptions[0]!.confirmed = true;
+  const warnings = validate(bp).items.filter((d) => d.code === 'BLD001');
+  assert.equal(warnings.length, 1);
+  assert.equal(warnings[0]!.at, 'intent.assumptions[1]');
+});
+
 /**
  * The broken example is the compiler's own regression suite. If a rule stops
  * firing, the corresponding assertion here fails rather than the fault reaching

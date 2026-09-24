@@ -181,7 +181,7 @@ export interface Blueprint {
   key: string;
   name: string;
   description?: string;
-  intent?: { outcome?: string; respondents?: string; [k: string]: unknown };
+  intent?: { outcome?: string; respondents?: string; assumptions?: { statement: string; affects: string; confirmed?: boolean }[]; openDecisions?: { question: string; provisionally: string; importance?: string }[]; [k: string]: unknown };
   roles: BpRole[];
   data: { fields: BpField[]; submitterField?: string; [k: string]: unknown };
   workflow: {
@@ -457,6 +457,7 @@ function partyLabel(p: Party | undefined): string {
 export function Builder() {
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
   const [showProcesses, setShowProcesses] = useState(false);
+  const [workspaceQuery, setWorkspaceQuery] = useState('');
   const [processes, setProcesses] = useState<ProcessRow[]>([]);
   const [draft, setDraft] = useState<DraftDetail | null>(null);
   const [blueprint, setBlueprint] = useState<Blueprint | null>(null);
@@ -1034,7 +1035,7 @@ export function Builder() {
         ) : (
           <>
             <header className="bd__head">
-              <div>
+              <div className="bd__headIdentity">
                 <h1 className="bd__title">{blueprint.name}</h1>
                 <p className="bd__sub">
                   <code>{draft.processKey}</code>
@@ -1053,6 +1054,7 @@ export function Builder() {
                   */}
                 <FormLink formId={draft.formId} />
               </div>
+              <label className="bd__headSearch"><span className="sr-only">Find in this process</span><input type="search" placeholder="Search fields, states, rules…" value={workspaceQuery} onChange={(e) => setWorkspaceQuery(e.target.value)} /></label>
               <div className="bd__actions">
                 <a className="bd__btn" href={`/builder/improve?draft=${draft.id}`}>Improve with AI</a>
                 <a className="bd__btn" href={`/builder/launch?draft=${draft.id}`}>Setup and sharing</a>
@@ -1079,15 +1081,13 @@ export function Builder() {
                   Publish…
                 </button>
               </div>
+              <div className="bd__headMetrics" aria-label="Draft summary">
+                <span><span className="bd__statusDot" aria-hidden="true" /> Private draft</span>
+                <span>{blueprint.data.fields.length} fields</span><span>{blueprint.workflow.states.length} states</span>
+                <span className={errors.length ? 'bd__statusError' : 'bd__statusReady'}>{errors.length} errors</span>
+                <span className={warnings.length ? 'bd__statusWarning' : ''}>{warnings.length} warnings</span>
+              </div>
             </header>
-
-            <div className="bd__statusBar" aria-label="Draft summary">
-              <span className="bd__statusIdentity"><span className="bd__statusDot" aria-hidden="true" /> Private draft</span>
-              <span>{blueprint.data.fields.length} fields</span>
-              <span>{blueprint.workflow.states.length} states</span>
-              <span className={errors.length ? 'bd__statusError' : 'bd__statusReady'}>{errors.length} errors</span>
-              <span className={warnings.length ? 'bd__statusWarning' : ''}>{warnings.length} warnings</span>
-            </div>
 
             <div className="bd__body" data-side={side}>
               <Outline
@@ -1103,6 +1103,7 @@ export function Builder() {
                 }}
                 onAdd={(t) => addItem(t)}
                 readOnly={frozen}
+                query={workspaceQuery}
               />
 
               <section className="bd__editor" data-tab={tab}>
@@ -1133,6 +1134,35 @@ export function Builder() {
                   <FieldEditor
                     field={blueprint.data.fields[index]}
                     fields={blueprint.data.fields.filter((f) => f.key !== blueprint.data.fields[index]?.key)}
+                    roles={blueprint.roles}
+                    draftId={draft.id}
+                    saved={status !== 'saving'}
+                    issues={diagnostics.filter((d) => locate(d, blueprint)?.tab === 'fields' && locate(d, blueprint)?.index === index)}
+                    onDuplicate={() => {
+                      const source = blueprint.data.fields[index];
+                      if (!source) return;
+                      const base = `${source.key}_copy`;
+                      let key = base;
+                      let n = 2;
+                      while (blueprint.data.fields.some((f) => f.key === key)) key = `${base}_${n++}`;
+                      mutate((bp) => {
+                        bp.data.fields.splice(index + 1, 0, { ...structuredClone(bp.data.fields[index]!), key, label: `${source.label} copy` });
+                        const section = sectionHolding(bp, source.key);
+                        if (section) {
+                          const at = section.fields!.indexOf(source.key);
+                          section.fields!.splice(at + 1, 0, key);
+                        }
+                      });
+                      setIndex(index + 1);
+                    }}
+                    onMask={(roleKey, hide) => mutate((bp) => {
+                      const role = bp.roles.find((r) => r.key === roleKey);
+                      const key = bp.data.fields[index]?.key;
+                      if (!role || !key) return;
+                      const hidden = new Set(role.hiddenFields ?? []);
+                      if (hide) hidden.add(key); else hidden.delete(key);
+                      role.hiddenFields = hidden.size ? [...hidden] : undefined;
+                    })}
                     isSubmitter={blueprint.data.submitterField === blueprint.data.fields[index]?.key}
                     onSubmitter={(next) =>
                       mutate((bp) => {
@@ -1297,6 +1327,10 @@ export function Builder() {
                         setTab(where.tab);
                         setIndex(where.index);
                       }}
+                      onAcceptAssumption={(at) => mutate((bp) => {
+                        const item = bp.intent?.assumptions?.[at];
+                        if (item) item.confirmed = true;
+                      })}
                     />
                     <LaunchChecklist
                       blueprint={blueprint}
@@ -2133,6 +2167,7 @@ function Outline({
   onSelect,
   onAdd,
   readOnly = false,
+  query,
 }: {
   blueprint: Blueprint;
   tab: Tab;
@@ -2143,9 +2178,13 @@ function Outline({
   onAdd: (t: Tab) => void;
   /** Somebody else has the draft: the list still navigates, it just cannot add. */
   readOnly?: boolean;
+  query: string;
 }) {
-  const [outlineQuery, setOutlineQuery] = useState('');
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [group, setGroup] = useState<'form' | 'workflow' | 'more'>('form');
+  useEffect(() => {
+    setGroup(['pages', 'fields'].includes(tab) ? 'form' : ['states', 'rules', 'approvals', 'tasks'].includes(tab) ? 'workflow' : 'more');
+  }, [tab]);
   const groups: { tab: Tab; label: string; items: { key: string; name: string; note?: string }[] }[] = [
     {
       tab: 'pages', label: 'Form pages',
@@ -2218,15 +2257,11 @@ function Outline({
         <span className="bd__outlineEyebrow">PROCESS MAP</span>
         <strong>Build your flow</strong>
         <p>Choose a question or workflow step to edit.</p>
-        <label className="bd__outlineSearchLabel" htmlFor="builder-outline-search">Find in this process</label>
-        <input
-          id="builder-outline-search"
-          className="bd__outlineSearch"
-          type="search"
-          placeholder="Find a field, state, rule…"
-          value={outlineQuery}
-          onChange={(e) => setOutlineQuery(e.target.value)}
-        />
+      </div>
+      <div className="bd__mapModes" role="group" aria-label="Process map sections">
+        {([['form', 'Form'], ['workflow', 'Workflow'], ['more', 'More']] as const).map(([key, label]) =>
+          <button key={key} type="button" aria-pressed={group === key} onClick={() => setGroup(key)}>{label}</button>
+        )}
       </div>
       <section className="bd__group">
         <header className="bd__groupHead"><span>Start here</span></header>
@@ -2235,9 +2270,9 @@ function Outline({
           <span className="bd__outlineNote">form, decisions and work</span>
         </button>
       </section>
-      {groups.filter((g) => !outlineQuery.trim() || g.items.some((item) =>
-        `${item.name} ${item.key} ${item.note ?? ''}`.toLowerCase().includes(outlineQuery.trim().toLowerCase()),
-      )).map((g) => (
+      {groups.filter((g) => (query.trim() || (group === 'form' ? ['pages', 'fields'] : group === 'workflow' ? ['states', 'rules', 'approvals', 'tasks'] : ['messages', 'roles', 'documents', 'scenarios']).includes(g.tab)) && (!query.trim() || g.items.some((item) =>
+        `${item.name} ${item.key} ${item.note ?? ''}`.toLowerCase().includes(query.trim().toLowerCase()),
+      ))).map((g) => (
         <section key={g.tab} className="bd__group">
           <header className="bd__groupHead">
             <span>{g.label}</span>
@@ -2252,7 +2287,7 @@ function Outline({
             </button>
           </header>
           {g.items.map((item, i) => ({ item, i })).filter(({ item }) =>
-            `${item.name} ${item.key} ${item.note ?? ''}`.toLowerCase().includes(outlineQuery.trim().toLowerCase()),
+            `${item.name} ${item.key} ${item.note ?? ''}`.toLowerCase().includes(query.trim().toLowerCase()),
           ).map(({ item, i }) => (
             <button
               key={item.key + i}
@@ -2266,8 +2301,8 @@ function Outline({
           ))}
         </section>
       ))}
-      {outlineQuery.trim() && !groups.some((g) => g.items.some((item) =>
-        `${item.name} ${item.key} ${item.note ?? ''}`.toLowerCase().includes(outlineQuery.trim().toLowerCase()),
+      {query.trim() && !groups.some((g) => g.items.some((item) =>
+        `${item.name} ${item.key} ${item.note ?? ''}`.toLowerCase().includes(query.trim().toLowerCase()),
       )) && <p className="bd__outlineEmpty">No matching items.</p>}
 
       <section className="bd__group">
@@ -2310,6 +2345,12 @@ function num(value: string): number | undefined {
 function FieldEditor({
   field,
   fields,
+  roles,
+  draftId,
+  saved,
+  issues,
+  onDuplicate,
+  onMask,
   width,
   onWidth,
   isSubmitter,
@@ -2319,6 +2360,12 @@ function FieldEditor({
 }: {
   field: BpField | undefined;
   fields: BpField[];
+  roles: BpRole[];
+  draftId: string;
+  saved: boolean;
+  issues: Diagnostic[];
+  onDuplicate: () => void;
+  onMask: (roleKey: string, hide: boolean) => void;
   /** Absent when this field is not on any form page, so there is no width to set. */
   width?: string;
   onWidth?: (next: string) => void;
@@ -2328,14 +2375,40 @@ function FieldEditor({
   onChange: (fn: (f: BpField) => void) => void;
   onRemove: () => void;
 }) {
+  const [showHistory, setShowHistory] = useState(false);
+  const [history, setHistory] = useState<{ revision: number; savedAt: string; actor: string; changed: string[]; field: Record<string, unknown> | null }[]>([]);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [sample, setSample] = useState('');
+  const [sampleResult, setSampleResult] = useState<{ valid: boolean; message: string | null } | null>(null);
+  const [sampleBusy, setSampleBusy] = useState(false);
+  useEffect(() => { setShowHistory(false); setHistory([]); setSample(''); setSampleResult(null); }, [field?.key]);
   if (!field) return <p className="bd__none">No field selected.</p>;
   const c = field.constraints ?? {};
+  const canTry = !['file', 'signature', 'repeating_group', 'content', 'calculated', 'hidden'].includes(field.type);
 
   return (
     <>
       <div className="bd__fieldIntro">
         <EditorHead title={field.label || field.key} kind="Form field" onRemove={onRemove} />
         <div className="bd__fieldMeta"><code>{field.key}</code><span>{field.type.replaceAll('_', ' ')}</span><span>{field.classification}</span></div>
+        <div className="bd__fieldTools" role="group" aria-label="Field tools">
+          <button type="button" onClick={onDuplicate}>Duplicate</button>
+          <button type="button" onClick={() => document.getElementById('field-conditional-rules')?.scrollIntoView({ behavior: 'smooth', block: 'center' })}>Conditional rules</button>
+          <button type="button" aria-expanded={showHistory} disabled={!saved} onClick={async () => {
+            if (showHistory) { setShowHistory(false); return; }
+            setHistoryError(null);
+            try {
+              setHistory(await call(`/api/builder/drafts/${draftId}/fields/${encodeURIComponent(field.key)}/history`));
+              setShowHistory(true);
+            } catch (err) { setHistoryError(err instanceof Error ? err.message : String(err)); }
+          }}>History</button>
+          <span className={issues.some((d) => d.severity === 'error') ? 'bd__schemaState bd__schemaState--bad' : 'bd__schemaState'}>{issues.length ? `${issues.length} check${issues.length === 1 ? '' : 's'}` : 'No field issues'}</span>
+        </div>
+        {historyError && <p role="alert">{historyError}</p>}
+        {showHistory && <div className="bd__fieldHistory" aria-label="Field history">
+          <strong>Saved field changes</strong>
+          {history.length ? history.map((entry) => <div key={entry.revision}><b>Revision {entry.revision}</b><span>{entry.actor} · {new Date(entry.savedAt).toLocaleString()}</span><small>{entry.field ? entry.changed.join(', ') || 'Field saved' : 'Field removed'}</small></div>) : <p>No saved changes yet.</p>}
+        </div>}
       </div>
 
       <section className="bd__studioCard">
@@ -2439,11 +2512,15 @@ function FieldEditor({
         </Row>
       </div>
 
-      <ConditionEditor title="Require this answer when" value={field.requiredWhen} fields={fields} onChange={(next) => onChange((f) => { if (next) f.requiredWhen = next; else delete f.requiredWhen; })} />
+      <div id="field-conditional-rules"><ConditionEditor title="Require this answer when" value={field.requiredWhen} fields={fields} onChange={(next) => onChange((f) => { if (next) f.requiredWhen = next; else delete f.requiredWhen; })} /></div>
       </section>
 
       <section className="bd__studioCard">
         <header className="bd__studioCardHead"><span className="bd__studioCardIcon">03</span><div><h3>Guidance &amp; validation</h3><p>Help people answer correctly and explain sensitive data.</p></div></header>
+
+      <div className="bd__privacyPanel"><strong>Who can see this answer</strong><p>The server redacts answers for hidden roles. People with another permitted role may still see them. Application logs omit answer values.</p><div className="bd__maskRoles">{roles.filter((r) => r.kind === 'internal').map((role) => <label key={role.key}><input type="checkbox" checked={(role.hiddenFields ?? []).includes(field.key)} onChange={(e) => onMask(role.key, e.target.checked)} /> Hide from {role.name}</label>)}</div></div>
+
+      {canTry && <div className="bd__playground"><strong>Validation playground</strong><p>Try a sample using the same check as a live form.</p><div><input className="bd__input" value={sample} placeholder="Enter a sample answer" onChange={(e) => { setSample(e.target.value); setSampleResult(null); }} /><button type="button" className="bd__btn bd__btn--small" disabled={!saved || sampleBusy} onClick={async () => { setSampleBusy(true); try { setSampleResult(await call(`/api/builder/drafts/${draftId}/fields/${encodeURIComponent(field.key)}/validate`, { method: 'POST', body: JSON.stringify({ value: ['number', 'currency', 'rating'].includes(field.type) && sample.trim() !== '' ? Number(sample) : sample }) })); } catch (err) { setSampleResult({ valid: false, message: err instanceof Error ? err.message : String(err) }); } finally { setSampleBusy(false); } }}>{sampleBusy ? 'Checking…' : 'Test answer'}</button></div>{sampleResult && <p role="status" className={sampleResult.valid ? 'bd__sampleGood' : 'bd__sampleBad'}>{sampleResult.valid ? 'Valid answer' : sampleResult.message}</p>}</div>}
 
       <Row label="Help text" hint="shown under the field">
         <input className="bd__input" value={field.help ?? ''} onChange={(e) => onChange((f) => void (f.help = e.target.value || undefined))} />
@@ -3653,11 +3730,13 @@ function DiagnosticsPanel({
   errors,
   warnings,
   onGo,
+  onAcceptAssumption,
 }: {
   blueprint: Blueprint;
   errors: Diagnostic[];
   warnings: Diagnostic[];
   onGo: (where: { tab: Tab; index: number }) => void;
+  onAcceptAssumption: (index: number) => void;
 }) {
   return (
     <aside className="bd__diag">
@@ -3682,18 +3761,21 @@ function DiagnosticsPanel({
 
       {[...errors, ...warnings].map((d, i) => {
         const where = locate(d, blueprint);
+        const assumptionIndex = d.code === 'BLD001' ? Number(d.at.match(/assumptions\[(\d+)\]/)?.[1]) : -1;
+        const isAssumption = d.code === 'BLD001' && Number.isInteger(assumptionIndex) && assumptionIndex >= 0;
+        const isDecision = d.code === 'BLD002';
+        const decisionIsAssignment = isDecision && /who|role|assign|approv/i.test(d.message);
         return (
           <article
             key={`${d.code}-${d.at}-${i}`}
             className={`bd__diagItem bd__diagItem--${d.severity}${where ? ' bd__diagItem--go' : ''}`}
-            onClick={where ? () => onGo(where) : undefined}
           >
-            <header>
-              <code>{d.code}</code>
-              <span className="bd__diagAt">{d.at}</span>
-            </header>
-            <p>{d.message}</p>
-            {d.fix && <p className="bd__diagFix">{d.fix}</p>}
+            <header><strong>{isAssumption ? 'Confirm assumption' : isDecision ? 'Decision needed' : d.severity === 'error' ? 'Fix before publishing' : 'Review recommendation'}</strong><span className="bd__diagAt">{d.severity}</span></header>
+            <p>{isAssumption ? d.message.replace(/^Assumed:\s*/, '') : isDecision ? d.message.replace(/^(Needs an answer|Undecided):\s*/, '') : d.message}</p>
+            {isAssumption && <button type="button" className="bd__insightAction" onClick={() => onAcceptAssumption(assumptionIndex)}>Accept this assumption</button>}
+            {isDecision && <button type="button" className="bd__insightAction" onClick={() => onGo({ tab: decisionIsAssignment ? 'roles' : 'states', index: 0 })}>{decisionIsAssignment ? 'Configure assignment' : 'Review workflow'}</button>}
+            {!isAssumption && !isDecision && where && <button type="button" className="bd__insightAction" onClick={() => onGo(where)}>Open {where.tab === 'fields' ? 'field' : where.tab === 'roles' ? 'role' : 'setting'}</button>}
+            {d.fix && <details className="bd__insightDetail"><summary>Why this matters</summary><p>{d.fix}</p></details>}
           </article>
         );
       })}

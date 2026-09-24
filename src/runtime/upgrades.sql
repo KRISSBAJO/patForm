@@ -19,6 +19,38 @@ update tenant set is_scenario = true where name like 'scenario:%' and not is_sce
 -- scenarios pass again at the final publish boundary.
 alter table process_draft add column if not exists ai_review_required boolean not null default false;
 
+create table if not exists process_draft_history (
+  draft_id uuid not null references process_draft(id) on delete cascade,
+  revision int not null,
+  blueprint jsonb not null,
+  actor_id uuid references actor(id),
+  saved_at timestamptz not null default now(),
+  primary key (draft_id, revision)
+);
+create or replace function record_process_draft_history() returns trigger language plpgsql as $$
+begin
+  if tg_op = 'INSERT' then
+    insert into process_draft_history (draft_id, revision, blueprint, actor_id)
+    values (new.id, new.revision, new.blueprint, new.updated_by)
+    on conflict (draft_id, revision) do nothing;
+  elsif new.blueprint is distinct from old.blueprint then
+    insert into process_draft_history (draft_id, revision, blueprint, actor_id)
+    values (new.id, new.revision, new.blueprint, new.updated_by)
+    on conflict (draft_id, revision) do nothing;
+  end if;
+  return new;
+end;
+$$;
+do $$ begin
+  if not exists (select 1 from pg_trigger where tgname = 'process_draft_history_write' and tgrelid = 'process_draft'::regclass) then
+    create trigger process_draft_history_write after insert or update of blueprint on process_draft
+      for each row execute function record_process_draft_history();
+  end if;
+end $$;
+insert into process_draft_history (draft_id, revision, blueprint, actor_id, saved_at)
+  select id, revision, blueprint, updated_by, updated_at from process_draft
+  on conflict (draft_id, revision) do nothing;
+
 create table if not exists ai_draft_job (
   id uuid primary key default gen_random_uuid(),
   tenant_id uuid not null references tenant(id),

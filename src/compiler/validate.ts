@@ -423,6 +423,7 @@ export function validate(bp: Blueprint): Diagnostics {
    * authority in the wrong place.
    */
   for (const [i, assumption] of (bp.intent.assumptions ?? []).entries()) {
+    if (assumption.confirmed) continue;
     d.warn(
       'BLD001',
       `intent.assumptions[${i}]`,

@@ -326,6 +326,33 @@ create table process_draft (
 
 create index draft_open on process_draft (tenant_id, process_key) where published_as is null;
 
+-- Every saved blueprint revision is retained for field-level history in the builder.
+create table process_draft_history (
+  draft_id uuid not null references process_draft(id) on delete cascade,
+  revision int not null,
+  blueprint jsonb not null,
+  actor_id uuid references actor(id),
+  saved_at timestamptz not null default now(),
+  primary key (draft_id, revision)
+);
+
+create function record_process_draft_history() returns trigger language plpgsql as $$
+begin
+  if tg_op = 'INSERT' then
+    insert into process_draft_history (draft_id, revision, blueprint, actor_id)
+    values (new.id, new.revision, new.blueprint, new.updated_by)
+    on conflict (draft_id, revision) do nothing;
+  elsif new.blueprint is distinct from old.blueprint then
+    insert into process_draft_history (draft_id, revision, blueprint, actor_id)
+    values (new.id, new.revision, new.blueprint, new.updated_by)
+    on conflict (draft_id, revision) do nothing;
+  end if;
+  return new;
+end;
+$$;
+create trigger process_draft_history_write after insert or update of blueprint on process_draft
+  for each row execute function record_process_draft_history();
+
 -- ----------------------------------------------------------- public links
 
 -- One public link per (workspace, process), made at first publish and kept

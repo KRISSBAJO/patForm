@@ -1,4 +1,5 @@
 import { Blueprint } from '../blueprint/index.js';
+import { checkField } from '../blueprint/answers.js';
 import { validate } from '../compiler/validate.js';
 import type { Diagnostic } from '../compiler/diagnostics.js';
 import { inTransaction, type Pool } from './db.js';
@@ -323,6 +324,44 @@ export async function loadDraft(pool: Pool, principal: Principal, draftId: strin
     updatedBy: lock.updated_by_name,
     lock: lockOf(lock, actor),
   };
+}
+
+/** Saved field changes, derived from immutable draft snapshots. Never includes respondent answers. */
+export async function fieldHistory(pool: Pool, principal: Principal, draftId: string, fieldKey: string) {
+  await loadDraft(pool, principal, draftId);
+  const { rows } = await pool.query<{
+    revision: number; blueprint: { data?: { fields?: Record<string, unknown>[] } };
+    saved_at: Date; actor_name: string | null;
+  }>(
+    `select h.revision, h.blueprint, h.saved_at, a.display_name as actor_name
+       from process_draft_history h left join actor a on a.id = h.actor_id
+      where h.draft_id = $1 order by h.revision asc`, [draftId],
+  );
+  const changes: { revision: number; savedAt: string; actor: string; changed: string[]; field: Record<string, unknown> | null }[] = [];
+  let previous: Record<string, unknown> | null = null;
+  for (const row of rows) {
+    const field = row.blueprint?.data?.fields?.find((f) => f.key === fieldKey) ?? null;
+    if (JSON.stringify(field) === JSON.stringify(previous)) continue;
+    const keys = new Set([...Object.keys(previous ?? {}), ...Object.keys(field ?? {})]);
+    const changed = [...keys].filter((key) => JSON.stringify(previous?.[key]) !== JSON.stringify(field?.[key]));
+    changes.push({ revision: row.revision, savedAt: row.saved_at.toISOString(), actor: row.actor_name ?? 'Draft creator', changed, field });
+    previous = field;
+  }
+  return changes.reverse().slice(0, 30);
+}
+
+/** Test a sample against the same field validator used when a form is submitted. */
+export async function tryFieldValue(pool: Pool, principal: Principal, draftId: string, fieldKey: string, value: unknown) {
+  const draft = await loadDraft(pool, principal, draftId);
+  const parsed = Blueprint.safeParse(draft.blueprint);
+  if (!parsed.success) throw new InvalidInput('Fix draft shape errors before testing a field.');
+  const field = parsed.data.data.fields.find((f) => f.key === fieldKey);
+  if (!field) throw new NotFound('Field no longer exists.');
+  if (field.type === 'file' || field.type === 'signature' || field.type === 'repeating_group') {
+    throw new InvalidInput('Use the full form preview to test this field type.');
+  }
+  const message = checkField(field, value);
+  return { valid: message === null, message, revision: draft.revision };
 }
 
 /** Zod issues, phrased the way the diagnostics panel expects. */

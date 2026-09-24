@@ -101,6 +101,7 @@ import {
   claimDraft,
   createDraft,
   discardDraft,
+  fieldHistory,
   listForBuilder,
   releaseDraft,
   loadDraft as loadProcessDraft,
@@ -110,6 +111,7 @@ import {
   saveDraft as saveProcessDraft,
   testDraft,
   testVersion,
+  tryFieldValue,
   viewProcess,
   type NewProcess,
   versionHistory,
@@ -306,6 +308,16 @@ route('POST', /^\/api\/builder\/drafts\/([0-9a-f-]{36})\/discard$/, async ({ poo
 route('GET', /^\/api\/builder\/drafts\/([0-9a-f-]{36})$/, async ({ pool, principal, url }) =>
   loadProcessDraft(pool, principal, url.pathname.split('/').pop()!),
 );
+
+route('GET', /^\/api\/builder\/drafts\/([0-9a-f-]{36})\/fields\/([A-Za-z0-9_.-]+)\/history$/, async ({ pool, principal, url }) => {
+  const parts = url.pathname.split('/');
+  return fieldHistory(pool, principal, parts[4]!, decodeURIComponent(parts[6]!));
+});
+
+route('POST', /^\/api\/builder\/drafts\/([0-9a-f-]{36})\/fields\/([A-Za-z0-9_.-]+)\/validate$/, async ({ pool, principal, url }, body) => {
+  const parts = url.pathname.split('/');
+  return tryFieldValue(pool, principal, parts[4]!, decodeURIComponent(parts[6]!), (body as { value?: unknown })?.value);
+});
 
 route('GET', /^\/api\/builder\/drafts\/([0-9a-f-]{36})\/setup$/, async ({ pool, principal, url }) =>
   processSetup(pool, principal, url.pathname.split('/')[4]!),
