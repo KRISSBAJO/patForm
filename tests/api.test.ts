@@ -413,8 +413,9 @@ test('a real provider never sees an address on a reserved domain', async () => {
 });
 
 test('workspace readers without a process role cannot read or search confidential or restricted answers', () => {
-  const privateFields = bp.data.fields.filter((field) =>
-    field.classification === 'confidential' || field.classification === 'restricted');
+  const privateFields = bp.data.fields.filter((field) => field.classification !== 'public');
+  assert.equal(bp.intent.sensitivityCeiling, 'restricted');
+  assert.ok(privateFields.some((field) => field.classification === 'internal'));
   assert.ok(privateFields.some((field) => field.classification === 'confidential'));
   assert.ok(privateFields.some((field) => field.classification === 'restricted'));
   const data = Object.fromEntries(bp.data.fields.map((field) => [field.key, 'secret'])) as Record<string, string>;
@@ -440,7 +441,7 @@ test('workspace readers without a process role cannot read or search confidentia
   const adminSearch = visibleFields(bp, [], 'admin');
   for (const field of privateFields) {
     assert.equal(adminView[field.key] === '[redacted]', field.classification === 'restricted');
-    assert.equal(adminSearch.includes(field.key), field.classification === 'confidential');
+    assert.equal(adminSearch.includes(field.key), field.classification !== 'restricted');
   }
 });
 

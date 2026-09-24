@@ -357,15 +357,18 @@ export function describe(principal: Principal): string {
  */
 export function redact(blueprint: Blueprint, roleKeys: string[], data: Answers, workspaceRole?: WorkspaceRole): Answers {
   const roles = blueprint.roles.filter((r) => roleKeys.includes(r.key));
-  // Workspace readers with no process role may inspect record metadata and
-  // ordinary answers, but personal/confidential answers need a process role.
+  // Workspace readers with no process role may inspect record metadata. In a
+  // restricted process, even an accidentally underclassified internal answer
+  // may identify a person, so only explicitly public answers remain visible.
   // Owners and administrators retain confidential access; restricted answers
   // still require a process role.
   if (!roles.length) {
     const privileged = workspaceRole === 'owner' || workspaceRole === 'admin';
+    const sensitiveProcess = blueprint.intent.sensitivityCeiling === 'restricted';
     const hidden = new Set(
       blueprint.data.fields
-        .filter((f) => f.classification === 'restricted' || (!privileged && f.classification === 'confidential'))
+        .filter((f) => f.classification === 'restricted' ||
+          (!privileged && (f.classification === 'confidential' || (sensitiveProcess && f.classification === 'internal'))))
         .map((f) => f.key),
     );
     return Object.fromEntries(
@@ -406,8 +409,10 @@ export function visibleFields(blueprint: Blueprint, roleKeys: string[], workspac
   const roles = blueprint.roles.filter((r) => roleKeys.includes(r.key));
   if (!roles.length) {
     const privileged = workspaceRole === 'owner' || workspaceRole === 'admin';
+    const sensitiveProcess = blueprint.intent.sensitivityCeiling === 'restricted';
     return blueprint.data.fields
-      .filter((f) => f.classification !== 'restricted' && (privileged || f.classification !== 'confidential'))
+      .filter((f) => f.classification !== 'restricted' &&
+        (privileged || (f.classification !== 'confidential' && !(sensitiveProcess && f.classification === 'internal'))))
       .map((f) => f.key);
   }
 
