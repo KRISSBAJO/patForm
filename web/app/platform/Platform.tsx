@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import './platform.css';
 
 type Section = 'overview' | 'workspaces' | 'people' | 'integrations' | 'security' | 'jobs' | 'trace' | 'mail' | 'audit' | 'operators';
@@ -66,6 +66,7 @@ function Panel({ title, aside, children, className = '' }: { title: string; asid
 export function Platform() {
   const [role, setRole] = useState('');
   const [section, setSection] = useState<Section>('overview');
+  const requestSeq = useRef(0);
   const [data, setData] = useState<Json | null>(null);
   const [detail, setDetail] = useState<Json | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -87,19 +88,25 @@ export function Platform() {
   const [workspaceName, setWorkspaceName] = useState('');
 
   const load = useCallback(async () => {
+    const request = ++requestSeq.current;
     setBusy(true);
     setError('');
     try {
       if (section === 'trace') {
-        setData(traceQuery ? await api(`trace/${traceQuery}`) : null);
+        const result = traceQuery ? await api(`trace/${traceQuery}`) : null;
+        if (request === requestSeq.current) setData(result);
       } else {
         const query = section === 'workspaces' ? `?q=${encodeURIComponent(search)}&page=${page}&scope=${workspaceScope}`
           : section === 'people' ? `?q=${encodeURIComponent(search)}&page=${page}&status=${peopleStatus}`
           : section === 'integrations' ? `?q=${encodeURIComponent(search)}&page=${page}` : `?page=${page}`;
-        setData(await api(section + query));
+        const result = await api(section + query);
+        if (request === requestSeq.current) {
+          if (section === 'workspaces' && !Array.isArray(result.rows)) throw new Error('Workspace list is unavailable. Refresh to try again.');
+          setData(result);
+        }
       }
-    } catch (e) { setError((e as Error).message); }
-    finally { setBusy(false); }
+    } catch (e) { if (request === requestSeq.current) setError((e as Error).message); }
+    finally { if (request === requestSeq.current) setBusy(false); }
   }, [section, search, page, traceQuery, workspaceScope, peopleStatus]);
 
   useEffect(() => {
@@ -129,6 +136,7 @@ export function Platform() {
   useEffect(() => {
     if (!role) return;
     const syncAddress = () => {
+      requestSeq.current++;
       const params = new URLSearchParams(window.location.search);
       const wanted = params.get('section');
       const next = sections.some((s) => s.key === wanted) ? wanted as Section : 'overview';
@@ -163,6 +171,7 @@ export function Platform() {
   }
 
   function navigate(next: Section) {
+    requestSeq.current++;
     const address = new URL(window.location.href);
     if (next === 'overview') address.searchParams.delete('section');
     else address.searchParams.set('section', next);

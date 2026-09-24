@@ -98,10 +98,10 @@ export class Engine {
 
   // ------------------------------------------------------------- publishing
 
-  async createTenant(name: string): Promise<string> {
+  async createTenant(name: string, options: { scenario?: boolean } = {}): Promise<string> {
     const { rows } = await this.pool.query<{ id: string }>(
-      'insert into tenant (name) values ($1) returning id',
-      [name],
+      'insert into tenant (name, is_scenario) values ($1, $2) returning id',
+      [name, options.scenario ?? false],
     );
     return rows[0]!.id;
   }
@@ -995,6 +995,7 @@ export class Engine {
           select id from timer
            where fired_at is null and cancelled_at is null and due_at <= $1
              and ($3::uuid is null or tenant_id = $3)
+             and ($3::uuid is not null or not exists (select 1 from tenant t where t.id = timer.tenant_id and t.is_scenario))
            order by due_at, id
              for update skip locked
            limit $2
@@ -1075,6 +1076,7 @@ export class Engine {
           select id from outbox
            where done_at is null and available_at <= $2
              and ($5::uuid is null or tenant_id = $5)
+             and ($5::uuid is not null or not exists (select 1 from tenant t where t.id = outbox.tenant_id and t.is_scenario))
            order by id
              for update skip locked
            limit $3

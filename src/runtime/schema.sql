@@ -12,6 +12,7 @@ create extension if not exists pgcrypto;
 create table tenant (
   id          uuid primary key default gen_random_uuid(),
   name        text not null,
+  is_scenario boolean not null default false,
   created_at  timestamptz not null default now(),
   intake_paused_at timestamptz,
   intake_pause_reason text

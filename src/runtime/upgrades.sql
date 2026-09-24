@@ -12,6 +12,8 @@ alter table approval_request add column if not exists electorate int;
 -- A site owner can pause new intake for one workspace without hiding its existing records.
 alter table tenant add column if not exists intake_paused_at timestamptz;
 alter table tenant add column if not exists intake_pause_reason text;
+alter table tenant add column if not exists is_scenario boolean not null default false;
+update tenant set is_scenario = true where name like 'scenario:%' and not is_scenario;
 
 -- Compiling AI drafts with failing sample scenarios stay private until the
 -- scenarios pass again at the final publish boundary.

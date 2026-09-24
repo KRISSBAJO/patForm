@@ -45,7 +45,7 @@ export async function runScenarios(pool: Pool, bp: Blueprint): Promise<ScenarioR
   for (const test of bp.tests) {
     // Each scenario gets its own tenant so that duplicate detection, which is
     // scoped to a tenant, does not make one scenario interfere with the next.
-    const tenantId = await engine.createTenant(`scenario:${bp.key}:${test.key}`);
+    const tenantId = await engine.createTenant(`scenario:${bp.key}:${test.key}`, { scenario: true });
     const version = await engine.publish(tenantId, bp, 'scenario-runner');
 
     /**

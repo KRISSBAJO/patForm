@@ -155,7 +155,9 @@ export function ProcessPage({ kind }: { kind: Kind }) {
   }
 
   const row = processes?.find((p) => p.process_key === processKey) ?? null;
-  const editHref = processKey ? `/builder?process=${encodeURIComponent(processKey)}` : '/builder';
+  const editHref = row?.draft_id && which === 'draft'
+    ? `/builder?draft=${row.draft_id}`
+    : processKey ? `/builder?process=${encodeURIComponent(processKey)}` : '/builder';
 
   return (
     <div className="bd">
