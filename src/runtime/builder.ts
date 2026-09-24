@@ -685,6 +685,7 @@ export async function createDraft(
     }
     let outcome: GenerationOutcome | undefined;
     let reviewCandidate: { blueprint: Blueprint; audit: GenerationOutcome['audit']; failures: string[] } | undefined;
+    let editableCandidate: { blueprint: Blueprint; audit: GenerationOutcome['audit']; errors: string[] } | undefined;
     let lastProblem = 'The model did not return a valid process.';
     // A successful HTTP response can still contain an unusable blueprint.
     // Try the next configured provider in the requested priority order.
@@ -705,6 +706,16 @@ export async function createDraft(
           // provider adds minutes and cannot make this candidate publishable.
           break;
         }
+        if (proposed.editable) {
+          editableCandidate = {
+            blueprint: proposed.editable.blueprint,
+            audit: proposed.audit,
+            errors: proposed.editable.errors.map((item) => `${item.code}: ${item.message}`),
+          };
+          // The builder can edit an invalid private draft. Returning it now
+          // avoids another full model run; publication still checks every rule.
+          break;
+        }
         const errors = proposed.diagnostics.filter((item) => item.severity === 'error');
         const detail = errors.slice(0, 2).map((item) => `${item.code}: ${item.message}`).join(' / ');
         lastProblem = `${name} returned a ${proposed.decision} process: ${detail || 'the result could not pass validation'}`;
@@ -717,15 +728,18 @@ export async function createDraft(
     const explanation = lastProblem.length > 240
       ? `${lastProblem.slice(0, 240).replace(/\s+\S*$/, '')}…`
       : lastProblem;
-    if (!outcome?.blueprint && !reviewCandidate) throw new InvalidInput(`AI could not produce a safe draft. ${explanation} Try simplifying the description or start from a template.`);
-    audit = outcome?.audit ?? reviewCandidate!.audit;
-    decision = outcome?.decision ?? 'review_required';
+    if (!outcome?.blueprint && !reviewCandidate && !editableCandidate) throw new InvalidInput(`AI could not produce a safe draft. ${explanation} Try simplifying the description or start from a template.`);
+    audit = outcome?.audit ?? reviewCandidate?.audit ?? editableCandidate!.audit;
+    decision = outcome?.decision ?? (editableCandidate ? 'needs_fixes' : 'review_required');
     if (reviewCandidate && !outcome?.blueprint) {
       reviewNote = `${reviewCandidate.failures.length} sample check(s) need repair. ${reviewCandidate.failures[0] ?? ''}`.slice(0, 400);
     }
+    if (editableCandidate) {
+      reviewNote = `Saved privately with ${editableCandidate.errors.length} validation error(s). Fix these in the builder before publishing. ${editableCandidate.errors[0] ?? ''}`.slice(0, 400);
+    }
     // The key the builder typed wins over the one the model chose, so the URL
     // and the list entry match what they asked for.
-    const generated = outcome?.blueprint ?? reviewCandidate!.blueprint;
+    const generated = outcome?.blueprint ?? reviewCandidate?.blueprint ?? editableCandidate!.blueprint;
     blueprint = { ...generated, key: input.key, name: input.name ?? generated.name };
   }
 

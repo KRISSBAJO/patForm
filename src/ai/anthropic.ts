@@ -45,11 +45,15 @@ export class AnthropicProvider implements Provider {
 
   async generate(request: GenerationRequest): Promise<ProviderResponse> {
     const started = Date.now();
+    // Bound the whole fallback, including a structured-output retry. A stream
+    // can keep delivering chunks without hitting the SDK's per-request timeout.
+    const signal = AbortSignal.timeout(120_000);
 
     if (this.structuredOutputWorks) {
       try {
-        return await this.structured(request, started);
+        return await this.structured(request, started, signal);
       } catch (err) {
+        if (signal.aborted) throw err;
         // Anything that would fail the freeform path too is a real failure.
         if (isFatal(err)) throw err;
         // Otherwise the schema was the problem, not the request: the blueprint
@@ -61,10 +65,10 @@ export class AnthropicProvider implements Provider {
       }
     }
 
-    return this.freeform(request, started);
+    return this.freeform(request, started, signal);
   }
 
-  private async structured(request: GenerationRequest, started: number): Promise<ProviderResponse> {
+  private async structured(request: GenerationRequest, started: number, signal: AbortSignal): Promise<ProviderResponse> {
     const response = await this.client.messages.parse({
       model: this.model,
       max_tokens: 32000,
@@ -75,12 +79,12 @@ export class AnthropicProvider implements Provider {
         effort: 'high',
         format: zodOutputFormat(Blueprint as never),
       },
-    });
+    }, { signal });
 
     return this.wrap(response, started, 'structured', response.parsed_output ?? undefined);
   }
 
-  private async freeform(request: GenerationRequest, started: number): Promise<ProviderResponse> {
+  private async freeform(request: GenerationRequest, started: number, signal: AbortSignal): Promise<ProviderResponse> {
     // Streamed because a full blueprint runs long, and a non-streaming request
     // at this max_tokens risks an HTTP timeout.
     const stream = this.client.messages.stream({
@@ -97,7 +101,7 @@ export class AnthropicProvider implements Provider {
       messages: [{ role: 'user', content: request.user }],
       thinking: { type: 'adaptive' },
       output_config: { effort: 'high' },
-    });
+    }, { signal });
 
     const response = await stream.finalMessage();
     return this.wrap(response, started, 'text');

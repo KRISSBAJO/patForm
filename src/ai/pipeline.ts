@@ -27,6 +27,8 @@ export interface GenerationOutcome {
   blueprint?: Blueprint;
   /** A compiling draft whose sample scenarios still need human repair. Never publish directly. */
   reviewable?: { blueprint: Blueprint; scenarios: ScenarioResult[] };
+  /** A shape-valid private draft with compiler errors. It can be edited but never published as-is. */
+  editable?: { blueprint: Blueprint; errors: Diagnostic[] };
   attempts: Attempt[];
   diagnostics: Diagnostic[];
   scenarios?: ScenarioResult[];
@@ -110,6 +112,7 @@ export async function generateBlueprint(
   let decision: Decision = 'unparseable';
   let scenarios: ScenarioResult[] | undefined;
   let reviewable: GenerationOutcome['reviewable'];
+  let editable: GenerationOutcome['editable'];
 
   for (let attempt = 1; attempt <= maxRepairs + 1; attempt++) {
     await options.onProgress?.('generating');
@@ -155,6 +158,10 @@ export async function generateBlueprint(
     // ------------------------------------------------------------ gate two
     const compiled = validate(parsed.data);
     diagnostics = [...compiled.items, ...undeclaredAssumptions(parsed.data)];
+    const candidateErrors = diagnostics.filter((item) => item.severity === 'error');
+    if (candidateErrors.length && (!editable || candidateErrors.length < editable.errors.length)) {
+      editable = { blueprint: parsed.data, errors: candidateErrors };
+    }
     attempts.push({
       attempt,
       meta: response.meta,
@@ -228,6 +235,7 @@ export async function generateBlueprint(
     decision,
     blueprint: decision === 'publishable' ? blueprint : undefined,
     reviewable: decision === 'publishable' ? undefined : reviewable,
+    editable: decision === 'publishable' || reviewable ? undefined : editable,
     attempts,
     diagnostics,
     scenarios,
