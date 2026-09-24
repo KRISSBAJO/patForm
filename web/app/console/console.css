@@ -1134,8 +1134,83 @@
 
 /* --------------------------------------------- two-step verification */
 
+.cs__body--security .cs__left {
+  width: 100%;
+  max-width: 850px;
+  margin-inline: auto;
+}
+
+.vw__mfaIntro {
+  padding: 30px 34px 24px;
+  border-bottom: 1px solid var(--line);
+}
+
+.vw__mfaEyebrow {
+  display: block;
+  color: var(--green-deep);
+  font-family: var(--font-mono), monospace;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .08em;
+}
+
+.vw__mfaIntro h2 {
+  margin: 10px 0 7px;
+  font-size: 25px;
+  line-height: 1.2;
+  color: var(--ink);
+}
+
+.vw__mfaIntro p,
+.vw__mfaManual p {
+  margin: 0;
+  color: var(--ink-soft);
+  line-height: 1.55;
+  font-size: 14px;
+}
+
+.vw__mfaConnect {
+  display: grid;
+  grid-template-columns: 256px minmax(0, 1fr);
+  align-items: center;
+  gap: 32px;
+  padding: 30px 34px;
+}
+
+.vw__mfaQr {
+  width: 256px;
+  height: 256px;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  color: var(--ink-soft);
+  text-align: center;
+  font-size: 13px;
+}
+
+.vw__mfaQr img { display: block; max-width: 100%; height: auto; }
+.vw__mfaManual { min-width: 0; }
+.vw__mfaManual h3, .vw__mfaConfirm h3 { margin: 0 0 8px; font-size: 17px; color: var(--ink); }
+.vw__mfaManual a { display: inline-block; margin-top: 14px; color: var(--green-deep); text-decoration: underline; }
+.vw__mfaManual .vw__mfaPrivate { margin-top: 18px; font-size: 12px; }
+
+.vw__mfaConfirm {
+  display: grid;
+  gap: 10px;
+  padding: 26px 34px 32px;
+  border-top: 1px solid var(--line);
+}
+
+.vw__mfaConfirm .cs__input { max-width: 260px; font-size: 18px; letter-spacing: .18em; }
+.vw__mfaConfirm .vw__actions { margin-top: 6px; align-items: center; }
+.vw__mfaReplace { margin-left: auto; }
+
 .vw__secret {
-  margin: 14px 18px 8px;
+  display: block;
+  margin: 14px 0 0;
   padding: 12px 14px;
   font-family: var(--font-mono), monospace;
   font-size: 15px;
@@ -1267,8 +1342,34 @@
   font-family: var(--ui);
   font-size: 14px;
   font-weight: 400;
-  height: 36px;
+  height: auto;
+  min-height: 36px;
+  padding-block: 7px;
   border-radius: 6px;
+  line-height: 1.35;
+}
+
+.cs__navText,
+.cs__processText {
+  min-width: 0;
+  flex: 1;
+}
+
+.cs__process .cs__dot {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  display: grid;
+  place-items: center;
+  background: none;
+}
+
+.cs__process .cs__dot::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--green);
 }
 
 .cs__navItem:hover,
@@ -1351,8 +1452,20 @@
   border-radius: 6px;
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 7px;
+  justify-content: flex-start;
+  gap: 10px;
+  min-height: 36px;
+  height: auto;
+  padding: 7px 10px;
+  text-align: left;
+  line-height: 1.35;
+}
+
+.cs__seatPicker .cs__icon {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  margin: 0;
 }
 
 .cs__seatPicker:hover {
@@ -3851,6 +3964,14 @@ a.cs__navItem {
   font-size: 20px;
   font-weight: 700;
   color: var(--ink);
+}
+
+@media (max-width: 760px) {
+  .cs__body--security { padding: 16px; }
+  .vw__mfaIntro, .vw__mfaConfirm { padding: 24px 20px; }
+  .vw__mfaConnect { grid-template-columns: 1fr; gap: 22px; padding: 24px 20px; }
+  .vw__mfaQr { margin-inline: auto; }
+  .vw__mfaReplace { margin-left: 0; }
 }
 
 .hr__when {

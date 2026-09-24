@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import QRCode from 'qrcode';
 import { useConfirm } from '../../components/confirm-dialog';
 import { SignatureView, type SignatureValue } from '../../components/signature-field';
 import { useDialog } from '../useDialog';
@@ -861,13 +862,14 @@ const post = postJson;
  * that demands a code from an account that had no way to set one up is a
  * lockout — which is this project's most repeated failure wearing a new hat.
  *
- * The secret is shown as text rather than a QR image on purpose: generating a
- * QR needs a dependency, and every authenticator app accepts a typed key. The
- * `otpauth://` link is there for a phone that can open it directly.
+ * QR generation stays in the browser. The provisioning URI must never be sent
+ * to an image service because it contains the second-factor secret.
  */
 export function SecurityView() {
   const [status, setStatus] = useState<MfaStatus | null>(null);
   const [setup, setSetup] = useState<{ secret: string; uri: string } | null>(null);
+  const [qr, setQr] = useState<string | null>(null);
+  const [qrError, setQrError] = useState(false);
   const [codes, setCodes] = useState<string[] | null>(null);
   const [code, setCode] = useState('');
   const [password, setPassword] = useState('');
@@ -886,6 +888,21 @@ export function SecurityView() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (!setup) { setQr(null); setQrError(false); return; }
+    let active = true;
+    setQr(null);
+    setQrError(false);
+    void QRCode.toDataURL(setup.uri, {
+      width: 224,
+      margin: 2,
+      errorCorrectionLevel: 'M',
+      color: { dark: '#123e31', light: '#ffffff' },
+    }).then((data) => { if (active) setQr(data); })
+      .catch(() => { if (active) setQrError(true); });
+    return () => { active = false; };
+  }, [setup]);
 
   const run = async (work: () => Promise<void>) => {
     setBusy(true);
@@ -959,24 +976,27 @@ export function SecurityView() {
   // ---- mid-enrolment
   if (setup) {
     return (
-      <div className="cs__panel">
-        <div className="cs__panelHead">
-          <h2 className="cs__tab">Set up two-step verification</h2>
+      <section className="cs__panel vw__mfa">
+        <div className="vw__mfaIntro">
+          <span className="vw__mfaEyebrow">ACCOUNT SECURITY · STEP 1 OF 2</span>
+          <h2>Connect your authenticator</h2>
+          <p>Open an authenticator app on your phone and scan this code. It will add PatForm to the app.</p>
         </div>
-        <p className="vw__note" style={{ marginBottom: 0 }}>
-          Add this key to an authenticator app, then type the code it shows. Nothing changes until
-          you do — an account that switched on before you proved the app had the key would be an
-          account you could not sign into.
-        </p>
-        <p className="vw__secret">{setup.secret}</p>
-        <p className="vw__note" style={{ marginTop: 0 }}>
-          <a href={setup.uri} style={{ textDecoration: 'underline', color: 'var(--green-deep)' }}>
-            Open in an authenticator app
-          </a>
-        </p>
-
+        <div className="vw__mfaConnect">
+          <div className="vw__mfaQr" aria-label="Authenticator setup QR code">
+            {qr ? <img src={qr} width="224" height="224" alt="Scan with an authenticator app to add your PatForm account" />
+              : <span role="status">{qrError ? 'Could not draw the QR code. Use the setup key.' : 'Preparing QR code…'}</span>}
+          </div>
+          <div className="vw__mfaManual">
+            <h3>Can’t scan it?</h3>
+            <p>Enter this setup key manually in your authenticator app.</p>
+            <code className="vw__secret">{setup.secret}</code>
+            <a href={setup.uri}>Open in an authenticator app</a>
+            <p className="vw__mfaPrivate">Keep the QR code and setup key private. They can generate your sign-in codes.</p>
+          </div>
+        </div>
         <form
-          className="vw__inline"
+          className="vw__mfaConfirm"
           onSubmit={(e) => {
             e.preventDefault();
             void run(async () => {
@@ -987,15 +1007,17 @@ export function SecurityView() {
             });
           }}
         >
-          <label className="cs__label" htmlFor="enrol-code">
-            Code from your app
-          </label>
+          <span className="vw__mfaEyebrow">STEP 2 OF 2</span>
+          <h3>Confirm it works</h3>
+          <label className="cs__label" htmlFor="enrol-code">Enter the 6-digit code shown in your app</label>
           <input
             id="enrol-code"
             className="cs__input"
             type="text"
             autoComplete="one-time-code"
             inputMode="numeric"
+            pattern="[0-9]{6}"
+            maxLength={6}
             value={code}
             onChange={(e) => setCode(e.target.value)}
             required
@@ -1012,9 +1034,15 @@ export function SecurityView() {
             <button type="button" className="cs__btn" onClick={() => setSetup(null)}>
               Cancel
             </button>
+            <button type="button" className="cs__btn vw__mfaReplace" disabled={busy} onClick={() => void run(async () => {
+              setCode('');
+              setSetup(await post<{ secret: string; uri: string }>('/api/account/mfa/begin', {}));
+            })}>
+              Generate a new key
+            </button>
           </div>
         </form>
-      </div>
+      </section>
     );
   }
 
@@ -1111,7 +1139,7 @@ export function SecurityView() {
                 })
               }
             >
-              {status.pending ? 'Continue setting it up' : 'Set it up'}
+              {status.pending ? 'Start again with a new key' : 'Set it up'}
             </button>
           </p>
         </>

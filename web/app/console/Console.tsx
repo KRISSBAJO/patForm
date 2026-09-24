@@ -416,7 +416,7 @@ export function Console() {
             onClick={() => setView('work')}
           >
             <NavIcon name="work" />
-            My work
+            <span className="cs__navText">My work</span>
             {counts.needsYou > 0 && <span className="cs__navCount">{counts.needsYou}</span>}
           </button>
           <button
@@ -426,7 +426,7 @@ export function Console() {
             onClick={() => setView('ask')}
           >
             <NavIcon name="ask" />
-            Ask
+            <span className="cs__navText">Ask</span>
           </button>
           <button
             type="button"
@@ -435,7 +435,7 @@ export function Console() {
             onClick={() => setView('records')}
           >
             <NavIcon name="records" />
-            Records
+            <span className="cs__navText">Records</span>
           </button>
           <button
             type="button"
@@ -444,7 +444,7 @@ export function Console() {
             onClick={() => setView('dashboard')}
           >
             <NavIcon name="dashboard" />
-            Dashboard
+            <span className="cs__navText">Dashboard</span>
           </button>
           <button
             type="button"
@@ -453,7 +453,7 @@ export function Console() {
             onClick={() => setView('health')}
           >
             <NavIcon name="health" />
-            Automation health
+            <span className="cs__navText">Automation health</span>
             {counts.failed > 0 && <span className="cs__navCount cs__navCount--bad">{counts.failed}</span>}
           </button>
           <button
@@ -463,7 +463,7 @@ export function Console() {
             onClick={() => setView('held')}
           >
             <NavIcon name="held" />
-            Held submissions
+            <span className="cs__navText">Held submissions</span>
             {heldCount > 0 && (
               <span className="cs__navCount" aria-label={`${heldCount} waiting`}>
                 {heldCount}
@@ -477,7 +477,7 @@ export function Console() {
             onClick={() => setView('processes')}
           >
             <NavIcon name="processes" />
-            Processes &amp; forms
+            <span className="cs__navText">Processes &amp; forms</span>
           </button>
           <button
             type="button"
@@ -486,7 +486,7 @@ export function Console() {
             onClick={() => setView('people')}
           >
             <NavIcon name="people" />
-            People
+            <span className="cs__navText">People</span>
           </button>
           {/* The builder is a different application, so a link rather than a
               view — and it was not linked from here at all, which is how
@@ -494,7 +494,7 @@ export function Console() {
               processes are designed rather than configured. */}
           <a className="cs__navItem" href="/builder">
             <NavIcon name="builder" />
-            Builder
+            <span className="cs__navText">Builder</span>
           </a>
 
           <span className="cs__sectionLabel" style={{ marginTop: 10 }}>
@@ -507,7 +507,7 @@ export function Console() {
             onClick={() => setView('integrations')}
           >
             <NavIcon name="integrations" />
-            Integrations
+            <span className="cs__navText">Integrations</span>
           </button>
           <button
             type="button"
@@ -516,7 +516,7 @@ export function Console() {
             onClick={() => setView('data')}
           >
             <NavIcon name="data" />
-            Import &amp; data
+            <span className="cs__navText">Import &amp; data</span>
           </button>
         </nav>
 
@@ -542,7 +542,7 @@ export function Console() {
               }}
             >
               <span className="cs__dot" aria-hidden="true" />
-              {p.name}
+              <span className="cs__processText">{p.name}</span>
             </button>
           ))}
         </div>
@@ -572,11 +572,11 @@ export function Console() {
             onClick={() => setView('security')}
           >
             <Icon name="account" />
-            Your account
+            <span>Your account</span>
           </button>
           <button type="button" className="cs__seatPicker" onClick={() => void signOut()}>
             <Icon name="logout" />
-            Sign out
+            <span>Sign out</span>
           </button>
           {siteAdmin && <a className="cs__seatPicker" href="/platform">Site administration ↗</a>}
           {session.devices.length > 1 && (
@@ -635,12 +635,12 @@ export function Console() {
             <span className="cs__version">{view === 'record' && record ? record.processName : work?.processName}</span>
           )}
           <span style={{ flexGrow: 1 }} />
-          <button type="button" className="cs__btn" onClick={() => void load()}>
+          {view !== 'security' && <button type="button" className="cs__btn" onClick={() => void load()}>
             Refresh
-          </button>
+          </button>}
         </div>
 
-        <div className="cs__body">
+        <div className={`cs__body ${view === 'security' ? 'cs__body--security' : ''}`}>
           <div className="cs__left">
             {view === 'record' && record ? (
               <RecordPage
@@ -749,7 +749,7 @@ export function Console() {
 
           {/* The record page carries its own side column; two of them would
               be a column of cards about a different subject. */}
-          {view !== 'record' && (
+          {view !== 'record' && view !== 'security' && (
           <div className="cs__right">
             {!processKey ? null : health ? (
               <div className="cs__card">
@@ -806,8 +806,6 @@ export function Console() {
                     ? 'Everything outside this workspace that can reach it, or that it reaches. Keys and signing secrets are shown once and stored as hashes, so a copy of our database is not a set of working credentials.'
                   : view === 'data'
                     ? 'Getting records in from a spreadsheet, what this workspace holds and where each value travels, and deleting what is past its retention. The dry run executes the whole thing and rolls it back — the only honest way to answer what would this delete.'
-                  : view === 'security'
-                    ? 'Your own account, and nobody else’s. Adding a second factor is the one change here that makes a stolen password insufficient on its own — and turning it off asks for your password rather than a code.'
                   : view === 'dashboard'
                     ? 'Nine measures from section 13.1, over the period you choose. A rate over fewer than five records is withheld rather than shown, because a percentage of three people identifies them.'
                     : view === 'records'
