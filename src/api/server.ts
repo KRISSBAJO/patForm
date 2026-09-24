@@ -1,8 +1,8 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { applyUpgrades, createPool, describeTarget, type Pool } from '../runtime/db.js';
-import { grantPlatformOperator, platformAudit, platformJobs, platformMail, platformOperators,
+import { changePlatformPerson, grantPlatformOperator, platformAudit, platformJobs, platformMail, platformOperators,
   platformOverview, platformWorkspace, platformWorkspaces, requirePlatformRole,
-  retryPlatformJob, revokePlatformOperator, revokePlatformSessions, platformTrace } from '../runtime/platform-admin.js';
+  renamePlatformWorkspace, retryPlatformJob, revokePlatformOperator, revokePlatformSessions, platformTrace } from '../runtime/platform-admin.js';
 import { Engine } from '../runtime/engine.js';
 import { AuthorizationError, requireWorkspaceCapability, WORKSPACE_GRANTS, type Principal } from '../runtime/policy.js';
 import type { Capability } from '../blueprint/roles.js';
@@ -855,13 +855,28 @@ route('GET', /^\/api\/platform\/overview$/, async ({ pool, actorId }) => {
 route('GET', /^\/api\/platform\/workspaces$/, async ({ pool, actorId, url }) => {
   await requirePlatformRole(pool, actorId);
   return platformWorkspaces(pool, (url.searchParams.get('q') ?? '').slice(0, 100),
-    Math.min(1000, Math.max(1, Number(url.searchParams.get('page')) || 1)));
+    Math.min(1000, Math.max(1, Number(url.searchParams.get('page')) || 1)),
+    url.searchParams.get('scope') === 'tests' ? 'tests' : url.searchParams.get('scope') === 'all' ? 'all' : 'customers');
 });
 route('GET', /^\/api\/platform\/workspaces\/[0-9a-f-]{36}$/, async ({ pool, actorId, url }) => {
   await requirePlatformRole(pool, actorId);
   const detail = await platformWorkspace(pool, url.pathname.split('/')[4]!);
   if (!detail) throw new HttpError(404, 'workspace not found');
   return detail;
+});
+route('POST', /^\/api\/platform\/workspaces\/[0-9a-f-]{36}\/rename$/, async ({ pool, actorId, url }, body) => {
+  await requirePlatformRole(pool, actorId, 'operator');
+  const b = body as { name?: string; reason?: string };
+  if (typeof b.name !== 'string' || typeof b.reason !== 'string') throw new InvalidInput('name and reason are required');
+  return renamePlatformWorkspace(pool, actorId, url.pathname.split('/')[4]!, b.name, b.reason);
+});
+route('POST', /^\/api\/platform\/workspaces\/[0-9a-f-]{36}\/people\/[0-9a-f-]{36}\/access$/, async ({ pool, actorId, url }, body) => {
+  await requirePlatformRole(pool, actorId, 'owner');
+  const b = body as { active?: boolean; workspaceRole?: string; reason?: string };
+  if (typeof b.reason !== 'string' || (b.active !== undefined && typeof b.active !== 'boolean') ||
+    (b.workspaceRole !== undefined && typeof b.workspaceRole !== 'string')) throw new InvalidInput('valid access change and reason are required');
+  const parts = url.pathname.split('/');
+  return changePlatformPerson(pool, actorId, parts[4]!, parts[6]!, { active: b.active, workspaceRole: b.workspaceRole, reason: b.reason });
 });
 route('GET', /^\/api\/platform\/jobs$/, async ({ pool, actorId, url }) => {
   await requirePlatformRole(pool, actorId);

@@ -5,7 +5,7 @@ import './platform.css';
 
 type Section = 'overview' | 'workspaces' | 'jobs' | 'trace' | 'mail' | 'audit' | 'operators';
 type Json = Record<string, any>;
-type Action = { path: string; label: string; body?: object };
+type Action = { path: string; label: string; body?: object; needsReason?: boolean };
 
 const sections: { key: Section; label: string; description: string; icon: string; group: string }[] = [
   { key: 'overview', label: 'Overview', description: 'The health of PatForm at a glance.', icon: 'overview', group: 'Monitor' },
@@ -65,7 +65,9 @@ export function Platform() {
   const [section, setSection] = useState<Section>('overview');
   const [data, setData] = useState<Json | null>(null);
   const [detail, setDetail] = useState<Json | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
   const [search, setSearch] = useState('');
+  const [workspaceScope, setWorkspaceScope] = useState<'customers' | 'tests' | 'all'>('customers');
   const [page, setPage] = useState(1);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -77,6 +79,8 @@ export function Platform() {
   const [showTestMail, setShowTestMail] = useState(false);
   const [password, setPassword] = useState('');
   const [code, setCode] = useState('');
+  const [actionReason, setActionReason] = useState('');
+  const [workspaceName, setWorkspaceName] = useState('');
 
   const load = useCallback(async () => {
     setBusy(true);
@@ -85,12 +89,12 @@ export function Platform() {
       if (section === 'trace') {
         setData(traceQuery ? await api(`trace/${traceQuery}`) : null);
       } else {
-        const query = section === 'workspaces' ? `?q=${encodeURIComponent(search)}&page=${page}` : `?page=${page}`;
+        const query = section === 'workspaces' ? `?q=${encodeURIComponent(search)}&page=${page}&scope=${workspaceScope}` : `?page=${page}`;
         setData(await api(section + query));
       }
     } catch (e) { setError((e as Error).message); }
     finally { setBusy(false); }
-  }, [section, search, page, traceQuery]);
+  }, [section, search, page, traceQuery, workspaceScope]);
 
   useEffect(() => {
     api('me').then((v) => setRole(v.role)).catch((e) => setError(e.status === 401
@@ -102,10 +106,12 @@ export function Platform() {
   useEffect(() => { if (role) void load(); }, [role, load]);
 
   async function selectWorkspace(id: string) {
+    setDetail(null);
+    setDetailLoading(true);
     setBusy(true); setError('');
-    try { setDetail(await api(`workspaces/${id}`)); }
+    try { const next = await api(`workspaces/${id}`); setDetail(next); setWorkspaceName(next.workspace.name); }
     catch (e) { setError((e as Error).message); }
-    finally { setBusy(false); }
+    finally { setBusy(false); setDetailLoading(false); }
   }
 
   async function runAction() {
@@ -118,9 +124,9 @@ export function Platform() {
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.reason || result.error || 'Could not confirm your identity');
-      const actionResult = await api(action.path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(action.body ?? {}) });
-      if (actionResult.granted === false || actionResult.revoked === false || actionResult.retried === false) throw new Error(actionResult.reason || 'Action could not be completed');
-      setAction(null); setPassword(''); setCode('');
+      const actionResult = await api(action.path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...action.body, ...(action.needsReason ? { reason: actionReason.trim() } : {}) }) });
+      if (actionResult.granted === false || actionResult.revoked === false || actionResult.retried === false || actionResult.changed === false) throw new Error(actionResult.reason || 'Action could not be completed');
+      setAction(null); setPassword(''); setCode(''); setActionReason('');
       await load();
       if (detail?.workspace?.id) await selectWorkspace(detail.workspace.id);
     } catch (e) { setError((e as Error).message); }
@@ -128,7 +134,7 @@ export function Platform() {
   }
 
   function navigate(next: Section) {
-    setSection(next); setData(null); setDetail(null); setPage(1); setError('');
+    setSection(next); setData(null); setDetail(null); setDetailLoading(false); setPage(1); setError('');
   }
   function trace(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -140,6 +146,7 @@ export function Platform() {
   const current = sections.find((s) => s.key === section)!;
   const mayAct = role === 'owner' || role === 'operator';
   const isOwner = role === 'owner';
+  const openWorkspace = (id: string) => { navigate('workspaces'); void selectWorkspace(id); };
   const processMail = data?.process || [];
   const realMail = processMail.filter((m: Json) => !String(m.workspace).startsWith('scenario:'));
   const testMail = processMail.filter((m: Json) => String(m.workspace).startsWith('scenario:'));
@@ -160,7 +167,7 @@ export function Platform() {
       </nav>
       <div className="platform__main">
         <div className="platform__heading">
-          <div><span className="platform__eyebrow">SITE ADMIN <span>/</span> {current.group.toUpperCase()}</span><h1>{current.label}</h1><p>{current.description}</p></div>
+          <div><span className="platform__eyebrow">SITE ADMIN <span>/</span> {current.group.toUpperCase()}</span><h1>{section === 'workspaces' && detail ? detail.workspace.name : current.label}</h1><p>{section === 'workspaces' && detail ? 'Workspace activity, installed processes and access controls.' : current.description}</p></div>
           <button className="platform__button platform__button--refresh" type="button" onClick={() => void load()} disabled={!role || busy}><Icon name="refresh" size={16}/>{busy ? 'Loading…' : 'Refresh'}</button>
         </div>
         {error && <div className="platform__error" role="alert"><strong>Could not complete that request.</strong><span>{error}</span>{!role && <a href="/console">Open your account</a>}</div>}
@@ -190,7 +197,7 @@ export function Platform() {
           </div>
           <div className="platform__columns">
             <Panel title="Recent workspaces" aside={<button className="platform__textAction" onClick={() => navigate('workspaces')}>View all <Icon name="arrow" size={15}/></button>}>
-              {data.recentWorkspaces.length ? data.recentWorkspaces.map((w: Json) => <button className="platform__rowbutton" key={w.id} onClick={() => { navigate('workspaces'); void selectWorkspace(w.id); }}><span>{w.name}</span><span>{w.records} records <Icon name="arrow" size={15}/></span></button>) : <Empty title="No workspaces yet"/>}
+              {data.recentWorkspaces.length ? data.recentWorkspaces.map((w: Json) => <button className="platform__rowbutton" key={w.id} onClick={() => openWorkspace(w.id)}><span>{w.name}</span><span>{w.records} records <Icon name="arrow" size={15}/></span></button>) : <Empty title="No workspaces yet"/>}
             </Panel>
             <Panel title="Recent service starts" aside={<span className="platform__panelAside">Host activity</span>}>
               {data.deployments.length ? data.deployments.slice(0, 5).map((d: Json, i: number) => <div className="platform__fact" key={i}><span><DateText value={d.started_at}/></span><span className="platform__mono">{d.revision?.slice(0, 8) || 'unknown'}</span></div>) : <Empty title="No starts recorded"/>}
@@ -199,20 +206,22 @@ export function Platform() {
           </div>
         </>}
 
-        {data && section === 'workspaces' && <>
-          <div className="platform__toolbar"><label className="platform__search"><Icon name="search" size={18}/><span className="platform__srOnly">Find a workspace</span><input value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} placeholder="Search workspaces"/></label><span className="platform__toolbarCount">{data.total} workspaces</span></div>
+        {data && section === 'workspaces' && !detail && !detailLoading && <>
+          <div className="platform__toolbar"><label className="platform__search"><Icon name="search" size={18}/><span className="platform__srOnly">Find a workspace</span><input value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} placeholder="Search workspaces"/></label><div className="platform__scope" aria-label="Workspace type">{(['customers', 'tests', 'all'] as const).map((scope) => <button key={scope} className={workspaceScope === scope ? 'active' : ''} aria-pressed={workspaceScope === scope} onClick={() => { setWorkspaceScope(scope); setPage(1); }}>{scope === 'customers' ? 'Customers' : scope === 'tests' ? 'Tests' : 'All'}</button>)}</div><span className="platform__toolbarCount">{data.total} workspaces</span></div>
           <div className="platform__table"><table><thead><tr><th>Workspace</th><th>People</th><th>Processes</th><th>Records</th><th>Failed jobs</th><th>Created</th></tr></thead><tbody>{data.rows.map((w: Json) => <tr key={w.id}><td><button className="platform__link" onClick={() => void selectWorkspace(w.id)}>{w.name}<Icon name="arrow" size={14}/></button></td><td>{w.people}</td><td>{w.processes}</td><td>{w.records}</td><td><Pill tone={w.failed_jobs ? 'bad' : 'neutral'}>{w.failed_jobs}</Pill></td><td><DateText value={w.created_at}/></td></tr>)}</tbody></table>{!data.rows.length && <Empty title="No matching workspaces"/>}</div>
-          {detail && <Panel title={detail.workspace.name} className="platform__detail" aside={<button className="platform__button" onClick={() => setDetail(null)}>Close details</button>}>
+        </>}
+
+        {section === 'workspaces' && (detail || detailLoading) && <div className="platform__workspacePage"><button className="platform__back" onClick={() => { setDetail(null); setDetailLoading(false); }}>← Back to workspaces</button>{detail ? <Panel title={detail.workspace.name} className="platform__detail">
             <p className="platform__hint platform__mono">{detail.workspace.id}</p>
             <div className="platform__detailMetrics"><span><strong>{detail.people.length}</strong> people</span><span><strong>{detail.processes.length}</strong> processes</span><span><strong>{detail.jobs.failed}</strong> failed jobs</span></div>
+            {mayAct && <div className="platform__manageBox"><h3>Workspace name</h3><div className="platform__inlineForm"><label className="platform__srOnly" htmlFor="platform-workspace-name">Workspace name</label><input id="platform-workspace-name" value={workspaceName} maxLength={120} onChange={(e) => setWorkspaceName(e.target.value)}/><button className="platform__button" disabled={workspaceName.trim() === detail.workspace.name || workspaceName.trim().length < 2} onClick={() => setAction({ path: `workspaces/${detail.workspace.id}/rename`, label: `Rename ${detail.workspace.name} to ${workspaceName.trim()}`, body: { name: workspaceName.trim() }, needsReason: true })}>Rename</button></div><p className="platform__hint">A reason and your password plus authenticator code are required.</p></div>}
             <h3 className="platform__subhead">Installed processes</h3><div className="platform__tags">{detail.processes.length ? detail.processes.map((p: Json) => <span key={p.process_key}>{p.process_key} · v{p.version}</span>) : <span>None yet</span>}</div>
-            <h3 className="platform__subhead">People</h3><div className="platform__table"><table><thead><tr><th>Name</th><th>Email</th><th>Workspace role</th><th>Sessions</th><th>Access</th></tr></thead><tbody>{detail.people.map((p: Json) => <tr key={p.id}><td>{p.display_name}</td><td>{p.email}</td><td>{p.workspace_role}</td><td>{p.sessions}</td><td>{mayAct && p.sessions > 0 && <button className="platform__button platform__button--danger" onClick={() => setAction({ path: `people/${p.id}/revoke-sessions`, label: `Sign ${p.display_name} out of every device` })}>Revoke sessions</button>}</td></tr>)}</tbody></table></div>
-          </Panel>}
-        </>}
+            <h3 className="platform__subhead">People</h3><div className="platform__table"><table><thead><tr><th>Name</th><th>Email</th><th>Workspace role</th><th>Status</th><th>Sessions</th><th>Controls</th></tr></thead><tbody>{detail.people.map((p: Json) => <tr key={p.id}><td>{p.display_name}</td><td>{p.email}</td><td>{p.workspace_role}</td><td><Pill tone={p.active ? 'good' : 'bad'}>{p.active ? 'Active' : 'Inactive'}</Pill></td><td>{p.sessions}</td><td><div className="platform__cellActions">{mayAct && p.sessions > 0 && <button className="platform__button" onClick={() => setAction({ path: `people/${p.id}/revoke-sessions`, label: `Sign ${p.display_name} out of every device` })}>Sign out</button>}{isOwner && <><button className="platform__button" onClick={() => setAction({ path: `workspaces/${detail.workspace.id}/people/${p.id}/access`, label: `${p.active ? 'Deactivate' : 'Reactivate'} ${p.display_name}`, body: { active: !p.active }, needsReason: true })}>{p.active ? 'Deactivate' : 'Reactivate'}</button><select aria-label={`Change role for ${p.display_name}`} value={p.workspace_role} onChange={(e) => setAction({ path: `workspaces/${detail.workspace.id}/people/${p.id}/access`, label: `Change ${p.display_name} to ${e.target.value}`, body: { workspaceRole: e.target.value }, needsReason: true })}>{['owner', 'admin', 'builder', 'operator', 'approver', 'analyst', 'read_only'].map((r) => <option value={r} key={r}>{r.replace('_', ' ')}</option>)}</select></>}</div></td></tr>)}</tbody></table></div>
+          </Panel> : <div className="platform__loading" role="status">Opening workspace…</div>}</div>}
 
         {data && section === 'jobs' && <Panel title="Workflow jobs" aside={<span className="platform__panelAside">Page {page}</span>}>
           {!data.rows.length && <Empty title="No failed jobs" >The workflow queue has nothing waiting for a retry.</Empty>}
-          {data.rows.map((j: Json) => <article className="platform__job" key={j.id}><div><strong>{j.workspace}</strong><span className="platform__mono">{j.transition_key}</span><Pill tone="bad">Failed</Pill></div><p>Job #{j.id} · {j.attempts} attempts · <DateText value={j.created_at}/></p><p>Request <span className="platform__mono">{j.request_id || '—'}</span>. Details stay in the workspace support trace.</p>{mayAct && <button className="platform__button" onClick={() => setAction({ path: `jobs/${j.id}/retry`, label: `Retry job #${j.id}` })}>Retry job</button>}</article>)}
+          {data.rows.map((j: Json) => <article className="platform__job" key={j.id}><div><button className="platform__link" onClick={() => openWorkspace(j.tenant_id)}>{j.workspace}<Icon name="arrow" size={14}/></button><span className="platform__mono">{j.transition_key}</span><Pill tone="bad">Failed</Pill></div><p>Job #{j.id} · {j.attempts} attempts · <DateText value={j.created_at}/></p><p>Request <span className="platform__mono">{j.request_id || '—'}</span></p><div className="platform__cellActions">{j.request_id && <button className="platform__button" onClick={() => { navigate('trace'); setRequestId(j.request_id); setTraceQuery(j.request_id); }}>Trace request</button>}{mayAct && <button className="platform__button" onClick={() => setAction({ path: `jobs/${j.id}/retry`, label: `Retry job #${j.id}` })}>Retry job</button>}</div></article>)}
         </Panel>}
 
         {section === 'trace' && <>
@@ -222,13 +231,14 @@ export function Platform() {
 
         {data && section === 'mail' && <>
           <div className="platform__summaryStrip"><span>Last 7 days</span><strong>{realMail.reduce((n: number, m: Json) => n + Number(m.count), 0)} customer process emails</strong><span>{testMail.length} test scenario rows separated below</span></div>
-          <div className="platform__columns"><Panel title="Customer process email" aside={<span className="platform__panelAside">Last 7 days</span>}>{realMail.length ? realMail.map((m: Json, i: number) => <div className="platform__fact" key={i}><strong>{m.workspace}</strong><span><Pill tone={m.status === 'failed' || m.status === 'bounced' ? 'bad' : m.status === 'delivered' ? 'good' : 'neutral'}>{m.status}</Pill> <b>{m.count}</b></span></div>) : <Empty title="No customer process email"/>}</Panel><Panel title="Account email" aside={<span className="platform__panelAside">Last 7 days</span>}>{data.account.length ? data.account.map((m: Json, i: number) => <div className="platform__fact" key={i}><span><strong>{m.workspace || 'Platform'}</strong><small>{m.kind}</small></span><span><Pill tone={m.status === 'failed' ? 'bad' : m.status === 'delivered' ? 'good' : 'neutral'}>{m.status}</Pill> <b>{m.count}</b></span></div>) : <Empty title="No account email"/>}</Panel></div>
+          <div className="platform__columns"><Panel title="Customer process email" aside={<span className="platform__panelAside">Last 7 days</span>}>{realMail.length ? realMail.map((m: Json, i: number) => <div className="platform__fact" key={i}><button className="platform__link" onClick={() => openWorkspace(m.tenant_id)}>{m.workspace}<Icon name="arrow" size={14}/></button><span><Pill tone={m.status === 'failed' || m.status === 'bounced' ? 'bad' : m.status === 'delivered' ? 'good' : 'neutral'}>{m.status}</Pill> <b>{m.count}</b></span></div>) : <Empty title="No customer process email"/>}</Panel><Panel title="Account email" aside={<span className="platform__panelAside">Last 7 days</span>}>{data.account.length ? data.account.map((m: Json, i: number) => <div className="platform__fact" key={i}><span>{m.tenant_id ? <button className="platform__link" onClick={() => openWorkspace(m.tenant_id)}>{m.workspace}<Icon name="arrow" size={14}/></button> : <strong>Platform</strong>}<small>{m.kind}</small></span><span><Pill tone={m.status === 'failed' ? 'bad' : m.status === 'delivered' ? 'good' : 'neutral'}>{m.status}</Pill> <b>{m.count}</b></span></div>) : <Empty title="No account email"/>}</Panel></div>
           <Panel title="Delivery alerts" className="platform__sectionGap">{data.alerts.length ? data.alerts.map((a: Json) => <div className="platform__fact" key={a.id}><span><Pill tone={a.cleared_at ? 'neutral' : 'bad'}>{a.level}</Pill> {a.bounced} bounces · {a.complained} complaints</span><span><DateText value={a.raised_at}/></span></div>) : <Empty title="No delivery alerts"/>}</Panel>
+          <Panel title="Recent delivery failures" className="platform__sectionGap" aside={<span className="platform__panelAside">Last 7 days · no message content shown</span>}>{data.failures?.length ? <div className="platform__table"><table><thead><tr><th>Workspace</th><th>Type</th><th>Result</th><th>When</th></tr></thead><tbody>{data.failures.map((m: Json, i: number) => <tr key={`${m.id}-${i}`}><td>{m.tenant_id ? <button className="platform__link" onClick={() => openWorkspace(m.tenant_id)}>{m.workspace}<Icon name="arrow" size={14}/></button> : m.workspace}</td><td>{m.kind}</td><td><Pill tone="bad">{m.status}</Pill></td><td><DateText value={m.sent_at}/></td></tr>)}</tbody></table></div> : <Empty title="No recent delivery failures"/>}</Panel>
           {testMail.length > 0 && <details className="platform__testDetails" open={showTestMail} onToggle={(e) => setShowTestMail(e.currentTarget.open)}><summary>Test scenario email <span>{testMail.length} rows</span></summary><div>{testMail.map((m: Json, i: number) => <div className="platform__fact" key={i}><span>{m.workspace.replace(/^scenario:/, '')}</span><span><Pill tone={m.status === 'failed' ? 'bad' : 'neutral'}>{m.status}</Pill> <b>{m.count}</b></span></div>)}</div></details>}
         </>}
 
         {data && section === 'audit' && <Panel title="Recorded admin actions" aside={<span className="platform__panelAside">Newest first</span>}>
-          {data.rows.length ? data.rows.map((a: Json) => <div className="platform__auditRow" key={a.id}><span className="platform__auditIcon"><Icon name="audit" size={17}/></span><div><strong>{a.action.replaceAll('_', ' ')}</strong><p>{a.actor || 'System'} · {a.workspace || a.target_id || 'Platform'}</p></div><time><DateText value={a.occurred_at}/></time></div>) : <Empty title="No admin actions yet"/>}
+          {data.rows.length ? data.rows.map((a: Json) => <div className="platform__auditRow" key={a.id}><span className="platform__auditIcon"><Icon name="audit" size={17}/></span><div><strong>{a.action.replaceAll('_', ' ')}</strong><p>{a.actor || 'System'} · {a.tenant_id ? <button className="platform__link" onClick={() => openWorkspace(a.tenant_id)}>{a.workspace || 'Workspace'}<Icon name="arrow" size={13}/></button> : (a.target_id ? `Target ${String(a.target_id).slice(0, 8)}` : 'Platform')}</p>{a.detail?.reason && <p>Reason: {a.detail.reason}</p>}{a.detail?.from && a.detail?.to && <p>From {typeof a.detail.from === 'string' ? a.detail.from : `${a.detail.from.role}, ${a.detail.from.active ? 'active' : 'inactive'}`} to {typeof a.detail.to === 'string' ? a.detail.to : `${a.detail.to.role}, ${a.detail.to.active ? 'active' : 'inactive'}`}</p>}</div><time><DateText value={a.occurred_at}/></time></div>) : <Empty title="No admin actions yet"/>}
         </Panel>}
 
         {data && section === 'operators' && <>
@@ -236,9 +246,9 @@ export function Platform() {
           {isOwner && <Panel title="Grant site access" className="platform__sectionGap"><p className="platform__muted">The person must already have an active account and a verified email.</p><div className="platform__grantForm"><label>Email address<input type="email" value={newEmail} onChange={(e) => setNewEmail(e.target.value)} placeholder="person@example.com"/></label><label>Site role<select value={newRole} onChange={(e) => setNewRole(e.target.value)}><option value="viewer">Viewer</option><option value="operator">Operator</option><option value="owner">Owner</option></select></label><button className="platform__button platform__button--primary" disabled={!newEmail.includes('@')} onClick={() => setAction({ path: 'operators', label: `Give ${newEmail} the ${newRole} site role`, body: { email: newEmail, role: newRole } })}>Review grant</button></div></Panel>}
         </>}
 
-        {data && ['workspaces', 'jobs', 'audit'].includes(section) && <div className="platform__pager"><button className="platform__button" disabled={page <= 1} onClick={() => setPage(page - 1)}>Previous</button><span>Page {page}</span><button className="platform__button" disabled={section === 'workspaces' ? page * 25 >= data.total : data.rows.length < (section === 'audit' ? 50 : 25)} onClick={() => setPage(page + 1)}>Next</button></div>}
+        {data && ['workspaces', 'jobs', 'audit'].includes(section) && !(section === 'workspaces' && (detail || detailLoading)) && <div className="platform__pager"><button className="platform__button" disabled={page <= 1} onClick={() => setPage(page - 1)}>Previous</button><span>Page {page}</span><button className="platform__button" disabled={section === 'workspaces' ? page * 25 >= data.total : data.rows.length < (section === 'audit' ? 50 : 25)} onClick={() => setPage(page + 1)}>Next</button></div>}
       </div>
     </div>
-    {action && <div className="platform__shade" role="presentation"><div className="platform__dialog" role="dialog" aria-modal="true" aria-labelledby="platform-confirm-title"><div className="platform__dialogIcon"><Icon name="shield" size={23}/></div><h2 id="platform-confirm-title">Confirm admin action</h2><p>{action.label}. This action is recorded in the site admin audit.</p><label>Password<input type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)}/></label><label>Authenticator code<input inputMode="numeric" autoComplete="one-time-code" value={code} onChange={(e) => setCode(e.target.value)}/></label><div className="platform__dialogActions"><button className="platform__button" onClick={() => { setAction(null); setPassword(''); setCode(''); }}>Cancel</button><button className="platform__button platform__button--primary" disabled={busy || !password || !code} onClick={() => void runAction()}>Confirm action</button></div></div></div>}
+    {action && <div className="platform__shade" role="presentation"><div className="platform__dialog" role="dialog" aria-modal="true" aria-labelledby="platform-confirm-title"><div className="platform__dialogIcon"><Icon name="shield" size={23}/></div><h2 id="platform-confirm-title">Confirm admin action</h2><p>{action.label}. This action is recorded in the site admin audit.</p>{error && <div className="platform__error" role="alert">{error}</div>}{action.needsReason && <label>Reason for this change<textarea value={actionReason} maxLength={500} onChange={(e) => setActionReason(e.target.value)} placeholder="Explain why this change is needed"/></label>}<label>Password<input type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)}/></label><label>Authenticator code<input inputMode="numeric" autoComplete="one-time-code" value={code} onChange={(e) => setCode(e.target.value)}/></label><div className="platform__dialogActions"><button className="platform__button" onClick={() => { setAction(null); setPassword(''); setCode(''); setActionReason(''); setError(''); }}>Cancel</button><button className="platform__button platform__button--primary" disabled={busy || !password || !code || (action.needsReason && actionReason.trim().length < 8)} onClick={() => void runAction()}>Confirm action</button></div></div></div>}
   </main>;
 }

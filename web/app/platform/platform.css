@@ -6,7 +6,7 @@
   min-height: 100vh;
   background: var(--admin-paper);
   color: var(--admin-ink);
-  font-family: var(--ui), 'Instrument Sans', sans-serif;
+  font-family: var(--font-body), 'Instrument Sans', sans-serif;
   font-size: 14px;
 }
 .platform * { box-sizing: border-box; }
@@ -54,7 +54,7 @@
 .platform__heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 22px; margin-bottom: 28px; }
 .platform__eyebrow { color: #49745b; font-size: 10px; font-weight: 800; letter-spacing: .13em; }
 .platform__eyebrow span { color: #aebcb0; margin: 0 5px; }
-.platform__heading h1 { margin: 8px 0 5px; color: #142d21; font: 700 clamp(29px, 3vw, 37px)/1.13 var(--ui), sans-serif; letter-spacing: -.04em; }
+.platform__heading h1 { margin: 8px 0 5px; color: #142d21; font: 700 clamp(29px, 3vw, 37px)/1.13 var(--font-body), sans-serif; letter-spacing: -.04em; }
 .platform__heading p { margin: 0; color: var(--admin-muted); font-size: 14px; }
 .platform__button { min-height: 36px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 8px 13px; border: 1px solid #cddbd0; border-radius: 7px; background: white; color: #214935; text-decoration: none; font-size: 12.5px; font-weight: 650; white-space: nowrap; }
 .platform__button:hover:not(:disabled) { background: #f1f7f2; border-color: #93baa0; }
@@ -88,7 +88,7 @@
 .platform__panel { min-width: 0; padding: 22px 24px; background: white; border: 1px solid var(--admin-line); border-radius: 10px; box-shadow: 0 1px 2px #1e382309; }
 .platform__sectionGap { margin-top: 16px; }
 .platform__panelHead { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 13px; }
-.platform__panel h2 { margin: 0; font: 700 17px/1.3 var(--ui), sans-serif; letter-spacing: -.02em; }
+.platform__panel h2 { margin: 0; font: 700 17px/1.3 var(--font-body), sans-serif; letter-spacing: -.02em; }
 .platform__panelAside { color: #718177; font-size: 11.5px; white-space: nowrap; }
 .platform__panel h3.platform__subhead, .platform__subhead { margin: 20px 0 9px; font-size: 12px; font-weight: 750; color: #52665a; text-transform: uppercase; letter-spacing: .05em; }
 .platform__muted, .platform__hint { color: var(--admin-muted); line-height: 1.5; }
@@ -117,6 +117,9 @@
 .platform__search { display: flex; align-items: center; gap: 9px; width: min(100%, 350px); min-height: 40px; padding: 0 12px; border: 1px solid #cbd9cd; border-radius: 8px; background: white; color: #597363; }
 .platform__search input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--admin-ink); }
 .platform__toolbarCount { color: var(--admin-muted); font-size: 12px; }
+.platform__scope { display: inline-flex; flex-wrap: nowrap; gap: 3px; padding: 3px; border: 1px solid var(--admin-line); border-radius: 8px; background: #eef3ee; }
+.platform__scope button { min-height: 32px; padding: 5px 11px; border: 0; border-radius: 5px; background: transparent; color: #5c6d61; font-size: 12px; font-weight: 650; }
+.platform__scope button.active { background: white; color: #145a38; box-shadow: 0 1px 3px #162b1a17; }
 .platform__table { width: 100%; overflow-x: auto; background: white; border: 1px solid var(--admin-line); border-radius: 10px; }
 .platform__panel .platform__table { margin-top: 15px; }
 .platform__table table { border-collapse: collapse; width: 100%; min-width: 710px; }
@@ -129,12 +132,22 @@
 .platform__table td .platform__button { min-height: 30px; padding: 5px 10px; }
 .platform__link { display: inline-flex; align-items: center; gap: 7px; border: 0; padding: 0; background: none; color: #15603b; font-weight: 700; text-align: left; }
 .platform__link:hover { text-decoration: underline; }
-.platform__detail { margin-top: 18px; }
+.platform__workspacePage { width: 100%; }
+.platform__back { display: inline-flex; align-items: center; min-height: 38px; margin: 0 0 15px; padding: 7px 0; border: 0; background: transparent; color: #185b37; font: 700 13px var(--font-body), sans-serif; cursor: pointer; }
+.platform__back:hover { text-decoration: underline; }
+.platform__detail { width: 100%; }
+.platform__detail .platform__panelHead h2 { font-size: 20px; }
 .platform__detailMetrics { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 18px; }
 .platform__detailMetrics span { padding: 10px 13px; border: 1px solid #dfe9df; border-radius: 7px; background: #f6faf6; color: #5c6e61; font-size: 12px; }
 .platform__detailMetrics strong { color: #183a26; }
 .platform__tags { display: flex; flex-wrap: wrap; gap: 6px; }
 .platform__tags span { max-width: 100%; padding: 7px 10px; border-radius: 6px; background: #eff5ef; color: #345a41; font: 11px var(--font-mono), monospace; overflow-wrap: anywhere; }
+.platform__manageBox { margin-top: 20px; padding: 16px; border: 1px solid var(--admin-line); border-radius: 9px; background: #f7faf7; }
+.platform__manageBox h3 { margin: 0 0 10px; font-size: 14px; }
+.platform__manageBox .platform__hint { margin-bottom: 0; }
+.platform__inlineForm, .platform__cellActions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.platform__inlineForm input { flex: 1 1 180px; min-width: 0; min-height: 38px; padding: 8px 11px; border: 1px solid #cbd9cd; border-radius: 7px; background: white; }
+.platform__cellActions select { min-height: 34px; max-width: 135px; padding: 5px 8px; border: 1px solid #cbd9cd; border-radius: 6px; background: white; color: var(--admin-ink); }
 .platform__pager { display: flex; align-items: center; gap: 12px; margin-top: 18px; color: var(--admin-muted); font-size: 12px; }
 
 .platform__empty { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 160px; padding: 26px; text-align: center; }
@@ -177,6 +190,7 @@
 .platform__dialogIcon { display: grid; place-items: center; width: 43px; height: 43px; border-radius: 10px; background: #e7f2e9; color: #1b6741; }
 .platform__dialog h2 { margin: 0; font-size: 23px; letter-spacing: -.03em; }
 .platform__dialog p { margin: 0; color: #56675b; line-height: 1.5; }
+.platform__dialog textarea { min-height: 82px; resize: vertical; padding: 9px 12px; border: 1px solid #cbd9cd; border-radius: 7px; color: var(--admin-ink); font: inherit; }
 .platform__dialogActions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 4px; }
 
 @media (max-width: 1100px) {
@@ -199,6 +213,10 @@
   .platform__heading p { font-size: 12px; }
   .platform__healthRevision { display: none; }
   .platform__grantForm { grid-template-columns: 1fr; }
+  .platform__toolbar { align-items: stretch; flex-wrap: wrap; }
+  .platform__search { width: 100%; }
+  .platform__scope { order: 2; }
+  .platform__toolbarCount { margin-left: auto; }
   .platform__auditRow { flex-wrap: wrap; }
   .platform__auditRow time { margin: 0 0 0 46px; width: 100%; text-align: left; }
 }
