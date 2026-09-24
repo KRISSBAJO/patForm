@@ -13,3 +13,47 @@ create table if not exists file_deletion (
   storage_key text primary key,
   queued_at timestamptz not null default now()
 );
+
+create table if not exists platform_operator (
+  actor_id uuid primary key references actor(id),
+  role text not null check (role in ('owner', 'operator', 'viewer')),
+  granted_by uuid references actor(id),
+  granted_at timestamptz not null default now(),
+  revoked_at timestamptz
+);
+
+create table if not exists platform_worker_heartbeat (
+  worker_id text primary key,
+  seen_at timestamptz not null,
+  actions bigint not null default 0,
+  timers bigint not null default 0,
+  webhooks bigint not null default 0,
+  errors bigint not null default 0
+);
+
+create table if not exists platform_deployment (
+  id bigserial primary key,
+  revision text,
+  environment text not null,
+  started_at timestamptz not null default now()
+);
+create index if not exists platform_deployment_recent on platform_deployment (started_at desc);
+
+create table if not exists platform_admin_audit (
+  id bigserial primary key,
+  actor_id uuid references actor(id),
+  action text not null,
+  tenant_id uuid references tenant(id),
+  target_id text,
+  detail jsonb not null default '{}'::jsonb,
+  occurred_at timestamptz not null default now()
+);
+create index if not exists platform_admin_audit_recent on platform_admin_audit (occurred_at desc, id desc);
+create or replace function platform_admin_audit_is_append_only() returns trigger as $$
+begin
+  raise exception 'platform admin audit is append-only';
+end;
+$$ language plpgsql;
+drop trigger if exists platform_admin_audit_no_change on platform_admin_audit;
+create trigger platform_admin_audit_no_change before update or delete on platform_admin_audit
+  for each row execute function platform_admin_audit_is_append_only();

@@ -1,0 +1,54 @@
+.platform { min-height: 100vh; background: var(--paper, #faf9f6); color: var(--ink, #20332b); font-family: 'Instrument Sans', sans-serif; }
+.platform * { box-sizing: border-box; }
+.platform button, .platform input { font: inherit; }
+.platform button { cursor: pointer; }
+.platform button:disabled { cursor: default; opacity: .48; }
+.platform__top { height: 64px; background: #124531; color: white; display: flex; align-items: center; justify-content: space-between; padding: 0 28px; }
+.platform__top div { display: flex; align-items: center; gap: 22px; }
+.platform__top strong { font-size: 18px; }
+.platform__top span { border-left: 1px solid #aac3b6; padding-left: 22px; }
+.platform__top a { color: white; }
+.platform__layout { display: grid; grid-template-columns: 230px minmax(0, 1fr); min-height: calc(100vh - 64px); }
+.platform__nav { background: white; border-right: 1px solid #dddcd4; padding: 26px 14px; display: flex; flex-direction: column; align-items: stretch; gap: 5px; }
+.platform__nav p, .platform__eyebrow { color: #62766b; font-size: 11px; letter-spacing: .13em; font-weight: 700; }
+.platform__nav p { padding: 0 13px; }
+.platform__nav button { text-align: left; background: none; border: 0; padding: 12px 14px; border-radius: 7px; color: inherit; }
+.platform__nav button.active, .platform__nav button:hover { background: #edf5ef; color: #0e5736; }
+.platform__nav small { margin: auto 12px 0; color: #6b746d; }
+.platform__main { min-width: 0; padding: 30px clamp(16px, 4vw, 52px) 60px; }
+.platform__heading { display: flex; justify-content: space-between; align-items: center; gap: 20px; margin-bottom: 24px; }
+.platform__heading h1 { font: 600 clamp(29px, 4vw, 40px) 'Fraunces', serif; margin: 6px 0 0; }
+.platform__heading button, .platform__panel button:not(.platform__link):not(.platform__rowbutton), .platform__pager button, .platform__dialog button { border: 1px solid #c6d2c9; border-radius: 7px; background: white; padding: 9px 14px; }
+.platform__metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+.platform__card, .platform__panel { border: 1px solid #dedfd8; border-radius: 11px; background: white; box-shadow: 0 2px 8px #1e382309; }
+.platform__card { padding: 19px 21px; display: flex; flex-direction: column; gap: 10px; }
+.platform__card span { color: #5e6f64; font-size: 13px; }
+.platform__card strong { font-size: 28px; line-height: 1; }
+.platform__columns { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; }
+.platform__panel { padding: 23px 25px; margin-top: 16px; min-width: 0; }
+.platform__columns .platform__panel { margin-top: 0; }
+.platform__panel h2 { font: 600 22px 'Fraunces', serif; margin: 0 0 14px; }
+.platform__panel h3 { font-size: 14px; margin: 24px 0 8px; }
+.platform__panel p { line-height: 1.5; margin: 9px 0; overflow-wrap: anywhere; }
+.platform__panel small { color: #68736a; }
+.platform__good { color: #1d6a40; }.platform__bad { color: #9e2e22; }
+.platform__error { color: #832c24; background: #fff0ed; padding: 15px 18px; border: 1px solid #e8c5bd; border-radius: 7px; margin: 0 0 20px; }
+.platform__error a { margin-left: 10px; }
+.platform__rowbutton { border: 0; border-top: 1px solid #e7e9e4; width: 100%; padding: 13px 0; display: flex; justify-content: space-between; color: #145a3a; background: transparent; text-align: left; }
+.platform__filters { display: flex; justify-content: space-between; align-items: end; gap: 20px; margin: 0 0 17px; }
+.platform__filters label, .platform__dialog label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 600; }
+.platform__filters input, .platform__filters select, .platform__dialog input { border: 1px solid #cdd6cf; border-radius: 7px; padding: 10px 12px; min-width: 220px; background: white; }
+.platform__table { width: 100%; overflow-x: auto; background: white; border: 1px solid #dedfd8; border-radius: 9px; }
+.platform__table table { width: 100%; border-collapse: collapse; min-width: 650px; }
+.platform__table th, .platform__table td { text-align: left; padding: 13px 15px; border-bottom: 1px solid #e8eae5; vertical-align: top; }
+.platform__table th { font-size: 12px; color: #617368; background: #f4f7f3; }
+.platform__link { background: none; border: 0; padding: 0; color: #145a3a; text-decoration: underline; text-align: left; }
+.platform__detail { position: relative; }.platform__close { position: absolute; top: 18px; right: 18px; }
+.platform__job { border-top: 1px solid #e6e8e3; padding: 18px 0; }.platform__job p { font-size: 13px; }
+.platform__pager { display: flex; gap: 14px; align-items: center; margin-top: 20px; }
+.platform__shade { position: fixed; inset: 0; background: #0b2118a8; display: grid; place-items: center; padding: 16px; z-index: 100; }
+.platform__dialog { width: min(100%, 460px); background: white; border-radius: 12px; padding: 26px; display: flex; flex-direction: column; gap: 15px; }
+.platform__dialog h2 { margin: 0; font: 600 25px 'Fraunces', serif; }.platform__dialog p { margin: 0; line-height: 1.5; }.platform__dialog input { min-width: 0; }
+.platform__dialog div { display: flex; justify-content: flex-end; gap: 10px; margin-top: 8px; }.platform__dialog .platform__primary { background: #124531 !important; color: white; }
+@media(max-width: 850px) { .platform__metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }.platform__columns { grid-template-columns: 1fr; } }
+@media(max-width: 600px) { .platform__layout { display: block; }.platform__nav { border-right: 0; border-bottom: 1px solid #dddcd4; padding: 12px; flex-direction: row; overflow-x: auto; }.platform__nav p, .platform__nav small { display: none; }.platform__nav button { white-space: nowrap; }.platform__metrics { gap: 8px; }.platform__card { padding: 15px; }.platform__card strong { font-size: 24px; }.platform__top { padding: 0 15px; }.platform__top span { display: none; } }

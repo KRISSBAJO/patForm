@@ -115,6 +115,51 @@ create table session (
 
 create index session_live on session (actor_id) where revoked_at is null;
 
+-- Platform access is independent of customer workspace ownership.
+create table platform_operator (
+  actor_id uuid primary key references actor(id),
+  role text not null check (role in ('owner', 'operator', 'viewer')),
+  granted_by uuid references actor(id),
+  granted_at timestamptz not null default now(),
+  revoked_at timestamptz
+);
+
+create table platform_worker_heartbeat (
+  worker_id text primary key,
+  seen_at timestamptz not null,
+  actions bigint not null default 0,
+  timers bigint not null default 0,
+  webhooks bigint not null default 0,
+  errors bigint not null default 0
+);
+
+create table platform_deployment (
+  id bigserial primary key,
+  revision text,
+  environment text not null,
+  started_at timestamptz not null default now()
+);
+create index platform_deployment_recent on platform_deployment (started_at desc);
+
+create table platform_admin_audit (
+  id bigserial primary key,
+  actor_id uuid references actor(id),
+  action text not null,
+  tenant_id uuid references tenant(id),
+  target_id text,
+  detail jsonb not null default '{}'::jsonb,
+  occurred_at timestamptz not null default now()
+);
+create index platform_admin_audit_recent on platform_admin_audit (occurred_at desc, id desc);
+
+create or replace function platform_admin_audit_is_append_only() returns trigger as $$
+begin
+  raise exception 'platform admin audit is append-only';
+end;
+$$ language plpgsql;
+create trigger platform_admin_audit_no_change before update or delete on platform_admin_audit
+  for each row execute function platform_admin_audit_is_append_only();
+
 -- Which blueprint role a person holds, in which process. Roles are defined
 -- per process, so a membership is per process too: being an approver for
 -- expenses grants nothing in onboarding.

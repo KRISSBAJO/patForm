@@ -101,3 +101,24 @@ Vercel URL, create a test workspace, install a simple template, publish it,
 submit a synthetic request, and approve it in the console. Confirm the event
 trail shows the submission and decision. Do not use live payment providers,
 real contact details, or customer data in staging.
+
+## Site administration
+
+`/platform` is separate from each customer's console. It shows workspace and
+process counts, worker heartbeat, failed jobs, request traces, email delivery summaries,
+service starts, and the platform admin audit. It never returns form answers,
+email bodies, or raw failure text. Operators can retry failed jobs and revoke
+sessions; platform owners can grant and revoke site roles. Every write is
+recorded in `platform_admin_audit` and asks for a recent password and MFA code.
+
+To bootstrap the two staging owners requested by the operator, set Render's
+`PLATFORM_BOOTSTRAP_EMAILS` to
+`krissbajo@gmail.com,krissbajo@logaxp.com` and redeploy. A matching account
+must already be active, email verified, and have a credential. Missing accounts
+are skipped, so create and verify the second account first or redeploy after it
+exists. If one email matches multiple workspace accounts, startup stops rather
+than picking one. Before `/platform` opens, each owner must turn on two-step
+verification under **Your account**. The supplied example password is not used
+as a seed credential; existing passwords remain unchanged. Remove the
+bootstrap setting after both grants have been confirmed, so later accounts
+cannot gain site access through it.

@@ -1,5 +1,8 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { applyUpgrades, createPool, describeTarget, type Pool } from '../runtime/db.js';
+import { grantPlatformOperator, platformAudit, platformJobs, platformMail, platformOperators,
+  platformOverview, platformWorkspace, platformWorkspaces, requirePlatformRole,
+  retryPlatformJob, revokePlatformOperator, revokePlatformSessions, platformTrace } from '../runtime/platform-admin.js';
 import { Engine } from '../runtime/engine.js';
 import { AuthorizationError, requireWorkspaceCapability, WORKSPACE_GRANTS, type Principal } from '../runtime/policy.js';
 import type { Capability } from '../blueprint/roles.js';
@@ -841,6 +844,63 @@ route('POST', /^\/api\/invitations\/([0-9a-f-]{36})\/revoke$/, async ({ pool, pr
 );
 
 // ------------------------------------------------------------------ session
+
+// A separate operator boundary: customer workspace roles never grant these routes.
+route('GET', /^\/api\/platform\/me$/, async ({ pool, actorId }) =>
+  ({ role: await requirePlatformRole(pool, actorId) }));
+route('GET', /^\/api\/platform\/overview$/, async ({ pool, actorId }) => {
+  await requirePlatformRole(pool, actorId);
+  return platformOverview(pool);
+});
+route('GET', /^\/api\/platform\/workspaces$/, async ({ pool, actorId, url }) => {
+  await requirePlatformRole(pool, actorId);
+  return platformWorkspaces(pool, (url.searchParams.get('q') ?? '').slice(0, 100),
+    Math.min(1000, Math.max(1, Number(url.searchParams.get('page')) || 1)));
+});
+route('GET', /^\/api\/platform\/workspaces\/[0-9a-f-]{36}$/, async ({ pool, actorId, url }) => {
+  await requirePlatformRole(pool, actorId);
+  const detail = await platformWorkspace(pool, url.pathname.split('/')[4]!);
+  if (!detail) throw new HttpError(404, 'workspace not found');
+  return detail;
+});
+route('GET', /^\/api\/platform\/jobs$/, async ({ pool, actorId, url }) => {
+  await requirePlatformRole(pool, actorId);
+  return platformJobs(pool, Math.min(1000, Math.max(1, Number(url.searchParams.get('page')) || 1)));
+});
+route('GET', /^\/api\/platform\/trace\/[\w.:-]{8,64}$/, async ({ pool, actorId, url }) => {
+  await requirePlatformRole(pool, actorId);
+  return platformTrace(pool, url.pathname.split('/')[4]!);
+});
+route('GET', /^\/api\/platform\/mail$/, async ({ pool, actorId }) => {
+  await requirePlatformRole(pool, actorId);
+  return platformMail(pool);
+});
+route('GET', /^\/api\/platform\/audit$/, async ({ pool, actorId, url }) => {
+  await requirePlatformRole(pool, actorId);
+  return platformAudit(pool, Math.min(1000, Math.max(1, Number(url.searchParams.get('page')) || 1)));
+});
+route('GET', /^\/api\/platform\/operators$/, async ({ pool, actorId }) => {
+  await requirePlatformRole(pool, actorId, 'owner');
+  return platformOperators(pool);
+});
+route('POST', /^\/api\/platform\/operators$/, async ({ pool, actorId }, body) => {
+  await requirePlatformRole(pool, actorId, 'owner');
+  const b = body as { email?: string; role?: string };
+  if (!b.email || !['owner', 'operator', 'viewer'].includes(b.role ?? '')) throw new InvalidInput('email and role are required');
+  return grantPlatformOperator(pool, actorId, b.email, b.role as 'owner' | 'operator' | 'viewer');
+});
+route('POST', /^\/api\/platform\/operators\/[0-9a-f-]{36}\/revoke$/, async ({ pool, actorId, url }) => {
+  await requirePlatformRole(pool, actorId, 'owner');
+  return revokePlatformOperator(pool, actorId, url.pathname.split('/')[4]!);
+});
+route('POST', /^\/api\/platform\/jobs\/\d+\/retry$/, async ({ pool, actorId, url }) => {
+  await requirePlatformRole(pool, actorId, 'operator');
+  return retryPlatformJob(pool, actorId, Number(url.pathname.split('/')[4]));
+});
+route('POST', /^\/api\/platform\/people\/[0-9a-f-]{36}\/revoke-sessions$/, async ({ pool, actorId, url }) => {
+  await requirePlatformRole(pool, actorId, 'operator');
+  return revokePlatformSessions(pool, actorId, url.pathname.split('/')[4]!);
+});
 
 route('GET', /^\/api\/session$/, async ({ engine, pool, actorId }) => {
   const actor = await engine.actor(actorId);

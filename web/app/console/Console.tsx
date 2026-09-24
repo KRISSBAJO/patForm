@@ -97,6 +97,7 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 
 export function Console() {
   const [session, setSession] = useState<SessionInfo | null>(null);
+  const [siteAdmin, setSiteAdmin] = useState(false);
   const [checking, setChecking] = useState(true);
   const [processKey, setProcessKey] = useState('');
   const [work, setWork] = useState<Work | null>(null);
@@ -163,6 +164,15 @@ export function Console() {
   useEffect(() => {
     void refreshSession();
   }, [refreshSession]);
+
+  useEffect(() => {
+    if (!session) { setSiteAdmin(false); return; }
+    let active = true;
+    void fetch('/api/platform/me', { credentials: 'same-origin' }).then((r) => {
+      if (active) setSiteAdmin(r.ok);
+    }).catch(() => { if (active) setSiteAdmin(false); });
+    return () => { active = false; };
+  }, [session?.actor.id]);
 
   /*
    * A record in the address bar is opened on arrival, and the browser's back
@@ -568,6 +578,7 @@ export function Console() {
             <Icon name="logout" />
             Sign out
           </button>
+          {siteAdmin && <a className="cs__seatPicker" href="/platform">Site administration ↗</a>}
           {session.devices.length > 1 && (
             <p className="cs__seatNote">
               {session.devices.length} active sessions.{' '}

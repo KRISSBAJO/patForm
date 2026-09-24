@@ -54,6 +54,14 @@ async function main(): Promise<void> {
     let did = 0;
 
     try {
+      await pool.query(
+        `insert into platform_worker_heartbeat (worker_id, seen_at, actions, timers, webhooks, errors)
+         values ($1, now(), $2, $3, $4, $5)
+         on conflict (worker_id) do update set seen_at = excluded.seen_at,
+           actions = excluded.actions, timers = excluded.timers,
+           webhooks = excluded.webhooks, errors = excluded.errors`,
+        [id, totals.actions, totals.timers, totals.webhooks, totals.errors],
+      );
       did += await engine.runOutbox(id, now, BATCH);
       totals.actions += did;
 

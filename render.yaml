@@ -20,6 +20,8 @@ services:
         sync: false
       - key: CONSOLE_ORIGIN
         sync: false
+      - key: PLATFORM_BOOTSTRAP_EMAILS
+        sync: false
       - key: FORM_TICKET_SECRET
         generateValue: true
       - key: MFA_ENCRYPTION_KEY

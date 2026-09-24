@@ -1,5 +1,6 @@
 import { applyUpgrades, createPool, describeTarget, initializeEmptySchema } from './runtime/db.js';
 import { syncBuiltInPacks } from './packs/sync-builtins.js';
+import { bootstrapPlatformOwner, recordDeployment } from './runtime/platform-admin.js';
 
 /**
  * Render Free can run one web service, but not a separate background worker.
@@ -16,6 +17,8 @@ try {
     console.log(`Initialized empty staging database ${describeTarget()}`);
   }
   await applyUpgrades(pool);
+  await bootstrapPlatformOwner(pool);
+  await recordDeployment(pool);
   const packs = await syncBuiltInPacks(pool);
   console.log(`Built-in packs: ${packs.total} available, ${packs.published} published or updated`);
 } finally {

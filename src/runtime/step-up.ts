@@ -100,6 +100,10 @@ export async function reauthenticate(
  * it is deleting rather than previewing what it would delete.
  */
 export const STEP_UP: { method: string; test: RegExp; when?: (body: unknown) => boolean; what: string }[] = [
+  { method: 'POST', test: /^\/api\/platform\/jobs\/\d+\/retry$/, what: 'retry a platform job' },
+  { method: 'POST', test: /^\/api\/platform\/people\/[0-9a-f-]{36}\/revoke-sessions$/, what: 'revoke sessions across a workspace' },
+  { method: 'POST', test: /^\/api\/platform\/operators$/, what: 'grant site admin access' },
+  { method: 'POST', test: /^\/api\/platform\/operators\/[0-9a-f-]{36}\/revoke$/, what: 'revoke site admin access' },
   { method: 'POST', test: /^\/api\/keys$/, what: 'issue an API key' },
   { method: 'POST', test: /^\/api\/webhooks$/, what: 'send records to a new webhook' },
   { method: 'POST', test: /^\/api\/webhooks\/[0-9a-f-]{36}\/rotate$/, what: 'issue a new webhook secret' },
