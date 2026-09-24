@@ -18,6 +18,7 @@ import { evaluate, render, withCalculatedFields, type Answers } from './expr.js'
 import { inTransaction, isUniqueViolation, type Client, type Pool } from './db.js';
 import { InvalidInput } from './errors.js';
 import { ensurePublicForm } from './form-links.js';
+import { requireIntakeOpen } from './intake-control.js';
 import {
   automationHealth,
   listRecords,
@@ -217,6 +218,7 @@ export class Engine {
     const identityKey = identityFor(bp, answers);
 
     return inTransaction(this.pool, async (client) => {
+      await requireIntakeOpen(client, args.version.tenant_id, true);
       await require_(client, {
         principal,
         action: 'submit',

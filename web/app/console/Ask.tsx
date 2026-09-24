@@ -90,6 +90,11 @@ export function Ask({ processKey, onOpenRecord }: { processKey: string; onOpenRe
   const [error, setError] = useState<string | null>(null);
   const [showPlan, setShowPlan] = useState(false);
 
+  const startForm = () => {
+    if (question.trim()) sessionStorage.setItem('patform:new-process-description', question.trim());
+    window.location.href = '/builder?new=describe';
+  };
+
   /**
    * Runs a plan from the history directly, without asking a model again.
    *
@@ -183,6 +188,10 @@ export function Ask({ processKey, onOpenRecord }: { processKey: string; onOpenRe
             {busy === 'ask' ? 'Thinking…' : 'Ask'}
           </button>
         </form>
+        <div className="ask__builderHandoff">
+          <span>Need a new form or approval process? AI can draft it in the Builder.</span>
+          <button type="button" className="cs__btn" onClick={startForm}>Build a form with AI</button>
+        </div>
 
         {/*
           * §7.3 asks for a record of model, prompt version, plan, human

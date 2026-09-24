@@ -754,6 +754,9 @@
 .ask__label { grid-area: label; margin-bottom: 0; }
 .ask__input { grid-area: input; }
 .ask__form > button { grid-area: button; }
+.ask__builderHandoff { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 12px 0 18px; padding: 12px 14px; border: 1px solid var(--line-soft); border-radius: 8px; background: var(--paper-2); font-size: 13px; }
+.ask__builderHandoff .cs__btn { flex: none; }
+@media (max-width: 700px) { .ask__builderHandoff { flex-direction: column; align-items: flex-start; } }
 
 .ask__input {
   flex: 1;

@@ -347,6 +347,7 @@ export async function deliverBatch(
             available_at = $2 + interval '30 seconds'
       from webhook_endpoint e
       where e.id = d.endpoint_id
+        and e.active
         and d.id in (
           select id from webhook_delivery
            where status = 'pending' and available_at <= $2

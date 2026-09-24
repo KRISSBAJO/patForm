@@ -91,7 +91,7 @@ export async function platformWorkspaces(pool: Pool, search: string, page: numbe
   const term = `%${search.replace(/[\\%_]/g, '\\$&')}%`;
   const where = `t.name ilike $1 and ($2 = 'all' or ($2 = 'tests' and t.name like 'scenario:%') or ($2 = 'customers' and t.name not like 'scenario:%'))`;
   const { rows } = await pool.query(
-    `select t.id, t.name, t.created_at,
+    `select t.id, t.name, t.created_at, t.intake_paused_at,
       (select count(*)::int from actor a where a.tenant_id = t.id and a.active) as people,
       (select count(distinct process_key)::int from process_version p where p.tenant_id = t.id) as processes,
       (select count(*)::int from instance i where i.tenant_id = t.id) as records,
@@ -104,9 +104,9 @@ export async function platformWorkspaces(pool: Pool, search: string, page: numbe
 }
 
 export async function platformWorkspace(pool: Pool, tenantId: string) {
-  const tenant = await pool.query('select id, name, created_at from tenant where id = $1', [tenantId]);
+  const tenant = await pool.query('select id, name, created_at, intake_paused_at, intake_pause_reason from tenant where id = $1', [tenantId]);
   if (!tenant.rows[0]) return null;
-  const [people, processes, jobs, mail, records] = await Promise.all([
+  const [people, processes, jobs, mail, records, endpoints, keys, clients] = await Promise.all([
     pool.query(`select a.id, a.display_name, a.email, a.workspace_role, a.active, a.email_verified_at,
       (select count(*)::int from session s where s.actor_id = a.id and s.revoked_at is null and s.expires_at > now()) as sessions
       from actor a where a.tenant_id = $1 order by a.created_at desc limit 100`, [tenantId]),
@@ -119,9 +119,68 @@ export async function platformWorkspace(pool: Pool, tenantId: string) {
     pool.query(`select i.id, i.process_key, i.state, i.outcome, i.created_at, i.completed_at,
         (select e.request_id from event e where e.instance_id = i.id order by e.seq desc limit 1) as request_id
       from instance i where i.tenant_id = $1 order by i.created_at desc limit 20`, [tenantId]),
+    pool.query(`select id, kind, description, active, created_at from webhook_endpoint
+      where tenant_id = $1 order by created_at desc limit 100`, [tenantId]),
+    pool.query(`select id, name, key_prefix, scopes, created_at, last_used_at, revoked_at from api_key
+      where tenant_id = $1 order by created_at desc limit 100`, [tenantId]),
+    pool.query(`select client_id, name, confidential, created_at from oauth_client
+      where tenant_id = $1 order by created_at desc limit 100`, [tenantId]),
   ]);
   return { workspace: tenant.rows[0], people: people.rows, processes: processes.rows,
-    jobs: jobs.rows[0], mail: mail.rows, records: records.rows };
+    jobs: jobs.rows[0], mail: mail.rows, records: records.rows,
+    integrations: { endpoints: endpoints.rows, keys: keys.rows, clients: clients.rows } };
+}
+
+export async function platformPeople(pool: Pool, search: string, page: number, status: 'all' | 'active' | 'inactive' = 'all') {
+  const term = `%${search.replace(/[\\%_]/g, '\\$&')}%`;
+  const where = `(a.display_name ilike $1 or a.email ilike $1 or t.name ilike $1)
+    and ($2 = 'all' or ($2 = 'active' and a.active) or ($2 = 'inactive' and not a.active))`;
+  const [people, total] = await Promise.all([
+    pool.query(`select a.id, a.tenant_id, t.name as workspace, a.display_name, a.email,
+      a.workspace_role, a.active, a.email_verified_at, (m.confirmed_at is not null) as mfa_enabled,
+      (select count(*)::int from session s where s.actor_id = a.id and s.revoked_at is null and s.expires_at > now()) as sessions
+      from actor a join tenant t on t.id = a.tenant_id left join mfa_enrolment m on m.actor_id = a.id
+      where ${where} order by a.created_at desc, a.id limit 25 offset $3`, [term, status, (page - 1) * 25]),
+    pool.query<{ count: number }>(`select count(*)::int as count from actor a join tenant t on t.id = a.tenant_id
+      where ${where}`, [term, status]),
+  ]);
+  return { rows: people.rows, total: total.rows[0]?.count ?? 0, page, pageSize: 25 };
+}
+
+export async function platformIntegrations(pool: Pool, search: string, page: number) {
+  const term = `%${search.replace(/[\\%_]/g, '\\$&')}%`;
+  const [workspaces, total] = await Promise.all([
+    pool.query(`select t.id, t.name, t.intake_paused_at,
+      (select count(*)::int from webhook_endpoint e where e.tenant_id = t.id and e.active) as active_webhooks,
+      (select count(*)::int from webhook_delivery d where d.tenant_id = t.id and d.status = 'dead_letter') as dead_webhooks,
+      (select count(*)::int from api_key k where k.tenant_id = t.id and k.revoked_at is null) as active_keys,
+      (select count(*)::int from oauth_client c where c.tenant_id = t.id) as oauth_clients
+      from tenant t where t.name ilike $1 and t.name not like 'scenario:%'
+      order by t.created_at desc limit 25 offset $2`, [term, (page - 1) * 25]),
+    pool.query<{ count: number }>(`select count(*)::int as count from tenant t
+      where t.name ilike $1 and t.name not like 'scenario:%'`, [term]),
+  ]);
+  return { rows: workspaces.rows, total: total.rows[0]?.count ?? 0, page, pageSize: 25 };
+}
+
+export async function platformSecurity(pool: Pool) {
+  const [posture, keys, admins] = await Promise.all([
+    pool.query(`select
+      (select count(*)::int from actor a join tenant t on t.id = a.tenant_id where a.active and t.name not like 'scenario:%') as active_people,
+      (select count(*)::int from actor a join tenant t on t.id = a.tenant_id join mfa_enrolment m on m.actor_id = a.id
+        where a.active and m.confirmed_at is not null and t.name not like 'scenario:%') as mfa_people,
+      (select count(*)::int from session s join actor a on a.id = s.actor_id join tenant t on t.id = a.tenant_id
+        where s.revoked_at is null and s.expires_at > now() and t.name not like 'scenario:%') as active_sessions,
+      (select count(*)::int from tenant where intake_paused_at is not null) as paused_workspaces`),
+    pool.query(`select t.id as tenant_id, t.name as workspace,
+      count(*) filter (where k.revoked_at is null)::int as active,
+      count(*) filter (where k.revoked_at is null and k.last_used_at is null)::int as never_used
+      from api_key k join tenant t on t.id = k.tenant_id where t.name not like 'scenario:%'
+      group by t.id order by active desc limit 25`),
+    pool.query(`select p.role, count(*)::int as count from platform_operator p
+      where p.revoked_at is null group by p.role order by p.role`),
+  ]);
+  return { posture: posture.rows[0], keys: keys.rows, admins: admins.rows };
 }
 
 export async function platformJobs(pool: Pool, page: number) {
@@ -278,6 +337,58 @@ export async function renamePlatformWorkspace(pool: Pool, actorId: string, tenan
       values ($1, 'rename_workspace', $2, $2, $3)`, [actorId, tenantId,
       JSON.stringify({ from: rows[0].name, to: nextName, reason: reason.trim() })]);
     return { changed: true, name: nextName };
+  });
+}
+
+export async function setPlatformIntakePaused(pool: Pool, actorId: string, tenantId: string, paused: boolean, reason: string) {
+  const why = reason.trim();
+  if (why.length < 8 || why.length > 500) return { changed: false, reason: 'Enter a reason of 8–500 characters.' };
+  return inTransaction(pool, async (db) => {
+    const { rows } = await db.query<{ intake_paused_at: Date | null }>(
+      'select intake_paused_at from tenant where id = $1 for update', [tenantId]);
+    if (!rows[0]) return { changed: false, reason: 'Workspace not found.' };
+    if (Boolean(rows[0].intake_paused_at) === paused) return { changed: false, reason: `Intake is already ${paused ? 'paused' : 'open'}.` };
+    await db.query(`update tenant set intake_paused_at = case when $1 then now() else null end,
+      intake_pause_reason = case when $1 then $2 else null end where id = $3`, [paused, why, tenantId]);
+    await db.query(`insert into platform_admin_audit (actor_id, action, tenant_id, target_id, detail)
+      values ($1, $2, $3, $3, $4)`, [actorId, paused ? 'pause_workspace_intake' : 'resume_workspace_intake',
+      tenantId, JSON.stringify({ reason: why })]);
+    return { changed: true, paused };
+  });
+}
+
+export async function setPlatformWebhookActive(pool: Pool, actorId: string, tenantId: string, endpointId: string, active: boolean, reason: string) {
+  const why = reason.trim();
+  if (why.length < 8 || why.length > 500) return { changed: false, reason: 'Enter a reason of 8–500 characters.' };
+  return inTransaction(pool, async (db) => {
+    const tenant = await db.query('select id from tenant where id = $1 for update', [tenantId]);
+    if (!tenant.rows[0]) return { changed: false, reason: 'Workspace not found.' };
+    const endpoint = await db.query<{ active: boolean }>(
+      'select active from webhook_endpoint where id = $1 and tenant_id = $2 for update', [endpointId, tenantId]);
+    if (!endpoint.rows[0]) return { changed: false, reason: 'Endpoint not found in this workspace.' };
+    if (endpoint.rows[0].active === active) return { changed: false, reason: `Endpoint is already ${active ? 'active' : 'disabled'}.` };
+    await db.query('update webhook_endpoint set active = $1 where id = $2', [active, endpointId]);
+    await db.query(`insert into platform_admin_audit (actor_id, action, tenant_id, target_id, detail)
+      values ($1, $2, $3, $4, $5)`, [actorId, active ? 'enable_webhook' : 'disable_webhook', tenantId, endpointId,
+      JSON.stringify({ reason: why })]);
+    return { changed: true, active };
+  });
+}
+
+export async function revokePlatformApiKey(pool: Pool, actorId: string, tenantId: string, keyId: string, reason: string) {
+  const why = reason.trim();
+  if (why.length < 8 || why.length > 500) return { changed: false, reason: 'Enter a reason of 8–500 characters.' };
+  return inTransaction(pool, async (db) => {
+    const tenant = await db.query('select id from tenant where id = $1 for update', [tenantId]);
+    if (!tenant.rows[0]) return { changed: false, reason: 'Workspace not found.' };
+    const key = await db.query<{ revoked_at: Date | null }>(
+      'select revoked_at from api_key where id = $1 and tenant_id = $2 for update', [keyId, tenantId]);
+    if (!key.rows[0]) return { changed: false, reason: 'API key not found in this workspace.' };
+    if (key.rows[0].revoked_at) return { changed: false, reason: 'API key is already revoked.' };
+    await db.query('update api_key set revoked_at = now() where id = $1', [keyId]);
+    await db.query(`insert into platform_admin_audit (actor_id, action, tenant_id, target_id, detail)
+      values ($1, 'revoke_api_key', $2, $3, $4)`, [actorId, tenantId, keyId, JSON.stringify({ reason: why })]);
+    return { changed: true };
   });
 }
 

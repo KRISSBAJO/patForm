@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { Pool } from '../src/runtime/db.js';
-import { changePlatformPerson, renamePlatformWorkspace } from '../src/runtime/platform-admin.js';
+import { changePlatformPerson, renamePlatformWorkspace, revokePlatformApiKey, setPlatformIntakePaused, setPlatformWebhookActive } from '../src/runtime/platform-admin.js';
+import { requireIntakeOpen } from '../src/runtime/intake-control.js';
 import { stepUpFor } from '../src/runtime/step-up.js';
 
 const tenantId = '11111111-1111-4111-8111-111111111111';
@@ -20,6 +21,44 @@ function fakePool(answer: (sql: string, params: unknown[] | undefined) => { rows
 test('site access changes require a fresh identity check', () => {
   assert.ok(stepUpFor('POST', `/api/platform/workspaces/${tenantId}/rename`, {}));
   assert.ok(stepUpFor('POST', `/api/platform/workspaces/${tenantId}/people/${personId}/access`, {}));
+  assert.ok(stepUpFor('POST', `/api/platform/workspaces/${tenantId}/intake`, {}));
+  assert.ok(stepUpFor('POST', `/api/platform/workspaces/${tenantId}/webhooks/${personId}/status`, {}));
+  assert.ok(stepUpFor('POST', `/api/platform/workspaces/${tenantId}/keys/${personId}/revoke`, {}));
+});
+
+test('a paused workspace refuses new submissions but an open workspace accepts them', async () => {
+  const db = { query: async () => ({ rows: [{ intake_paused_at: new Date() }] }) } as unknown as Pool;
+  await assert.rejects(requireIntakeOpen(db, tenantId, true), /new submissions are paused/);
+  const open = { query: async () => ({ rows: [{ intake_paused_at: null }] }) } as unknown as Pool;
+  await requireIntakeOpen(open, tenantId, true);
+});
+
+test('pausing workspace intake records a reason and can be reversed', async () => {
+  let paused = false;
+  const { pool, calls } = fakePool((sql, params) => {
+    if (sql.startsWith('select intake_paused_at')) return { rows: [{ intake_paused_at: paused ? new Date() : null }] };
+    if (sql.startsWith('update tenant set intake_paused_at')) paused = Boolean(params?.[0]);
+    if (sql.includes('insert into platform_admin_audit')) assert.equal(JSON.parse(String(params?.[3])).reason, 'Investigating a spam campaign');
+    return { rows: [] };
+  });
+  assert.deepEqual(await setPlatformIntakePaused(pool, adminId, tenantId, true, 'Investigating a spam campaign'), { changed: true, paused: true });
+  assert.deepEqual(await setPlatformIntakePaused(pool, adminId, tenantId, false, 'Investigating a spam campaign'), { changed: true, paused: false });
+  assert.equal(calls.filter((sql) => sql.includes('insert into platform_admin_audit')).length, 2);
+});
+
+test('site admin can disable a webhook with a reason, and revocation is scoped to a workspace', async () => {
+  const { pool, calls } = fakePool((sql, params) => {
+    if (sql.startsWith('select id from tenant')) return { rows: [{ id: tenantId }] };
+    if (sql.startsWith('select active from webhook_endpoint')) return { rows: [{ active: true }] };
+    if (sql.startsWith('select revoked_at from api_key')) return { rows: [] };
+    if (sql.includes('insert into platform_admin_audit')) assert.equal(JSON.parse(String(params?.[4])).reason, 'Endpoint is compromised');
+    return { rows: [] };
+  });
+  assert.deepEqual(await setPlatformWebhookActive(pool, adminId, tenantId, personId, false, 'Endpoint is compromised'), { changed: true, active: false });
+  assert.ok(calls.some((sql) => sql.startsWith('update webhook_endpoint')));
+  const revoked = await revokePlatformApiKey(pool, adminId, tenantId, personId, 'Endpoint is compromised');
+  assert.equal(revoked.changed, false);
+  assert.equal(calls.some((sql) => sql.startsWith('update api_key')), false);
 });
 
 test('site admin cannot remove the final workspace owner', async () => {

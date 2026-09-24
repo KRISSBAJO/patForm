@@ -101,6 +101,9 @@ export async function reauthenticate(
  */
 export const STEP_UP: { method: string; test: RegExp; when?: (body: unknown) => boolean; what: string }[] = [
   { method: 'POST', test: /^\/api\/platform\/workspaces\/[0-9a-f-]{36}\/rename$/, what: 'rename a workspace' },
+  { method: 'POST', test: /^\/api\/platform\/workspaces\/[0-9a-f-]{36}\/intake$/, what: 'change new submissions for a workspace' },
+  { method: 'POST', test: /^\/api\/platform\/workspaces\/[0-9a-f-]{36}\/webhooks\/[0-9a-f-]{36}\/status$/, what: 'change a workspace webhook' },
+  { method: 'POST', test: /^\/api\/platform\/workspaces\/[0-9a-f-]{36}\/keys\/[0-9a-f-]{36}\/revoke$/, what: 'revoke a workspace API key' },
   { method: 'POST', test: /^\/api\/platform\/workspaces\/[0-9a-f-]{36}\/people\/[0-9a-f-]{36}\/access$/, what: 'change workspace access across the site' },
   { method: 'POST', test: /^\/api\/platform\/jobs\/\d+\/retry$/, what: 'retry a platform job' },
   { method: 'POST', test: /^\/api\/platform\/people\/[0-9a-f-]{36}\/revoke-sessions$/, what: 'revoke sessions across a workspace' },

@@ -445,6 +445,7 @@ export function Builder() {
   const [impact, setImpact] = useState<PublishImpact | null>(null);
   const [published, setPublished] = useState<number | null>(null);
   const [creating, setCreating] = useState(false);
+  const [creatingFromAsk, setCreatingFromAsk] = useState(false);
   const [lock, setLock] = useState<DraftLock | null>(null);
   const [conflict, setConflict] = useState<ConflictInfo | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -500,11 +501,12 @@ export function Builder() {
         // does not reopen it after somebody has moved on.
         const query = new URLSearchParams(window.location.search);
         const asked = query.get('process');
+        const newMode = query.get('new');
         // Installing a template sends people here with the new draft's id.
         // Nothing read it, so they landed on the start screen and had to
         // find the draft they had just made.
         const draftId = query.get('draft');
-        if (asked || draftId) window.history.replaceState(null, '', window.location.pathname);
+        if (asked || draftId || newMode) window.history.replaceState(null, '', window.location.pathname);
         if (draftId && /^[0-9a-f-]{36}$/.test(draftId)) {
           adopt(await call<DraftDetail>(`/api/builder/drafts/${draftId}`));
           setOverview(true);
@@ -512,6 +514,9 @@ export function Builder() {
         } else if (asked) {
           adopt(await call<DraftDetail>('/api/builder/open', { method: 'POST', body: JSON.stringify({ processKey: asked }) }));
           await refreshList();
+        } else if (newMode === 'describe') {
+          setCreatingFromAsk(true);
+          setCreating(true);
         }
       } catch (err) {
         if (err instanceof Unauthenticated) setSignedIn(false);
@@ -1292,9 +1297,11 @@ export function Builder() {
         {creating && (
           <NewProcessDialog
             processes={processes}
-            onClose={() => setCreating(false)}
+            initialMode={creatingFromAsk ? 'describe' : undefined}
+            onClose={() => { setCreating(false); setCreatingFromAsk(false); }}
             onCreated={async (detail) => {
               setCreating(false);
+              setCreatingFromAsk(false);
               adopt(detail);
               setOverview(true);
               setSide('preview');
@@ -3641,14 +3648,16 @@ function Change({ label, tone, items }: { label: string; tone: string; items: st
 
 function NewProcessDialog({
   processes,
+  initialMode,
   onClose,
   onCreated,
 }: {
   processes: ProcessRow[];
+  initialMode?: 'describe';
   onClose: () => void;
   onCreated: (detail: DraftDetail) => void;
 }) {
-  const [mode, setMode] = useState<'pack' | 'describe' | 'copy'>('pack');
+  const [mode, setMode] = useState<'pack' | 'describe' | 'copy'>(initialMode ?? 'pack');
   // null until the catalogue answers. An empty array is a real answer
   // (there are none) and must not be confused with not having asked.
   const [packs, setPacks] = useState<Pack[] | null>(null);
@@ -3698,7 +3707,12 @@ function NewProcessDialog({
   }, []);
   const [key, setKey] = useState('');
   const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
+  const [description, setDescription] = useState(() => {
+    if (!initialMode || typeof window === 'undefined') return '';
+    const saved = sessionStorage.getItem('patform:new-process-description') ?? '';
+    sessionStorage.removeItem('patform:new-process-description');
+    return saved;
+  });
   const [copyFrom, setCopyFrom] = useState(processes.find((p) => p.version !== null)?.process_key ?? '');
 
   /** What is still missing, or null when the form is ready. */

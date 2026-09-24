@@ -8,6 +8,7 @@ import { inTransaction, type Client, type Pool } from './db.js';
 import { Engine } from './engine.js';
 import { issueResumeToken } from './auth.js';
 import { checkReceiptReferences } from './receipt-files.js';
+import { requireIntakeOpen } from './intake-control.js';
 
 /**
  * The respondent side: the public form, its draft, and its submission.
@@ -117,6 +118,7 @@ function publicField(field: Blueprint['data']['fields'][number]): PublicField {
  */
 export async function publicForm(pool: Pool, ref: string): Promise<PublicForm | null> {
   const form = await resolveForm(pool, ref);
+  await requireIntakeOpen(pool, form.tenantId);
   const { rows } = await pool.query<{ blueprint: Blueprint; version: number }>(
     `select blueprint, version from process_version
       where tenant_id = $1 and process_key = $2 order by version desc limit 1`,
@@ -185,6 +187,7 @@ async function latestVersion(client: Client, target: FormTarget) {
   const scoped = target.tenantId
     ? { tenantId: target.tenantId, processKey: target.processKey }
     : await resolveForm(client, target.processKey);
+  await requireIntakeOpen(client, scoped.tenantId);
   const { rows } = await client.query<{ id: string; tenant_id: string; blueprint: Blueprint }>(
     `select id, tenant_id, blueprint from process_version
       where tenant_id = $1 and process_key = $2 order by version desc limit 1`,

@@ -9,6 +9,10 @@
 -- Majority vote: how many people may vote, counted when the vote is asked.
 alter table approval_request add column if not exists electorate int;
 
+-- A site owner can pause new intake for one workspace without hiding its existing records.
+alter table tenant add column if not exists intake_paused_at timestamptz;
+alter table tenant add column if not exists intake_pause_reason text;
+
 create table if not exists file_deletion (
   storage_key text primary key,
   queued_at timestamptz not null default now()

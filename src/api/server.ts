@@ -1,8 +1,9 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { applyUpgrades, createPool, describeTarget, type Pool } from '../runtime/db.js';
-import { changePlatformPerson, grantPlatformOperator, platformAudit, platformJobs, platformMail, platformOperators,
+import { changePlatformPerson, grantPlatformOperator, platformAudit, platformIntegrations, platformJobs, platformMail, platformOperators, platformPeople, platformSecurity,
   platformOverview, platformWorkspace, platformWorkspaces, requirePlatformRole,
-  renamePlatformWorkspace, retryPlatformJob, revokePlatformOperator, revokePlatformSessions, platformTrace } from '../runtime/platform-admin.js';
+  renamePlatformWorkspace, retryPlatformJob, revokePlatformApiKey, revokePlatformOperator, revokePlatformSessions,
+  setPlatformIntakePaused, setPlatformWebhookActive, platformTrace } from '../runtime/platform-admin.js';
 import { Engine } from '../runtime/engine.js';
 import { AuthorizationError, requireWorkspaceCapability, WORKSPACE_GRANTS, type Principal } from '../runtime/policy.js';
 import type { Capability } from '../blueprint/roles.js';
@@ -858,6 +859,22 @@ route('GET', /^\/api\/platform\/workspaces$/, async ({ pool, actorId, url }) => 
     Math.min(1000, Math.max(1, Number(url.searchParams.get('page')) || 1)),
     url.searchParams.get('scope') === 'tests' ? 'tests' : url.searchParams.get('scope') === 'all' ? 'all' : 'customers');
 });
+route('GET', /^\/api\/platform\/people$/, async ({ pool, actorId, url }) => {
+  await requirePlatformRole(pool, actorId);
+  const status = url.searchParams.get('status');
+  return platformPeople(pool, (url.searchParams.get('q') ?? '').slice(0, 100),
+    Math.min(1000, Math.max(1, Number(url.searchParams.get('page')) || 1)),
+    status === 'active' || status === 'inactive' ? status : 'all');
+});
+route('GET', /^\/api\/platform\/integrations$/, async ({ pool, actorId, url }) => {
+  await requirePlatformRole(pool, actorId);
+  return platformIntegrations(pool, (url.searchParams.get('q') ?? '').slice(0, 100),
+    Math.min(1000, Math.max(1, Number(url.searchParams.get('page')) || 1)));
+});
+route('GET', /^\/api\/platform\/security$/, async ({ pool, actorId }) => {
+  await requirePlatformRole(pool, actorId);
+  return platformSecurity(pool);
+});
 route('GET', /^\/api\/platform\/workspaces\/[0-9a-f-]{36}$/, async ({ pool, actorId, url }) => {
   await requirePlatformRole(pool, actorId);
   const detail = await platformWorkspace(pool, url.pathname.split('/')[4]!);
@@ -869,6 +886,26 @@ route('POST', /^\/api\/platform\/workspaces\/[0-9a-f-]{36}\/rename$/, async ({ p
   const b = body as { name?: string; reason?: string };
   if (typeof b.name !== 'string' || typeof b.reason !== 'string') throw new InvalidInput('name and reason are required');
   return renamePlatformWorkspace(pool, actorId, url.pathname.split('/')[4]!, b.name, b.reason);
+});
+route('POST', /^\/api\/platform\/workspaces\/[0-9a-f-]{36}\/intake$/, async ({ pool, actorId, url }, body) => {
+  await requirePlatformRole(pool, actorId, 'owner');
+  const b = body as { paused?: boolean; reason?: string };
+  if (typeof b.paused !== 'boolean' || typeof b.reason !== 'string') throw new InvalidInput('paused and reason are required');
+  return setPlatformIntakePaused(pool, actorId, url.pathname.split('/')[4]!, b.paused, b.reason);
+});
+route('POST', /^\/api\/platform\/workspaces\/[0-9a-f-]{36}\/webhooks\/[0-9a-f-]{36}\/status$/, async ({ pool, actorId, url }, body) => {
+  await requirePlatformRole(pool, actorId, 'owner');
+  const b = body as { active?: boolean; reason?: string };
+  if (typeof b.active !== 'boolean' || typeof b.reason !== 'string') throw new InvalidInput('active and reason are required');
+  const parts = url.pathname.split('/');
+  return setPlatformWebhookActive(pool, actorId, parts[4]!, parts[6]!, b.active, b.reason);
+});
+route('POST', /^\/api\/platform\/workspaces\/[0-9a-f-]{36}\/keys\/[0-9a-f-]{36}\/revoke$/, async ({ pool, actorId, url }, body) => {
+  await requirePlatformRole(pool, actorId, 'owner');
+  const b = body as { reason?: string };
+  if (typeof b.reason !== 'string') throw new InvalidInput('reason is required');
+  const parts = url.pathname.split('/');
+  return revokePlatformApiKey(pool, actorId, parts[4]!, parts[6]!, b.reason);
 });
 route('POST', /^\/api\/platform\/workspaces\/[0-9a-f-]{36}\/people\/[0-9a-f-]{36}\/access$/, async ({ pool, actorId, url }, body) => {
   await requirePlatformRole(pool, actorId, 'owner');
