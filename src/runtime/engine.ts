@@ -1206,7 +1206,10 @@ export class Engine {
         blueprint: bp,
         instanceId,
       }, this.pool);
-      return { ...instance, data: redact(bp, decision.roles, instance.data) };
+      return {
+        ...instance,
+        data: principal.kind === 'system' ? instance.data : redact(bp, decision.roles, instance.data),
+      };
     });
   }
 

@@ -356,10 +356,17 @@ export function describe(principal: Principal): string {
  * never serialised rather than hidden in the client.
  */
 export function redact(blueprint: Blueprint, roleKeys: string[], data: Answers): Answers {
-  if (!roleKeys.length) return data;
-
   const roles = blueprint.roles.filter((r) => roleKeys.includes(r.key));
-  if (!roles.length) return data;
+  // Workspace-level view access is not a process role. With no matching role,
+  // default to hiding restricted answers until a process role grants access.
+  if (!roles.length) {
+    const restricted = new Set(
+      blueprint.data.fields.filter((f) => f.classification === 'restricted').map((f) => f.key),
+    );
+    return Object.fromEntries(
+      Object.entries(data).map(([key, value]) => [key, restricted.has(key) ? '[redacted]' : value]),
+    );
+  }
 
   // A field is hidden only when EVERY role the actor holds hides it. Holding a
   // second, broader role is how someone legitimately sees more.
@@ -391,10 +398,10 @@ export function redact(blueprint: Blueprint, roleKeys: string[], data: Answers):
  */
 export function visibleFields(blueprint: Blueprint, roleKeys: string[]): string[] {
   const all = blueprint.data.fields.map((f) => f.key);
-  if (!roleKeys.length) return all;
-
   const roles = blueprint.roles.filter((r) => roleKeys.includes(r.key));
-  if (!roles.length) return all;
+  if (!roles.length) {
+    return blueprint.data.fields.filter((f) => f.classification !== 'restricted').map((f) => f.key);
+  }
 
   const hidden = roles
     .map((r) => new Set(r.hiddenFields ?? []))
