@@ -474,6 +474,7 @@ export function Builder() {
   const [impact, setImpact] = useState<PublishImpact | null>(null);
   const [published, setPublished] = useState<number | null>(null);
   const [creating, setCreating] = useState(false);
+  const [creatingMode, setCreatingMode] = useState<'copy' | undefined>();
   const [creatingFromAsk, setCreatingFromAsk] = useState(false);
   const [lock, setLock] = useState<DraftLock | null>(null);
   const [conflict, setConflict] = useState<ConflictInfo | null>(null);
@@ -546,6 +547,9 @@ export function Builder() {
         } else if (newMode === 'describe') {
           window.location.href = '/builder/ai';
           return;
+        } else if (newMode === 'copy') {
+          setCreatingMode('copy');
+          setCreating(true);
         }
       } catch (err) {
         if (err instanceof Unauthenticated) setSignedIn(false);
@@ -1089,6 +1093,21 @@ export function Builder() {
               </div>
             </header>
 
+            <nav className="bd__journey" aria-label="Process launch steps">
+              <button type="button" className="bd__journeyStep" data-state={status === 'saved' || status === 'idle' ? 'done' : 'current'} onClick={() => setOverview(true)}>
+                <span className="bd__journeyNumber">1</span><span><strong>Draft</strong><small>{status === 'saving' ? 'Saving…' : status === 'error' ? 'Save needs attention' : 'Saved privately'}</small></span>
+              </button>
+              <button type="button" className="bd__journeyStep" data-state={errors.length ? 'needs-work' : 'done'} onClick={() => setSide('checks')}>
+                <span className="bd__journeyNumber">2</span><span><strong>Check</strong><small>{errors.length ? `${errors.length} to fix` : warnings.length ? `${warnings.length} to review` : 'No errors'}</small></span>
+              </button>
+              <button type="button" className="bd__journeyStep" data-state={tests?.total && tests.passed === tests.total ? 'done' : 'available'} onClick={() => { setSide('tests'); if (!tests && publishable && status !== 'saving') void runTests(); }}>
+                <span className="bd__journeyNumber">3</span><span><strong>Test</strong><small>{tests ? `${tests.passed} of ${tests.total} passed` : 'Try sample cases'}</small></span>
+              </button>
+              <button type="button" className="bd__journeyStep" data-state={publishable ? 'available' : 'locked'} disabled={!publishable || busy !== null || frozen || status === 'saving'} onClick={() => void reviewPublish()}>
+                <span className="bd__journeyNumber">4</span><span><strong>Publish</strong><small>{publishable ? 'Review & publish' : 'After checks'}</small></span>
+              </button>
+            </nav>
+
             <div className="bd__body" data-side={side}>
               <Outline
                 blueprint={blueprint}
@@ -1390,11 +1409,12 @@ export function Builder() {
         {creating && (
           <NewProcessDialog
             processes={processes}
-            initialMode={creatingFromAsk ? 'describe' : undefined}
-            onClose={() => { setCreating(false); setCreatingFromAsk(false); }}
+            initialMode={creatingFromAsk ? 'describe' : creatingMode}
+            onClose={() => { setCreating(false); setCreatingFromAsk(false); setCreatingMode(undefined); }}
             onCreated={async (detail) => {
               setCreating(false);
               setCreatingFromAsk(false);
+              setCreatingMode(undefined);
               adopt(detail);
               setOverview(true);
               setSide('preview');
@@ -3909,7 +3929,7 @@ function NewProcessDialog({
   onCreated,
 }: {
   processes: ProcessRow[];
-  initialMode?: 'describe';
+  initialMode?: 'describe' | 'copy';
   onClose: () => void;
   onCreated: (detail: DraftDetail) => void;
 }) {
@@ -4172,6 +4192,7 @@ function NewProcessDialog({
                   </option>
                 ))}
             </select>
+            {!processes.some((p) => p.version !== null) && <p className="bd__note">There are no published processes to copy yet. <a href="/builder/new">Choose another starting point</a>.</p>}
           </Row>
         )}
 

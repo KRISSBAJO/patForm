@@ -88,7 +88,7 @@ export function PackPage({ packId }: { packId: string }) {
         <p className="gl__error" role="alert">
           {error}
         </p>
-        <a className="pd__back" href="/builder/new">
+        <a className="pd__back" href="/builder/new?view=templates">
           Back to the catalogue
         </a>
       </main>
@@ -105,7 +105,7 @@ export function PackPage({ packId }: { packId: string }) {
 
   return (
     <main className="gl pdp">
-      <a className="pd__back" href="/builder/new">
+      <a className="pd__back" href="/builder/new?view=templates">
         ← Back to the catalogue
       </a>
 

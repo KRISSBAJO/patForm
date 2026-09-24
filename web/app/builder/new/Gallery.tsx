@@ -41,6 +41,7 @@ function keyFrom(name: string): string {
 }
 
 export function Gallery() {
+  const [view, setView] = useState<'choose' | 'templates'>('choose');
   const [packs, setPacks] = useState<Pack[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
@@ -66,6 +67,13 @@ export function Gallery() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    const syncView = () => setView(new URLSearchParams(window.location.search).get('view') === 'templates' ? 'templates' : 'choose');
+    syncView();
+    window.addEventListener('popstate', syncView);
+    return () => window.removeEventListener('popstate', syncView);
+  }, []);
 
   const categories = useMemo(() => {
     const seen = new Map<string, number>();
@@ -134,8 +142,37 @@ export function Gallery() {
         </a>
       </header>
 
+      {view === 'choose' ? (
+        <main className="gl__choose">
+          <span className="gl__eyebrow">Start a process</span>
+          <h1>How would you like to begin?</h1>
+          <p className="gl__chooseIntro">Choose a starting point. Everything opens as a private draft for you to review.</p>
+          <div className="gl__paths">
+            <button type="button" className="gl__path gl__path--featured" onClick={() => {
+              window.history.pushState(null, '', '/builder/new?view=templates');
+              setView('templates');
+            }}>
+              <PathIcon name="template" />
+              <span className="gl__pathText"><strong>Start from a template</strong><span>Choose a ready-made process with its form and approvals already connected.</span></span>
+              <span className="gl__pathArrow" aria-hidden="true">→</span>
+            </button>
+            <a className="gl__path" href="/builder/ai">
+              <PathIcon name="sparkles" />
+              <span className="gl__pathText"><strong>Describe your process</strong><span>Tell us what happens. AI will prepare a draft for you to check.</span></span>
+              <span className="gl__pathArrow" aria-hidden="true">→</span>
+            </a>
+            <a className="gl__path" href="/builder?new=copy">
+              <PathIcon name="copy" />
+              <span className="gl__pathText"><strong>Adapt an existing process</strong><span>Copy one of your published processes and change what differs.</span></span>
+              <span className="gl__pathArrow" aria-hidden="true">→</span>
+            </a>
+          </div>
+          <p className="gl__chooseFoot">Your process stays private until you publish it.</p>
+        </main>
+      ) : <>
       <div className="gl__head">
         <div className="gl__headInner">
+          <a className="gl__back" href="/builder/new">← All starting options</a>
           <h1>Start from something that already works</h1>
           <p>
             Choose a ready-made process. Review and edit your private draft before publishing.
@@ -169,7 +206,6 @@ export function Gallery() {
           </div>
         </div>
       </div>
-
       <div className="gl__body" id="gallery-main">
         <div className="gl__mobileFilter">
           <label htmlFor="pack-category">Category</label>
@@ -264,6 +300,7 @@ export function Gallery() {
         </p>
         </div>
       </div>
+      </>}
 
       {/* What is inside, counted from the blueprint rather than written. */}
       {installing && (
@@ -323,4 +360,12 @@ export function Gallery() {
       )}
     </div>
   );
+}
+
+function PathIcon({ name }: { name: 'template' | 'sparkles' | 'copy' }) {
+  return <span className="gl__pathIcon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+    {name === 'template' && <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 9h18M8 13h4M8 16h8" /></>}
+    {name === 'sparkles' && <><path d="m12 2 1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8L12 2Z" /><path d="m19 17 .6 1.4L21 19l-1.4.6L19 21l-.6-1.4L17 19l1.4-.6L19 17Z" /></>}
+    {name === 'copy' && <><rect x="8" y="7" width="12" height="13" rx="2" /><path d="M16 7V5a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h2" /></>}
+  </svg></span>;
 }

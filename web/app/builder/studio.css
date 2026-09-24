@@ -212,3 +212,24 @@
   .bd .bd__actions .bd__btn { width: 100%; min-width: 0; white-space: normal; text-align: center; }
   .bd .bd__actions .bd__btn--primary { grid-column: 1 / -1; }
 }
+
+/* A short, actionable route from a private draft to launch. */
+.bd__journey { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; padding: 0 20px; border-bottom: 1px solid #dce9df; background: #fff; }
+.bd__journeyStep { display: flex; align-items: center; gap: 9px; min-width: 0; min-height: 57px; padding: 9px 14px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: #385748; font: inherit; text-align: left; cursor: pointer; }
+.bd__journeyStep:hover:not(:disabled), .bd__journeyStep:focus-visible { background: #f2faf4; }
+.bd__journeyStep:focus-visible { outline: 2px solid #6db789; outline-offset: -2px; }
+.bd__journeyStep:disabled { cursor: default; opacity: .55; }
+.bd__journeyStep[data-state='done'] { border-bottom-color: #278253; }
+.bd__journeyStep[data-state='needs-work'] { border-bottom-color: #bb6d35; }
+.bd__journeyNumber { display: grid; place-items: center; width: 25px; height: 25px; flex: 0 0 25px; border-radius: 50%; background: #eaf4ed; color: #17613d; font-size: 11px; font-weight: 800; }
+.bd__journeyStep[data-state='needs-work'] .bd__journeyNumber { background: #fff0dc; color: #966021; }
+.bd__journeyStep > span:last-child { min-width: 0; }
+.bd__journeyStep strong, .bd__journeyStep small { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bd__journeyStep strong { font-size: 12px; }
+.bd__journeyStep small { margin-top: 1px; color: #6a7f70; font-size: 10px; }
+@media (max-width: 640px) {
+  .bd__journey { padding: 0 6px; }
+  .bd__journeyStep { flex-direction: column; justify-content: center; gap: 3px; padding: 8px 3px; text-align: center; }
+  .bd__journeyStep strong { font-size: 11px; }
+  .bd__journeyStep small { display: none; }
+}
