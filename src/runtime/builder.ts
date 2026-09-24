@@ -726,10 +726,10 @@ export async function createDraft(
         console.warn(lastProblem, error instanceof Error ? error.message : String(error));
       }
     }
-    const explanation = lastProblem.length > 240
-      ? `${lastProblem.slice(0, 240).replace(/\s+\S*$/, '')}…`
-      : lastProblem;
-    if (!outcome?.blueprint && !reviewCandidate && !editableCandidate) throw new InvalidInput(`AI could not produce a safe draft. ${explanation} Try simplifying the description or start from a template.`);
+    if (!outcome?.blueprint && !reviewCandidate && !editableCandidate) {
+      console.warn('AI draft exhausted providers:', lastProblem);
+      throw new InvalidInput('AI could not complete a draft that passed the builder checks. Nothing was saved. Please try again.');
+    }
     audit = outcome?.audit ?? reviewCandidate?.audit ?? editableCandidate!.audit;
     decision = outcome?.decision ?? (editableCandidate ? 'needs_fixes' : 'review_required');
     if (reviewCandidate && !outcome?.blueprint) {

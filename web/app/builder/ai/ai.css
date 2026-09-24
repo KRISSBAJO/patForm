@@ -68,5 +68,5 @@
 .aiPage__aside li span { color:#728476; font-size:12px; line-height:1.4; }
 .aiPage__asideNote { margin:18px -28px 0; padding:20px 28px; background:#f0f7f1; color:#476a52; font-size:12px; line-height:1.45; }
 @keyframes aiPulse { 50% { opacity:.55; transform:scale(.93); } }
-@media(max-width:800px) { .aiPage__grid { grid-template-columns:minmax(0,1fr); } .aiPage__body { padding-top:32px; } }
+@media(max-width:800px) { .aiPage__grid { grid-template-columns:minmax(0,1fr); } .aiPage__body { padding-top:32px; } .aiPage__aside { display:none; } }
 @media(max-width:540px) { .aiPage__top { padding:0 16px; } .aiPage__body { padding:28px 16px 60px; } .aiPage__card { padding:22px 20px; } .aiPage__fields { grid-template-columns:minmax(0,1fr); } .aiPage__submit { align-items:stretch; flex-direction:column; } .aiPage__submit button { width:100%; } .aiPage__intro h1 { font-size:35px; } .aiPage__step small { font-size:9px; } .aiPage__progressFoot { align-items:flex-start; flex-direction:column; } }
