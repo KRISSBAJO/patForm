@@ -1054,15 +1054,15 @@ export function Builder() {
                   */}
                 <FormLink formId={draft.formId} />
               </div>
-              <label className="bd__headSearch"><span className="sr-only">Find in this process</span><input type="search" placeholder="Search fields, states, rules…" value={workspaceQuery} onChange={(e) => setWorkspaceQuery(e.target.value)} /></label>
-              <div className="bd__actions">
-                <a className="bd__btn" href={`/builder/improve?draft=${draft.id}`}>Improve with AI</a>
-                <a className="bd__btn" href={`/builder/launch?draft=${draft.id}`}>Setup and sharing</a>
-                <button className="bd__btn" onClick={discard} disabled={busy !== null || frozen}>
-                  Discard
+              <label className="bd__headSearch"><span className="sr-only">Find in this process</span><ActionIcon name="search" /><input type="search" placeholder="Find in this process…" value={workspaceQuery} onChange={(e) => setWorkspaceQuery(e.target.value)} /></label>
+              <nav className="bd__actions" aria-label="Draft actions">
+                <a className="bd__btn" href={`/builder/improve?draft=${draft.id}`}><ActionIcon name="sparkles" />Improve with AI</a>
+                <a className="bd__btn" href={`/builder/launch?draft=${draft.id}`}><ActionIcon name="share" />Share &amp; access</a>
+                <button className="bd__btn bd__btn--quietDanger" onClick={discard} disabled={busy !== null || frozen}>
+                  <ActionIcon name="trash" />Discard draft
                 </button>
                 <button className="bd__btn" onClick={runTests} disabled={busy !== null || !publishable || status === 'saving'}>
-                  {busy === 'test' ? 'Running…' : 'Test'}
+                  <ActionIcon name="flask" />{busy === 'test' ? 'Running…' : 'Run tests'}
                 </button>
                 <button
                   className="bd__btn bd__btn--primary"
@@ -1078,9 +1078,9 @@ export function Builder() {
                           : 'resolve the errors first'
                   }
                 >
-                  Publish…
+                  <ActionIcon name="check" />Review &amp; publish
                 </button>
-              </div>
+              </nav>
               <div className="bd__headMetrics" aria-label="Draft summary">
                 <span><span className="bd__statusDot" aria-hidden="true" /> Private draft</span>
                 <span>{blueprint.data.fields.length} fields</span><span>{blueprint.workflow.states.length} states</span>
@@ -1638,6 +1638,17 @@ function LockBanner({
       <span className="bd__bannerActions">{actions}</span>
     </div>
   );
+}
+
+function ActionIcon({ name }: { name: 'search' | 'sparkles' | 'share' | 'trash' | 'flask' | 'check' }) {
+  return <svg className="bd__actionIcon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    {name === 'search' && <><circle cx="10.8" cy="10.8" r="6.8" /><path d="m16 16 4.5 4.5" /></>}
+    {name === 'sparkles' && <><path d="m12 2 1.7 6.3L20 10l-6.3 1.7L12 18l-1.7-6.3L4 10l6.3-1.7L12 2Z" /><path d="m19 17 .7 2.3L22 20l-2.3.7L19 23l-.7-2.3L16 20l2.3-.7L19 17Z" /></>}
+    {name === 'share' && <><circle cx="18" cy="5" r="2.4" /><circle cx="6" cy="12" r="2.4" /><circle cx="18" cy="19" r="2.4" /><path d="m8.2 10.9 7.6-4.7M8.2 13.1l7.6 4.7" /></>}
+    {name === 'trash' && <><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6" /></>}
+    {name === 'flask' && <><path d="M9 3h6M10 3v7L4.5 19a1.5 1.5 0 0 0 1.3 2.3h12.4a1.5 1.5 0 0 0 1.3-2.3L14 10V3M8 16h8" /></>}
+    {name === 'check' && <><circle cx="12" cy="12" r="9" /><path d="m8 12 2.6 2.6L16 9" /></>}
+  </svg>;
 }
 
 function SaveState({ status }: { status: string }) {

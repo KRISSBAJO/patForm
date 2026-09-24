@@ -340,7 +340,8 @@ export async function fieldHistory(pool: Pool, principal: Principal, draftId: st
   const changes: { revision: number; savedAt: string; actor: string; changed: string[]; field: Record<string, unknown> | null }[] = [];
   let previous: Record<string, unknown> | null = null;
   for (const row of rows) {
-    const field = row.blueprint?.data?.fields?.find((f) => f.key === fieldKey) ?? null;
+    const fields = row.blueprint?.data?.fields;
+    const field = Array.isArray(fields) ? fields.find((f) => f && typeof f === 'object' && f.key === fieldKey) ?? null : null;
     if (JSON.stringify(field) === JSON.stringify(previous)) continue;
     const keys = new Set([...Object.keys(previous ?? {}), ...Object.keys(field ?? {})]);
     const changed = [...keys].filter((key) => JSON.stringify(previous?.[key]) !== JSON.stringify(field?.[key]));
@@ -360,7 +361,13 @@ export async function tryFieldValue(pool: Pool, principal: Principal, draftId: s
   if (field.type === 'file' || field.type === 'signature' || field.type === 'repeating_group') {
     throw new InvalidInput('Use the full form preview to test this field type.');
   }
-  const message = checkField(field, value);
+  let message: string | null;
+  try {
+    message = checkField(field, value);
+  } catch (error) {
+    if (error instanceof SyntaxError) throw new InvalidInput('This field has an invalid pattern. Fix its constraint before testing.');
+    throw error;
+  }
   return { valid: message === null, message, revision: draft.revision };
 }
 

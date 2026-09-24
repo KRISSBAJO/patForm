@@ -192,3 +192,23 @@
   .bd__fieldIntro, .bd__studioCard { padding: 14px; }
   .bd__studioCardHead { align-items: flex-start; }
 }
+
+/* Header actions share one baseline and one control size. */
+.bd .bd__head { column-gap: 14px; }
+.bd .bd__headSearch { position: relative; display: flex; align-items: center; min-width: 0; }
+.bd .bd__headSearch .bd__actionIcon { position: absolute; left: 10px; width: 15px; height: 15px; color: #638371; pointer-events: none; }
+.bd .bd__headSearch input { min-height: 36px; padding-left: 32px; }
+.bd .bd__actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: nowrap; gap: 7px; margin-left: auto; }
+.bd .bd__actions .bd__btn { display: inline-flex; align-items: center; justify-content: center; gap: 7px; flex: 0 0 auto; height: 36px; min-height: 36px; padding: 0 11px; line-height: 1; text-decoration: none; }
+.bd .bd__actions .bd__actionIcon { width: 15px; height: 15px; flex: 0 0 15px; }
+.bd .bd__actions .bd__btn--quietDanger { color: #945246; border-color: #ead9d4; }
+.bd .bd__actions .bd__btn--quietDanger:hover:not(:disabled) { background: #fff5f2; border-color: #dcafa5; }
+@media (max-width: 1340px) {
+  .bd .bd__head { grid-template-columns: minmax(180px, 1fr) minmax(180px, 300px); }
+  .bd .bd__actions { grid-column: 1 / -1; justify-content: flex-end; width: 100%; }
+}
+@media (max-width: 640px) {
+  .bd .bd__actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; margin: 0; }
+  .bd .bd__actions .bd__btn { width: 100%; min-width: 0; white-space: normal; text-align: center; }
+  .bd .bd__actions .bd__btn--primary { grid-column: 1 / -1; }
+}
