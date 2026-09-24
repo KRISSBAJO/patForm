@@ -106,7 +106,7 @@ export async function platformWorkspaces(pool: Pool, search: string, page: numbe
 export async function platformWorkspace(pool: Pool, tenantId: string) {
   const tenant = await pool.query('select id, name, created_at from tenant where id = $1', [tenantId]);
   if (!tenant.rows[0]) return null;
-  const [people, processes, jobs, mail] = await Promise.all([
+  const [people, processes, jobs, mail, records] = await Promise.all([
     pool.query(`select a.id, a.display_name, a.email, a.workspace_role, a.active, a.email_verified_at,
       (select count(*)::int from session s where s.actor_id = a.id and s.revoked_at is null and s.expires_at > now()) as sessions
       from actor a where a.tenant_id = $1 order by a.created_at desc limit 100`, [tenantId]),
@@ -116,8 +116,12 @@ export async function platformWorkspace(pool: Pool, tenantId: string) {
       from outbox where tenant_id = $1 and done_at is null`, [tenantId]),
     pool.query(`select status, count(*)::int as count from email_log
       where tenant_id = $1 and sent_at > now() - interval '7 days' group by status`, [tenantId]),
+    pool.query(`select i.id, i.process_key, i.state, i.outcome, i.created_at, i.completed_at,
+        (select e.request_id from event e where e.instance_id = i.id order by e.seq desc limit 1) as request_id
+      from instance i where i.tenant_id = $1 order by i.created_at desc limit 20`, [tenantId]),
   ]);
-  return { workspace: tenant.rows[0], people: people.rows, processes: processes.rows, jobs: jobs.rows[0], mail: mail.rows };
+  return { workspace: tenant.rows[0], people: people.rows, processes: processes.rows,
+    jobs: jobs.rows[0], mail: mail.rows, records: records.rows };
 }
 
 export async function platformJobs(pool: Pool, page: number) {
@@ -163,11 +167,13 @@ export async function platformMail(pool: Pool) {
       from delivery_alert order by raised_at desc limit 20`),
     pool.query(`select e.id, e.tenant_id, t.name as workspace, e.status, e.template_key as kind, e.sent_at
       from email_log e join tenant t on t.id = e.tenant_id
-      where e.status in ('failed','bounced','complained') and e.sent_at > now() - interval '7 days'
+      where e.status in ('failed','bounced','complained') and e.sent_at between now() - interval '7 days' and now()
+        and t.name not like 'scenario:%'
       union all
       select p.id, p.tenant_id, coalesce(t.name, 'Platform') as workspace, p.status, p.kind, p.sent_at
       from platform_email p left join tenant t on t.id = p.tenant_id
-      where p.status = 'failed' and p.sent_at > now() - interval '7 days'
+      where p.status = 'failed' and p.sent_at between now() - interval '7 days' and now()
+        and (t.name is null or t.name not like 'scenario:%')
       order by sent_at desc limit 30`),
   ]);
   return { process: process.rows, account: account.rows, alerts: alert.rows, failures: failures.rows };
