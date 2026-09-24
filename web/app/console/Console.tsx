@@ -531,7 +531,7 @@ export function Console() {
           </button>
         </nav>
 
-        <div className="cs__processList">
+        {view !== 'processes' && <div className="cs__processList">
           <span className="cs__sectionLabel">PROCESSES</span>
           {session.processes
             .filter((p, index) => index < 5 || p.process_key === processKey)
@@ -563,7 +563,7 @@ export function Console() {
               Browse all {session.processes.length} processes →
             </button>
           )}
-        </div>
+        </div>}
 
         <div className="cs__seat">
           <div className="cs__seatRow">
