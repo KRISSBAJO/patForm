@@ -105,14 +105,37 @@ export function Platform() {
   }, []);
   useEffect(() => { if (role) void load(); }, [role, load]);
 
-  async function selectWorkspace(id: string) {
+  const selectWorkspace = useCallback(async (id: string, updateAddress = true) => {
+    if (updateAddress) {
+      const address = new URL(window.location.href);
+      address.searchParams.set('section', 'workspaces');
+      address.searchParams.set('workspace', id);
+      window.history.pushState({}, '', address);
+    }
     setDetail(null);
     setDetailLoading(true);
     setBusy(true); setError('');
     try { const next = await api(`workspaces/${id}`); setDetail(next); setWorkspaceName(next.workspace.name); }
     catch (e) { setError((e as Error).message); }
     finally { setBusy(false); setDetailLoading(false); }
-  }
+  }, []);
+
+  useEffect(() => {
+    if (!role) return;
+    const syncAddress = () => {
+      const params = new URLSearchParams(window.location.search);
+      const wanted = params.get('section');
+      const next = sections.some((s) => s.key === wanted) ? wanted as Section : 'overview';
+      const workspace = params.get('workspace');
+      setSection(next); setData(null); setPage(1); setError('');
+      if (next === 'workspaces' && workspace && /^[0-9a-f-]{36}$/.test(workspace)) {
+        void selectWorkspace(workspace, false);
+      } else { setDetail(null); setDetailLoading(false); }
+    };
+    syncAddress();
+    window.addEventListener('popstate', syncAddress);
+    return () => window.removeEventListener('popstate', syncAddress);
+  }, [role, selectWorkspace]);
 
   async function runAction() {
     if (!action) return;
@@ -128,12 +151,17 @@ export function Platform() {
       if (actionResult.granted === false || actionResult.revoked === false || actionResult.retried === false || actionResult.changed === false) throw new Error(actionResult.reason || 'Action could not be completed');
       setAction(null); setPassword(''); setCode(''); setActionReason('');
       await load();
-      if (detail?.workspace?.id) await selectWorkspace(detail.workspace.id);
+      if (detail?.workspace?.id) await selectWorkspace(detail.workspace.id, false);
     } catch (e) { setError((e as Error).message); }
     finally { setBusy(false); }
   }
 
   function navigate(next: Section) {
+    const address = new URL(window.location.href);
+    if (next === 'overview') address.searchParams.delete('section');
+    else address.searchParams.set('section', next);
+    address.searchParams.delete('workspace');
+    window.history.pushState({}, '', address);
     setSection(next); setData(null); setDetail(null); setDetailLoading(false); setPage(1); setError('');
   }
   function trace(e: FormEvent<HTMLFormElement>) {
@@ -211,7 +239,7 @@ export function Platform() {
           <div className="platform__table"><table><thead><tr><th>Workspace</th><th>People</th><th>Processes</th><th>Records</th><th>Failed jobs</th><th>Created</th></tr></thead><tbody>{data.rows.map((w: Json) => <tr key={w.id}><td><button className="platform__link" onClick={() => void selectWorkspace(w.id)}>{w.name}<Icon name="arrow" size={14}/></button></td><td>{w.people}</td><td>{w.processes}</td><td>{w.records}</td><td><Pill tone={w.failed_jobs ? 'bad' : 'neutral'}>{w.failed_jobs}</Pill></td><td><DateText value={w.created_at}/></td></tr>)}</tbody></table>{!data.rows.length && <Empty title="No matching workspaces"/>}</div>
         </>}
 
-        {section === 'workspaces' && (detail || detailLoading) && <div className="platform__workspacePage"><button className="platform__back" onClick={() => { setDetail(null); setDetailLoading(false); }}>← Back to workspaces</button>{detail ? <Panel title={detail.workspace.name} className="platform__detail">
+        {section === 'workspaces' && (detail || detailLoading) && <div className="platform__workspacePage"><button className="platform__back" onClick={() => navigate('workspaces')}>← Back to workspaces</button>{detail ? <Panel title={detail.workspace.name} className="platform__detail">
             <p className="platform__hint platform__mono">{detail.workspace.id}</p>
             <div className="platform__detailMetrics"><span><strong>{detail.people.length}</strong> people</span><span><strong>{detail.processes.length}</strong> processes</span><span><strong>{detail.jobs.failed}</strong> failed jobs</span></div>
             {mayAct && <div className="platform__manageBox"><h3>Workspace name</h3><div className="platform__inlineForm"><label className="platform__srOnly" htmlFor="platform-workspace-name">Workspace name</label><input id="platform-workspace-name" value={workspaceName} maxLength={120} onChange={(e) => setWorkspaceName(e.target.value)}/><button className="platform__button" disabled={workspaceName.trim() === detail.workspace.name || workspaceName.trim().length < 2} onClick={() => setAction({ path: `workspaces/${detail.workspace.id}/rename`, label: `Rename ${detail.workspace.name} to ${workspaceName.trim()}`, body: { name: workspaceName.trim() }, needsReason: true })}>Rename</button></div><p className="platform__hint">A reason and your password plus authenticator code are required.</p></div>}
