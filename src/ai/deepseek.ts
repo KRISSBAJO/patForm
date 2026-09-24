@@ -31,6 +31,9 @@ export class DeepSeekProvider implements Provider {
         { role: 'user', content: request.user },
       ],
       response_format: { type: 'json_object' },
+      // Flash defaults to high-effort thinking. This task needs a structured
+      // draft, so spend the output budget on the JSON instead of reasoning.
+      reasoning_effort: 'none',
       max_tokens: 32000,
     });
     const choice = completion.choices[0];
