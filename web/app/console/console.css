@@ -1397,6 +1397,17 @@
   gap: 4px;
 }
 
+.cs__processBrowse {
+  border: 0;
+  background: transparent;
+  color: var(--green-deep);
+  text-align: left;
+  font: 600 12px var(--ui);
+  padding: 9px 10px;
+  cursor: pointer;
+}
+.cs__processBrowse:hover { text-decoration: underline; }
+
 .cs__process {
   min-height: 34px;
   padding-block: 4px;
@@ -1739,6 +1750,65 @@
 
 .mg__process {
   margin-bottom: 18px;
+}
+
+.cs__body--processes .cs__left { max-width: 1180px; margin-inline: auto; }
+.mg__directory { min-width: 0; }
+.mg__directoryIntro {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 6px 0 24px;
+}
+.mg__eyebrow { color: var(--green-deep); font: 700 11px var(--ui); letter-spacing: .13em; margin: 0 0 10px; }
+.mg__directoryIntro h2 { font: 600 clamp(24px, 2.4vw, 34px) var(--ui); letter-spacing: -.035em; margin: 0 0 7px; }
+.mg__directoryIntro p:not(.mg__eyebrow) { color: var(--muted); font-size: 14px; margin: 0; }
+.mg__directoryCount { color: var(--muted); font-size: 13px; white-space: nowrap; }
+.mg__directoryTools { display: flex; gap: 10px; margin-bottom: 14px; }
+.mg__directoryTools input { flex: 1; min-width: 0; }
+.mg__directoryTools select { width: 195px; flex: none; }
+.mg__directoryResults { color: var(--muted); font-size: 12px; margin-bottom: 9px; }
+.mg__directoryList { border: 1px solid var(--line); border-radius: 12px; background: var(--white); overflow: hidden; }
+.mg__directoryItem {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  width: 100%;
+  min-width: 0;
+  padding: 15px 18px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+.mg__directoryItem:last-child { border-bottom: 0; }
+.mg__directoryItem:hover, .mg__directoryItem:focus-visible { background: var(--paper-2); }
+.mg__directoryMark { display: grid; place-items: center; width: 38px; height: 38px; flex: none; border-radius: 9px; background: #e9f3ee; color: var(--green-deep); font-size: 16px; font-weight: 700; }
+.mg__directoryIdentity { display: grid; gap: 4px; min-width: 0; flex: 1; }
+.mg__directoryIdentity strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
+.mg__directoryIdentity small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 11px; }
+.mg__directoryMeta, .mg__directoryOpen { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.mg__directoryOpen { min-width: 64px; text-align: right; }
+.mg__directoryArrow { color: var(--green-deep); font-size: 19px; }
+.mg__directoryEmpty { padding: 36px 18px; border: 1px dashed var(--line); border-radius: 12px; text-align: center; color: var(--muted); }
+.mg__directoryPages { display: flex; align-items: center; justify-content: flex-end; gap: 9px; margin-top: 16px; }
+.mg__directoryPages span { margin-right: auto; color: var(--muted); font-size: 12px; }
+.mg__back { margin: 18px 18px 5px; }
+@media (max-width: 600px) {
+  .mg__directoryIntro { align-items: flex-start; padding-top: 0; }
+  .mg__directoryCount { margin-top: 6px; }
+  .mg__directoryTools { flex-direction: column; }
+  .mg__directoryTools select { width: 100%; }
+  .mg__directoryItem { gap: 10px; padding: 13px 12px; }
+  .mg__directoryMark { width: 32px; height: 32px; }
+  .mg__directoryMeta { display: none; }
+  .mg__directoryOpen { min-width: 48px; }
+  .mg__processBody { padding: 14px; }
+  .mg__linkRow { flex-wrap: wrap; }
+  .mg__linkRow .cs__input { min-width: 0; width: 100%; }
 }
 
 .mg__processBody {

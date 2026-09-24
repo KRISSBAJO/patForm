@@ -555,7 +555,20 @@ export function ProcessesView({
   const [installs, setInstalls] = useState<Install[]>([]);
   const [open, setOpen] = useState<string | null>(null);
   const [records, setRecords] = useState<RecordRow[]>([]);
+  const [selected, setSelected] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
+  const [sort, setSort] = useState<'name' | 'activity'>('name');
+  const [page, setPage] = useState(1);
   const origin = typeof window === 'undefined' ? '' : window.location.origin;
+  const pageSize = 15;
+  const selectedProcess = processes.find((p) => p.process_key === selected);
+  const filtered = processes
+    .filter((p) => `${p.name} ${p.process_key} ${p.roles.join(' ')}`.toLowerCase().includes(query.trim().toLowerCase()))
+    .sort((a, b) => sort === 'activity'
+      ? b.open_records - a.open_records || a.name.localeCompare(b.name)
+      : a.name.localeCompare(b.name));
+  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const currentPage = Math.min(page, pageCount);
 
   useEffect(() => {
     // Which processes came from a pack, and whether the pack has moved on
@@ -600,25 +613,50 @@ export function ProcessesView({
 
   return (
     <>
-      <div className="cs__panel" style={{ marginBottom: 18 }}>
-        <div className="cs__panelHead">
-          <h2 className="cs__tab">How a record starts</h2>
+      {!selectedProcess ? <section className="mg__directory" aria-label="Published processes">
+        <div className="mg__directoryIntro">
+          <div>
+            <p className="mg__eyebrow">WORKSPACE LIBRARY</p>
+            <h2>Published processes</h2>
+            <p>Find a form, review its records, or change how it works.</p>
+          </div>
+          <span className="mg__directoryCount">{processes.length} processes</span>
         </div>
-        <p className="vw__note" style={{ marginTop: 14 }}>
-          Each published process serves a form at its own link. Send that link to whoever fills it
-          in — a new starter, a claimant, a supplier — and every submission becomes a record on{' '}
-          <strong>My work</strong>, routed by the process&rsquo;s own rules. Nobody needs an account
-          to submit one.
-        </p>
-      </div>
-
-      {processes.map((p) => {
+        <div className="mg__directoryTools">
+          <label className="cs__srOnly" htmlFor="process-search">Search processes</label>
+          <input id="process-search" className="cs__input" type="search" placeholder="Search name, key, or role" value={query} onChange={(e) => { setQuery(e.target.value); setPage(1); }} />
+          <label className="cs__srOnly" htmlFor="process-sort">Sort processes</label>
+          <select id="process-sort" className="cs__input" value={sort} onChange={(e) => { setSort(e.target.value as 'name' | 'activity'); setPage(1); }}>
+            <option value="name">Name A–Z</option>
+            <option value="activity">Most open records</option>
+          </select>
+        </div>
+        <div className="mg__directoryResults" aria-live="polite">{filtered.length} {filtered.length === 1 ? 'result' : 'results'}</div>
+        {filtered.length ? <div className="mg__directoryList">
+          {filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize).map((p) => (
+            <button key={p.process_key} type="button" className="mg__directoryItem" onClick={() => { setSelected(p.process_key); setOpen(null); setRecords([]); }}>
+              <span className="mg__directoryMark" aria-hidden="true">{p.name.slice(0, 1).toUpperCase()}</span>
+              <span className="mg__directoryIdentity"><strong>{p.name}</strong><small>{p.process_key}</small></span>
+              <span className="mg__directoryMeta">Published v{p.version}</span>
+              <span className="mg__directoryOpen">{p.open_records} open</span>
+              <span className="mg__directoryArrow" aria-hidden="true">→</span>
+            </button>
+          ))}
+        </div> : <div className="mg__directoryEmpty">No processes match your search.</div>}
+        {pageCount > 1 && <div className="mg__directoryPages">
+          <span>Page {currentPage} of {pageCount}</span>
+          <button type="button" className="cs__btn" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>Previous</button>
+          <button type="button" className="cs__btn" disabled={currentPage === pageCount} onClick={() => setPage(currentPage + 1)}>Next</button>
+        </div>}
+      </section> : (() => {
+        const p = selectedProcess;
         // Each workspace's form has its own link; the key alone is shared by
         // every workspace that installed the same pack.
         const url = `${origin}/f/${p.public_id}`;
         const from = installs.find((i) => i.process_key === p.process_key);
         return (
           <div className="cs__panel mg__process" key={p.process_key}>
+            <button type="button" className="mg__back cs__linkBtn cs__linkBtn--onLight" onClick={() => setSelected(null)}>← All processes</button>
             <div className="cs__panelHead">
               <h2 className="cs__tab">{p.name}</h2>
               <span className="cs__sort">
@@ -627,8 +665,6 @@ export function ProcessesView({
             </div>
 
             <div className="mg__processBody">
-              {/* Facts as chips rather than a sentence: they are scanned, not
-                  read, and a sentence makes somebody parse to find one. */}
               <div className="mg__chips">
                 <span className="mg__chip">
                   <Icon name="people" />
@@ -744,7 +780,7 @@ export function ProcessesView({
             </div>
           </div>
         );
-      })}
+      })()}
     </>
   );
 }

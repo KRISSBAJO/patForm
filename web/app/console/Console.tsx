@@ -533,7 +533,9 @@ export function Console() {
 
         <div className="cs__processList">
           <span className="cs__sectionLabel">PROCESSES</span>
-          {session.processes.map((p) => (
+          {session.processes
+            .filter((p, index) => index < 5 || p.process_key === processKey)
+            .map((p) => (
             <button
               key={p.process_key}
               type="button"
@@ -556,6 +558,11 @@ export function Console() {
               <span className="cs__processText">{p.name}</span>
             </button>
           ))}
+          {session.processes.length > 5 && (
+            <button type="button" className="cs__processBrowse" onClick={() => setView('processes')}>
+              Browse all {session.processes.length} processes →
+            </button>
+          )}
         </div>
 
         <div className="cs__seat">
@@ -651,7 +658,7 @@ export function Console() {
           </button>}
         </div>
 
-        <div className={`cs__body ${view === 'security' ? 'cs__body--security' : ''} ${view === 'ask' ? 'cs__body--ask' : ''}`}>
+        <div className={`cs__body ${view === 'security' ? 'cs__body--security' : ''} ${view === 'ask' ? 'cs__body--ask' : ''} ${view === 'processes' ? 'cs__body--processes' : ''}`}>
           <div className="cs__left">
             {view === 'record' && record ? (
               <RecordPage
@@ -760,7 +767,7 @@ export function Console() {
 
           {/* The record page carries its own side column; two of them would
               be a column of cards about a different subject. */}
-          {view !== 'record' && view !== 'security' && view !== 'ask' && (
+          {view !== 'record' && view !== 'security' && view !== 'ask' && view !== 'processes' && (
           <div className="cs__right">
             {!processKey ? null : health ? (
               <div className="cs__card">
@@ -811,8 +818,6 @@ export function Console() {
                     ? 'Who is in this workspace and what they may do. An invitation is emailed, works once, and expires in seven days — the link is never shown here, because anybody who can invite could otherwise mint one for an address whose owner never sees it.'
                   : view === 'invite'
                     ? 'One person, a pasted list, or a spreadsheet. Every row is checked before anything is sent: typos, duplicates, people already here and roles you cannot give are set aside, and only the rest go. Each invitation works once and expires in seven days.'
-                  : view === 'processes'
-                    ? 'Where records come from. Each published process serves a form at its own link; every submission becomes a record, routed by that process’s own rules. Nobody needs an account to submit one.'
                   : view === 'integrations'
                     ? 'Everything outside this workspace that can reach it, or that it reaches. Keys and signing secrets are shown once and stored as hashes, so a copy of our database is not a set of working credentials.'
                   : view === 'data'
