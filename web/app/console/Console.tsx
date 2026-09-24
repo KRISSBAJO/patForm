@@ -645,7 +645,7 @@ export function Console() {
           {['work', 'record', 'ask', 'records', 'dashboard'].includes(view) && (view === 'record' ? record : work) && (
             <span className="cs__version">{view === 'record' && record ? record.processName : work?.processName}</span>
           )}
-          <span style={{ flexGrow: 1 }} />
+          <span className="cs__headSpacer" />
           {view !== 'security' && <button type="button" className="cs__btn" onClick={() => void load()}>
             Refresh
           </button>}
