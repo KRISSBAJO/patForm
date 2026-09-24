@@ -64,3 +64,15 @@
   .st__conditionRow select, .st__conditionRow input { flex: 1 1 44%; }
   .st__mapping { grid-template-columns: minmax(70px, 1fr) auto minmax(95px, 1fr) auto; }
 }
+.bd__mobileMap { display: none; }
+@media (max-width: 640px) {
+  .bd .bd__outline { max-height: none; overflow: visible; }
+  .bd__mobileMap { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; border-bottom: 1px solid #dfe9e1; }
+  .bd__mobileMap span { min-width: 0; }
+  .bd__mobileMap strong, .bd__mobileMap small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bd__mobileMap strong { font-size: 13px; }
+  .bd__mobileMap small { color: #62756a; font-size: 12px; }
+  .bd__mobileMap button { flex: 0 0 auto; border: 1px solid #bed8c6; border-radius: 7px; background: #f1f8f3; color: #155b3c; padding: 8px 10px; font: inherit; font-size: 12px; font-weight: 700; }
+  .bd__outline:not(.bd__outline--open) > :not(.bd__mobileMap) { display: none; }
+  .bd__outline--open { max-height: 62vh !important; overflow-y: auto !important; }
+}

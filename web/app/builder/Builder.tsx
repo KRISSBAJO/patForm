@@ -2145,6 +2145,7 @@ function Outline({
   readOnly?: boolean;
 }) {
   const [outlineQuery, setOutlineQuery] = useState('');
+  const [mobileOpen, setMobileOpen] = useState(false);
   const groups: { tab: Tab; label: string; items: { key: string; name: string; note?: string }[] }[] = [
     {
       tab: 'pages', label: 'Form pages',
@@ -2211,7 +2212,8 @@ function Outline({
   ];
 
   return (
-    <nav className="bd__outline" aria-label="Process map">
+    <nav className={`bd__outline${mobileOpen ? ' bd__outline--open' : ''}`} aria-label="Process map">
+      <div className="bd__mobileMap"><span><strong>Process map</strong><small>{overview ? 'Process overview' : groups.find((g) => g.tab === tab)?.items[index]?.name ?? 'Choose a step'}</small></span><button type="button" aria-expanded={mobileOpen} onClick={() => setMobileOpen((was) => !was)}>{mobileOpen ? 'Close' : 'Browse steps'}</button></div>
       <div className="bd__outlineIntro">
         <span className="bd__outlineEyebrow">PROCESS MAP</span>
         <strong>Build your flow</strong>
@@ -2228,7 +2230,7 @@ function Outline({
       </div>
       <section className="bd__group">
         <header className="bd__groupHead"><span>Start here</span></header>
-        <button className="bd__outlineItem" aria-current={overview ? 'true' : undefined} onClick={onOverview}>
+        <button className="bd__outlineItem" aria-current={overview ? 'true' : undefined} onClick={() => { onOverview(); setMobileOpen(false); }}>
           <span className="bd__outlineName">Process overview</span>
           <span className="bd__outlineNote">form, decisions and work</span>
         </button>
@@ -2242,7 +2244,7 @@ function Outline({
             <span className="bd__count">{g.items.length}</span>
             <button
               className="bd__add"
-              onClick={() => onAdd(g.tab)}
+              onClick={() => { onAdd(g.tab); setMobileOpen(false); }}
               disabled={readOnly}
               title={readOnly ? 'someone else has this draft' : `Add a ${g.label.slice(0, -1).toLowerCase()}`}
             >
@@ -2256,7 +2258,7 @@ function Outline({
               key={item.key + i}
               className="bd__outlineItem"
               aria-current={!overview && tab === g.tab && index === i ? 'true' : undefined}
-              onClick={() => onSelect(g.tab, i)}
+              onClick={() => { onSelect(g.tab, i); setMobileOpen(false); }}
             >
               <span className="bd__outlineName">{item.name}</span>
               {item.note && <span className="bd__outlineNote">{item.note}</span>}
@@ -2275,7 +2277,7 @@ function Outline({
         <button
           className="bd__outlineItem"
           aria-current={!overview && tab === 'json' ? 'true' : undefined}
-          onClick={() => onSelect('json', 0)}
+          onClick={() => { onSelect('json', 0); setMobileOpen(false); }}
         >
           <span className="bd__outlineName">Blueprint JSON</span>
           <span className="bd__outlineNote">advanced blueprint settings</span>
@@ -3622,7 +3624,7 @@ function LaunchChecklist({ blueprint, errors, warnings, status, tests, onPreview
   draftId: string;
 }) {
   const rows = [
-    { label: 'Draft saved', detail: status === 'saved' ? 'Latest edits saved' : status === 'saving' ? 'Saving latest edits' : status === 'error' ? 'Save failed' : 'Ready to edit', ok: status === 'saved', action: null },
+    { label: 'Draft saved', detail: status === 'saved' ? 'Latest edits saved' : status === 'saving' ? 'Saving latest edits' : status === 'error' ? 'Save failed' : 'Up to date', ok: status === 'saved' || status === 'idle', action: null },
     { label: 'Form reviewed', detail: `${blueprint.experience?.pages?.length ?? 0} pages`, ok: null, action: <button type="button" onClick={onPreview}>Preview</button> },
     { label: 'Blueprint checks', detail: `${errors} errors · ${warnings} warnings`, ok: errors === 0, action: null },
     { label: 'Test scenarios', detail: tests ? `${tests.passed} of ${tests.total} passed` : `${blueprint.tests?.length ?? 0} defined · not run since last edit`, ok: tests && tests.total > 0 ? tests.passed === tests.total : false, action: <><button type="button" onClick={onScenarios}>Edit</button><button type="button" disabled={!canTest || testing} onClick={onTest}>{testing ? 'Running…' : 'Run'}</button></> },
