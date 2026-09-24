@@ -57,3 +57,24 @@ test('shape repair sees the full prior blueprint, including its last fields', as
   assert.equal(calls, 2);
   assert.ok(result.editable);
 });
+
+test('AI revision receives the selected blueprint and a request to preserve existing behavior', async () => {
+  const source = JSON.parse(readFileSync(new URL('../processes/expense-approval.blueprint.json', import.meta.url), 'utf8'));
+  let seen = false;
+  const provider: Provider = {
+    name: 'fixture', model: 'fixture',
+    async generate(request) {
+      assert.match(request.user, /Revise the EXISTING process blueprint/);
+      assert.match(request.user, /Keep the same root key, preserve existing fields/);
+      assert.ok(request.user.includes(`"key":"${source.key}"`));
+      assert.ok(request.user.includes('Add a finance review above 2500'));
+      seen = true;
+      return { text: JSON.stringify(source), parsed: source,
+        meta: { provider: 'fixture', model: 'fixture', mode: 'structured', latencyMs: 1 } };
+    },
+  };
+  await generateBlueprint(provider, blueprintSchema(), {
+    description: 'Add a finance review above 2500', sourceBlueprint: source, maxRepairs: 0,
+  });
+  assert.ok(seen);
+});

@@ -5,7 +5,7 @@ import { changePlatformPerson, grantPlatformOperator, platformAudit, platformInt
   renamePlatformWorkspace, retryPlatformJob, revokePlatformApiKey, revokePlatformOperator, revokePlatformSessions,
   setPlatformIntakePaused, setPlatformWebhookActive, platformTrace } from '../runtime/platform-admin.js';
 import { Engine } from '../runtime/engine.js';
-import { aiDraftStatus, queueAiDraft } from '../runtime/ai-drafts.js';
+import { aiDraftStatus, applyAiRevision, queueAiDraft, queueAiRevision } from '../runtime/ai-drafts.js';
 import { AuthorizationError, requireWorkspaceCapability, WORKSPACE_GRANTS, type Principal } from '../runtime/policy.js';
 import type { Capability } from '../blueprint/roles.js';
 import {
@@ -291,6 +291,12 @@ route('POST', /^\/api\/builder\/ai-jobs$/, async ({ pool, principal }, body) =>
 );
 route('GET', /^\/api\/builder\/ai-jobs\/[0-9a-f-]{36}$/, async ({ pool, principal, url }) =>
   aiDraftStatus(pool, principal, url.pathname.split('/')[4]!),
+);
+route('POST', /^\/api\/builder\/drafts\/([0-9a-f-]{36})\/improve$/, async ({ pool, principal, url }, body) =>
+  queueAiRevision(pool, principal, url.pathname.split('/')[4]!, (body as { request?: string })?.request ?? ''),
+);
+route('POST', /^\/api\/builder\/ai-jobs\/([0-9a-f-]{36})\/apply$/, async ({ pool, principal, url }) =>
+  applyAiRevision(pool, principal, url.pathname.split('/')[4]!),
 );
 
 route('POST', /^\/api\/builder\/drafts\/([0-9a-f-]{36})\/discard$/, async ({ pool, principal, url }) =>

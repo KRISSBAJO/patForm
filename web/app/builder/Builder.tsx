@@ -1024,6 +1024,7 @@ export function Builder() {
                 <FormLink formId={draft.formId} />
               </div>
               <div className="bd__actions">
+                <a className="bd__btn" href={`/builder/improve?draft=${draft.id}`}>Improve with AI</a>
                 <a className="bd__btn" href={`/builder/launch?draft=${draft.id}`}>Setup and sharing</a>
                 <button className="bd__btn" onClick={discard} disabled={busy !== null || frozen}>
                   Discard

@@ -49,6 +49,8 @@ export interface GenerationOutcome {
 export interface GenerateOptions {
   description: string;
   pack?: string;
+  /** Existing draft to revise, rather than a process to invent from scratch. */
+  sourceBlueprint?: Blueprint;
   /** §7.4 gates validity "after one repair attempt", so one is the default. */
   maxRepairs?: number;
   /** When given, a clean blueprint also has to pass its own scenarios. */
@@ -105,7 +107,7 @@ export async function generateBlueprint(
   const maxRepairs = options.maxRepairs ?? 1;
   const attempts: Attempt[] = [];
 
-  const baseUser = userTurn(options.description, options.pack);
+  const baseUser = userTurn(options.description, options.pack, options.sourceBlueprint);
   let user = baseUser;
   let blueprint: Blueprint | undefined;
   let diagnostics: Diagnostic[] = [];

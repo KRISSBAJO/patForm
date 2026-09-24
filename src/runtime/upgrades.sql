@@ -38,6 +38,12 @@ create table if not exists ai_draft_job (
 );
 alter table ai_draft_job add column if not exists stage text not null default 'waiting';
 alter table ai_draft_job add column if not exists heartbeat_at timestamptz;
+alter table ai_draft_job add column if not exists source_draft_id uuid;
+alter table ai_draft_job add column if not exists source_revision int;
+alter table ai_draft_job add column if not exists source_blueprint jsonb;
+alter table ai_draft_job add column if not exists proposal jsonb;
+alter table ai_draft_job add column if not exists review jsonb;
+alter table ai_draft_job add column if not exists applied_at timestamptz;
 create index if not exists ai_draft_job_queue on ai_draft_job (created_at) where status in ('queued', 'running');
 create unique index if not exists ai_draft_job_active_key on ai_draft_job (tenant_id, process_key) where status in ('queued', 'running');
 update process_draft set ai_review_required = true
