@@ -140,6 +140,7 @@ create table ai_draft_job (
   attempts int not null default 0,
   created_at timestamptz not null default now(),
   started_at timestamptz,
+  heartbeat_at timestamptz,
   completed_at timestamptz
 );
 create index ai_draft_job_queue on ai_draft_job (created_at) where status in ('queued', 'running');

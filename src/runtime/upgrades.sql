@@ -31,9 +31,11 @@ create table if not exists ai_draft_job (
   attempts int not null default 0,
   created_at timestamptz not null default now(),
   started_at timestamptz,
+  heartbeat_at timestamptz,
   completed_at timestamptz
 );
 alter table ai_draft_job add column if not exists stage text not null default 'waiting';
+alter table ai_draft_job add column if not exists heartbeat_at timestamptz;
 create index if not exists ai_draft_job_queue on ai_draft_job (created_at) where status in ('queued', 'running');
 create unique index if not exists ai_draft_job_active_key on ai_draft_job (tenant_id, process_key) where status in ('queued', 'running');
 

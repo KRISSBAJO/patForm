@@ -37,14 +37,20 @@ export async function aiDraftStatus(pool: Pool, principal: Principal, jobId: str
 
 export async function processNextAiDraft(pool: Pool): Promise<boolean> {
   const claimed = await pool.query<{ id: string; tenant_id: string; actor_id: string; process_key: string; process_name: string | null; description: string }>(
-    `update ai_draft_job j set status = 'running', stage = 'generating', started_at = now(), attempts = attempts + 1, error = null
+    `update ai_draft_job j set status = 'running', stage = 'generating', started_at = now(), heartbeat_at = now(), attempts = attempts + 1, error = null
      where j.id = (select id from ai_draft_job
-       where status = 'queued' or (status = 'running' and started_at < now() - interval '30 minutes')
+       where status = 'queued' or (status = 'running' and coalesce(heartbeat_at, started_at) < now() - interval '90 seconds')
        order by created_at for update skip locked limit 1)
      returning j.id, j.tenant_id, j.actor_id, j.process_key, j.process_name, j.description`,
   );
   const job = claimed.rows[0];
   if (!job) return false;
+  // Model calls can take minutes. A live worker refreshes its claim so only
+  // interrupted jobs become eligible for another worker after 90 seconds.
+  const heartbeat = setInterval(() => {
+    void pool.query(`update ai_draft_job set heartbeat_at = now() where id = $1 and status = 'running'`, [job.id])
+      .catch((error: unknown) => console.error('AI draft heartbeat failed:', job.id, error));
+  }, 20_000);
   try {
     const draft = await createDraft(pool, { principal: { kind: 'actor', tenantId: job.tenant_id, actorId: job.actor_id },
       input: { key: job.process_key, name: job.process_name ?? undefined, description: job.description },
@@ -56,6 +62,8 @@ export async function processNextAiDraft(pool: Pool): Promise<boolean> {
     await pool.query(`update ai_draft_job set status = 'failed', error = $2, completed_at = now(), description = ''
       where id = $1`, [job.id, message.slice(0, 500)]);
     console.error('AI draft job failed:', job.id, error instanceof Error ? error.message : String(error));
+  } finally {
+    clearInterval(heartbeat);
   }
   return true;
 }
