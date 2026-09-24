@@ -515,8 +515,8 @@ export function Builder() {
           adopt(await call<DraftDetail>('/api/builder/open', { method: 'POST', body: JSON.stringify({ processKey: asked }) }));
           await refreshList();
         } else if (newMode === 'describe') {
-          setCreatingFromAsk(true);
-          setCreating(true);
+          window.location.href = '/builder/ai';
+          return;
         }
       } catch (err) {
         if (err instanceof Unauthenticated) setSignedIn(false);
@@ -1783,7 +1783,7 @@ function Welcome({
               </a>
             </li>
             <li>
-              <button type="button" className="bd__startCard" onClick={onNew}>
+              <a className="bd__startCard" href="/builder/ai">
                 <span className="bd__startCardTop">
                   <Sketch kind="describe" />
                 </span>
@@ -1791,7 +1791,7 @@ function Welcome({
                 <span className="bd__startCardMeta">
                   Say what happens in a sentence or two and it is drafted for you to review
                 </span>
-              </button>
+              </a>
             </li>
             <li>
               <button type="button" className="bd__startCard" onClick={onNew}>
@@ -3737,6 +3737,11 @@ function NewProcessDialog({
   const box = useDialog(onClose);
 
   const submit = async () => {
+    if (mode === 'describe') {
+      sessionStorage.setItem('patform:new-process-description', description.trim());
+      window.location.href = '/builder/ai';
+      return;
+    }
     setBusy(true);
     setErr(null);
     try {
@@ -3753,11 +3758,7 @@ function NewProcessDialog({
       }
       const detail = await call<DraftDetail>('/api/builder/create', {
         method: 'POST',
-        body: JSON.stringify(
-          mode === 'describe'
-            ? { key, name: name || undefined, description }
-            : { key, name: name || undefined, copyFrom },
-        ),
+        body: JSON.stringify({ key, name: name || undefined, copyFrom }),
       });
       onCreated(detail);
     } catch (e) {
@@ -3781,7 +3782,7 @@ function NewProcessDialog({
           <button className={`bd__mode${mode === 'pack' ? ' bd__mode--on' : ''}`} onClick={() => setMode('pack')}>
             From a pack
           </button>
-          <button className={`bd__mode${mode === 'describe' ? ' bd__mode--on' : ''}`} onClick={() => setMode('describe')}>
+          <button className={`bd__mode${mode === 'describe' ? ' bd__mode--on' : ''}`} onClick={() => { window.location.href = '/builder/ai'; }}>
             Describe it
           </button>
           <button className={`bd__mode${mode === 'copy' ? ' bd__mode--on' : ''}`} onClick={() => setMode('copy')}>

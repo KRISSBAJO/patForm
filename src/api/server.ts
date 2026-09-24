@@ -5,6 +5,7 @@ import { changePlatformPerson, grantPlatformOperator, platformAudit, platformInt
   renamePlatformWorkspace, retryPlatformJob, revokePlatformApiKey, revokePlatformOperator, revokePlatformSessions,
   setPlatformIntakePaused, setPlatformWebhookActive, platformTrace } from '../runtime/platform-admin.js';
 import { Engine } from '../runtime/engine.js';
+import { aiDraftStatus, queueAiDraft } from '../runtime/ai-drafts.js';
 import { AuthorizationError, requireWorkspaceCapability, WORKSPACE_GRANTS, type Principal } from '../runtime/policy.js';
 import type { Capability } from '../blueprint/roles.js';
 import {
@@ -278,8 +279,18 @@ route('POST', /^\/api\/builder\/open$/, async ({ pool, principal }, body) => {
   return openProcessDraft(pool, { principal, processKey });
 });
 
-route('POST', /^\/api\/builder\/create$/, async ({ pool, principal }, body) =>
-  createDraft(pool, { principal, input: body as NewProcess }),
+route('POST', /^\/api\/builder\/create$/, async ({ pool, principal }, body) => {
+  const input = body as NewProcess;
+  // Older builder clients still call this route. Keep AI work out of the
+  // request so a slow provider cannot turn the response into a gateway error.
+  if (input.description?.trim()) return queueAiDraft(pool, principal, input);
+  return createDraft(pool, { principal, input });
+});
+route('POST', /^\/api\/builder\/ai-jobs$/, async ({ pool, principal }, body) =>
+  queueAiDraft(pool, principal, body as NewProcess),
+);
+route('GET', /^\/api\/builder\/ai-jobs\/[0-9a-f-]{36}$/, async ({ pool, principal, url }) =>
+  aiDraftStatus(pool, principal, url.pathname.split('/')[4]!),
 );
 
 route('POST', /^\/api\/builder\/drafts\/([0-9a-f-]{36})\/discard$/, async ({ pool, principal, url }) =>

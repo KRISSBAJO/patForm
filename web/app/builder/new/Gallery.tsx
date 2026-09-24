@@ -251,7 +251,7 @@ export function Gallery() {
         )}
 
         <p className="gl__other">
-          Nothing here fits? <a href="/builder">Describe your process in a sentence</a> and the
+          Nothing here fits? <a href="/builder/ai">Describe your process in a sentence</a> and the
           builder will draft it, or copy one you already have.
         </p>
         </div>

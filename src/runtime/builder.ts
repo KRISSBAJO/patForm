@@ -10,7 +10,7 @@ import {
   availableProviders,
   blueprintSchema,
   generateBlueprint,
-  preferredProvider,
+  providerFor,
   type GenerationOutcome,
   type ProviderName,
 } from '../ai/index.js';
@@ -669,21 +669,27 @@ export async function createDraft(
     if (!available.length) {
       throw new Error('no AI provider is configured — set DEEPSEEK_API_KEY, ANTHROPIC_API_KEY or OPENAI_API_KEY, or copy an existing process');
     }
-    const provider = preferredProvider(input.provider);
-    // The pool is passed so a clean blueprint also has to pass its own
-    // scenarios before the pipeline calls it publishable (§7.4, gate three).
-    const outcome = await generateBlueprint(provider, blueprintSchema(), {
-      description: input.description,
-      pack: input.pack,
-      pool,
-    });
+    let outcome: GenerationOutcome | undefined;
+    let lastProblem = 'The model did not return a valid process.';
+    // A successful HTTP response can still contain an unusable blueprint.
+    // Try the next configured provider in the requested priority order.
+    for (const name of input.provider ? [input.provider] : available) {
+      try {
+        const proposed = await generateBlueprint(providerFor(name), blueprintSchema(), {
+          description: input.description,
+          pack: input.pack,
+          pool,
+        });
+        if (proposed.blueprint) { outcome = proposed; break; }
+        lastProblem = `${name} returned a ${proposed.decision} process: ${proposed.diagnostics[0]?.message ?? 'no detail'}`;
+      } catch (error) {
+        lastProblem = `${name} could not complete generation`;
+        console.warn(lastProblem, error instanceof Error ? error.message : String(error));
+      }
+    }
+    if (!outcome?.blueprint) throw new InvalidInput(`AI could not produce a safe draft. ${lastProblem.slice(0, 220)}. Try simplifying the description or start from a template.`);
     audit = outcome.audit;
     decision = outcome.decision;
-    if (!outcome.blueprint) {
-      throw new Error(
-        `the model did not produce a usable blueprint (${outcome.decision}) — ${outcome.diagnostics[0]?.message ?? 'no detail'}`,
-      );
-    }
     // The key the builder typed wins over the one the model chose, so the URL
     // and the list entry match what they asked for.
     blueprint = { ...outcome.blueprint, key: input.key, name: input.name ?? outcome.blueprint.name };

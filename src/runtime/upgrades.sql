@@ -13,6 +13,24 @@ alter table approval_request add column if not exists electorate int;
 alter table tenant add column if not exists intake_paused_at timestamptz;
 alter table tenant add column if not exists intake_pause_reason text;
 
+create table if not exists ai_draft_job (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null references tenant(id),
+  actor_id uuid not null references actor(id),
+  process_key text not null,
+  process_name text,
+  description text not null,
+  status text not null default 'queued' check (status in ('queued', 'running', 'ready', 'failed')),
+  draft_id uuid,
+  error text,
+  attempts int not null default 0,
+  created_at timestamptz not null default now(),
+  started_at timestamptz,
+  completed_at timestamptz
+);
+create index if not exists ai_draft_job_queue on ai_draft_job (created_at) where status in ('queued', 'running');
+create unique index if not exists ai_draft_job_active_key on ai_draft_job (tenant_id, process_key) where status in ('queued', 'running');
+
 create table if not exists file_deletion (
   storage_key text primary key,
   queued_at timestamptz not null default now()

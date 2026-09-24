@@ -5,6 +5,7 @@ import { sweepExpiredTokens } from './runtime/retention.js';
 import { sweepHeld } from './runtime/held.js';
 import { checkSendingHealth } from './runtime/delivery-health.js';
 import { cleanupExpiredReceipts, drainReceiptDeletions } from './runtime/receipt-files.js';
+import { processNextAiDraft } from './runtime/ai-drafts.js';
 
 /**
  * The durable worker §10.1 asks for: "Queue-backed workers for email,
@@ -35,6 +36,7 @@ async function main(): Promise<void> {
 
   let running = true;
   let lastSweep = 0;
+  let aiDraftRunning = false;
   const totals = { actions: 0, timers: 0, webhooks: 0, errors: 0 };
 
   const stop = (signal: string) => {
@@ -77,6 +79,14 @@ async function main(): Promise<void> {
       did += hooks.claimed;
       if (hooks.deadLettered) {
         console.log(`  ${now.toISOString()}  ${hooks.deadLettered} webhook(s) gave up and went to the dead letter`);
+      }
+
+      if (!aiDraftRunning) {
+        aiDraftRunning = true;
+        void processNextAiDraft(pool)
+          .then((claimed) => { if (claimed) console.log('  AI draft job processed'); })
+          .catch((error) => { totals.errors++; console.error('  AI draft worker error:', error instanceof Error ? error.message : error); })
+          .finally(() => { aiDraftRunning = false; });
       }
 
       if (fired) console.log(`  ${now.toISOString()}  fired ${fired} timer(s)`);

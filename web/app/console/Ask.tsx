@@ -92,7 +92,7 @@ export function Ask({ processKey, onOpenRecord }: { processKey: string; onOpenRe
 
   const startForm = () => {
     if (question.trim()) sessionStorage.setItem('patform:new-process-description', question.trim());
-    window.location.href = '/builder?new=describe';
+    window.location.href = '/builder/ai';
   };
 
   /**

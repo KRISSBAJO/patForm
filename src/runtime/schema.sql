@@ -126,6 +126,24 @@ create table platform_operator (
   revoked_at timestamptz
 );
 
+create table ai_draft_job (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null references tenant(id),
+  actor_id uuid not null references actor(id),
+  process_key text not null,
+  process_name text,
+  description text not null,
+  status text not null default 'queued' check (status in ('queued', 'running', 'ready', 'failed')),
+  draft_id uuid,
+  error text,
+  attempts int not null default 0,
+  created_at timestamptz not null default now(),
+  started_at timestamptz,
+  completed_at timestamptz
+);
+create index ai_draft_job_queue on ai_draft_job (created_at) where status in ('queued', 'running');
+create unique index ai_draft_job_active_key on ai_draft_job (tenant_id, process_key) where status in ('queued', 'running');
+
 create table platform_worker_heartbeat (
   worker_id text primary key,
   seen_at timestamptz not null,
