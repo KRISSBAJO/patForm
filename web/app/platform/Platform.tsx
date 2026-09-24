@@ -59,7 +59,11 @@ export function Platform() {
   }, [section, search, page, requestId]);
 
   useEffect(() => {
-    api('me').then((v) => setRole(v.role)).catch((e) => setError(e.status === 401 ? 'Sign in to your account first.' : e.message));
+    api('me').then((v) => setRole(v.role)).catch((e) => setError(e.status === 401
+      ? 'Sign in to your account first.'
+      : e.status === 403
+        ? 'Site administration needs an approved platform role, a verified email, and two-step verification. Check Your account in the customer console to turn on two-step verification.'
+        : e.message));
   }, []);
   useEffect(() => { if (role) void load(); }, [role, load]);
 
@@ -102,7 +106,7 @@ export function Platform() {
       </nav>
       <div className="platform__main">
         <div className="platform__heading"><div><span className="platform__eyebrow">SITE ADMIN</span><h1>{sections.find((s) => s.key === section)?.label}</h1></div><button onClick={() => void load()} disabled={!role || busy}>Refresh</button></div>
-        {error && <div className="platform__error" role="alert">{error} {!role && <a href="/console">Open sign in</a>}</div>}
+        {error && <div className="platform__error" role="alert">{error} {!role && <a href="/console">Open your account</a>}</div>}
         {!role && !error && <p>Checking your access…</p>}
         {data && section === 'overview' && <>
           <div className="platform__metrics">
