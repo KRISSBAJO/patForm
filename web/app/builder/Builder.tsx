@@ -1136,7 +1136,7 @@ export function Builder() {
                     fields={blueprint.data.fields.filter((f) => f.key !== blueprint.data.fields[index]?.key)}
                     roles={blueprint.roles}
                     draftId={draft.id}
-                    saved={status !== 'saving'}
+                    saved={status === 'saved' || status === 'idle'}
                     issues={diagnostics.filter((d) => locate(d, blueprint)?.tab === 'fields' && locate(d, blueprint)?.index === index)}
                     onDuplicate={() => {
                       const source = blueprint.data.fields[index];
@@ -2520,7 +2520,7 @@ function FieldEditor({
 
       <div className="bd__privacyPanel"><strong>Who can see this answer</strong><p>The server redacts answers for hidden roles. People with another permitted role may still see them. Application logs omit answer values.</p><div className="bd__maskRoles">{roles.filter((r) => r.kind === 'internal').map((role) => <label key={role.key}><input type="checkbox" checked={(role.hiddenFields ?? []).includes(field.key)} onChange={(e) => onMask(role.key, e.target.checked)} /> Hide from {role.name}</label>)}</div></div>
 
-      {canTry && <div className="bd__playground"><strong>Validation playground</strong><p>Try a sample using the same check as a live form.</p><div><input className="bd__input" value={sample} placeholder="Enter a sample answer" onChange={(e) => { setSample(e.target.value); setSampleResult(null); }} /><button type="button" className="bd__btn bd__btn--small" disabled={!saved || sampleBusy} onClick={async () => { setSampleBusy(true); try { setSampleResult(await call(`/api/builder/drafts/${draftId}/fields/${encodeURIComponent(field.key)}/validate`, { method: 'POST', body: JSON.stringify({ value: ['number', 'currency', 'rating'].includes(field.type) && sample.trim() !== '' ? Number(sample) : sample }) })); } catch (err) { setSampleResult({ valid: false, message: err instanceof Error ? err.message : String(err) }); } finally { setSampleBusy(false); } }}>{sampleBusy ? 'Checking…' : 'Test answer'}</button></div>{sampleResult && <p role="status" className={sampleResult.valid ? 'bd__sampleGood' : 'bd__sampleBad'}>{sampleResult.valid ? 'Valid answer' : sampleResult.message}</p>}</div>}
+      {canTry && <div className="bd__playground"><strong>Validation playground</strong><p>Test this field’s saved type and constraints. Use Preview to test conditional rules.</p><div><input className="bd__input" value={sample} placeholder="Enter a sample answer" onChange={(e) => { setSample(e.target.value); setSampleResult(null); }} /><button type="button" className="bd__btn bd__btn--small" disabled={!saved || sampleBusy} onClick={async () => { setSampleBusy(true); try { setSampleResult(await call(`/api/builder/drafts/${draftId}/fields/${encodeURIComponent(field.key)}/validate`, { method: 'POST', body: JSON.stringify({ value: ['number', 'currency', 'rating'].includes(field.type) && sample.trim() !== '' ? Number(sample) : sample }) })); } catch (err) { setSampleResult({ valid: false, message: err instanceof Error ? err.message : String(err) }); } finally { setSampleBusy(false); } }}>{sampleBusy ? 'Checking…' : 'Test answer'}</button></div>{sampleResult && <p role="status" className={sampleResult.valid ? 'bd__sampleGood' : 'bd__sampleBad'}>{sampleResult.valid ? 'Valid answer' : sampleResult.message}</p>}</div>}
 
       <Row label="Help text" hint="shown under the field">
         <input className="bd__input" value={field.help ?? ''} onChange={(e) => onChange((f) => void (f.help = e.target.value || undefined))} />
@@ -3765,14 +3765,18 @@ function DiagnosticsPanel({
         const isAssumption = d.code === 'BLD001' && Number.isInteger(assumptionIndex) && assumptionIndex >= 0;
         const isDecision = d.code === 'BLD002';
         const decisionIsAssignment = isDecision && /who|role|assign|approv/i.test(d.message);
+        const assumptionText = d.message.replace(/^Assumed:\s*/, '');
+        const shortAssumption = assumptionText.length > 145 ? `${assumptionText.slice(0, assumptionText.lastIndexOf(' ', 145))}…` : assumptionText;
         return (
           <article
             key={`${d.code}-${d.at}-${i}`}
             className={`bd__diagItem bd__diagItem--${d.severity}${where ? ' bd__diagItem--go' : ''}`}
           >
             <header><strong>{isAssumption ? 'Confirm assumption' : isDecision ? 'Decision needed' : d.severity === 'error' ? 'Fix before publishing' : 'Review recommendation'}</strong><span className="bd__diagAt">{d.severity}</span></header>
-            <p>{isAssumption ? d.message.replace(/^Assumed:\s*/, '') : isDecision ? d.message.replace(/^(Needs an answer|Undecided):\s*/, '') : d.message}</p>
-            {isAssumption && <button type="button" className="bd__insightAction" onClick={() => onAcceptAssumption(assumptionIndex)}>Accept this assumption</button>}
+            <p>{isAssumption ? shortAssumption : isDecision ? d.message.replace(/^(Needs an answer|Undecided):\s*/, '') : d.message}</p>
+            {isAssumption && (shortAssumption === assumptionText
+              ? <button type="button" className="bd__insightAction" onClick={() => onAcceptAssumption(assumptionIndex)}>Confirm reviewed</button>
+              : <details className="bd__insightDetail"><summary>Review full assumption</summary><p>{assumptionText}</p><button type="button" className="bd__insightAction" onClick={() => onAcceptAssumption(assumptionIndex)}>Confirm reviewed</button></details>)}
             {isDecision && <button type="button" className="bd__insightAction" onClick={() => onGo({ tab: decisionIsAssignment ? 'roles' : 'states', index: 0 })}>{decisionIsAssignment ? 'Configure assignment' : 'Review workflow'}</button>}
             {!isAssumption && !isDecision && where && <button type="button" className="bd__insightAction" onClick={() => onGo(where)}>Open {where.tab === 'fields' ? 'field' : where.tab === 'roles' ? 'role' : 'setting'}</button>}
             {d.fix && <details className="bd__insightDetail"><summary>Why this matters</summary><p>{d.fix}</p></details>}
