@@ -99,6 +99,9 @@ export function Console() {
   const [session, setSession] = useState<SessionInfo | null>(null);
   const [siteAdmin, setSiteAdmin] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [processPickerOpen, setProcessPickerOpen] = useState(false);
+  const [processSearch, setProcessSearch] = useState('');
+  const [recentProcessKeys, setRecentProcessKeys] = useState<string[]>([]);
   const [checking, setChecking] = useState(true);
   const [processKey, setProcessKey] = useState('');
   const [work, setWork] = useState<Work | null>(null);
@@ -177,6 +180,22 @@ export function Console() {
   }, [session?.actor.id]);
 
   useEffect(() => { void checkSiteAdmin(); }, [checkSiteAdmin]);
+
+  useEffect(() => {
+    if (!session?.actor.id || !processKey) return;
+    const storageKey = `patform:recent-processes:${session.actor.id}`;
+    let stored: string[] = [];
+    try {
+      const value: unknown = JSON.parse(window.localStorage.getItem(storageKey) ?? '[]');
+      if (Array.isArray(value)) stored = value.filter((key): key is string => typeof key === 'string');
+    } catch { /* A broken browser preference must not block the console. */ }
+    const available = new Set(session.processes.map((process) => process.process_key));
+    const next = [processKey, ...stored].filter((key, index, keys) => available.has(key) && keys.indexOf(key) === index).slice(0, 5);
+    setRecentProcessKeys(next);
+    try { window.localStorage.setItem(storageKey, JSON.stringify(next)); } catch { /* Private browsing can refuse storage. */ }
+  }, [session, processKey]);
+
+  useEffect(() => { setProcessPickerOpen(false); }, [view]);
 
   /*
    * A record in the address bar is opened on arrival, and the browser's back
@@ -385,6 +404,22 @@ export function Console() {
 
   const me = session.actor;
   const counts = work?.counts ?? { arrived: 0, needsYou: 0, late: 0, failed: 0 };
+  const currentProcess = session.processes.find((process) => process.process_key === processKey);
+  const recentProcesses = recentProcessKeys
+    .filter((key) => key !== processKey)
+    .map((key) => session.processes.find((process) => process.process_key === key))
+    .filter((process): process is SessionInfo['processes'][number] => Boolean(process))
+    .slice(0, 3);
+  const matchingProcesses = session.processes
+    .filter((process) => `${process.name} ${process.process_key}`.toLowerCase().includes(processSearch.trim().toLowerCase()))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const switchProcess = (key: string) => {
+    setProcessKey(key);
+    setProcessPickerOpen(false);
+    setProcessSearch('');
+    setRecord(null);
+    setView('work');
+  };
 
   return (
     <div className="cs">
@@ -531,38 +566,32 @@ export function Console() {
           </button>
         </nav>
 
-        {view !== 'processes' && <div className="cs__processList">
-          <span className="cs__sectionLabel">PROCESSES</span>
-          {session.processes
-            .filter((p, index) => index < 5 || p.process_key === processKey)
-            .map((p) => (
-            <button
-              key={p.process_key}
-              type="button"
-              className="cs__process"
-              aria-current={processKey === p.process_key}
-              /*
-               * Switching process on a page that has nothing to do with a
-               * process — Integrations, People, your account — changed a value
-               * nothing on screen was showing, so the button read as broken.
-               * It now takes you to that process's work, which is what
-               * choosing a process is for.
-               */
-              onClick={() => {
-                setProcessKey(p.process_key);
-                setRecord(null);
-                setView('work');
-              }}
-            >
-              <span className="cs__dot" aria-hidden="true" />
-              <span className="cs__processText">{p.name}</span>
-            </button>
-          ))}
-          {session.processes.length > 5 && (
-            <button type="button" className="cs__processBrowse" onClick={() => setView('processes')}>
-              Browse all {session.processes.length} processes →
-            </button>
-          )}
+        {view !== 'processes' && session.processes.length > 0 && <div className="cs__processList">
+          <div className="cs__processHeading"><span className="cs__sectionLabel">YOUR PROCESSES</span><span>{session.processes.length}</span></div>
+          <button type="button" className="cs__processCurrent" aria-expanded={processPickerOpen} aria-controls="console-process-picker" onClick={(event) => { event.stopPropagation(); setProcessPickerOpen((open) => !open); setProcessSearch(''); }}>
+            <span><small>Current process</small><strong>{currentProcess?.name ?? 'Choose a process'}</strong></span>
+            <span aria-hidden="true">⌄</span>
+          </button>
+          {processPickerOpen ? <div id="console-process-picker" className="cs__processPicker">
+            <label className="cs__srOnly" htmlFor="console-process-search">Find a process</label>
+            <input id="console-process-search" type="search" placeholder="Find a process…" autoFocus value={processSearch} onChange={(event) => setProcessSearch(event.target.value)} />
+            <div className="cs__processMatches">
+              {(processSearch ? matchingProcesses : recentProcesses.length ? recentProcesses : matchingProcesses).slice(0, 6).map((process) => (
+                <button key={process.process_key} type="button" className="cs__process" aria-current={processKey === process.process_key} onClick={() => switchProcess(process.process_key)}>
+                  <span className="cs__dot" aria-hidden="true" /><span className="cs__processText">{process.name}</span>
+                </button>
+              ))}
+              {processSearch && matchingProcesses.length === 0 && <p className="cs__processNoMatch">No matching process.</p>}
+            </div>
+            {!processSearch && recentProcesses.length === 0 && session.processes.length > 6 && <p className="cs__processHint">Search to find another process.</p>}
+            {processSearch && matchingProcesses.length > 6 && <p className="cs__processHint">Showing 6 of {matchingProcesses.length} matches. Keep typing to narrow them.</p>}
+          </div> : recentProcesses.length > 0 && <div className="cs__processRecent" aria-label="Recently used processes">
+            <span className="cs__processRecentLabel">RECENT</span>
+            {recentProcesses.map((process) => <button key={process.process_key} type="button" className="cs__process" onClick={() => switchProcess(process.process_key)}><span className="cs__dot" aria-hidden="true" /><span className="cs__processText">{process.name}</span></button>)}
+          </div>}
+          <button type="button" className="cs__processBrowse" onClick={() => { setProcessPickerOpen(false); setView('processes'); }}>
+            Browse all {session.processes.length} processes →
+          </button>
         </div>}
 
         <div className="cs__seat">

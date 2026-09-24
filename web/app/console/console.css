@@ -2023,6 +2023,27 @@ a.cs__navItem {
   padding-top: 12px;
 }
 
+/* The rail stays useful when a workspace has dozens of processes. */
+.cs__processList { min-width: 0; gap: 5px; }
+.cs__processHeading { display: flex; align-items: center; justify-content: space-between; padding-right: 8px; }
+.cs__processHeading > span:last-child { color: var(--muted); font: 600 11px var(--ui); }
+.cs__processCurrent { display: flex; align-items: center; justify-content: space-between; gap: 7px; width: 100%; min-height: 53px; padding: 8px 10px; border: 1px solid #c9dfd0; border-radius: 8px; background: #eff8f1; color: var(--green-deep); font: inherit; text-align: left; cursor: pointer; }
+.cs__processCurrent:hover, .cs__processCurrent[aria-expanded='true'] { border-color: #87b999; background: #e6f5e9; }
+.cs__processCurrent:focus-visible, .cs__processPicker input:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+.cs__processCurrent > span:first-child { min-width: 0; }
+.cs__processCurrent small, .cs__processCurrent strong { display: block; overflow: hidden; text-overflow: ellipsis; }
+.cs__processCurrent small { margin-bottom: 3px; color: #5e7b69; font-size: 10px; }
+.cs__processCurrent strong { font-size: 12px; line-height: 1.25; }
+.cs__processCurrent > span:last-child { flex: 0 0 auto; font-size: 18px; line-height: 1; }
+.cs__processPicker { padding: 8px; border: 1px solid var(--rail-line); border-radius: 8px; background: #fff; box-shadow: 0 6px 16px #173e2612; }
+.cs__processPicker input { box-sizing: border-box; width: 100%; min-height: 34px; padding: 0 9px; border: 1px solid #d6e2d9; border-radius: 6px; background: #fff; color: var(--ink); font: 12px var(--ui); }
+.cs__processMatches { max-height: 204px; overflow-y: auto; margin-top: 6px; }
+.cs__processMatches .cs__process { font-size: 12px; }
+.cs__processRecent { display: grid; gap: 2px; margin-top: 7px; }
+.cs__processRecentLabel { padding: 0 8px 4px; color: var(--muted); font: 700 10px var(--ui); letter-spacing: .06em; }
+.cs__processNoMatch, .cs__processHint { margin: 7px 5px; color: var(--muted); font: 11px/1.4 var(--ui); }
+.cs__processBrowse { padding-block: 7px; }
+
 /*
  * 3. Table density. Rows were 9px tall in padding terms with a 13px face,
  *    which reads as a spreadsheet rather than a list. One row height, one
