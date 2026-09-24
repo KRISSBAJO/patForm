@@ -587,6 +587,19 @@ export async function publishDraft(
     );
   }
 
+  // A scenario-failed AI proposal is saved only as a private review draft.
+  // Re-run its examples after every edit before allowing it to go live.
+  const reviewGate = await pool.query<{ ai_review_required: boolean }>(
+    'select ai_review_required from process_draft where id = $1 and tenant_id = $2',
+    [draft.id, actor.tenantId],
+  );
+  if (reviewGate.rows[0]?.ai_review_required) {
+    const failed = (await runScenarios(pool, draft.blueprint)).filter((item) => !item.passed);
+    if (failed.length) {
+      throw new InvalidInput(`the AI draft still has ${failed.length} failing sample check(s) — ${failed[0]!.failures[0] ?? failed[0]!.test}`);
+    }
+  }
+
   const impact = await publishImpact(pool, args);
   const engine = new Engine(pool);
   const version = await engine.publish(actor.tenantId, draft.blueprint, describe(args.principal));
@@ -633,7 +646,7 @@ export interface NewProcess {
 export async function createDraft(
   pool: Pool,
   args: { principal: Principal; input: NewProcess; onProgress?: (stage: 'generating' | 'checking' | 'saving') => Promise<void> },
-): Promise<DraftDetail & { audit?: GenerationOutcome['audit']; decision?: string }> {
+): Promise<DraftDetail & { audit?: GenerationOutcome['audit']; decision?: string; reviewNote?: string }> {
   const { principal, input } = args;
   await requireWorkspaceCapability(pool, principal, 'administer', input.key);
   if (principal.kind !== 'actor') throw new Error('unreachable');
@@ -658,6 +671,7 @@ export async function createDraft(
   let blueprint: Blueprint;
   let audit: GenerationOutcome['audit'] | undefined;
   let decision: string | undefined;
+  let reviewNote: string | undefined;
 
   if (input.copyFrom) {
     const source = await currentBlueprint(pool, tenantId, input.copyFrom);
@@ -670,6 +684,7 @@ export async function createDraft(
       throw new Error('no AI provider is configured — set DEEPSEEK_API_KEY, ANTHROPIC_API_KEY or OPENAI_API_KEY, or copy an existing process');
     }
     let outcome: GenerationOutcome | undefined;
+    let reviewCandidate: { blueprint: Blueprint; audit: GenerationOutcome['audit']; failures: string[] } | undefined;
     let lastProblem = 'The model did not return a valid process.';
     // A successful HTTP response can still contain an unusable blueprint.
     // Try the next configured provider in the requested priority order.
@@ -682,6 +697,14 @@ export async function createDraft(
           onProgress: args.onProgress,
         });
         if (proposed.blueprint) { outcome = proposed; break; }
+        if (proposed.reviewable) {
+          const failures = proposed.reviewable.scenarios.filter((item) => !item.passed)
+            .flatMap((item) => item.failures.map((failure) => `${item.test}: ${failure}`));
+          reviewCandidate = { blueprint: proposed.reviewable.blueprint, audit: proposed.audit, failures };
+          // A private, compiling draft is useful now. Trying every fallback
+          // provider adds minutes and cannot make this candidate publishable.
+          break;
+        }
         const errors = proposed.diagnostics.filter((item) => item.severity === 'error');
         const detail = errors.slice(0, 2).map((item) => `${item.code}: ${item.message}`).join(' / ');
         lastProblem = `${name} returned a ${proposed.decision} process: ${detail || 'the result could not pass validation'}`;
@@ -694,22 +717,26 @@ export async function createDraft(
     const explanation = lastProblem.length > 240
       ? `${lastProblem.slice(0, 240).replace(/\s+\S*$/, '')}…`
       : lastProblem;
-    if (!outcome?.blueprint) throw new InvalidInput(`AI could not produce a safe draft. ${explanation} Try simplifying the description or start from a template.`);
-    audit = outcome.audit;
-    decision = outcome.decision;
+    if (!outcome?.blueprint && !reviewCandidate) throw new InvalidInput(`AI could not produce a safe draft. ${explanation} Try simplifying the description or start from a template.`);
+    audit = outcome?.audit ?? reviewCandidate!.audit;
+    decision = outcome?.decision ?? 'review_required';
+    if (reviewCandidate && !outcome?.blueprint) {
+      reviewNote = `${reviewCandidate.failures.length} sample check(s) need repair. ${reviewCandidate.failures[0] ?? ''}`.slice(0, 400);
+    }
     // The key the builder typed wins over the one the model chose, so the URL
     // and the list entry match what they asked for.
-    blueprint = { ...outcome.blueprint, key: input.key, name: input.name ?? outcome.blueprint.name };
+    const generated = outcome?.blueprint ?? reviewCandidate!.blueprint;
+    blueprint = { ...generated, key: input.key, name: input.name ?? generated.name };
   }
 
   await args.onProgress?.('saving');
   const { rows } = await pool.query<{ id: string }>(
-    `insert into process_draft (tenant_id, process_key, based_on_version, blueprint, created_by)
-     values ($1, $2, null, $3, $4) returning id`,
-    [tenantId, input.key, JSON.stringify(blueprint), describe(principal)],
+    `insert into process_draft (tenant_id, process_key, based_on_version, blueprint, created_by, ai_review_required)
+     values ($1, $2, null, $3, $4, $5) returning id`,
+    [tenantId, input.key, JSON.stringify(blueprint), describe(principal), decision === 'review_required'],
   );
 
-  return { ...(await loadDraft(pool, principal, rows[0]!.id)), audit, decision };
+  return { ...(await loadDraft(pool, principal, rows[0]!.id)), audit, decision, reviewNote };
 }
 
 /**

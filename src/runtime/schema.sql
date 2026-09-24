@@ -291,6 +291,7 @@ create table process_draft (
   based_on_version int,
   blueprint       jsonb not null,
   created_by      text not null,
+  ai_review_required boolean not null default false,
   created_at      timestamptz not null default now(),
   updated_at      timestamptz not null default now(),
   published_as    int,

@@ -13,6 +13,10 @@ alter table approval_request add column if not exists electorate int;
 alter table tenant add column if not exists intake_paused_at timestamptz;
 alter table tenant add column if not exists intake_pause_reason text;
 
+-- Compiling AI drafts with failing sample scenarios stay private until the
+-- scenarios pass again at the final publish boundary.
+alter table process_draft add column if not exists ai_review_required boolean not null default false;
+
 create table if not exists ai_draft_job (
   id uuid primary key default gen_random_uuid(),
   tenant_id uuid not null references tenant(id),

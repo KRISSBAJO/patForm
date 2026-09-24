@@ -49,8 +49,8 @@ export async function processNextAiDraft(pool: Pool): Promise<boolean> {
     const draft = await createDraft(pool, { principal: { kind: 'actor', tenantId: job.tenant_id, actorId: job.actor_id },
       input: { key: job.process_key, name: job.process_name ?? undefined, description: job.description },
       onProgress: async (stage) => { await pool.query('update ai_draft_job set stage = $2 where id = $1', [job.id, stage]); } });
-    await pool.query(`update ai_draft_job set status = 'ready', draft_id = $2, completed_at = now(), description = ''
-      where id = $1`, [job.id, draft.id]);
+    await pool.query(`update ai_draft_job set status = 'ready', draft_id = $2, error = $3, completed_at = now(), description = ''
+      where id = $1`, [job.id, draft.id, draft.reviewNote ?? null]);
   } catch (error) {
     const message = error instanceof InvalidInput ? error.message : 'AI generation could not finish. Please try again.';
     await pool.query(`update ai_draft_job set status = 'failed', error = $2, completed_at = now(), description = ''

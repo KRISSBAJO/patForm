@@ -25,6 +25,8 @@ export interface Attempt {
 export interface GenerationOutcome {
   decision: Decision;
   blueprint?: Blueprint;
+  /** A compiling draft whose sample scenarios still need human repair. Never publish directly. */
+  reviewable?: { blueprint: Blueprint; scenarios: ScenarioResult[] };
   attempts: Attempt[];
   diagnostics: Diagnostic[];
   scenarios?: ScenarioResult[];
@@ -107,6 +109,7 @@ export async function generateBlueprint(
   let diagnostics: Diagnostic[] = [];
   let decision: Decision = 'unparseable';
   let scenarios: ScenarioResult[] | undefined;
+  let reviewable: GenerationOutcome['reviewable'];
 
   for (let attempt = 1; attempt <= maxRepairs + 1; attempt++) {
     await options.onProgress?.('generating');
@@ -191,6 +194,9 @@ export async function generateBlueprint(
         }));
         diagnostics = [...diagnostics, ...scenarioErrors];
         if (scenarioErrors.length) {
+          if (!reviewable || scenarioErrors.length < reviewable.scenarios.filter((item) => !item.passed).length) {
+            reviewable = { blueprint: parsed.data, scenarios };
+          }
           decision = 'blocked';
           user = `${baseUser}\n\nYou returned this blueprint:\n\n${JSON.stringify(parsed.data)}\n\n${repairTurn(diagnostics)}`;
           continue;
@@ -221,6 +227,7 @@ export async function generateBlueprint(
   return {
     decision,
     blueprint: decision === 'publishable' ? blueprint : undefined,
+    reviewable: decision === 'publishable' ? undefined : reviewable,
     attempts,
     diagnostics,
     scenarios,
