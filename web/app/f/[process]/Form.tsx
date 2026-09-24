@@ -227,9 +227,10 @@ export function Form({ processKey: fromUrl }: { processKey: string }) {
       return next;
     });
     setErrors((prev) => {
-      if (!prev[key]) return prev;
+      if (!prev[key] && !Object.keys(prev).some((path) => path.startsWith(`${key}[`))) return prev;
       const next = { ...prev };
       delete next[key];
+      for (const path of Object.keys(next)) if (path.startsWith(`${key}[`)) delete next[path];
       return next;
     });
   };
