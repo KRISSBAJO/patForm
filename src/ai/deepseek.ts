@@ -11,7 +11,10 @@ export class DeepSeekProvider implements Provider {
   constructor(opts: { model?: string; apiKey?: string } = {}) {
     const apiKey = opts.apiKey ?? process.env.DEEPSEEK_API_KEY;
     if (!apiKey) throw new Error('DEEPSEEK_API_KEY is not configured');
-    this.client = new OpenAI({ apiKey, baseURL: 'https://api.deepseek.com', timeout: 120_000, maxRetries: 0 });
+    // A complete process can include pages, workflow actions and six executable
+    // scenarios. Give the configured primary provider room to finish that JSON
+    // before falling back to a second provider and repeating the entire build.
+    this.client = new OpenAI({ apiKey, baseURL: 'https://api.deepseek.com', timeout: 240_000, maxRetries: 0 });
     this.model = opts.model ?? process.env.DEEPSEEK_MODEL ?? 'deepseek-flash';
     const raw = process.env.DEEPSEEK_RATES;
     const [input, output] = raw?.split(':').map(Number) ?? [];
@@ -28,7 +31,7 @@ export class DeepSeekProvider implements Provider {
         { role: 'user', content: request.user },
       ],
       response_format: { type: 'json_object' },
-      max_tokens: 16000,
+      max_tokens: 32000,
     });
     const choice = completion.choices[0];
     const content = choice?.message.content ?? '';

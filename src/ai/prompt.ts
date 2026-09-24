@@ -9,7 +9,7 @@ import type { Diagnostic } from '../compiler/diagnostics.js';
  * record says exactly which instructions produced it. Eval results are only
  * comparable within a version.
  */
-export const PROMPT_VERSION = 'blueprint-gen@3';
+export const PROMPT_VERSION = 'blueprint-gen@4';
 
 export const SYSTEM_PROMPT = `You design business processes for an operations platform.
 
@@ -76,6 +76,7 @@ Form and data
 Tasks and approvals
 - A task with "blocking": true must have a transition triggered by its completion. A blocking task nothing waits for is a control that does nothing.
 - A transition triggered by task completion must name a task some transition actually creates.
+- In a complete_task test step, "answers" may contain ONLY fields named by that task's "requiredFields". Omit "answers" if the task collects nothing. If the task records an operator field, put that field in "requiredFields" and allow the completing role to edit it.
 - If the process has approvals, some role must have the "approve" capability.
 - Address messages to a role, an email field, or the submitter. Only use { "assignee": "current" } if some transition runs an "assign" action first.
 
@@ -108,6 +109,7 @@ Tests
 # What you return
 
 One JSON object and nothing else. No prose, no markdown fence, no explanation.
+Keep names, descriptions and scenario steps concise. Do not repeat the process description in every section.
 
 If the description is too vague to model, still return a blueprint. Record
 what you decided for them in intent.assumptions — each with the statement and
