@@ -145,7 +145,7 @@ export async function exportRecord(
     // there — and wrong in an export, where a literal "[redacted]" in a value
     // column reads as data. So the placeholders are lifted out into `withheld`
     // and the answers carry only what this role may actually see.
-    const redacted = redact(bp, decision.roles, instance.data);
+    const redacted = redact(bp, decision.roles, instance.data, decision.workspaceRole);
     const withheld: string[] = [];
     const visible: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(redacted)) {

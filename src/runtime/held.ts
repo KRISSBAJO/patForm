@@ -84,7 +84,7 @@ export async function listHeld(pool: Pool, principal: Principal): Promise<HeldRo
         blueprint: row.blueprint,
       });
       if (!decision.allowed) continue;
-      const visible = redact(row.blueprint, decision.roles, row.answers);
+      const visible = redact(row.blueprint, decision.roles, row.answers, decision.workspaceRole);
       out.push({
         id: row.id,
         reference: row.id.slice(0, 8).toUpperCase(),

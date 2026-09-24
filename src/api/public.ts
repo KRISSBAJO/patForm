@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { Blueprint } from '../blueprint/index.js';
 import { inTransaction, type Pool } from './../runtime/db.js';
-import { redact, require_, visibleFields, type Principal } from '../runtime/policy.js';
+import { redact, require_, visibleFields, type Principal, type WorkspaceRole } from '../runtime/policy.js';
 import type { Capability } from '../blueprint/roles.js';
 
 /**
@@ -177,8 +177,9 @@ export function toPublicRecord(
     state_entered_at: Date;
     completed_at: Date | null;
   },
+  workspaceRole?: WorkspaceRole,
 ): PublicRecord {
-  const masked = redact(bp, roles, row.data);
+  const masked = redact(bp, roles, row.data, workspaceRole);
   const data: Record<string, unknown> = {};
   const omitted: string[] = [];
   for (const [key, value] of Object.entries(masked)) {
@@ -292,7 +293,7 @@ export async function listRecordsPage(
      */
     const q = args.query?.trim();
     if (q) {
-      const visible = visibleFields(bp, decision.roles);
+      const visible = visibleFields(bp, decision.roles, decision.workspaceRole);
       /*
        * `!` as the escape character rather than a backslash. Either works in
        * Postgres; this one survives being read, copied and pasted, which a
@@ -352,7 +353,7 @@ export async function listRecordsPage(
     const last = page[page.length - 1];
 
     return {
-      data: page.map((r) => toPublicRecord(bp, r.version, decision.roles, r)),
+      data: page.map((r) => toPublicRecord(bp, r.version, decision.roles, r, decision.workspaceRole)),
       next_cursor: hasMore && last ? encodeCursor({ createdAt: last.created_at.toISOString(), id: last.id }) : null,
       has_more: hasMore,
     };
@@ -402,7 +403,7 @@ export async function getRecord(
       pool,
     );
 
-    return toPublicRecord(row.blueprint, row.version, decision.roles, row);
+    return toPublicRecord(row.blueprint, row.version, decision.roles, row, decision.workspaceRole);
   });
 }
 

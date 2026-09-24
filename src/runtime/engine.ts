@@ -1208,7 +1208,7 @@ export class Engine {
       }, this.pool);
       return {
         ...instance,
-        data: principal.kind === 'system' ? instance.data : redact(bp, decision.roles, instance.data),
+        data: principal.kind === 'system' ? instance.data : redact(bp, decision.roles, instance.data, decision.workspaceRole),
       };
     });
   }

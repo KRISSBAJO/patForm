@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { Blueprint } from '../src/blueprint/index.js';
 import { compileAction, compileQuery } from '../src/copilot/compile.js';
 import { ActionPlan, Proposal, QueryPlan } from '../src/copilot/plan.js';
+import { visibleFields } from '../src/runtime/policy.js';
 
 /**
  * The plan language is the boundary a model sits behind, so these tests are
@@ -93,6 +94,25 @@ test('a restricted answer cannot be used as a filter', () => {
     errors({ processKey: bp.key, filters: [{ kind: 'answer', field: confidential.key, op: 'is_not_empty' }] }),
     [],
   );
+});
+
+test('a reader without a process role cannot use confidential answers to filter or select records', () => {
+  const confidential = bp.data.fields.find((f) => f.classification === 'confidential');
+  assert.ok(confidential);
+  const allowed = new Set(visibleFields(bp, [], 'read_only'));
+  const byAnswer = compileQuery(bp, QueryPlan.parse({
+    processKey: bp.key,
+    filters: [{ kind: 'answer', field: confidential.key, op: 'is_not_empty' }],
+  }), TENANT, NOW, allowed);
+  assert.equal(byAnswer.ok, false);
+  assert.equal(byAnswer.diagnostics[0]?.code, 'QRY004');
+
+  const selected = compileQuery(bp, QueryPlan.parse({
+    processKey: bp.key,
+    select: [confidential.key],
+  }), TENANT, NOW, allowed);
+  assert.equal(selected.ok, false);
+  assert.equal(selected.diagnostics[0]?.code, 'QRY004');
 });
 
 test('comparisons are type-checked against the field, as in the blueprint', () => {

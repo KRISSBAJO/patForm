@@ -412,13 +412,15 @@ test('a real provider never sees an address on a reserved domain', async () => {
   assert.equal(none.retryable, false);
 });
 
-test('workspace readers without a process role cannot read or search restricted answers', () => {
-  const restricted = bp.data.fields.filter((field) => field.classification === 'restricted');
-  assert.ok(restricted.length, 'the fixture must contain restricted answers');
+test('workspace readers without a process role cannot read or search confidential or restricted answers', () => {
+  const privateFields = bp.data.fields.filter((field) =>
+    field.classification === 'confidential' || field.classification === 'restricted');
+  assert.ok(privateFields.some((field) => field.classification === 'confidential'));
+  assert.ok(privateFields.some((field) => field.classification === 'restricted'));
   const data = Object.fromEntries(bp.data.fields.map((field) => [field.key, 'secret'])) as Record<string, string>;
-  const masked = redact(bp, [], data);
-  const searchable = visibleFields(bp, []);
-  for (const field of restricted) {
+  const masked = redact(bp, [], data, 'read_only');
+  const searchable = visibleFields(bp, [], 'read_only');
+  for (const field of privateFields) {
     assert.equal(masked[field.key], '[redacted]');
     assert.ok(!searchable.includes(field.key), `${field.key} must not be searchable`);
   }
@@ -431,8 +433,15 @@ test('workspace readers without a process role cannot read or search restricted 
     created_at: new Date('2026-01-01'),
     state_entered_at: new Date('2026-01-01'),
     completed_at: null,
-  });
-  for (const field of restricted) assert.ok(!(field.key in record.data));
+  }, 'read_only');
+  for (const field of privateFields) assert.ok(!(field.key in record.data));
+
+  const adminView = redact(bp, [], data, 'admin');
+  const adminSearch = visibleFields(bp, [], 'admin');
+  for (const field of privateFields) {
+    assert.equal(adminView[field.key] === '[redacted]', field.classification === 'restricted');
+    assert.equal(adminSearch.includes(field.key), field.classification === 'confidential');
+  }
 });
 
 test('a form reached by its public link keeps every intake rate limit', async () => {

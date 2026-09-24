@@ -355,16 +355,21 @@ export function describe(principal: Principal): string {
  * record." Redaction happens on the way out, so a field a role may not see is
  * never serialised rather than hidden in the client.
  */
-export function redact(blueprint: Blueprint, roleKeys: string[], data: Answers): Answers {
+export function redact(blueprint: Blueprint, roleKeys: string[], data: Answers, workspaceRole?: WorkspaceRole): Answers {
   const roles = blueprint.roles.filter((r) => roleKeys.includes(r.key));
-  // Workspace-level view access is not a process role. With no matching role,
-  // default to hiding restricted answers until a process role grants access.
+  // Workspace readers with no process role may inspect record metadata and
+  // ordinary answers, but personal/confidential answers need a process role.
+  // Owners and administrators retain confidential access; restricted answers
+  // still require a process role.
   if (!roles.length) {
-    const restricted = new Set(
-      blueprint.data.fields.filter((f) => f.classification === 'restricted').map((f) => f.key),
+    const privileged = workspaceRole === 'owner' || workspaceRole === 'admin';
+    const hidden = new Set(
+      blueprint.data.fields
+        .filter((f) => f.classification === 'restricted' || (!privileged && f.classification === 'confidential'))
+        .map((f) => f.key),
     );
     return Object.fromEntries(
-      Object.entries(data).map(([key, value]) => [key, restricted.has(key) ? '[redacted]' : value]),
+      Object.entries(data).map(([key, value]) => [key, hidden.has(key) ? '[redacted]' : value]),
     );
   }
 
@@ -396,11 +401,14 @@ export function redact(blueprint: Blueprint, roleKeys: string[], data: Answers):
  * to guess. The same intersection rule as `redact` — a field is hidden only
  * when every role the actor holds hides it.
  */
-export function visibleFields(blueprint: Blueprint, roleKeys: string[]): string[] {
+export function visibleFields(blueprint: Blueprint, roleKeys: string[], workspaceRole?: WorkspaceRole): string[] {
   const all = blueprint.data.fields.map((f) => f.key);
   const roles = blueprint.roles.filter((r) => roleKeys.includes(r.key));
   if (!roles.length) {
-    return blueprint.data.fields.filter((f) => f.classification !== 'restricted').map((f) => f.key);
+    const privileged = workspaceRole === 'owner' || workspaceRole === 'admin';
+    return blueprint.data.fields
+      .filter((f) => f.classification !== 'restricted' && (privileged || f.classification !== 'confidential'))
+      .map((f) => f.key);
   }
 
   const hidden = roles

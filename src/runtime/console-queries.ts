@@ -182,7 +182,7 @@ export async function myWork(
       waitingHours: Math.round((now - row.created_at.getTime()) / 3_600_000),
       dueAt: row.due_at?.toISOString() ?? null,
       late: Boolean(row.due_at && row.due_at.getTime() < now),
-      summary: summarise(bp, redact(bp, decision.roles, row.data)),
+      summary: summarise(bp, redact(bp, decision.roles, row.data, decision.workspaceRole)),
       /** How far a multi-person approval has got: "1 of 2 approved". */
       progress:
         row.mode === 'majority'
@@ -234,7 +234,7 @@ export async function myWork(
         assignee: row.assignee,
         dueAt: row.due_at?.toISOString() ?? null,
         late: Boolean(row.due_at && row.due_at.getTime() < now),
-        summary: summarise(bp, redact(bp, decision.roles, row.data)),
+        summary: summarise(bp, redact(bp, decision.roles, row.data, decision.workspaceRole)),
       });
     }
 
@@ -312,7 +312,7 @@ export async function listRecords(
       return {
         id: row.id,
         reference: reference(row.id),
-        summary: summarise(bp, redact(bp, decision.roles, row.data)),
+        summary: summarise(bp, redact(bp, decision.roles, row.data, decision.workspaceRole)),
         state: row.state,
         stateName: state?.name ?? row.state,
         outcome: row.outcome,
@@ -372,7 +372,7 @@ export async function recordDetail(pool: Pool, principal: Principal, instanceId:
       pool,
     );
 
-    const visible = redact(bp, decision.roles, instance.data);
+    const visible = redact(bp, decision.roles, instance.data, decision.workspaceRole);
     const state = bp.workflow.states.find((s) => s.key === instance.state);
 
     const [events, approvals, tasks, emails, documents] = await Promise.all([

@@ -47,7 +47,9 @@ const OPS_FOR_KIND: Record<string, Set<string>> = {
   none: new Set([]),
 };
 
-export function compileQuery(bp: Blueprint, plan: QueryPlan, tenantId: string, now: Date): CompiledQuery {
+export function compileQuery(
+  bp: Blueprint, plan: QueryPlan, tenantId: string, now: Date, visibleKeys?: ReadonlySet<string>,
+): CompiledQuery {
   const d = new Diagnostics();
   const params: unknown[] = [tenantId, plan.processKey];
   const where: string[] = ['i.tenant_id = $1', 'i.process_key = $2'];
@@ -70,6 +72,10 @@ export function compileQuery(bp: Blueprint, plan: QueryPlan, tenantId: string, n
 
   for (const [i, filter] of plan.filters.entries()) {
     const at = `filters[${i}]`;
+    if (filter.kind === 'answer' && visibleKeys && !visibleKeys.has(filter.field)) {
+      d.error('QRY004', at, `Field "${filter.field}" is hidden from your role and cannot be used to filter records.`);
+      continue;
+    }
     const clause = compileFilter(filter, { bp, at, d, push, fieldByKey, stateKeys, now });
     if (clause) where.push(clause);
   }
@@ -80,6 +86,10 @@ export function compileQuery(bp: Blueprint, plan: QueryPlan, tenantId: string, n
   for (const key of plan.select ?? []) {
     if (!fieldByKey.has(key)) {
       d.error('QRY001', 'select', `The process has no field "${key}".`, 'Name a field the blueprint declares.');
+      continue;
+    }
+    if (visibleKeys && !visibleKeys.has(key)) {
+      d.error('QRY004', 'select', `Field "${key}" is hidden from your role.`);
       continue;
     }
     select.push(key);

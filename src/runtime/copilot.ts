@@ -7,7 +7,7 @@ import { compileAction, compileQuery } from '../copilot/compile.js';
 import { ActionPlan, Proposal, QueryPlan } from '../copilot/plan.js';
 import { inTransaction, type Client, type Pool } from './db.js';
 import { Engine } from './engine.js';
-import { AuthorizationError, authorize, editableFields, redact, require_, type Principal } from './policy.js';
+import { AuthorizationError, authorize, editableFields, redact, require_, visibleFields, type Principal } from './policy.js';
 import { appUrl, sendPlatformMail } from './platform-mail.js';
 
 /**
@@ -151,7 +151,8 @@ export async function runPlan(
       pool,
     );
 
-    const compiled = compileQuery(bp, args.plan, tenantId, now);
+    const readable = new Set(visibleFields(bp, decision.roles, decision.workspaceRole));
+    const compiled = compileQuery(bp, args.plan, tenantId, now, readable);
     const diagnostics = [...compiled.diagnostics];
     if (args.action) diagnostics.push(...compileAction(bp, args.action));
     const ok = !diagnostics.some((d) => d.severity === 'error');
@@ -169,9 +170,9 @@ export async function runPlan(
       const state = stateByKey.get(row.state);
       const sla = state?.slaHours;
       // Redaction applies to the answer exactly as it does on the record view.
-      const visible = redact(bp, decision.roles, row.data);
+      const visible = redact(bp, decision.roles, row.data, decision.workspaceRole);
       const answers: Record<string, unknown> = {};
-      for (const key of compiled.select) if (key in visible) answers[key] = visible[key];
+      for (const key of compiled.select) if (key in visible && visible[key] !== '[redacted]') answers[key] = visible[key];
       return {
         instanceId: row.id,
         reference: reference(row.id),
