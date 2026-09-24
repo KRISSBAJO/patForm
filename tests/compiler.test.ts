@@ -352,6 +352,21 @@ test('a file field is refused, because the platform does not accept uploads', ()
   assert.ok(codes.includes('SEC013'), `expected SEC013, got ${codes.join(', ') || 'nothing'}`);
 });
 
+test('a task scenario cannot supply answers its actor lacks permission to edit', () => {
+  const raw = structuredClone(load('employee-onboarding.blueprint.json'));
+  raw.data.fields.push({ key: 'equipment_note', type: 'short_text', label: 'Equipment note', required: false,
+    classification: 'internal', setBy: 'operator' });
+  const task = raw.workflow.tasks.find((item) => item.key === 'issue_equipment')!;
+  task.assignee = { field: 'manager_email' };
+  task.requiredFields = ['equipment_note'];
+  const scenario = raw.tests.find((item) => item.kind === 'happy_path')!;
+  const step = scenario.steps.find((item) => item.step === 'complete_task' && item.task === 'issue_equipment')!;
+  if (step.step !== 'complete_task') throw new Error('expected task step');
+  step.answers = { equipment_note: 'Issued' };
+  const errors = validate(raw).errors;
+  assert.ok(errors.some((item) => item.code === 'TEST004' && item.message.includes('it_operator')));
+});
+
 test('the two processes that asked for a document now ask where it is', () => {
   // docs/failure-cases.md D1: record that a check happened and where to verify
   // it, rather than storing the evidence. That was already the pattern here —

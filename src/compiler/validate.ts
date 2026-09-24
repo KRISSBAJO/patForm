@@ -1110,8 +1110,27 @@ export function validate(bp: Blueprint): Diagnostics {
         if (!roleByKey.has(step.as)) d.error('TEST002', at, `Unknown role "${step.as}".`);
       }
       if (step.step === 'complete_task') {
-        if (!taskByKey.has(step.task)) d.error('TEST002', at, `Unknown task "${step.task}".`);
-        if (!roleByKey.has(step.as)) d.error('TEST002', at, `Unknown role "${step.as}".`);
+        const task = taskByKey.get(step.task);
+        const role = roleByKey.get(step.as);
+        if (!task) d.error('TEST002', at, `Unknown task "${step.task}".`);
+        if (!role) d.error('TEST002', at, `Unknown role "${step.as}".`);
+        // Scenario actors receive only a workspace operator grant. Supplying
+        // task answers also needs process-level edit rights for every field.
+        // Checking this before the expensive scenario run gives AI a precise
+        // permission error instead of a cascade of unopened-task failures.
+        const answers = Object.keys(step.answers ?? {});
+        if (!step.expectDenied && answers.length) {
+          if (task) for (const key of answers) {
+            if (!task.requiredFields.includes(key)) {
+              d.error('TEST004', at, `Task "${task.key}" cannot collect "${key}" in this scenario.`,
+                `Add "${key}" to the task's requiredFields or remove it from the scenario answer.`);
+            }
+          }
+          if (role && (!role.capabilities.includes('edit') || answers.some((key) => !role.editableFields?.includes(key)))) {
+            d.error('TEST004', at, `Role "${role.key}" cannot edit the answers supplied when completing task "${step.task}".`,
+              `Grant the role edit and list ${answers.join(', ')} in its editableFields, or have the task collect no answers.`);
+          }
+        }
       }
       if (step.step === 'attempt' && !roleByKey.has(step.as)) {
         d.error('TEST002', at, `Unknown role "${step.as}".`);

@@ -9,7 +9,7 @@ import type { Diagnostic } from '../compiler/diagnostics.js';
  * record says exactly which instructions produced it. Eval results are only
  * comparable within a version.
  */
-export const PROMPT_VERSION = 'blueprint-gen@5';
+export const PROMPT_VERSION = 'blueprint-gen@6';
 
 export const SYSTEM_PROMPT = `You design business processes for an operations platform.
 
@@ -72,11 +72,14 @@ Form and data
 - A calculated field must have "compute", must not refer to itself, and may only do arithmetic over numeric or repeating-group fields.
 - Comparisons must be type-compatible: gt/gte/lt/lte need a number, currency, rating, date or time. Comparing a choice field against a value that is not one of its options is rejected.
 - Name the fields in data.identity that together identify a duplicate submission (usually an email plus a date or reference).
+- File uploads are not supported. A text field containing a receipt reference is not an uploaded receipt. If the request requires an attachment, disclose this gap in intent.openDecisions; do not claim the process enforces receipt upload.
+- Field "required" is unconditional. Do not claim the process enforces an amount-dependent requirement such as a receipt only when an item exceeds $25 unless the blueprint and its scenarios prove it.
 
 Tasks and approvals
 - A task with "blocking": true must have a transition triggered by its completion. A blocking task nothing waits for is a control that does nothing.
 - A transition triggered by task completion must name a task some transition actually creates.
 - In a complete_task test step, "answers" may contain ONLY fields named by that task's "requiredFields". Omit "answers" if the task collects nothing. If the task records an operator field, put that field in "requiredFields" and allow the completing role to edit it.
+- A role completing a task with answers needs the "edit" capability and every answered field in "editableFields", even when the task is assigned through an email field.
 - If the process has approvals, some role must have the "approve" capability.
 - Address messages to a role, an email field, or the submitter. Only use { "assignee": "current" } if some transition runs an "assign" action first.
 
