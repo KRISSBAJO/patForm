@@ -11,7 +11,7 @@ export class DeepSeekProvider implements Provider {
   constructor(opts: { model?: string; apiKey?: string } = {}) {
     const apiKey = opts.apiKey ?? process.env.DEEPSEEK_API_KEY;
     if (!apiKey) throw new Error('DEEPSEEK_API_KEY is not configured');
-    this.client = new OpenAI({ apiKey, baseURL: 'https://api.deepseek.com' });
+    this.client = new OpenAI({ apiKey, baseURL: 'https://api.deepseek.com', timeout: 120_000, maxRetries: 0 });
     this.model = opts.model ?? process.env.DEEPSEEK_MODEL ?? 'deepseek-flash';
     const raw = process.env.DEEPSEEK_RATES;
     const [input, output] = raw?.split(':').map(Number) ?? [];

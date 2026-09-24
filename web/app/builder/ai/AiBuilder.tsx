@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import './ai.css';
 
-type Job = { id: string; status: 'queued' | 'running' | 'ready' | 'failed'; draft_id?: string | null; error?: string | null };
+type Job = { id: string; status: 'queued' | 'running' | 'ready' | 'failed'; stage: 'waiting' | 'generating' | 'checking' | 'saving'; process_key: string; process_name?: string | null; created_at: string; draft_id?: string | null; error?: string | null };
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, { credentials: 'include', cache: 'no-store', headers: { 'content-type': 'application/json' }, ...init });
@@ -24,6 +24,7 @@ export function AiBuilder() {
   const [job, setJob] = useState<Job | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [elapsed, setElapsed] = useState(0);
 
   useEffect(() => {
     const saved = sessionStorage.getItem('patform:new-process-description');
@@ -38,13 +39,24 @@ export function AiBuilder() {
     const poll = async () => {
       try {
         const result = await api<Job>(`/api/builder/ai-jobs/${jobId}`);
-        if (live) { setJob(result); setError(''); }
+        if (live) { setJob(result); setKey(result.process_key); if (result.process_name) setName(result.process_name); setError(''); }
       } catch (e) { if (live) setError((e as Error).message); }
     };
     void poll();
     const timer = window.setInterval(() => void poll(), 3000);
     return () => { live = false; window.clearInterval(timer); };
   }, [jobId, job?.status]);
+
+  useEffect(() => {
+    if (!job || job.status === 'ready' || job.status === 'failed') return;
+    const tick = () => setElapsed(Math.max(0, Math.floor((Date.now() - new Date(job.created_at).getTime()) / 1000)));
+    tick();
+    const timer = window.setInterval(tick, 1000);
+    return () => window.clearInterval(timer);
+  }, [job?.id, job?.status, job?.created_at]);
+
+  const activeStep = job?.status === 'ready' ? 4 : job?.status === 'queued' || !job ? 1 : job.stage === 'generating' ? 2 : job.stage === 'checking' ? 3 : 4;
+  const progressTitle = job?.status === 'ready' ? 'Your private draft is ready' : job?.status === 'failed' ? 'We could not create a safe draft' : job?.status === 'queued' || !job ? 'Your request is in the queue' : job.stage === 'checking' ? 'Checking the questions and workflow' : job.stage === 'saving' ? 'Saving your private draft' : 'AI is creating your process';
 
   const ready = /^[a-z][a-z0-9_]{2,}$/.test(key) && description.trim().length >= 20 && description.length <= 8000 && !busy;
   const submit = async () => {
@@ -75,7 +87,11 @@ export function AiBuilder() {
           <p className="aiPage__hint">The key appears in the form link. Use lowercase letters, numbers and underscores.</p>
           {error && <div className="aiPage__error" role="alert">{error}</div>}
           {!jobId && <div className="aiPage__submit"><span>Creates a private draft. You decide when to publish.</span><button type="button" disabled={!ready} onClick={() => void submit()}>{busy ? 'Starting…' : 'Create my draft'} <span aria-hidden="true">→</span></button></div>}
-          {jobId && <div className="aiPage__progress" role="status" aria-live="polite"><span className={`aiPage__progressIcon ${job?.status === 'ready' ? 'done' : ''}`}>{job?.status === 'ready' ? '✓' : '✳'}</span><div><strong>{job?.status === 'ready' ? 'Your draft is ready' : job?.status === 'failed' ? 'We could not create a safe draft' : job?.status === 'running' ? 'Building and checking your process…' : 'Waiting for the builder…'}</strong><p>{job?.status === 'failed' ? job.error : job?.status === 'ready' ? 'Open it to review and change anything before publishing.' : 'You can leave this page and return using this link. Some processes take a few minutes.'}</p></div>{job?.status === 'ready' && job.draft_id && <a href={`/builder?draft=${job.draft_id}`}>Open draft →</a>}{job?.status === 'failed' && <button type="button" onClick={() => { setJobId(null); setJob(null); window.history.replaceState({}, '', '/builder/ai'); }}>Try again</button>}</div>}
+          {jobId && <div className={`aiPage__progress ${job?.status === 'failed' ? 'aiPage__progress--failed' : ''}`}>
+            <div className="aiPage__progressHeading"><span className={`aiPage__progressIcon ${job?.status === 'ready' || job?.status === 'failed' ? 'done' : ''}`} aria-hidden="true">{job?.status === 'ready' ? '✓' : job?.status === 'failed' ? '!' : '✳'}</span><div><strong role="status" aria-live="polite">{progressTitle}</strong><p>{job?.status === 'failed' ? job.error : job?.status === 'ready' ? 'Saved in your workspace. Open it to review and edit before publishing.' : 'We are preparing the form, decisions and checks. You can leave and return with this link.'}</p></div></div>
+            {job?.status !== 'failed' && <div className="aiPage__steps" aria-label="Creation progress">{['Request saved','AI drafting','Workflow checks','Private draft'].map((label, i) => <div className={`aiPage__step ${i + 1 < activeStep || job?.status === 'ready' ? 'isDone' : i + 1 === activeStep ? 'isActive' : ''}`} key={label}><span aria-hidden="true">{i + 1 < activeStep || job?.status === 'ready' ? '✓' : i + 1}</span><small>{label}</small></div>)}</div>}
+            <div className="aiPage__progressFoot">{job?.status === 'running' || job?.status === 'queued' ? <span>Working for {Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, '0')} · This can take a few minutes</span> : <span>{job?.status === 'ready' ? 'Ready to review' : 'No draft was published'}</span>}{job?.status === 'ready' && job.draft_id && <a href={`/builder?draft=${job.draft_id}`}>Open draft →</a>}{job?.status === 'failed' && <button type="button" onClick={() => { setJobId(null); setJob(null); window.history.replaceState({}, '', '/builder/ai'); }}>Try again</button>}</div>
+          </div>}
         </section>
         <aside className="aiPage__aside"><div className="aiPage__asideTop"><span className="aiPage__orb">✳</span><span>HOW IT WORKS</span></div><h2>More than a form.</h2><p>AI proposes a complete flow, then PatForm checks the parts that must work together.</p><ol><li><strong>Questions and pages</strong><span>What people fill in, including private fields.</span></li><li><strong>Decisions and handoffs</strong><span>Approvals, tasks, reminders and messages.</span></li><li><strong>Checks before launch</strong><span>Rules and sample scenarios are tested.</span></li></ol><div className="aiPage__asideNote">Your process stays in draft until you review and publish it.</div></aside>
       </div>

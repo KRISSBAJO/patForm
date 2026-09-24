@@ -35,7 +35,9 @@ export class OpenAIProvider implements Provider {
   private schemaFormatWorks = true;
 
   constructor(opts: { model?: string; apiKey?: string } = {}) {
-    this.client = opts.apiKey ? new OpenAI({ apiKey: opts.apiKey }) : new OpenAI();
+    this.client = opts.apiKey
+      ? new OpenAI({ apiKey: opts.apiKey, timeout: 120_000, maxRetries: 0 })
+      : new OpenAI({ timeout: 120_000, maxRetries: 0 });
     this.model = opts.model ?? process.env.OPENAI_MODEL ?? 'gpt-4o-mini';
   }
 

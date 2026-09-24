@@ -21,6 +21,7 @@ create table if not exists ai_draft_job (
   process_name text,
   description text not null,
   status text not null default 'queued' check (status in ('queued', 'running', 'ready', 'failed')),
+  stage text not null default 'waiting',
   draft_id uuid,
   error text,
   attempts int not null default 0,
@@ -28,6 +29,7 @@ create table if not exists ai_draft_job (
   started_at timestamptz,
   completed_at timestamptz
 );
+alter table ai_draft_job add column if not exists stage text not null default 'waiting';
 create index if not exists ai_draft_job_queue on ai_draft_job (created_at) where status in ('queued', 'running');
 create unique index if not exists ai_draft_job_active_key on ai_draft_job (tenant_id, process_key) where status in ('queued', 'running');
 

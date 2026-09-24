@@ -37,7 +37,9 @@ export class AnthropicProvider implements Provider {
   constructor(opts: { model?: string; apiKey?: string } = {}) {
     // Zero-arg construction resolves ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN,
     // or a signed-in CLI profile. The key is never read into this process.
-    this.client = opts.apiKey ? new Anthropic({ apiKey: opts.apiKey }) : new Anthropic();
+    this.client = opts.apiKey
+      ? new Anthropic({ apiKey: opts.apiKey, timeout: 120_000, maxRetries: 0 })
+      : new Anthropic({ timeout: 120_000, maxRetries: 0 });
     this.model = opts.model ?? process.env.ANTHROPIC_MODEL ?? 'claude-opus-5';
   }
 

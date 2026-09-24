@@ -49,6 +49,8 @@ export interface GenerateOptions {
   maxRepairs?: number;
   /** When given, a clean blueprint also has to pass its own scenarios. */
   pool?: Pool;
+  /** Optional durable status callback for a queued draft. */
+  onProgress?: (stage: 'generating' | 'checking') => Promise<void>;
 }
 
 /**
@@ -106,6 +108,7 @@ export async function generateBlueprint(
   let decision: Decision = 'unparseable';
 
   for (let attempt = 1; attempt <= maxRepairs + 1; attempt++) {
+    await options.onProgress?.('generating');
     const response = await provider.generate({
       description: options.description,
       pack: options.pack,
@@ -122,6 +125,7 @@ export async function generateBlueprint(
     }
 
     // ------------------------------------------------------------ gate one
+    await options.onProgress?.('checking');
     const candidate = response.parsed ?? tryExtract(response.text);
     const parsed = Blueprint.safeParse(candidate);
 

@@ -11,6 +11,7 @@ if (process.env.STAGING_COMBINED_SERVICE !== 'true') {
   throw new Error('STAGING_COMBINED_SERVICE=true is required for the combined staging service');
 }
 
+const serviceStartedAt = new Date();
 const pool = createPool(2);
 try {
   if (await initializeEmptySchema(pool)) {
@@ -26,3 +27,21 @@ try {
 }
 
 await Promise.all([import('./api/server.js'), import('./worker.js')]);
+
+// Render replaces the single combined service during a deploy. An AI call
+// interrupted in the retired process must not sit in "running" for 30 minutes.
+// Wait until the replacement is live, then recover only jobs started before it.
+setTimeout(() => {
+  void (async () => {
+    const recoveryPool = createPool(1);
+    try {
+      const recovered = await recoveryPool.query(
+        `update ai_draft_job set status = 'queued', stage = 'waiting', started_at = null
+         where status = 'running' and started_at < $1`, [serviceStartedAt],
+      );
+      if (recovered.rowCount) console.log(`Recovered ${recovered.rowCount} interrupted AI draft job(s)`);
+    } finally {
+      await recoveryPool.end();
+    }
+  })().catch((error) => console.error('AI job recovery failed:', error instanceof Error ? error.message : error));
+}, 90_000);

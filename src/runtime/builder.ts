@@ -632,7 +632,7 @@ export interface NewProcess {
 
 export async function createDraft(
   pool: Pool,
-  args: { principal: Principal; input: NewProcess },
+  args: { principal: Principal; input: NewProcess; onProgress?: (stage: 'generating' | 'checking' | 'saving') => Promise<void> },
 ): Promise<DraftDetail & { audit?: GenerationOutcome['audit']; decision?: string }> {
   const { principal, input } = args;
   await requireWorkspaceCapability(pool, principal, 'administer', input.key);
@@ -679,6 +679,7 @@ export async function createDraft(
           description: input.description,
           pack: input.pack,
           pool,
+          onProgress: args.onProgress,
         });
         if (proposed.blueprint) { outcome = proposed; break; }
         lastProblem = `${name} returned a ${proposed.decision} process: ${proposed.diagnostics[0]?.message ?? 'no detail'}`;
@@ -695,6 +696,7 @@ export async function createDraft(
     blueprint = { ...outcome.blueprint, key: input.key, name: input.name ?? outcome.blueprint.name };
   }
 
+  await args.onProgress?.('saving');
   const { rows } = await pool.query<{ id: string }>(
     `insert into process_draft (tenant_id, process_key, based_on_version, blueprint, created_by)
      values ($1, $2, null, $3, $4) returning id`,

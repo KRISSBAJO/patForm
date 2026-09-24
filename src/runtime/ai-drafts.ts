@@ -26,7 +26,7 @@ export async function queueAiDraft(pool: Pool, principal: Principal, input: NewP
 
 export async function aiDraftStatus(pool: Pool, principal: Principal, jobId: string) {
   if (principal.kind !== 'actor') throw new NotFound('Draft job not found.');
-  const result = await pool.query(`select j.id, j.process_key, j.status, j.draft_id, j.error,
+  const result = await pool.query(`select j.id, j.process_key, j.process_name, j.status, j.stage, j.draft_id, j.error,
     j.created_at, j.started_at, j.completed_at
     from ai_draft_job j where j.id = $1 and j.tenant_id = $2 and j.actor_id = $3`,
   [jobId, principal.tenantId, principal.actorId]);
@@ -37,7 +37,7 @@ export async function aiDraftStatus(pool: Pool, principal: Principal, jobId: str
 
 export async function processNextAiDraft(pool: Pool): Promise<boolean> {
   const claimed = await pool.query<{ id: string; tenant_id: string; actor_id: string; process_key: string; process_name: string | null; description: string }>(
-    `update ai_draft_job j set status = 'running', started_at = now(), attempts = attempts + 1, error = null
+    `update ai_draft_job j set status = 'running', stage = 'generating', started_at = now(), attempts = attempts + 1, error = null
      where j.id = (select id from ai_draft_job
        where status = 'queued' or (status = 'running' and started_at < now() - interval '30 minutes')
        order by created_at for update skip locked limit 1)
@@ -47,7 +47,8 @@ export async function processNextAiDraft(pool: Pool): Promise<boolean> {
   if (!job) return false;
   try {
     const draft = await createDraft(pool, { principal: { kind: 'actor', tenantId: job.tenant_id, actorId: job.actor_id },
-      input: { key: job.process_key, name: job.process_name ?? undefined, description: job.description } });
+      input: { key: job.process_key, name: job.process_name ?? undefined, description: job.description },
+      onProgress: async (stage) => { await pool.query('update ai_draft_job set stage = $2 where id = $1', [job.id, stage]); } });
     await pool.query(`update ai_draft_job set status = 'ready', draft_id = $2, completed_at = now(), description = ''
       where id = $1`, [job.id, draft.id]);
   } catch (error) {

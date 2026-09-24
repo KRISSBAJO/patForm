@@ -134,6 +134,7 @@ create table ai_draft_job (
   process_name text,
   description text not null,
   status text not null default 'queued' check (status in ('queued', 'running', 'ready', 'failed')),
+  stage text not null default 'waiting',
   draft_id uuid,
   error text,
   attempts int not null default 0,
