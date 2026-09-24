@@ -3379,7 +3379,9 @@ a.cs__navItem {
 /* ------------------------------------------------------------ invite page */
 
 .iv {
-  max-width: 880px;
+  width: 100%;
+  max-width: 640px;
+  min-width: 0;
 }
 
 .iv__back {
@@ -3426,21 +3428,20 @@ a.cs__navItem {
 }
 
 .iv__modes {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 4px;
   margin: 18px 26px 0;
   padding: 4px;
-  width: fit-content;
-  max-width: calc(100% - 52px);
-  flex-wrap: wrap;
+  width: calc(100% - 52px);
   border-radius: 10px;
   background: var(--paper-2);
   border: 1px solid var(--line);
 }
 
 .iv__mode {
-  height: 36px;
-  padding: 0 16px;
+  min-height: 40px;
+  padding: 7px 8px;
   border: 0;
   border-radius: 7px;
   background: transparent;
@@ -3448,6 +3449,7 @@ a.cs__navItem {
   font-size: 13.5px;
   font-weight: 600;
   color: var(--ink-soft);
+  text-align: center;
   cursor: pointer;
   transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
 }
@@ -3475,17 +3477,26 @@ a.cs__navItem {
 
 .iv__grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
 }
 
 .iv__field {
   display: flex;
   flex-direction: column;
+  min-width: 0;
 }
 
 .iv__field .cs__label {
   margin-top: 0;
+}
+
+.iv__noteInput {
+  height: auto;
+  min-height: 76px;
+  padding: 10px 13px;
+  line-height: 1.45;
+  resize: vertical;
 }
 
 .iv__paste {
@@ -3626,9 +3637,6 @@ a.cs__navItem {
 }
 
 @media (max-width: 720px) {
-  .iv__grid {
-    grid-template-columns: 1fr;
-  }
   .iv__intro,
   .iv__body,
   .iv__review {
@@ -3638,7 +3646,7 @@ a.cs__navItem {
   .iv__modes {
     margin-left: 16px;
     margin-right: 16px;
-    max-width: calc(100% - 32px);
+    width: calc(100% - 32px);
   }
 }
 

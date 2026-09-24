@@ -237,18 +237,6 @@ export function InviteView({ onBack }: { onBack: () => void }) {
 
         <div className="iv__body">
           <div className="iv__grid">
-            <label className="iv__field">
-              <span className="cs__label">{mode === 'one' ? 'Role' : 'Role, where a row does not say'}</span>
-              <select className="cs__input" value={role} onChange={(e) => setRole(e.target.value)}>
-                {grantable.map((r) => (
-                  <option key={r} value={r}>
-                    {roleName(r)}
-                  </option>
-                ))}
-              </select>
-              <span className="mg__hint">{ROLE_WORDS[role] ?? ''}</span>
-            </label>
-
             {mode === 'one' && (
               <label className="iv__field">
                 <span className="cs__label">Their email</span>
@@ -262,6 +250,18 @@ export function InviteView({ onBack }: { onBack: () => void }) {
                 />
               </label>
             )}
+            <label className="iv__field">
+              <span className="cs__label">{mode === 'one' ? 'Role' : 'Role, where a row does not say'}</span>
+              <select className="cs__input" value={role} onChange={(e) => setRole(e.target.value)}>
+                {grantable.map((r) => (
+                  <option key={r} value={r}>
+                    {roleName(r)}
+                  </option>
+                ))}
+              </select>
+              <span className="mg__hint">{ROLE_WORDS[role] ?? ''}</span>
+            </label>
+
           </div>
 
           {mode === 'list' && (
@@ -327,8 +327,9 @@ export function InviteView({ onBack }: { onBack: () => void }) {
 
           <label className="iv__field">
             <span className="cs__label">A note in the email (optional)</span>
-            <input
-              className="cs__input"
+            <textarea
+              className="cs__input iv__noteInput"
+              rows={3}
               value={message}
               onChange={(e) => setMessage(e.target.value)}
               placeholder="You will be handling the onboarding approvals."
