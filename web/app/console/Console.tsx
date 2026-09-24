@@ -339,6 +339,7 @@ export function Console() {
     try {
       const detail = await call<RecordDetail>(`/api/records/${instanceId}`);
       setRecord(detail);
+      setProcessKey(detail.processKey);
       setView('record');
       window.history.pushState({ record: instanceId }, '', `?record=${encodeURIComponent(instanceId)}`);
     } catch (err) {
@@ -614,8 +615,8 @@ export function Console() {
           {/* The process pill is context for the record views. On People,
               Processes and Your account it named a process the page has
               nothing to do with. */}
-          {work && ['work', 'record', 'ask', 'records', 'dashboard'].includes(view) && (
-            <span className="cs__version">{work.processName}</span>
+          {['work', 'record', 'ask', 'records', 'dashboard'].includes(view) && (view === 'record' ? record : work) && (
+            <span className="cs__version">{view === 'record' && record ? record.processName : work?.processName}</span>
           )}
           <span style={{ flexGrow: 1 }} />
           <button type="button" className="cs__btn" onClick={() => void load()}>

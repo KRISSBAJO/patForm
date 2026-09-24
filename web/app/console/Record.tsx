@@ -23,6 +23,8 @@ import { isSignature, SignatureView } from '../../components/signature-field';
 export interface RecordDetail {
   instanceId: string;
   reference: string;
+  processKey: string;
+  processName: string;
   version: number;
   stateName: string;
   nextAction: string;
