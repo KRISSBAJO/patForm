@@ -373,6 +373,12 @@ export class Engine {
       if (request.mode === 'majority' && args.decision === 'changes_requested') {
         throw new InvalidInput('this approval is a vote — approve or reject');
       }
+      if (args.decision === 'changes_requested' && !declared?.allowRequestChanges) {
+        throw new InvalidInput('this approval does not allow requests for changes');
+      }
+      if (declared?.reasonRequired && args.decision !== 'approved' && !args.reason?.trim()) {
+        throw new InvalidInput('give a reason when rejecting or requesting changes');
+      }
 
       const actor = describePrincipal(args.principal);
       // One person, one decision. "Any two directors" is not one director twice.

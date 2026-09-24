@@ -271,7 +271,7 @@ export function Console() {
   const decide = (
     instanceId: string,
     approvalKey: string,
-    decision: 'approved' | 'rejected',
+    decision: 'approved' | 'rejected' | 'changes_requested',
     reason = 'Decided in the console',
   ) =>
     act(

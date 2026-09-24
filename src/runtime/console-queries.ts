@@ -177,6 +177,7 @@ export async function myWork(
       reference: reference(row.instance_id),
       approvalKey: row.approval_key,
       approvalName: bp.workflow.approvals.find((a) => a.key === row.approval_key)?.name ?? row.approval_key,
+      allowRequestChanges: bp.workflow.approvals.find((a) => a.key === row.approval_key)?.allowRequestChanges ?? false,
       state: row.state,
       stateName: stateName(row.state),
       waitingHours: Math.round((now - row.created_at.getTime()) / 3_600_000),

@@ -44,6 +44,7 @@ export interface PendingApproval {
   instanceId: string;
   approvalKey: string;
   approvalName: string;
+  allowRequestChanges?: boolean;
   waitingHours: number;
   late: boolean;
   summary: string;
@@ -100,13 +101,13 @@ export function RecordPage({
   task?: PendingTask;
   busy: string | null;
   onBack: () => void;
-  onDecide: (instanceId: string, approvalKey: string, decision: 'approved' | 'rejected', reason: string) => void;
+  onDecide: (instanceId: string, approvalKey: string, decision: 'approved' | 'rejected' | 'changes_requested', reason: string) => void;
   onCompleteTask: (instanceId: string, taskKey: string, answers: Record<string, string>) => void;
   onExport: (instanceId: string, reference: string, format: 'json' | 'csv') => void;
 }) {
   const [showTrail, setShowTrail] = useState(false);
   const [reason, setReason] = useState('');
-  const [rejecting, setRejecting] = useState(false);
+  const [decisionMode, setDecisionMode] = useState<'rejected' | 'changes_requested' | null>(null);
   const [completionAnswers, setCompletionAnswers] = useState<Record<string, string>>({});
   const [receiptError, setReceiptError] = useState<string | null>(null);
   // A majority vote reads as a vote: "Vote for", "Vote against".
@@ -175,10 +176,10 @@ export function RecordPage({
             ) : null}
           </div>
 
-          {rejecting ? (
+          {decisionMode ? (
             <div className="rc__reason">
               <label className="rc__reasonLabel" htmlFor="reject-reason">
-                {voting ? 'Why are you voting against?' : 'Why are you rejecting this? The applicant may be told.'}
+                {decisionMode === 'changes_requested' ? 'What must be corrected? The applicant may be told.' : voting ? 'Why are you voting against?' : 'Why are you rejecting this? The applicant may be told.'}
               </label>
               <textarea
                 id="reject-reason"
@@ -188,26 +189,31 @@ export function RecordPage({
                 onChange={(e) => setReason(e.target.value)}
               />
               <div className="rc__reasonActions">
-                <button type="button" className="cs__btn" onClick={() => setRejecting(false)}>
+                  <button type="button" className="cs__btn" onClick={() => setDecisionMode(null)}>
                   Cancel
                 </button>
                 <button
                   type="button"
                   className="cs__btn cs__btn--danger"
                   disabled={working || !reason.trim()}
-                  onClick={() => onDecide(record.instanceId, approval.approvalKey, 'rejected', reason.trim())}
+                  onClick={() => onDecide(record.instanceId, approval.approvalKey, decisionMode, reason.trim())}
                 >
                   <Icon name="reject" />
-                  {voting ? 'Vote against' : 'Confirm rejection'}
+                  {decisionMode === 'changes_requested' ? 'Send back for changes' : voting ? 'Vote against' : 'Confirm rejection'}
                 </button>
               </div>
             </div>
           ) : (
             <div className="rc__decisionActions">
-              <button type="button" className="cs__btn" disabled={working} onClick={() => setRejecting(true)}>
+              <button type="button" className="cs__btn" disabled={working} onClick={() => setDecisionMode('rejected')}>
                 <Icon name="reject" />
                 {voting ? 'Vote against' : 'Reject'}
               </button>
+              {approval.allowRequestChanges && !voting && (
+                <button type="button" className="cs__btn" disabled={working} onClick={() => setDecisionMode('changes_requested')}>
+                  Request changes
+                </button>
+              )}
               <button
                 type="button"
                 className="cs__btn cs__btn--primary"
