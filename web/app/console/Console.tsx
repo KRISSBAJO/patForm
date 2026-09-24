@@ -47,6 +47,7 @@ interface Work {
     reference: string;
     taskKey: string;
     taskName: string;
+    description?: string;
     requiredFields?: { key: string; label: string; type: string }[];
     assignee: string | null;
     late: boolean;

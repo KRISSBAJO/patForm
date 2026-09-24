@@ -52,6 +52,7 @@ export interface PendingTask {
   instanceId: string;
   taskKey: string;
   taskName: string;
+  description?: string;
   requiredFields?: { key: string; label: string; type: string }[];
   assignee: string | null;
   late: boolean;
@@ -227,6 +228,7 @@ export function RecordPage({
               Assigned to {who(task.assignee)}
               {task.late ? ' — overdue' : ''}. {task.summary}
             </p>
+            {task.description && <p>{task.description}</p>}
             {task.requiredFields?.map((field) => {
               const recorded = record.fields.find((f) => f.key === field.key)?.value;
               const value = completionAnswers[field.key] ?? (typeof recorded === 'string' && recorded !== '[redacted]' ? recorded : '');

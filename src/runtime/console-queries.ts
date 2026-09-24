@@ -38,6 +38,7 @@ export interface WorkSummary {
     reference: string;
     taskKey: string;
     taskName: string;
+    description?: string;
     assignee: string | null;
     dueAt: string | null;
     late: boolean;
@@ -225,6 +226,7 @@ export async function myWork(
         reference: reference(row.instance_id),
         taskKey: row.task_key,
         taskName: declared?.name ?? row.task_key,
+        description: declared?.description,
         requiredFields: (declared?.requiredFields ?? []).map((key) => {
           const field = bp.data.fields.find((f) => f.key === key);
           return { key, label: field?.label ?? key, type: field?.type ?? 'short_text' };
