@@ -19,8 +19,10 @@ export const EmailTemplate = z
     replyTo: Party.optional(),
     subject: z.string().min(1),
     /**
-     * Body is a template string with {{field_key}} placeholders. The compiler
-     * resolves every placeholder against the data schema and checks its
+     * Body is a template string with {{field_key}} placeholders. The special
+     * {{decision_reason}} placeholder is available only in a rejection or
+     * changes-requested email addressed solely to the submitter. The compiler
+     * resolves every other placeholder against the data schema and checks its
      * classification before the template can be published.
      */
     body: z.string().min(1),

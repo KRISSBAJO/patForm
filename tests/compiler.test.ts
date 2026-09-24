@@ -351,6 +351,21 @@ test('file fields allow supported uploads and refuse unsupported formats', () =>
   assert.ok(unsupported.includes('SEC013'));
 });
 
+test('a decision reason may appear only in a rejection or changes email to the submitter', () => {
+  const bp = structuredClone(load('expense-approval.blueprint.json'));
+  const rejected = bp.communications.email.find((e) => e.key === 'claim_rejected')!;
+  rejected.body += '\nReason: {{decision_reason}}';
+  assert.equal(validate(bp).errors.length, 0);
+
+  rejected.to = [{ user: 'manager@example.test' }];
+  assert.ok(validate(bp).errors.some((e) => e.code === 'SEC014'));
+
+  rejected.to = [{ submitter: true }];
+  const approved = bp.communications.email.find((e) => e.key === 'claim_approved')!;
+  approved.body += '\nReason: {{ decision_reason }}';
+  assert.ok(validate(bp).errors.some((e) => e.code === 'SEC014'));
+});
+
 test('a task scenario cannot supply answers its actor lacks permission to edit', () => {
   const raw = structuredClone(load('employee-onboarding.blueprint.json'));
   raw.data.fields.push({ key: 'equipment_note', type: 'short_text', label: 'Equipment note', required: false,

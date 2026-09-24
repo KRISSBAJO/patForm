@@ -10,6 +10,7 @@ import {
   type Expr,
   type Field,
   type Party,
+  type Transition,
 } from '../blueprint/index.js';
 import { Diagnostics } from './diagnostics.js';
 
@@ -617,7 +618,7 @@ export function validate(bp: Blueprint): Diagnostics {
     }
   };
 
-  const checkAction = (action: Action, at: string): void => {
+  const checkAction = (action: Action, at: string, transition: Transition): void => {
     switch (action.do) {
       case 'set_reference': {
         const field = requireField(action.field, at, 'Generated reference');
@@ -675,6 +676,13 @@ export function validate(bp: Blueprint): Diagnostics {
           tpl.cc.length === 0 && tpl.to.length > 0 && tpl.to.every((p) => 'submitter' in p);
 
         for (const ph of [...placeholdersIn(tpl.subject), ...placeholdersIn(tpl.body)]) {
+          if (ph === 'decision_reason') {
+            if (!selfAddressedOnly || transition.trigger.on !== 'approval_decided' ||
+              transition.trigger.decision === 'approved') {
+              d.error('SEC014', at, `Template "${tpl.key}" may include the decision reason only in a rejection or changes-requested email to the submitter alone.`);
+            }
+            continue;
+          }
           const f = requireField(ph, at, `Template "${tpl.key}"`);
           if (!f) continue;
           if (f.classification === 'restricted') {
@@ -855,7 +863,7 @@ export function validate(bp: Blueprint): Diagnostics {
         );
       }
       seenActionKeys.add(composite);
-      checkAction(action, aat);
+      checkAction(action, aat, t);
     }
   }
 
