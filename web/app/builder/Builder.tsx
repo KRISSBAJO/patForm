@@ -1105,7 +1105,7 @@ export function Builder() {
                 readOnly={frozen}
               />
 
-              <section className="bd__editor">
+              <section className="bd__editor" data-tab={tab}>
                 {overview ? (
                   <ProcessOverview
                     blueprint={blueprint}
@@ -1288,6 +1288,16 @@ export function Builder() {
                 <div className="sp__scroll">
                   {side === 'checks' && (
                     <>
+                    <DiagnosticsPanel
+                      blueprint={blueprint}
+                      errors={errors}
+                      warnings={warnings}
+                      onGo={(where) => {
+                        setOverview(false);
+                        setTab(where.tab);
+                        setIndex(where.index);
+                      }}
+                    />
                     <LaunchChecklist
                       blueprint={blueprint}
                       errors={errors.length}
@@ -1300,16 +1310,6 @@ export function Builder() {
                       testing={busy === 'test'}
                       canTest={publishable && status !== 'saving'}
                       draftId={draft.id}
-                    />
-                    <DiagnosticsPanel
-                      blueprint={blueprint}
-                      errors={errors}
-                      warnings={warnings}
-                      onGo={(where) => {
-                        setOverview(false);
-                        setTab(where.tab);
-                        setIndex(where.index);
-                      }}
                     />
                     </>
                   )}
@@ -2333,7 +2333,13 @@ function FieldEditor({
 
   return (
     <>
-      <EditorHead title={field.label || field.key} kind="Field" onRemove={onRemove} />
+      <div className="bd__fieldIntro">
+        <EditorHead title={field.label || field.key} kind="Form field" onRemove={onRemove} />
+        <div className="bd__fieldMeta"><code>{field.key}</code><span>{field.type.replaceAll('_', ' ')}</span><span>{field.classification}</span></div>
+      </div>
+
+      <section className="bd__studioCard">
+        <header className="bd__studioCardHead"><span className="bd__studioCardIcon">01</span><div><h3>Field fundamentals</h3><p>The question and the data it collects.</p></div></header>
 
       <Row label="Label">
         <input className="bd__input" value={field.label} onChange={(e) => onChange((f) => void (f.label = e.target.value))} />
@@ -2370,6 +2376,10 @@ function FieldEditor({
           </select>
         </Row>
       </div>
+      </section>
+
+      <section className="bd__studioCard">
+        <header className="bd__studioCardHead"><span className="bd__studioCardIcon">02</span><div><h3>Layout &amp; visibility</h3><p>Who answers, where it appears, and when it is required.</p></div></header>
 
       {/*
         * Width is a property of where the field sits, not of the field, so it
@@ -2430,6 +2440,10 @@ function FieldEditor({
       </div>
 
       <ConditionEditor title="Require this answer when" value={field.requiredWhen} fields={fields} onChange={(next) => onChange((f) => { if (next) f.requiredWhen = next; else delete f.requiredWhen; })} />
+      </section>
+
+      <section className="bd__studioCard">
+        <header className="bd__studioCardHead"><span className="bd__studioCardIcon">03</span><div><h3>Guidance &amp; validation</h3><p>Help people answer correctly and explain sensitive data.</p></div></header>
 
       <Row label="Help text" hint="shown under the field">
         <input className="bd__input" value={field.help ?? ''} onChange={(e) => onChange((f) => void (f.help = e.target.value || undefined))} />
@@ -2600,6 +2614,7 @@ function FieldEditor({
           />
         </Row>
       </fieldset>
+      </section>
     </>
   );
 }
@@ -3646,6 +3661,7 @@ function DiagnosticsPanel({
 }) {
   return (
     <aside className="bd__diag">
+      <div className="bd__insightsIntro"><span>BUILDER INSIGHTS</span><strong>Checks &amp; decisions</strong></div>
       {/* The tally is the thing a builder is watching, and it changes on every
           keystroke without focus moving — 4.1.3 again. `atomic` so it is read
           as one sentence rather than two numbers. */}
