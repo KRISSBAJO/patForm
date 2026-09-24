@@ -719,7 +719,8 @@ export async function createDraft(
         const errors = proposed.diagnostics.filter((item) => item.severity === 'error');
         const detail = errors.slice(0, 2).map((item) => `${item.code}: ${item.message}`).join(' / ');
         lastProblem = `${name} returned a ${proposed.decision} process: ${detail || 'the result could not pass validation'}`;
-        console.warn('AI proposal did not pass:', name, proposed.decision, errors.map((item) => item.code).slice(0, 12).join(','));
+        console.warn('AI proposal did not pass:', name, proposed.decision,
+          errors.slice(0, 12).map((item) => `${item.code}:${item.at}`).join(','));
       } catch (error) {
         lastProblem = `${name} could not complete generation`;
         console.warn(lastProblem, error instanceof Error ? error.message : String(error));

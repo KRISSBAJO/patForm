@@ -38,3 +38,22 @@ test('shape-valid AI output with compiler errors remains an editable private dra
   assert.ok(result.editable?.errors.length);
   assert.equal(result.editable?.blueprint.key, 'broken_example');
 });
+
+test('shape repair sees the full prior blueprint, including its last fields', async () => {
+  const broken = JSON.parse(readFileSync(new URL('../processes/_broken-example.blueprint.json', import.meta.url), 'utf8'));
+  const marker = 'FINAL_FIELD_TO_REPAIR';
+  let calls = 0;
+  const provider: Provider = {
+    name: 'fixture', model: 'fixture',
+    async generate(request) {
+      calls += 1;
+      if (calls === 2) assert.ok(request.user.includes(marker));
+      const parsed = calls === 1 ? { padding: 'x'.repeat(2500), last_field: marker } : broken;
+      return { text: JSON.stringify(parsed), parsed,
+        meta: { provider: 'fixture', model: 'fixture', mode: 'structured', latencyMs: 1 } };
+    },
+  };
+  const result = await generateBlueprint(provider, blueprintSchema(), { description: 'Create a review process.', maxRepairs: 1 });
+  assert.equal(calls, 2);
+  assert.ok(result.editable);
+});

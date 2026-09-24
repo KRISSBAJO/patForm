@@ -151,7 +151,10 @@ export async function generateBlueprint(
         at: message.split(':')[0]!,
         message: message.split(': ').slice(1).join(': ') || message,
       }));
-      user = `${baseUser}\n\nYour previous reply could not be read as a blueprint:\n\n${response.text.slice(0, 2000)}\n\n${repairTurn(diagnostics)}`;
+      // Shape errors often occur near the end of a large blueprint. Showing
+      // only its first 2,000 characters makes the repair turn guess the rest
+      // from scratch, which commonly repeats the same invalid structure.
+      user = `${baseUser}\n\nYour previous reply could not be read as a blueprint:\n\n${response.text}\n\n${repairTurn(diagnostics)}`;
       continue;
     }
 
