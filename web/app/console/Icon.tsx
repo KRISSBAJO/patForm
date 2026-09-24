@@ -24,7 +24,9 @@ export type IconName =
   | 'hide'
   | 'search'
   | 'sort'
-  | 'filter';
+  | 'filter'
+  | 'account'
+  | 'logout';
 
 export function Icon({ name }: { name: IconName }) {
   const p = {
@@ -41,6 +43,20 @@ export function Icon({ name }: { name: IconName }) {
   };
 
   switch (name) {
+    case 'account':
+      return (
+        <svg {...p}>
+          <circle cx="8" cy="5.2" r="2.4" />
+          <path d="M3.3 13.3c.4-2.4 2.1-3.7 4.7-3.7s4.3 1.3 4.7 3.7" />
+        </svg>
+      );
+    case 'logout':
+      return (
+        <svg {...p}>
+          <path d="M7.2 2.7H4.1a1 1 0 0 0-1 1v8.6a1 1 0 0 0 1 1h3.1" />
+          <path d="M7.3 8h6M10.8 5.4 13.4 8l-2.6 2.6" />
+        </svg>
+      );
     case 'open':
       return (
         <svg {...p}>

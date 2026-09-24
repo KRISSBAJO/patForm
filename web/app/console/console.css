@@ -1349,6 +1349,10 @@
   font-family: var(--ui);
   font-size: 13px;
   border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
 }
 
 .cs__seatPicker:hover {

@@ -13,6 +13,7 @@ import { RecordPage } from './Record';
 import { WorkList } from './WorkList';
 import { ReauthDialog } from './stepup';
 import { PasswordInput } from './PasswordInput';
+import { Icon } from './Icon';
 
 /**
  * Calls go to the same origin so the HttpOnly, SameSite=Lax session cookie is
@@ -63,6 +64,8 @@ interface Health {
 interface RecordDetail {
   instanceId: string;
   reference: string;
+  processKey: string;
+  processName: string;
   version: number;
   stateName: string;
   nextAction: string;
@@ -558,9 +561,11 @@ export function Console() {
             aria-current={view === 'security' ? 'page' : undefined}
             onClick={() => setView('security')}
           >
+            <Icon name="account" />
             Your account
           </button>
           <button type="button" className="cs__seatPicker" onClick={() => void signOut()}>
+            <Icon name="logout" />
             Sign out
           </button>
           {session.devices.length > 1 && (
