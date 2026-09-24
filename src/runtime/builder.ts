@@ -682,13 +682,19 @@ export async function createDraft(
           onProgress: args.onProgress,
         });
         if (proposed.blueprint) { outcome = proposed; break; }
-        lastProblem = `${name} returned a ${proposed.decision} process: ${proposed.diagnostics[0]?.message ?? 'no detail'}`;
+        const errors = proposed.diagnostics.filter((item) => item.severity === 'error');
+        const detail = errors.slice(0, 2).map((item) => `${item.code}: ${item.message}`).join(' / ');
+        lastProblem = `${name} returned a ${proposed.decision} process: ${detail || 'the result could not pass validation'}`;
+        console.warn('AI proposal did not pass:', name, proposed.decision, errors.map((item) => item.code).slice(0, 12).join(','));
       } catch (error) {
         lastProblem = `${name} could not complete generation`;
         console.warn(lastProblem, error instanceof Error ? error.message : String(error));
       }
     }
-    if (!outcome?.blueprint) throw new InvalidInput(`AI could not produce a safe draft. ${lastProblem.slice(0, 220)}. Try simplifying the description or start from a template.`);
+    const explanation = lastProblem.length > 240
+      ? `${lastProblem.slice(0, 240).replace(/\s+\S*$/, '')}…`
+      : lastProblem;
+    if (!outcome?.blueprint) throw new InvalidInput(`AI could not produce a safe draft. ${explanation} Try simplifying the description or start from a template.`);
     audit = outcome.audit;
     decision = outcome.decision;
     // The key the builder typed wins over the one the model chose, so the URL

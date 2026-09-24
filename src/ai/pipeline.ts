@@ -106,6 +106,7 @@ export async function generateBlueprint(
   let blueprint: Blueprint | undefined;
   let diagnostics: Diagnostic[] = [];
   let decision: Decision = 'unparseable';
+  let scenarios: ScenarioResult[] | undefined;
 
   for (let attempt = 1; attempt <= maxRepairs + 1; attempt++) {
     await options.onProgress?.('generating');
@@ -178,6 +179,23 @@ export async function generateBlueprint(
     const undeclared = undeclaredAssumptions(parsed.data);
     if (compiled.publishable && !undeclared.length) {
       blueprint = parsed.data;
+      // A failed scenario is repairable too. Previously this gate ran only
+      // after the final model turn, so its diagnostics could never reach the
+      // one repair turn promised by the pipeline.
+      if (options.pool) {
+        scenarios = await runScenarios(options.pool, parsed.data);
+        const scenarioErrors = scenarios.filter((s) => !s.passed).map((s): Diagnostic => ({
+          code: 'SCENARIO', severity: 'error', at: `tests.${s.test}`,
+          message: `The blueprint's "${s.kind}" scenario failed: ${s.failures.join('; ')}`,
+          fix: 'Fix the workflow, or the scenario if its expectation is wrong.',
+        }));
+        diagnostics = [...diagnostics, ...scenarioErrors];
+        if (scenarioErrors.length) {
+          decision = 'blocked';
+          user = `${baseUser}\n\nYou returned this blueprint:\n\n${JSON.stringify(parsed.data)}\n\n${repairTurn(diagnostics)}`;
+          continue;
+        }
+      }
       decision = 'publishable';
       break;
     }
@@ -189,27 +207,6 @@ export async function generateBlueprint(
 
     decision = 'blocked';
     user = `${baseUser}\n\nYou returned this blueprint:\n\n${JSON.stringify(parsed.data)}\n\n${repairTurn(diagnostics)}`;
-  }
-
-  // -------------------------------------------------------------- gate three
-  let scenarios: ScenarioResult[] | undefined;
-  if (blueprint && options.pool) {
-    scenarios = await runScenarios(options.pool, blueprint);
-    if (scenarios.some((s) => !s.passed)) {
-      decision = 'blocked';
-      diagnostics = [
-        ...diagnostics,
-        ...scenarios
-          .filter((s) => !s.passed)
-          .map((s) => ({
-            code: 'SCENARIO',
-            severity: 'error' as const,
-            at: `tests.${s.test}`,
-            message: `The blueprint's own "${s.kind}" scenario failed: ${s.failures.join('; ')}`,
-            fix: 'The process does not do what its tests say it does. Fix the workflow, or the test if the test is wrong.',
-          })),
-      ];
-    }
   }
 
   const totals = attempts.reduce(

@@ -30,7 +30,11 @@ export function AiBuilder() {
     const saved = sessionStorage.getItem('patform:new-process-description');
     if (saved) { setDescription(saved); sessionStorage.removeItem('patform:new-process-description'); }
     const existing = new URLSearchParams(window.location.search).get('job');
-    if (existing && /^[0-9a-f-]{36}$/.test(existing)) setJobId(existing);
+    if (existing && /^[0-9a-f-]{36}$/.test(existing)) {
+      setJobId(existing);
+      const previous = sessionStorage.getItem(`patform:ai-prompt:${existing}`);
+      if (previous) setDescription(previous);
+    }
   }, []);
 
   useEffect(() => {
@@ -65,6 +69,7 @@ export function AiBuilder() {
     try {
       const result = await api<{ jobId: string }>('/api/builder/ai-jobs', { method: 'POST',
         body: JSON.stringify({ key, name: name.trim() || undefined, description: description.trim() }) });
+      sessionStorage.setItem(`patform:ai-prompt:${result.jobId}`, description.trim());
       setJobId(result.jobId);
       window.history.replaceState({}, '', `/builder/ai?job=${result.jobId}`);
     } catch (e) { setError((e as Error).message); }
