@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { AskHistory } from './Trail';
+import { Icon } from './Icon';
 
 /**
  * §20.1 step 9, on screen.
@@ -91,7 +92,7 @@ export function Ask({ processKey, onOpenRecord }: { processKey: string; onOpenRe
   const [showPlan, setShowPlan] = useState(false);
 
   const startForm = () => {
-    if (question.trim()) sessionStorage.setItem('patform:new-process-description', question.trim());
+    sessionStorage.removeItem('patform:new-process-description');
     window.location.href = '/builder/ai';
   };
 
@@ -161,37 +162,53 @@ export function Ask({ processKey, onOpenRecord }: { processKey: string; onOpenRe
   return (
     <div className="cs__panel ask__panel">
       <div className="ask__hero">
-        <span className="ask__eyebrow">YOUR RECORDS, IN CONTEXT</span>
-        <h2>What do you need to know?</h2>
-        <p>Ask a question about this process. You can review the plan before any action runs.</p>
+        <svg className="ask__map" viewBox="0 0 1000 400" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+          <path d="M0 72 112 36 230 128 360 35 498 98 620 22 778 108 1000 30M0 231 112 36 205 275 360 35 485 253 620 22 730 279 1000 30M0 72 205 275 230 128 485 253 498 98 730 279 778 108 1000 245M0 353 205 275 360 355 485 253 620 360 730 279 1000 245M112 36 230 128 498 98 778 108M205 275 360 355 620 360 1000 245" />
+          {[112,230,360,498,620,778,205,485,730].map((x, index) => (
+            <circle key={x} cx={x} cy={[36,128,35,98,22,108,275,253,279][index]} r={index === 3 ? 6 : 4} />
+          ))}
+        </svg>
+        <div className="ask__heroCard">
+          <span className="ask__eyebrow">PATFORM ASK · YOUR RECORDS</span>
+          <h2>What do you need to know?</h2>
+          <p>Ask about this process. See the matching records and review any proposed action before it runs.</p>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void submit(question);
+            }}
+            className="ask__form"
+          >
+            <label className="ask__srOnly" htmlFor="ask-question">Your question</label>
+            <div className="ask__prompt">
+              <Icon name="search" />
+              <input
+                id="ask-question"
+                className="ask__input"
+                value={question}
+                placeholder="Ask about records, approvals or delays…"
+                onChange={(e) => setQuestion(e.target.value)}
+                disabled={busy !== null}
+              />
+              <button type="submit" className="ask__send" aria-label="Ask PatForm" disabled={busy !== null || !question.trim()}>
+                {busy === 'ask' ? <span className="ask__spinner" aria-hidden="true" /> : <span aria-hidden="true">↑</span>}
+              </button>
+            </div>
+          </form>
+          {!result && !error && <div className="ask__suggestions" aria-label="Suggested questions">
+            {SUGGESTIONS.slice(0, 3).map((s) => (
+              <button key={s} type="button" className="ask__suggestion" disabled={busy !== null} onClick={() => { setQuestion(s); void submit(s); }}>
+                {s}
+              </button>
+            ))}
+          </div>}
+        </div>
       </div>
 
       <div className="ask__content">
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            void submit(question);
-          }}
-          className="ask__form"
-        >
-          <label className="ask__label" htmlFor="ask-question">
-            Your question
-          </label>
-          <input
-            id="ask-question"
-            className="ask__input"
-            value={question}
-            placeholder="Which records are overdue?"
-            onChange={(e) => setQuestion(e.target.value)}
-            disabled={busy !== null}
-          />
-          <button type="submit" className="cs__btn cs__btn--primary" disabled={busy !== null || !question.trim()}>
-            {busy === 'ask' ? 'Thinking…' : 'Ask'}
-          </button>
-        </form>
-        <div className="ask__builderHandoff">
-          <span>Creating a form or approval flow?</span>
-          <button type="button" className="cs__btn" onClick={startForm}>Build a form with AI</button>
+        <div className="ask__contentHead">
+          <div><span className="ask__sectionEyebrow">YOUR ACTIVITY</span><h3>{result ? 'Answer and next steps' : 'Recent questions'}</h3></div>
+          {result && <button type="button" className="cs__btn" onClick={() => { setResult(null); setReport(null); setError(null); setQuestion(''); setShowPlan(false); document.getElementById('ask-question')?.focus(); }}>New question</button>}
         </div>
 
         {/*
@@ -209,23 +226,6 @@ export function Ask({ processKey, onOpenRecord }: { processKey: string; onOpenRe
                 void rerun(run.plan);
               }}
             />
-          </div>
-        )}
-
-        {!result && !error && (
-          <div className="ask__suggestions">
-            {SUGGESTIONS.map((s) => (
-              <button
-                key={s}
-                className="ask__suggestion"
-                onClick={() => {
-                  setQuestion(s);
-                  void submit(s);
-                }}
-              >
-                {s}
-              </button>
-            ))}
           </div>
         )}
 
@@ -321,6 +321,10 @@ export function Ask({ processKey, onOpenRecord }: { processKey: string; onOpenRe
             {report && <Result report={report} />}
           </>
         )}
+        <div className="ask__builderHandoff">
+          <span><strong>Need a new process?</strong><small>Describe a form and its approvals to create a private draft.</small></span>
+          <button type="button" className="cs__btn" onClick={startForm}>Build with AI <span aria-hidden="true">↗</span></button>
+        </div>
       </div>
     </div>
   );

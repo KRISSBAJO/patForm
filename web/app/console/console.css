@@ -4327,3 +4327,109 @@ a.cs__navItem {
   border-bottom: 1px solid var(--line-soft);
   color: var(--ink);
 }
+
+/* Ask is a focused workspace: the graph gives context, never pretends to be a result. */
+.cs__body--ask > .cs__left { max-width: 1120px; }
+.ask__panel { border-radius: 18px; }
+.ask__hero {
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  place-items: center;
+  min-height: 390px;
+  padding: 50px 24px;
+  overflow: hidden;
+  background: radial-gradient(circle at 8% 15%, #f9f3ed, transparent 39%), radial-gradient(circle at 90% 25%, #eff8f3, transparent 44%), #f8faf7;
+}
+.ask__map {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  color: #8da99c;
+  opacity: .45;
+}
+.ask__map path { fill: none; stroke: currentColor; stroke-width: .7; }
+.ask__map circle { fill: #457764; }
+.ask__heroCard {
+  width: min(100%, 730px);
+  padding: 32px clamp(22px, 4vw, 48px) 30px;
+  border: 1px solid #dce8df;
+  border-radius: 22px;
+  background: rgba(255,255,255,.96);
+  box-shadow: 0 22px 55px rgba(24, 65, 45, .11);
+  text-align: center;
+}
+.ask__heroCard h2 { margin: 10px 0 8px; font-size: clamp(28px, 3.2vw, 40px); }
+.ask__heroCard p { max-width: 560px; margin: 0 auto 24px; }
+.ask__form { display: block; margin: 0; }
+.ask__prompt {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  min-height: 62px;
+  padding: 6px 7px 6px 18px;
+  border: 1px solid #bfd9c8;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 2px 0 rgba(17, 80, 54, .04);
+  color: var(--green);
+  transition: border-color .2s, box-shadow .2s;
+}
+.ask__prompt:focus-within { border-color: var(--green); box-shadow: 0 0 0 4px var(--green-pale); }
+.ask__prompt .cs__icon { width: 20px; height: 20px; margin: 0; }
+.ask__form .ask__input {
+  min-width: 0;
+  height: 48px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  font-size: 16px;
+}
+.ask__form .ask__input:focus { box-shadow: none; }
+.ask__send {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 46px;
+  height: 46px;
+  border: 0;
+  border-radius: 11px;
+  background: var(--green);
+  color: #fff;
+  font-family: inherit;
+  font-size: 25px;
+  line-height: 1;
+  cursor: pointer;
+}
+.ask__send:disabled { opacity: .45; cursor: not-allowed; }
+.ask__send:not(:disabled):hover { background: var(--green-deep); }
+.ask__spinner { width: 17px; height: 17px; border: 2px solid #ffffff80; border-top-color: #fff; border-radius: 50%; animation: askSpin .8s linear infinite; }
+@keyframes askSpin { to { transform: rotate(360deg); } }
+.ask__suggestions { justify-content: center; gap: 8px; margin-top: 17px; }
+.ask__suggestion { padding: 8px 13px; background: #fff; border-color: #d9e6dc; color: var(--ink-soft); }
+.ask__suggestion:disabled { cursor: not-allowed; opacity: .55; }
+.ask__content { padding: clamp(22px, 4vw, 42px); }
+.ask__contentHead { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.ask__sectionEyebrow { font-size: 10px; font-weight: 700; letter-spacing: .16em; color: var(--green-deep); }
+.ask__contentHead h3 { margin: 6px 0 0; font-size: 20px; letter-spacing: -.02em; }
+.ask__history { margin-top: 20px; padding-top: 0; border-top: 0; }
+.ask__historyTitle { display: none; }
+.ask__builderHandoff { margin: 30px 0 0; padding: 18px 20px; border-radius: 12px; background: #f7faf7; }
+.ask__builderHandoff span { display: grid; gap: 3px; }
+.ask__builderHandoff strong { font-size: 14px; }
+.ask__builderHandoff small { font-size: 12.5px; color: var(--muted); }
+@media (max-width: 700px) {
+  .ask__hero { min-height: 0; padding: 22px 14px; }
+  .ask__heroCard { padding: 24px 18px; border-radius: 16px; }
+  .ask__heroCard p { font-size: 13.5px; }
+  .ask__prompt { min-height: 56px; padding-left: 12px; }
+  .ask__form .ask__input { height: 42px; font-size: 14px; }
+  .ask__send { width: 42px; height: 42px; }
+  .ask__builderHandoff { align-items: stretch; }
+}
+@media (prefers-reduced-motion: reduce) { .ask__spinner { animation: none; } }
