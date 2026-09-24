@@ -1917,6 +1917,7 @@ a.cs__navItem {
   .cs__body { padding: 16px; flex-direction: column; gap: 16px; width: 100%; min-width: 0; }
   .cs__left, .cs__right { width: 100%; min-width: 0; }
   .cs__tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .cs__card--dark { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {
