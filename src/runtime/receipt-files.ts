@@ -4,7 +4,7 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { inTransaction, type Client, type Pool } from './db.js';
 import { resolveForm } from './form-links.js';
 import { InvalidInput, NotFound } from './errors.js';
-import type { Blueprint } from '../blueprint/index.js';
+import { flattenFields, type Blueprint, type Field } from '../blueprint/index.js';
 import type { Principal } from './policy.js';
 import { recordDetail } from './console-queries.js';
 
@@ -23,8 +23,22 @@ function config() {
 
 function tokenHash(token: string) { return createHash('sha256').update(token).digest('hex'); }
 
+export function referencedFileIds(answers: Record<string, unknown>): string[] {
+  const ids = new Set<string>();
+  const visit = (value: unknown): void => {
+    if (typeof value === 'string') {
+      const id = REFERENCE.exec(value)?.[1];
+      if (id) ids.add(id);
+    } else if (Array.isArray(value)) value.forEach(visit);
+    else if (value && typeof value === 'object') Object.values(value).forEach(visit);
+  };
+  visit(answers);
+  return [...ids];
+}
+
 function evidenceField(bp: Blueprint, key: string) {
-  return EVIDENCE_FIELDS.has(key) && bp.data.fields.some((f) => f.key === key && f.setBy !== 'operator');
+  return flattenFields(bp.data.fields).some(({ field }) => field.key === key && field.setBy !== 'operator' &&
+    (field.type === 'file' || EVIDENCE_FIELDS.has(key)));
 }
 
 function sniff(bytes: Buffer): string | null {
@@ -50,6 +64,11 @@ export async function uploadReceipt(pool: Pool, args: { form: string; token: str
   );
   const draft = rows[0];
   if (!draft || !evidenceField(draft.blueprint, args.fieldKey)) throw new InvalidInput('This draft cannot accept that receipt.');
+  const declared = flattenFields(draft.blueprint.data.fields).find(({ field }) => field.key === args.fieldKey)?.field;
+  if (declared?.type === 'file' && (
+    (declared.constraints?.accept?.length && !declared.constraints.accept.includes(contentType)) ||
+    bytes.length > (declared.constraints?.maxSizeMb ?? 5) * 1024 * 1024
+  )) throw new InvalidInput('This file does not match the field’s allowed type or size.');
   const id = randomUUID();
   const key = `${PREFIX}${form.tenantId}/${id}`;
   const checksum = createHash('sha256').update(bytes).digest('hex');
@@ -87,13 +106,35 @@ export async function receiptStatus(pool: Pool, args: { form: string; token: str
   return { status, filename: rows[0].filename };
 }
 
-/** A caller may type any reference, but a receipt-file reference must be a clean object on this exact draft. */
+/** File answers must be clean objects on this exact draft; legacy reference fields may still hold external IDs. */
 export async function checkReceiptReferences(pool: Pool, args: { tenantId: string; processKey: string; token?: string; answers: Record<string, unknown> }) {
-  for (const fieldKey of EVIDENCE_FIELDS) {
-    const value = args.answers[fieldKey];
-    if (typeof value !== 'string' || !value.startsWith('receipt-file:')) continue;
+  const { rows: versions } = await pool.query<{ blueprint: Blueprint }>(
+    `select blueprint from process_version where tenant_id = $1 and process_key = $2 order by version desc limit 1`,
+    [args.tenantId, args.processKey],
+  );
+  const bp = versions[0]?.blueprint;
+  if (!bp) return { field: '_', message: 'This form is no longer available.' };
+  const references: { fieldKey: string; path: string; value: unknown; file: boolean }[] = [];
+  const collect = (field: Field, value: unknown, path: string) => {
+    if (field.type === 'repeating_group' && Array.isArray(value)) {
+      value.forEach((row, index) => {
+        if (row && typeof row === 'object' && !Array.isArray(row))
+          for (const child of field.fields ?? []) collect(child, (row as Record<string, unknown>)[child.key], `${path}[${index}].${child.key}`);
+      });
+    } else if (field.type === 'file' || EVIDENCE_FIELDS.has(field.key)) {
+      const values = Array.isArray(value) ? value : [value];
+      for (const item of values) if (item !== null && item !== undefined && item !== '')
+        references.push({ fieldKey: field.key, path, value: item, file: field.type === 'file' });
+    }
+  };
+  for (const field of bp.data.fields) collect(field, args.answers[field.key], field.key);
+  for (const { fieldKey, path, value, file } of references) {
+    if (typeof value !== 'string' || !REFERENCE.test(value)) {
+      if (file) return { field: path, message: 'Upload the actual file before submitting.' };
+      continue;
+    }
     const id = REFERENCE.exec(value)?.[1];
-    if (!id || !args.token) return { field: fieldKey, message: 'Upload the receipt again.' };
+    if (!id || !args.token) return { field: path, message: 'Upload the receipt again.' };
     const { rows } = await pool.query<{ storage_key: string }>(
       `select f.storage_key from file f join draft d on d.id = f.draft_id
          join process_version pv on pv.id = d.process_version_id
@@ -101,9 +142,9 @@ export async function checkReceiptReferences(pool: Pool, args: { tenantId: strin
           and d.token_hash = $4 and pv.process_key = $5 and d.expires_at > now()`,
       [id, fieldKey, args.tenantId, tokenHash(args.token), args.processKey],
     );
-    if (!rows[0]) return { field: fieldKey, message: 'Upload the receipt again.' };
+    if (!rows[0]) return { field: path, message: 'Upload the receipt again.' };
     const status = await scanStatus(rows[0].storage_key);
-    if (status !== 'clean') return { field: fieldKey, message: status === 'scanning' ? 'The receipt is still being scanned. Try again shortly.' : 'The receipt could not pass its security scan. Upload a different file.' };
+    if (status !== 'clean') return { field: path, message: status === 'scanning' ? 'The file is still being scanned. Try again shortly.' : 'The file could not pass its security scan. Upload a different file.' };
     await pool.query('update file set scan_status = $2 where id = $1', [id, 'clean']);
   }
   return null;
@@ -113,11 +154,24 @@ export async function receiptDownload(pool: Pool, principal: Principal, instance
   if (principal.kind === 'system') throw new NotFound('No receipt is visible on this record.');
   // recordDetail applies the process view policy and redacts fields for this actor.
   const detail = await recordDetail(pool, principal, instanceId);
-  const field = detail.fields.find((f) => typeof f.value === 'string' && f.value === `receipt-file:${fileId}`);
-  if (!field) throw new NotFound('No receipt is visible on this record.');
+  let fieldKey: string | null = null;
+  const ref = `receipt-file:${fileId}`;
+  for (const field of detail.fields) {
+    if (field.value === ref) fieldKey = field.key;
+    if (Array.isArray(field.value)) {
+      if (field.value.includes(ref)) fieldKey = field.key;
+      for (const row of field.value) {
+        if (!row || typeof row !== 'object' || Array.isArray(row)) continue;
+        for (const [key, value] of Object.entries(row)) {
+          if (value === ref || (Array.isArray(value) && value.includes(ref))) fieldKey = key;
+        }
+      }
+    }
+  }
+  if (!fieldKey) throw new NotFound('No receipt is visible on this record.');
   const { rows } = await pool.query<{ storage_key: string; filename: string; scan_status: string }>(
     'select storage_key, filename, scan_status from file where id = $1 and instance_id = $2 and tenant_id = $3 and field_key = $4',
-    [fileId, instanceId, principal.tenantId, field.key],
+    [fileId, instanceId, principal.tenantId, fieldKey],
   );
   if (!rows[0]) throw new NotFound('No receipt is attached to this record.');
   if ((await scanStatus(rows[0].storage_key)) !== 'clean') throw new InvalidInput('The receipt has not passed its security scan.');

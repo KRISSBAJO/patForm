@@ -12,7 +12,7 @@ import {
   type Attachment,
   type EmailProvider,
 } from './email.js';
-import type { Blueprint, Action, Party, Transition } from '../blueprint/index.js';
+import { flattenFields, type Blueprint, type Action, type Party, type Transition } from '../blueprint/index.js';
 import { checkField } from '../blueprint/answers.js';
 import { evaluate, render, withCalculatedFields, type Answers } from './expr.js';
 import { inTransaction, isUniqueViolation, type Client, type Pool } from './db.js';
@@ -167,6 +167,10 @@ export class Engine {
 
   /** Publishing never mutates an existing version; it adds the next one. */
   async publish(tenantId: string, blueprint: Blueprint, publishedBy: string): Promise<VersionRow> {
+    if (flattenFields(blueprint.data.fields).some(({ field }) => field.type === 'file') &&
+      (!process.env.AWS_S3_BUCKET || !process.env.AWS_REGION)) {
+      throw new InvalidInput('File upload storage must be configured before publishing this form.');
+    }
     return inTransaction(this.pool, async (client) => {
       const { rows: existing } = await client.query<{ next: number }>(
         'select coalesce(max(version), 0) + 1 as next from process_version where tenant_id = $1 and process_key = $2',
@@ -211,7 +215,7 @@ export class Engine {
 
     // Requirement 6.3: a submission that does not satisfy the published form
     // never becomes an instance. The form is the gate, not the approver.
-    const missing = missingRequiredFields(bp, answers);
+    const missing = missingRequiredFields(bp, answers, args.now);
     if (missing.length) return { instanceId: '', duplicate: false, rejected: missing };
 
     const transition = selectSubmissionTransition(bp, answers, args.now);
@@ -1527,6 +1531,15 @@ async function performEffect(
   const answers = instance.data;
 
   switch (action.do) {
+    case 'set_reference': {
+      const reference = `${action.prefix}${instance.id.toUpperCase()}`;
+      const data = { ...instance.data, [action.field]: reference };
+      await client.query('update instance set data = $1 where id = $2', [JSON.stringify(data), instance.id]);
+      instance.data = data;
+      await appendEvent(client, { tenantId: instance.tenant_id, instanceId: instance.id,
+        type: 'reference_generated', payload: { field: action.field, reference }, actor: 'system', now });
+      return;
+    }
     case 'send_email': {
       const template = bp.communications.email.find((t) => t.key === action.template)!;
       if (template.skipWhen && evaluate(template.skipWhen, { answers, now })) return;
@@ -2112,14 +2125,27 @@ function selectSubmissionTransition(bp: Blueprint, answers: Answers, now: Date):
   return candidates[0]!;
 }
 
-function missingRequiredFields(bp: Blueprint, answers: Answers): string[] {
+function missingRequiredFields(bp: Blueprint, answers: Answers, now: Date): string[] {
   const missing: string[] = [];
+  const blank = (value: unknown) => value === undefined || value === null || value === '' || (Array.isArray(value) && !value.length);
   for (const field of bp.data.fields) {
-    if (!field.required) continue;
     if (field.type === 'hidden' || field.type === 'calculated' || field.type === 'content') continue;
     const value = answers[field.key];
-    if (value === undefined || value === null || value === '' || (Array.isArray(value) && !value.length)) {
+    if ((field.required || (field.requiredWhen && evaluate(field.requiredWhen, { answers, now }))) && blank(value)) {
       missing.push(field.key);
+    }
+    if (field.type === 'file' && !blank(value) && checkField(field, value)) missing.push(field.key);
+    if (field.type === 'repeating_group' && Array.isArray(value)) {
+      for (const [index, row] of value.entries()) {
+        if (!row || typeof row !== 'object' || Array.isArray(row)) continue;
+        const item = row as Answers;
+        for (const child of field.fields ?? []) {
+          if ((child.required || (child.requiredWhen && evaluate(child.requiredWhen, { answers: { ...answers, ...item }, now }))) && blank(item[child.key])) {
+            missing.push(`${field.key}[${index}].${child.key}`);
+          }
+          if (child.type === 'file' && !blank(item[child.key]) && checkField(child, item[child.key])) missing.push(`${field.key}[${index}].${child.key}`);
+        }
+      }
     }
   }
   return missing;

@@ -34,6 +34,7 @@ export const Step = z.discriminatedUnion('step', [
     expectDenied: z.boolean().optional(),
   }).strict(),
   z.object({ step: z.literal('advance_hours'), hours: z.number().positive() }).strict(),
+  z.object({ step: z.literal('manual'), transition: Key, as: Key }).strict(),
   z
     .object({
       step: z.literal('attempt'),

@@ -92,7 +92,7 @@ export function validate(bp: Blueprint): Diagnostics {
     if (parts.length > 1) groupOf.set(field.key, parts[parts.length - 2]!);
   }
 
-  const checkExpr = (expr: Expr, at: string): void => {
+  const checkExpr = (expr: Expr, at: string, initialScope: Set<string> = new Set()): void => {
     const operand = (o: unknown, scope: Set<string>): void => {
       if (!o || typeof o !== 'object' || !('field' in o)) return;
       const key = (o as { field: string }).field;
@@ -166,7 +166,7 @@ export function validate(bp: Blueprint): Diagnostics {
       }
     };
 
-    walk(expr, new Set());
+    walk(expr, initialScope);
     typeCheckExpr(d, expr, at, fieldByKey);
   };
 
@@ -243,6 +243,9 @@ export function validate(bp: Blueprint): Diagnostics {
   for (const { path, field } of allFields) {
     const at = `data.fields.${path}`;
 
+    if (field.requiredWhen) checkExpr(field.requiredWhen, `${at}.requiredWhen`,
+      new Set(path.split('.').slice(0, -1)));
+
     if (DATA_CLASS_RANK[field.classification] > DATA_CLASS_RANK[bp.intent.sensitivityCeiling]) {
       d.error(
         'SEC001',
@@ -266,6 +269,10 @@ export function validate(bp: Blueprint): Diagnostics {
       if (!field.compute) {
         d.error('TYPE004', at, `Calculated field "${field.key}" has no compute expression.`);
       } else {
+        const calc = field.compute;
+        if ('op' in calc && (calc.op === 'sum' || calc.op === 'count')) {
+          if (calc.where) checkExpr(calc.where, `${at}.compute.where`, new Set([calc.over]));
+        }
         for (const ref of fieldsInCalc(field.compute)) {
           if (ref === field.key) {
             d.error('TYPE005', at, `Calculated field "${field.key}" refers to itself.`);
@@ -432,34 +439,15 @@ export function validate(bp: Blueprint): Diagnostics {
     );
   }
 
-  /*
-   * A file field collects a name, not a file.
-   *
-   * The respondent's browser reads `e.target.files` and sends `f.name`. The
-   * bytes never leave the machine, nothing stores them, and the record ends up
-   * holding the string "right-to-work.pdf". A process that says it collected a
-   * right-to-work photograph and holds a filename is not a weak compliance
-   * record — it is not a compliance record, and HR opening it would believe
-   * otherwise.
-   *
-   * An error rather than a warning. Warnings do not block a publish, and the
-   * thing this prevents is a published process making a claim about evidence
-   * it has not got.
-   *
-   * The fix is the pattern this codebase already settled on for exactly this
-   * (docs/failure-cases.md D1): record *that* a check happened and where to
-   * verify it, rather than storing the evidence. It keeps the process below a
-   * sensitivity ceiling it would otherwise blow through, which is why it was
-   * the right answer before uploads were the reason.
-   */
-  for (const [i, field] of bp.data.fields.entries()) {
+  for (const { path, field } of allFields) {
     if (field.type !== 'file') continue;
-    d.error(
-      'SEC013',
-      `data.fields[${i}]`,
-      `"${field.key}" is a file field, and this platform does not accept uploads — it would record the file's name and nothing else.`,
-      'Ask for a reference to the document and a confirmation that somebody checked it, so the record says what is true.',
-    );
+    const at = `data.fields.${path}`;
+    const accept = field.constraints?.accept ?? ['application/pdf', 'image/png', 'image/jpeg'];
+    if (accept.some((type) => !['application/pdf', 'image/png', 'image/jpeg'].includes(type)) ||
+      (field.constraints?.maxSizeMb ?? 5) > 5) {
+      d.error('SEC013', at, `File field "${field.key}" exceeds the supported upload types or 5 MB size limit.`,
+        'Use PDF, PNG or JPEG and a maximum file size of 5 MB.');
+    }
   }
 
   if (bp.workflow.approvals.length && !bp.roles.some((r) => r.capabilities.includes('approve'))) {
@@ -631,6 +619,13 @@ export function validate(bp: Blueprint): Diagnostics {
 
   const checkAction = (action: Action, at: string): void => {
     switch (action.do) {
+      case 'set_reference': {
+        const field = requireField(action.field, at, 'Generated reference');
+        if (field && (field.setBy !== 'system' || field.type !== 'short_text')) {
+          d.error('TYPE004', at, `Generated reference "${action.field}" must be a system-set short text field.`);
+        }
+        return;
+      }
       case 'set_state':
         if (!stateByKey.has(action.state)) d.error('REF006', at, `Unknown state "${action.state}".`);
         return;
@@ -1131,6 +1126,11 @@ export function validate(bp: Blueprint): Diagnostics {
               `Grant the role edit and list ${answers.join(', ')} in its editableFields, or have the task collect no answers.`);
           }
         }
+      }
+      if (step.step === 'manual') {
+        const transition = bp.workflow.transitions.find((item) => item.key === step.transition);
+        if (!transition || transition.trigger.on !== 'manual') d.error('TEST002', at, `Unknown manual step "${step.transition}".`);
+        if (!roleByKey.has(step.as)) d.error('TEST002', at, `Unknown role "${step.as}".`);
       }
       if (step.step === 'attempt' && !roleByKey.has(step.as)) {
         d.error('TEST002', at, `Unknown role "${step.as}".`);

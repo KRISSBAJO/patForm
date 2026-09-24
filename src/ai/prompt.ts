@@ -9,7 +9,7 @@ import type { Diagnostic } from '../compiler/diagnostics.js';
  * record says exactly which instructions produced it. Eval results are only
  * comparable within a version.
  */
-export const PROMPT_VERSION = 'blueprint-gen@6';
+export const PROMPT_VERSION = 'blueprint-gen@7';
 
 export const SYSTEM_PROMPT = `You design business processes for an operations platform.
 
@@ -70,16 +70,18 @@ Form and data
 - A value someone fills in later — a triage severity, a reference number, a reviewer's note — is a field with "setBy": "operator" (or "system" for one the runtime writes). Those do not go on a page. Use this instead of leaving a field unplaced.
 - A single_choice, multi_choice, dropdown or matrix field must declare "choices".
 - A calculated field must have "compute", must not refer to itself, and may only do arithmetic over numeric or repeating-group fields.
+- For a total of personally paid expense rows, use {"op":"sum","over":"expense_items","of":"item_total","where":{"op":"eq","left":{"field":"item_payment_method"},"right":{"literal":"personal_card"}}}. Calculated child fields are evaluated in each row before the total.
 - Comparisons must be type-compatible: gt/gte/lt/lte need a number, currency, rating, date or time. Comparing a choice field against a value that is not one of its options is rejected.
 - Name the fields in data.identity that together identify a duplicate submission (usually an email plus a date or reference).
-- File uploads are not supported. A text field containing a receipt reference is not an uploaded receipt. If the request requires an attachment, disclose this gap in intent.openDecisions; do not claim the process enforces receipt upload.
-- Field "required" is unconditional. Do not claim the process enforces an amount-dependent requirement such as a receipt only when an item exceeds $25 unless the blueprint and its scenarios prove it.
+- File uploads use a field of type "file". The form uploads real PDF, PNG or JPEG bytes (maximum 5 MB per file), checks the malware scan, and stores a protected reference. Do not substitute a text receipt reference for a requested upload.
+- Field "required" is unconditional. For a conditional receipt on each expense row, use a file child field inside a repeating_group with "requiredWhen": {"op":"gte","left":{"field":"amount"},"right":{"literal":25}}. The field key in the condition must name the numeric child in the same row. Add scenarios for both sides of the threshold.
 
 Tasks and approvals
 - A task with "blocking": true must have a transition triggered by its completion. A blocking task nothing waits for is a control that does nothing.
 - A transition triggered by task completion must name a task some transition actually creates.
 - In a complete_task test step, "answers" may contain ONLY fields named by that task's "requiredFields". Omit "answers" if the task collects nothing. If the task records an operator field, put that field in "requiredFields" and allow the completing role to edit it.
 - A role completing a task with answers needs the "edit" capability and every answered field in "editableFields", even when the task is assigned through an email field.
+- A transition for an approved task must explicitly require the task's decision field to equal "approved". Reject and return transitions must have their own conditions, so they never overlap approval routing.
 - If the process has approvals, some role must have the "approve" capability.
 - Address messages to a role, an email field, or the submitter. Only use { "assignee": "current" } if some transition runs an "assign" action first.
 

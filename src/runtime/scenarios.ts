@@ -1,4 +1,5 @@
 import type { Blueprint, ScenarioTest } from '../blueprint/index.js';
+import { evaluate } from './expr.js';
 import type { Answers } from './expr.js';
 import { Engine } from './engine.js';
 import type { Pool } from './db.js';
@@ -60,9 +61,13 @@ export async function runScenarios(pool: Pool, bp: Blueprint): Promise<ScenarioR
     const submitted = test.steps.find((step) => step.step === 'submit');
     const answers = (submitted?.step === 'submit' ? submitted.answers : {}) as Answers;
     for (const step of test.steps) {
-      if (step.step !== 'decide') continue;
-      const approval = bp.workflow.approvals.find((a) => a.key === step.approval);
-      for (const party of approval?.approvers ?? []) {
+      const parties = step.step === 'decide'
+        ? bp.workflow.approvals.find((a) => a.key === step.approval)?.approvers ?? []
+        : step.step === 'complete_task'
+          ? [bp.workflow.tasks.find((task) => task.key === step.task)?.assignee].filter((party) => party !== undefined)
+          : [];
+      if (step.step !== 'decide' && step.step !== 'complete_task') continue;
+      for (const party of parties) {
         if (!('field' in party)) continue;
         const given = answers[party.field];
         // completeAnswers fills an unspecified email field with this shape.
@@ -206,6 +211,18 @@ async function runOne(
           break;
         }
 
+        case 'manual': {
+          if (!instanceId) { fail('manual step ran before submission'); break; }
+          const member = cast.get(step.as);
+          if (!member) { fail(`scenario names unknown role "${step.as}"`); break; }
+          try {
+            const result = await engine.fireManual({ instanceId, transitionKey: step.transition, principal: member.principal, now });
+            if (!result.applied) fail(`manual step "${step.transition}" did not apply: ${result.reason ?? 'unknown reason'}`);
+          } catch (err) { fail(`manual step "${step.transition}" failed: ${err instanceof Error ? err.message : String(err)}`); }
+          await engine.drain(now, `scenario:${test.key}`, tenantId);
+          break;
+        }
+
         case 'attempt': {
           const member = cast.get(step.as);
           if (!member) {
@@ -298,6 +315,19 @@ function completeAnswers(bp: Blueprint, given: Answers): Answers {
     if (field.key in answers && answers[field.key] !== undefined) continue;
     answers[field.key] = placeholderFor(field);
   }
+  for (const field of bp.data.fields) {
+    if (field.type !== 'repeating_group' || !Array.isArray(answers[field.key])) continue;
+    answers[field.key] = (answers[field.key] as Answers[]).map((row) => {
+      const completed = { ...row };
+      for (const child of field.fields ?? []) {
+        if (completed[child.key] !== undefined) continue;
+        if (child.required || (child.requiredWhen && evaluate(child.requiredWhen, { answers: { ...answers, ...completed }, now: new Date('2026-10-01') }))) {
+          completed[child.key] = placeholderFor(child);
+        }
+      }
+      return completed;
+    });
+  }
   return answers;
 }
 
@@ -325,7 +355,7 @@ function placeholderFor(field: Blueprint['data']['fields'][number]): unknown {
     case 'matrix':
       return field.choices?.length ? [field.choices[0]!.value] : [];
     case 'file':
-      return `${field.key}.pdf`;
+      return 'receipt-file:00000000-0000-4000-8000-000000000001';
     case 'repeating_group':
       return [
         Object.fromEntries((field.fields ?? []).map((child) => [child.key, placeholderFor(child)])),

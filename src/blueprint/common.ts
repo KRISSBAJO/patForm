@@ -85,7 +85,7 @@ export const Expr: z.ZodType<Expr> = z.lazy(() =>
  */
 export type Calc =
   | { op: 'add' | 'subtract' | 'multiply' | 'divide'; operands: Calc[] }
-  | { op: 'sum' | 'count'; over: string; of?: string }
+  | { op: 'sum' | 'count'; over: string; of?: string; where?: Expr }
   | { field: string }
   | { literal: number };
 
@@ -94,7 +94,7 @@ export const Calc: z.ZodType<Calc> = z.lazy(() =>
     z
       .object({ op: z.enum(['add', 'subtract', 'multiply', 'divide']), operands: z.array(Calc).min(2) })
       .strict(),
-    z.object({ op: z.enum(['sum', 'count']), over: Key, of: Key.optional() }).strict(),
+    z.object({ op: z.enum(['sum', 'count']), over: Key, of: Key.optional(), where: Expr.optional() }).strict(),
     z.object({ field: Key }).strict(),
     z.object({ literal: z.number() }).strict(),
   ]),

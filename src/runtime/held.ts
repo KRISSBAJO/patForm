@@ -5,6 +5,7 @@ import { inTransaction, type Pool } from './db.js';
 import { Engine, appendEvent } from './engine.js';
 import { authorize, redact, require_, type Principal } from './policy.js';
 import { HOLD_REASON_WORDS, type HoldReason } from './screening.js';
+import { referencedFileIds } from './receipt-files.js';
 
 /**
  * The queue screening puts things in, and the two ways out of it.
@@ -218,14 +219,21 @@ export async function releaseHeld(
       now,
     });
     if (row.draft_token_hash && !duplicate) {
+      const used = referencedFileIds(row.answers);
       await tx.query('update draft set submitted_instance_id = $1, updated_at = now() where token_hash = $2', [
         instanceId,
         row.draft_token_hash,
       ]);
+      await tx.query(`insert into file_deletion (storage_key)
+        select storage_key from file where draft_id = (select id from draft where token_hash = $1 and tenant_id = $2)
+          and not (id = any($3::uuid[])) on conflict do nothing`, [row.draft_token_hash, actor.tenantId, used]);
+      await tx.query(`delete from file where draft_id = (select id from draft where token_hash = $1 and tenant_id = $2)
+        and not (id = any($3::uuid[]))`, [row.draft_token_hash, actor.tenantId, used]);
       await tx.query(
         `update file set instance_id = $1, draft_id = null
-          where draft_id = (select id from draft where token_hash = $2 and tenant_id = $3)`,
-        [instanceId, row.draft_token_hash, actor.tenantId],
+          where draft_id = (select id from draft where token_hash = $2 and tenant_id = $3)
+            and id = any($4::uuid[])`,
+        [instanceId, row.draft_token_hash, actor.tenantId, used],
       );
     }
     if (row.draft_token_hash && duplicate) {

@@ -160,7 +160,7 @@ export function Form({ processKey: fromUrl }: { processKey: string }) {
     return () => clearTimeout(id);
   }, [answers, pageIndex, token, form, processKey]);
 
-  const uploadReceipt = async (fieldKey: string, file: File) => {
+  const uploadReceipt = async (fieldKey: string, file: File): Promise<string> => {
     setReceiptUploads((prev) => ({ ...prev, [fieldKey]: 'Uploading…' }));
     try {
       let draftToken = token;
@@ -184,18 +184,23 @@ export function Form({ processKey: fromUrl }: { processKey: string }) {
         method: 'POST',
         body: JSON.stringify({ token: draftToken, fieldKey, filename: file.name, base64: dataUrl.split(',')[1] }),
       });
-      set(fieldKey, uploaded.reference);
       setReceiptUploads((prev) => ({ ...prev, [fieldKey]: 'Scanning for malware…' }));
+      return uploaded.reference;
     } catch (err) {
       setReceiptUploads((prev) => ({ ...prev, [fieldKey]: err instanceof Error ? err.message : 'Upload failed.' }));
+      throw err;
     }
   };
 
   useEffect(() => {
     if (!token) return;
-    const pending = Object.entries(answers).filter(([key, value]) =>
-      (key === 'receipt_reference' || key === 'invoice_evidence_reference') &&
-      typeof value === 'string' && /^receipt-file:[0-9a-f-]{36}$/.test(value));
+    const pending: [string, string][] = [];
+    const collect = (key: string, value: unknown) => {
+      if (typeof value === 'string' && /^receipt-file:[0-9a-f-]{36}$/.test(value)) pending.push([key, value]);
+      else if (Array.isArray(value)) value.forEach((item) => collect(key, item));
+      else if (value && typeof value === 'object') Object.entries(value).forEach(([childKey, item]) => collect(childKey, item));
+    };
+    Object.entries(answers).forEach(([key, value]) => collect(key, value));
     if (!pending.length) return;
     let active = true;
     const check = async () => {
@@ -368,7 +373,8 @@ export function Form({ processKey: fromUrl }: { processKey: string }) {
                 <div className="fm__grid">
                   {fields.map((field) => (
                     <FieldCell section={section} fieldKey={field.key} key={field.key}>
-                      {typeof answers[field.key] === 'string' && String(answers[field.key]).startsWith('receipt-file:') ? (
+                      {(field.key === 'receipt_reference' || field.key === 'invoice_evidence_reference') &&
+                        typeof answers[field.key] === 'string' && String(answers[field.key]).startsWith('receipt-file:') ? (
                         <div className="fm__field">
                           <span className="fm__label">{field.label}</span>
                           <p className="fm__help">Document uploaded. {receiptUploads[field.key] ?? 'Checking scan status…'}</p>
@@ -381,7 +387,9 @@ export function Form({ processKey: fromUrl }: { processKey: string }) {
                           value={answers[field.key]}
                           computed={computed[field.key]}
                           error={errors[field.key]}
+                          nestedErrors={errors}
                           onChange={(v) => set(field.key, v)}
+                          onFileUpload={uploadReceipt}
                         />
                       )}
                       {(field.key === 'receipt_reference' || field.key === 'invoice_evidence_reference') && (
@@ -389,7 +397,7 @@ export function Form({ processKey: fromUrl }: { processKey: string }) {
                           <label className="fm__label" htmlFor={`upload-${field.key}`}>Or upload the document</label>
                           <input id={`upload-${field.key}`} type="file" accept="application/pdf,image/png,image/jpeg" onChange={(event) => {
                             const file = event.target.files?.[0];
-                            if (file) void uploadReceipt(field.key, file);
+                            if (file) void uploadReceipt(field.key, file).then((reference) => set(field.key, reference)).catch(() => undefined);
                           }} />
                           <p className="fm__help">PDF, PNG or JPEG, up to 5 MB. We check it before accepting the form.</p>
                           {receiptUploads[field.key] && <p className="fm__help" role="status">{receiptUploads[field.key]}</p>}

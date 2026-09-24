@@ -440,6 +440,7 @@ export async function recordDetail(pool: Pool, principal: Principal, instanceId:
                   table: {
                     columns: f.fields.map((c) => c.label),
                     rows: rows.map((r) => f.fields!.map((c) => answerText(c, r?.[c.key]))),
+                    references: rows.map((r) => f.fields!.map((c) => c.type === 'file' ? r?.[c.key] ?? null : null)),
                   },
                 }
               : {}),

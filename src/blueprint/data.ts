@@ -96,6 +96,8 @@ export interface Field {
   label: string;
   help?: string;
   required?: boolean;
+  /** Require this answer only when the typed condition is true. In a group, child keys read from the current row. */
+  requiredWhen?: Expr;
   classification: DataClass;
   constraints?: z.infer<typeof Constraints>;
   choices?: z.infer<typeof Choice>[];
@@ -127,6 +129,7 @@ export const Field: z.ZodType<Field> = z.lazy(() =>
       label: z.string().min(1),
       help: z.string().optional(),
       required: z.boolean().optional(),
+      requiredWhen: Expr.optional(),
       classification: DataClass,
       constraints: Constraints.optional(),
       choices: z.array(Choice).optional(),

@@ -1,4 +1,4 @@
-import type { Blueprint, Capability, Role } from '../blueprint/index.js';
+import { flattenFields, type Blueprint, type Capability, type Role } from '../blueprint/index.js';
 import type { Client, Pool } from './db.js';
 import type { Answers } from './expr.js';
 
@@ -357,6 +357,22 @@ export function describe(principal: Principal): string {
  */
 export function redact(blueprint: Blueprint, roleKeys: string[], data: Answers, workspaceRole?: WorkspaceRole): Answers {
   const roles = blueprint.roles.filter((r) => roleKeys.includes(r.key));
+  const applyHidden = (hidden: Set<string>): Answers => {
+    const visit = (fields: Blueprint['data']['fields'], values: Answers): Answers => {
+      const out: Answers = { ...values };
+      for (const field of fields) {
+        if (!(field.key in out)) continue;
+        if (hidden.has(field.key)) { out[field.key] = '[redacted]'; continue; }
+        if (field.type === 'repeating_group' && Array.isArray(out[field.key])) {
+          out[field.key] = (out[field.key] as unknown[]).map((row) =>
+            row && typeof row === 'object' && !Array.isArray(row)
+              ? visit(field.fields ?? [], row as Answers) : row);
+        }
+      }
+      return out;
+    };
+    return visit(blueprint.data.fields, data);
+  };
   // Workspace readers with no process role may inspect record metadata. In a
   // restricted process, even an accidentally underclassified internal answer
   // may identify a person, so only explicitly public answers remain visible.
@@ -366,14 +382,12 @@ export function redact(blueprint: Blueprint, roleKeys: string[], data: Answers, 
     const privileged = workspaceRole === 'owner' || workspaceRole === 'admin';
     const sensitiveProcess = blueprint.intent.sensitivityCeiling === 'restricted';
     const hidden = new Set(
-      blueprint.data.fields
+      flattenFields(blueprint.data.fields).map(({ field }) => field)
         .filter((f) => f.classification === 'restricted' ||
           (!privileged && (f.classification === 'confidential' || (sensitiveProcess && f.classification === 'internal'))))
         .map((f) => f.key),
     );
-    return Object.fromEntries(
-      Object.entries(data).map(([key, value]) => [key, hidden.has(key) ? '[redacted]' : value]),
-    );
+    return applyHidden(hidden);
   }
 
   // A field is hidden only when EVERY role the actor holds hides it. Holding a
@@ -385,13 +399,7 @@ export function redact(blueprint: Blueprint, roleKeys: string[], data: Answers, 
       return new Set([...intersection].filter((key) => next.has(key)));
     }, new Set());
 
-  if (!hidden.size) return data;
-
-  const out: Answers = {};
-  for (const [key, value] of Object.entries(data)) {
-    out[key] = hidden.has(key) ? '[redacted]' : value;
-  }
-  return out;
+  return hidden.size ? applyHidden(hidden) : data;
 }
 
 /**

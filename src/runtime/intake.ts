@@ -7,7 +7,7 @@ import { withCalculatedFields } from './expr.js';
 import { inTransaction, type Client, type Pool } from './db.js';
 import { Engine } from './engine.js';
 import { issueResumeToken } from './auth.js';
-import { checkReceiptReferences } from './receipt-files.js';
+import { checkReceiptReferences, referencedFileIds } from './receipt-files.js';
 import { requireIntakeOpen } from './intake-control.js';
 
 /**
@@ -46,6 +46,7 @@ export interface PublicField {
   label: string;
   help?: string;
   required: boolean;
+  requiredWhen?: unknown;
   choices?: { value: string; label: string }[];
   constraints?: Record<string, unknown>;
   fields?: PublicField[];
@@ -101,6 +102,7 @@ function publicField(field: Blueprint['data']['fields'][number]): PublicField {
     label: field.label,
     help: field.help,
     required: Boolean(field.required),
+    requiredWhen: field.requiredWhen,
     choices: field.choices,
     constraints: field.constraints as Record<string, unknown> | undefined,
     default: field.default,
@@ -421,11 +423,19 @@ export async function submitForm(
           (select id from draft where token_hash = $1 and tenant_id = $2)`,
         [sha256(args.token), version.tenant_id]);
       } else {
-        // Files uploaded against the draft now belong to the record.
+        // Only files still named in answers belong to the record. Replaced or
+        // removed uploads are queued for deletion instead of becoming hidden attachments.
+        const used = referencedFileIds(answers);
+        await tx.query(`insert into file_deletion (storage_key)
+          select storage_key from file where draft_id = (select id from draft where token_hash = $1 and tenant_id = $2)
+            and not (id = any($3::uuid[])) on conflict do nothing`, [sha256(args.token), version.tenant_id, used]);
+        await tx.query(`delete from file where draft_id = (select id from draft where token_hash = $1 and tenant_id = $2)
+          and not (id = any($3::uuid[]))`, [sha256(args.token), version.tenant_id, used]);
         await tx.query(
           `update file set instance_id = $1, draft_id = null
-            where draft_id = (select id from draft where token_hash = $2 and tenant_id = $3)`,
-          [result.instanceId, sha256(args.token), version.tenant_id],
+            where draft_id = (select id from draft where token_hash = $2 and tenant_id = $3)
+              and id = any($4::uuid[])`,
+          [result.instanceId, sha256(args.token), version.tenant_id, used],
         );
       }
     }

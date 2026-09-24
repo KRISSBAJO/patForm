@@ -16,10 +16,12 @@ export function calculate(calc: Calc, answers: Answers): number {
     case 'count': {
       const rows = answers[calc.over];
       if (!Array.isArray(rows)) return 0;
-      if (calc.op === 'count') return rows.length;
+      const included = calc.where ? rows.filter((row) => row && typeof row === 'object' &&
+        evaluate(calc.where!, { answers: { ...answers, ...(row as Answers) }, now: new Date() })) : rows;
+      if (calc.op === 'count') return included.length;
       const of = calc.of;
       if (!of) return 0;
-      return rows.reduce<number>((total, row) => {
+      return included.reduce<number>((total, row) => {
         const cell = row && typeof row === 'object' ? (row as Record<string, unknown>)[of] : undefined;
         return total + toNumber(cell);
       }, 0);
@@ -52,6 +54,11 @@ function toNumber(value: unknown): number {
 /** Fills in every calculated field so conditions can read them like any other. */
 export function withCalculatedFields(fields: Field[], answers: Answers): Answers {
   const out: Answers = { ...answers };
+  for (const field of fields) {
+    if (field.type === 'repeating_group' && Array.isArray(out[field.key])) {
+      out[field.key] = (out[field.key] as Answers[]).map((row) => withCalculatedFields(field.fields ?? [], row));
+    }
+  }
   // Two passes so a calculated field may depend on another one. The compiler
   // has already rejected cycles, so this terminates with the right answer.
   for (let pass = 0; pass < 2; pass++) {

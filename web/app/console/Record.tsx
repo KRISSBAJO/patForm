@@ -36,7 +36,7 @@ export interface RecordDetail {
     value: unknown;
     /** The answer in words, from the server; absent on an older API. */
     text?: string | null;
-    table?: { columns: string[]; rows: string[][] };
+    table?: { columns: string[]; rows: string[][]; references?: unknown[][] };
   }[];
 }
 
@@ -327,7 +327,16 @@ export function RecordPage({
                             {f.table.rows.map((r, i) => (
                               <tr key={i}>
                                 {r.map((cell, j) => (
-                                  <td key={j}>{cell}</td>
+                                  <td key={j}>{typeof f.table?.references?.[i]?.[j] === 'string' &&
+                                    /^receipt-file:[0-9a-f-]{36}$/.test(String(f.table.references[i][j])) ? (
+                                    <button type="button" className="cs__btn" onClick={async () => {
+                                      const id = String(f.table!.references![i]![j]).slice('receipt-file:'.length);
+                                      const response = await fetch(`/api/records/${record.instanceId}/receipts/${id}`);
+                                      const result = await response.json();
+                                      if (!response.ok) { setReceiptError(result.error ?? 'The document is unavailable.'); return; }
+                                      window.location.assign(result.url);
+                                    }}>Download document</button>
+                                  ) : cell}</td>
                                 ))}
                               </tr>
                             ))}

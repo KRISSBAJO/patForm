@@ -49,6 +49,8 @@ export function answerText(field: Pick<Field, 'type' | 'choices' | 'constraints'
       const n = Array.isArray(value) ? value.length : 0;
       return n === 1 ? '1 row' : `${n} rows`;
     }
+    case 'file':
+      return Array.isArray(value) ? `${value.length} documents uploaded` : 'Document uploaded';
     default:
       if (Array.isArray(value)) return value.map(String).join(', ');
       if (typeof value === 'object') return '(not shown)';

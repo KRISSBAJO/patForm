@@ -131,6 +131,9 @@ export function checkField(field: Field, value: unknown): string | null {
       if (c?.maxFiles && files.length > c.maxFiles) {
         return custom ?? `Attach at most ${c.maxFiles} file${c.maxFiles === 1 ? '' : 's'}.`;
       }
+      if (files.some((file) => typeof file !== 'string' || !/^receipt-file:[0-9a-f-]{36}$/.test(file))) {
+        return custom ?? 'Upload the actual file before submitting.';
+      }
       break;
     }
 
@@ -176,7 +179,8 @@ export function validateAnswers(
     if (!visible.has(field.key)) continue;
     if (opts.scope && !opts.scope.includes(field.key)) continue;
 
-    const message = checkField(field, answers[field.key]);
+    const required = Boolean(field.required || (field.requiredWhen && evaluate(field.requiredWhen, { answers, now })));
+    const message = checkField({ ...field, required }, answers[field.key]);
     if (message) errors.push({ field: field.key, message });
 
     // Rows inside a repeating group are checked against the group's own fields.
@@ -184,7 +188,9 @@ export function validateAnswers(
       const rows = answers[field.key] as Record<string, unknown>[];
       for (const [index, row] of rows.entries()) {
         for (const child of field.fields ?? []) {
-          const childMessage = checkField(child, row?.[child.key]);
+          const rowAnswers = { ...answers, ...row };
+          const required = Boolean(child.required || (child.requiredWhen && evaluate(child.requiredWhen, { answers: rowAnswers, now })));
+          const childMessage = checkField({ ...child, required }, row?.[child.key]);
           if (childMessage) {
             errors.push({ field: `${field.key}[${index}].${child.key}`, message: childMessage });
           }

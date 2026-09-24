@@ -115,6 +115,7 @@ export type Task = z.infer<typeof Task>;
  */
 export const Action = z.discriminatedUnion('do', [
   z.object({ do: z.literal('set_state'), key: Key, state: Key }).strict(),
+  z.object({ do: z.literal('set_reference'), key: Key, field: Key, prefix: z.string().max(24).regex(/^[A-Z0-9-]*$/).default('') }).strict(),
   z.object({ do: z.literal('assign'), key: Key, to: Party }).strict(),
   z.object({ do: z.literal('create_task'), key: Key, task: Key }).strict(),
   z.object({ do: z.literal('request_approval'), key: Key, approval: Key }).strict(),

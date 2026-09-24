@@ -24,6 +24,7 @@ export interface PublicField {
   label: string;
   help?: string;
   required: boolean;
+  requiredWhen?: unknown;
   choices?: { value: string; label: string }[];
   constraints?: Record<string, unknown>;
   fields?: PublicField[];
@@ -169,13 +170,17 @@ export function Field({
   value,
   computed,
   error,
+  nestedErrors,
   onChange,
+  onFileUpload,
 }: {
   field: PublicField;
   value: unknown;
   computed?: unknown;
   error?: string;
+  nestedErrors?: Record<string, string>;
   onChange: (value: unknown) => void;
+  onFileUpload?: (fieldKey: string, file: File) => Promise<string>;
 }) {
   const id = `f-${field.key}`;
   const describedBy = [field.help ? `${id}-help` : null, error ? `${id}-error` : null].filter(Boolean).join(' ');
@@ -398,6 +403,7 @@ export function Field({
           onChange={onChange}
           accept={(c.accept as string[]) ?? undefined}
           describedBy={describedBy || undefined}
+          onFileUpload={onFileUpload}
         />,
       );
 
@@ -410,7 +416,7 @@ export function Field({
       );
 
     case 'repeating_group':
-      return <RepeatingGroup field={field} value={value} error={error} onChange={onChange} />;
+      return <RepeatingGroup field={field} value={value} error={error} nestedErrors={nestedErrors} onChange={onChange} onFileUpload={onFileUpload} />;
 
     case 'address':
       return wrap(
@@ -438,25 +444,24 @@ export function Field({
   }
 }
 
-/**
- * File input. The bytes go to local disk behind the API — there is no object
- * storage, no malware scan and no quarantine yet (§12.1), and the form says
- * nothing it cannot back up.
- */
 function FileField({
   field,
   value,
   onChange,
   accept,
   describedBy,
+  onFileUpload,
 }: {
   field: PublicField;
   value: unknown;
   onChange: (v: unknown) => void;
   accept?: string[];
   describedBy?: string;
+  onFileUpload?: (fieldKey: string, file: File) => Promise<string>;
 }) {
-  const names = Array.isArray(value) ? (value as string[]) : value ? [value as string] : [];
+  const [uploading, setUploading] = useState(false);
+  const [message, setMessage] = useState('');
+  const files = Array.isArray(value) ? (value as string[]) : value ? [value as string] : [];
   const max = typeof field.constraints?.maxFiles === 'number' ? field.constraints.maxFiles : 1;
 
   return (
@@ -465,33 +470,36 @@ function FileField({
         id={`f-${field.key}`}
         className="fm__file"
         type="file"
-        required={field.required}
+        disabled={!onFileUpload || uploading}
         aria-describedby={describedBy}
         multiple={max > 1}
         accept={accept?.join(',')}
-        onChange={(e) => {
-          const picked = [...(e.target.files ?? [])].map((f) => f.name);
-          onChange(max > 1 ? picked : (picked[0] ?? null));
+        onChange={async (e) => {
+          const picked = [...(e.target.files ?? [])];
+          if (!picked.length || !onFileUpload) return;
+          setUploading(true);
+          setMessage('Uploading and checking the file…');
+          try {
+            const uploaded = await Promise.all(picked.map((file) => onFileUpload(field.key, file)));
+            onChange(max > 1 ? [...files, ...uploaded].slice(0, max) : uploaded[0]);
+            setMessage('Uploaded. A security scan must finish before submission.');
+          } catch (error) {
+            setMessage(error instanceof Error ? error.message : 'Upload failed. Try again.');
+          } finally {
+            setUploading(false);
+            e.target.value = '';
+          }
         }}
       />
-      {/*
-        * Said out loud, because the control does not do what a file input
-        * looks like it does: the browser hands over the file's name and the
-        * bytes stay on the machine. A respondent who believes they have sent
-        * their passport, and a reviewer who believes they have received it,
-        * are both wrong and neither would find out.
-        *
-        * SEC013 refuses to publish a new process with one of these, so this
-        * only renders for a version published before that existed.
-        */}
-      <p className="fm__fileWarn">
-        The document itself is not sent — only its name is recorded. If somebody needs to see it, send it the way
-        they asked you to.
-      </p>
-      {names.length > 0 && (
+      {!onFileUpload && <p className="fm__fileWarn">Uploads are unavailable in preview.</p>}
+      {message && <p className="fm__help" role="status">{message}</p>}
+      {files.length > 0 && (
         <ul className="fm__files">
-          {names.map((name) => (
-            <li key={name}>{name}</li>
+          {files.map((reference, index) => (
+            <li key={`${reference}-${index}`}>
+              File {index + 1} uploaded{' '}
+              <button type="button" onClick={() => onChange(max > 1 ? files.filter((_, i) => i !== index) : null)}>Remove</button>
+            </li>
           ))}
         </ul>
       )}
@@ -503,12 +511,16 @@ function RepeatingGroup({
   field,
   value,
   error,
+  nestedErrors,
   onChange,
+  onFileUpload,
 }: {
   field: PublicField;
   value: unknown;
   error?: string;
+  nestedErrors?: Record<string, string>;
   onChange: (v: unknown) => void;
+  onFileUpload?: (fieldKey: string, file: File) => Promise<string>;
 }) {
   const rows = Array.isArray(value) ? (value as Record<string, unknown>[]) : [];
 
@@ -533,7 +545,9 @@ function RepeatingGroup({
                 key={child.key}
                 field={child}
                 value={row[child.key]}
+                error={nestedErrors?.[`${field.key}[${index}].${child.key}`]}
                 onChange={(v) => update(index, child.key, v)}
+                onFileUpload={onFileUpload}
               />
             ))}
           </div>

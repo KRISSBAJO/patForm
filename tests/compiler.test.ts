@@ -331,15 +331,8 @@ test('the expense claim bars the claimant from approving it', () => {
   assert.equal(bp.data.submitterField, 'employee_email');
 });
 
-test('a file field is refused, because the platform does not accept uploads', () => {
-  /*
-   * The respondent's browser reads `e.target.files` and sends `f.name`. The
-   * bytes never leave the machine. A process that says it collected a
-   * right-to-work photograph and holds the string "right-to-work.pdf" is not
-   * a weak compliance record — it is not a compliance record, and the person
-   * opening it would believe otherwise.
-   */
-  const codes = codesFor((b) => {
+test('file fields allow supported uploads and refuse unsupported formats', () => {
+  const allowed = codesFor((b) => {
     b.data.fields.push({
       key: 'some_upload',
       type: 'file',
@@ -349,7 +342,13 @@ test('a file field is refused, because the platform does not accept uploads', ()
       collectionReason: 'Because we said so.',
     });
   });
-  assert.ok(codes.includes('SEC013'), `expected SEC013, got ${codes.join(', ') || 'nothing'}`);
+  assert.ok(!allowed.includes('SEC013'));
+  const unsupported = codesFor((b) => {
+    b.data.fields.push({ key: 'some_upload', type: 'file', label: 'Document', required: false,
+      classification: 'confidential', collectionReason: 'For review',
+      constraints: { accept: ['application/zip'], maxSizeMb: 10 } });
+  });
+  assert.ok(unsupported.includes('SEC013'));
 });
 
 test('a task scenario cannot supply answers its actor lacks permission to edit', () => {
