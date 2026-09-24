@@ -1042,6 +1042,14 @@ export function Builder() {
               </div>
             </header>
 
+            <div className="bd__statusBar" aria-label="Draft summary">
+              <span className="bd__statusIdentity"><span className="bd__statusDot" aria-hidden="true" /> Private draft</span>
+              <span>{blueprint.data.fields.length} fields</span>
+              <span>{blueprint.workflow.states.length} states</span>
+              <span className={errors.length ? 'bd__statusError' : 'bd__statusReady'}>{errors.length} errors</span>
+              <span className={warnings.length ? 'bd__statusWarning' : ''}>{warnings.length} warnings</span>
+            </div>
+
             <div className="bd__body" data-side={side}>
               <Outline
                 blueprint={blueprint}
@@ -2056,6 +2064,7 @@ function Outline({
   /** Somebody else has the draft: the list still navigates, it just cannot add. */
   readOnly?: boolean;
 }) {
+  const [outlineQuery, setOutlineQuery] = useState('');
   const groups: { tab: Tab; label: string; items: { key: string; name: string; note?: string }[] }[] = [
     {
       tab: 'fields',
@@ -2110,7 +2119,21 @@ function Outline({
   ];
 
   return (
-    <nav className="bd__outline">
+    <nav className="bd__outline" aria-label="Process map">
+      <div className="bd__outlineIntro">
+        <span className="bd__outlineEyebrow">PROCESS MAP</span>
+        <strong>Build your flow</strong>
+        <p>Choose a question or workflow step to edit.</p>
+        <label className="bd__outlineSearchLabel" htmlFor="builder-outline-search">Find in this process</label>
+        <input
+          id="builder-outline-search"
+          className="bd__outlineSearch"
+          type="search"
+          placeholder="Find a field, state, rule…"
+          value={outlineQuery}
+          onChange={(e) => setOutlineQuery(e.target.value)}
+        />
+      </div>
       <section className="bd__group">
         <header className="bd__groupHead"><span>Start here</span></header>
         <button className="bd__outlineItem" aria-current={overview ? 'true' : undefined} onClick={onOverview}>
@@ -2118,7 +2141,9 @@ function Outline({
           <span className="bd__outlineNote">form, decisions and work</span>
         </button>
       </section>
-      {groups.map((g) => (
+      {groups.filter((g) => !outlineQuery.trim() || g.items.some((item) =>
+        `${item.name} ${item.key} ${item.note ?? ''}`.toLowerCase().includes(outlineQuery.trim().toLowerCase()),
+      )).map((g) => (
         <section key={g.tab} className="bd__group">
           <header className="bd__groupHead">
             <span>{g.label}</span>
@@ -2132,7 +2157,9 @@ function Outline({
               +
             </button>
           </header>
-          {g.items.map((item, i) => (
+          {g.items.map((item, i) => ({ item, i })).filter(({ item }) =>
+            `${item.name} ${item.key} ${item.note ?? ''}`.toLowerCase().includes(outlineQuery.trim().toLowerCase()),
+          ).map(({ item, i }) => (
             <button
               key={item.key + i}
               className="bd__outlineItem"
@@ -2145,6 +2172,9 @@ function Outline({
           ))}
         </section>
       ))}
+      {outlineQuery.trim() && !groups.some((g) => g.items.some((item) =>
+        `${item.name} ${item.key} ${item.note ?? ''}`.toLowerCase().includes(outlineQuery.trim().toLowerCase()),
+      )) && <p className="bd__outlineEmpty">No matching items.</p>}
 
       <section className="bd__group">
         <header className="bd__groupHead">
