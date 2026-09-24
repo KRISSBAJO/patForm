@@ -10,7 +10,7 @@ import {
   availableProviders,
   blueprintSchema,
   generateBlueprint,
-  providerFor,
+  preferredProvider,
   type GenerationOutcome,
   type ProviderName,
 } from '../ai/index.js';
@@ -669,7 +669,7 @@ export async function createDraft(
     if (!available.length) {
       throw new Error('no AI provider is configured — set DEEPSEEK_API_KEY, ANTHROPIC_API_KEY or OPENAI_API_KEY, or copy an existing process');
     }
-    const provider = providerFor(input.provider ?? available[0]!);
+    const provider = preferredProvider(input.provider);
     // The pool is passed so a clean blueprint also has to pass its own
     // scenarios before the pipeline calls it publishable (§7.4, gate three).
     const outcome = await generateBlueprint(provider, blueprintSchema(), {

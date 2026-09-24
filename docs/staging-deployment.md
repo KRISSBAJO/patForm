@@ -128,7 +128,9 @@ cannot gain site access through it.
 PatForm can use DeepSeek for process generation, rule proposals, and Ask. Set
 `DEEPSEEK_API_KEY` in the Render service Environment settings; enter the key
 there yourself. `DEEPSEEK_MODEL` defaults to `deepseek-flash`. When more than
-one AI provider key is configured, DeepSeek is selected first. PatForm sends
+one AI provider key is configured, PatForm tries DeepSeek, then OpenAI, then
+Anthropic if a provider request fails. A model refusal does not trigger a
+fallback. An explicit provider choice uses only that provider. PatForm sends
 the process description or question and process schema to the provider, then
 validates returned JSON before any workflow is accepted or action is run.
 DeepSeek's prices vary by model, time and cache status, so cost reporting is

@@ -86,8 +86,8 @@ Return one JSON object matching the schema. Nothing else.`;
  */
 export function askerFor(provider: Provider): Asker {
   return {
-    name: provider.name,
-    model: provider.model,
+    get name() { return provider.name; },
+    get model() { return provider.model; },
     promptVersion: COPILOT_PROMPT_VERSION,
 
     async propose(question, context) {

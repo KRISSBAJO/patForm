@@ -90,7 +90,7 @@ import {
 import type { Answers } from '../blueprint/answers.js';
 import { ask, bulkOptions, confirm, recentRuns, runDirect } from '../runtime/copilot.js';
 import { askerFor } from '../copilot/ask.js';
-import { availableProviders, providerFor } from '../ai/index.js';
+import { availableProviders, preferredProvider } from '../ai/index.js';
 import { proposeRule } from '../ai/rule.js';
 import { Blueprint } from '../blueprint/index.js';
 import { QueryPlan, ActionPlan } from '../copilot/plan.js';
@@ -351,7 +351,7 @@ route('POST', /^\/api\/builder\/drafts\/([0-9a-f-]{36})\/rule$/, async ({ pool, 
     throw new HttpError(400, 'this draft does not parse yet — fix the errors before asking for a rule');
   }
 
-  return proposeRule(providerFor(available[0]!), { sentence, blueprint: parsed.data });
+  return proposeRule(preferredProvider(), { sentence, blueprint: parsed.data });
 });
 
 route('POST', /^\/api\/builder\/drafts\/([0-9a-f-]{36})\/test$/, async ({ pool, principal, url }) =>
@@ -383,7 +383,7 @@ route('POST', /^\/api\/copilot\/ask$/, async ({ pool, principal }, body) => {
   if (!available.length) {
     throw new HttpError(503, 'no AI provider is configured — set DEEPSEEK_API_KEY, ANTHROPIC_API_KEY or OPENAI_API_KEY');
   }
-  return ask(pool, askerFor(providerFor(available[0]!)), { principal, processKey, question });
+  return ask(pool, askerFor(preferredProvider()), { principal, processKey, question });
 });
 
 route('POST', /^\/api\/copilot\/run$/, async ({ pool, principal }, body) => {
