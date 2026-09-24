@@ -39,10 +39,12 @@
 .aiPage__error { margin-top:18px; padding:13px 15px; border:1px solid #efc7c2; border-radius:8px; background:#fff4f2; color:#9b3b32; font-size:13px; }
 .aiPage__progress { margin-top:26px; padding:21px; border:1px solid #bcdac8; border-radius:11px; background:linear-gradient(115deg,#f2faf4,#fbfffc); }
 .aiPage__progress--failed { border-color:#efc7c2; background:#fff8f7; }
+.aiPage__progress--review { border-color:#e4cb91; background:#fffbf2; }
 .aiPage__progressHeading { display:flex; min-width:0; align-items:center; gap:14px; }
 .aiPage__progressHeading > div { min-width:0; overflow-wrap:anywhere; }
 .aiPage__progressIcon { display:grid; place-items:center; width:42px; height:42px; flex:none; border-radius:50%; color:#1d714b; background:#dcf1e2; font-size:24px; animation:aiPulse 1.8s ease-in-out infinite; }
 .aiPage__progressIcon.done { animation:none; }
+.aiPage__progress--review .aiPage__progressIcon { color:#87560e; background:#fff0cd; }
 .aiPage__progress strong { font-size:15px; }
 .aiPage__progress p { margin:5px 0 0; color:#5e7566; font-size:12px; line-height:1.45; }
 .aiPage__steps { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:6px; margin-top:22px; }
@@ -52,8 +54,11 @@
 .aiPage__step > span { display:grid; place-items:center; width:29px; height:29px; border:2px solid #dce9df; border-radius:50%; background:#fff; color:#9bae9f; font-size:11px; font-weight:700; }
 .aiPage__step.isDone > span { border-color:#2e8b5b; background:#2e8b5b; color:#fff; }
 .aiPage__step.isActive > span { border-color:#2e8b5b; color:#2e8b5b; box-shadow:0 0 0 5px #dcefe2; animation:aiPulse 1.8s ease-in-out infinite; }
+.aiPage__step.isWarning > span { border-color:#c68b2e; background:#fff0cd; color:#87560e; }
+.aiPage__step.isWarning:not(:last-child)::after { background:#e4cb91; }
 .aiPage__step small { font-size:11px; line-height:1.3; }
 .aiPage__step.isActive small,.aiPage__step.isDone small { color:#1d714b; font-weight:700; }
+.aiPage__step.isWarning small { color:#87560e; font-weight:700; }
 .aiPage__progressFoot { display:flex; min-width:0; align-items:center; justify-content:space-between; gap:14px; margin-top:20px; padding-top:16px; border-top:1px solid #dce9df; color:#718474; font-size:11px; overflow-wrap:anywhere; }
 .aiPage__progress a,.aiPage__progress button { white-space:nowrap; }
 .aiPage__aside { min-width:0; overflow:hidden; padding:30px 28px 0; }
