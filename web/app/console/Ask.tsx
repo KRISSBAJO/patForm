@@ -159,13 +159,14 @@ export function Ask({ processKey, onOpenRecord }: { processKey: string; onOpenRe
   const errors = result?.diagnostics.filter((d) => d.severity === 'error') ?? [];
 
   return (
-    <div className="cs__panel">
-      <div className="cs__panelHead">
-        <h2 className="cs__tab">Ask</h2>
-        <span className="cs__sort">answered from your records, never from the model&rsquo;s memory</span>
+    <div className="cs__panel ask__panel">
+      <div className="ask__hero">
+        <span className="ask__eyebrow">YOUR RECORDS, IN CONTEXT</span>
+        <h2>What do you need to know?</h2>
+        <p>Ask a question about this process. You can review the plan before any action runs.</p>
       </div>
 
-      <div style={{ padding: '14px 18px' }}>
+      <div className="ask__content">
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -174,7 +175,7 @@ export function Ask({ processKey, onOpenRecord }: { processKey: string; onOpenRe
           className="ask__form"
         >
           <label className="ask__label" htmlFor="ask-question">
-            Ask about these records
+            Your question
           </label>
           <input
             id="ask-question"
@@ -189,7 +190,7 @@ export function Ask({ processKey, onOpenRecord }: { processKey: string; onOpenRe
           </button>
         </form>
         <div className="ask__builderHandoff">
-          <span>Need a new form or approval process? AI can draft it in the Builder.</span>
+          <span>Creating a form or approval flow?</span>
           <button type="button" className="cs__btn" onClick={startForm}>Build a form with AI</button>
         </div>
 

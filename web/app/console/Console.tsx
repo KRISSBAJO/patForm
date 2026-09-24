@@ -651,7 +651,7 @@ export function Console() {
           </button>}
         </div>
 
-        <div className={`cs__body ${view === 'security' ? 'cs__body--security' : ''}`}>
+        <div className={`cs__body ${view === 'security' ? 'cs__body--security' : ''} ${view === 'ask' ? 'cs__body--ask' : ''}`}>
           <div className="cs__left">
             {view === 'record' && record ? (
               <RecordPage
@@ -760,7 +760,7 @@ export function Console() {
 
           {/* The record page carries its own side column; two of them would
               be a column of cards about a different subject. */}
-          {view !== 'record' && view !== 'security' && (
+          {view !== 'record' && view !== 'security' && view !== 'ask' && (
           <div className="cs__right">
             {!processKey ? null : health ? (
               <div className="cs__card">
@@ -821,9 +821,7 @@ export function Console() {
                     ? 'Nine measures from section 13.1, over the period you choose. A rate over fewer than five records is withheld rather than shown, because a percentage of three people identifies them.'
                     : view === 'records'
                       ? 'Every record you are allowed to see, newest first. The same cursor pagination the public API uses, so one behaviour is tested twice.'
-                      : view === 'ask'
-                        ? 'A question becomes a typed plan, the plan is shown to you before anything runs, and what executes is bound to what you confirmed.'
-                        : 'Four questions, in order: what arrived, what needs you, what is late, what failed. Sign in as someone else and the same records offer different actions — every one of them checked by the runtime, not by this page.'}
+                      : 'Four questions, in order: what arrived, what needs you, what is late, what failed. Sign in as someone else and the same records offer different actions — every one of them checked by the runtime, not by this page.'}
               </p>
             </div>
           </div>

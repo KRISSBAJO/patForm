@@ -290,7 +290,14 @@ export async function checkAnswers(
         : (bp.experience.pages[args.pageIndex]?.sections.flatMap((s) => s.fields) ?? []);
 
     const computed = Object.fromEntries(
-      bp.data.fields.filter((f) => f.type === 'calculated').map((f) => [f.key, withTotals[f.key]]),
+      bp.data.fields.flatMap((field) => {
+        if (field.type === 'calculated') return [[field.key, withTotals[field.key]]];
+        if (field.type !== 'repeating_group' || !field.fields?.some((child) => child.type === 'calculated')) return [];
+        const rows = Array.isArray(withTotals[field.key]) ? withTotals[field.key] as Answers[] : [];
+        return [[field.key, rows.map((row) => Object.fromEntries(
+          field.fields!.filter((child) => child.type === 'calculated').map((child) => [child.key, row[child.key]]),
+        ))]];
+      }),
     );
 
     return {

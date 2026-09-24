@@ -92,6 +92,24 @@
   gap: 24px;
 }
 
+.gl__mobileFilter { display: none; }
+
+@media (max-width: 899px) {
+  .gl__headInner { padding: 26px 20px 22px; }
+  .gl__head h1 { font-size: clamp(24px, 6vw, 28px); line-height: 1.15; }
+  .gl__head p { font-size: 14px; line-height: 1.45; margin-top: 8px; }
+  .gl__search { max-width: none; margin-top: 16px; }
+  .gl__body { padding: 18px 20px 56px; gap: 14px; }
+  .gl__side { display: none; }
+  .gl__mobileFilter { display: grid; gap: 6px; }
+  .gl__mobileFilter label { font-size: 12px; font-weight: 700; color: var(--ink-soft); }
+  .gl__mobileFilter select {
+    width: 100%; min-width: 0; height: 44px; padding: 0 12px;
+    border: 1px solid var(--card-line); border-radius: 7px;
+    background: #fff; color: var(--ink); font: inherit;
+  }
+}
+
 .gl__side {
   display: flex;
   flex-wrap: wrap;

@@ -1145,6 +1145,30 @@
   margin-inline: auto;
 }
 
+.cs__body--ask { justify-content: center; }
+.cs__body--ask > .cs__left { max-width: 1060px; }
+.ask__panel { overflow: hidden; box-shadow: 0 16px 44px rgba(18, 45, 32, .06); }
+.ask__hero {
+  padding: clamp(26px, 4vw, 52px) clamp(20px, 4vw, 52px) 25px;
+  border-bottom: 1px solid var(--line-soft);
+  background: linear-gradient(130deg, #f0faf4 0%, #fff 68%);
+}
+.ask__eyebrow { color: var(--green-deep); font-size: 11px; font-weight: 700; letter-spacing: .14em; }
+.ask__hero h2 { margin: 12px 0 8px; font-size: clamp(25px, 3vw, 37px); line-height: 1.12; letter-spacing: -.035em; }
+.ask__hero p { margin: 0; color: var(--muted); font-size: 15px; line-height: 1.5; }
+.ask__content { padding: clamp(20px, 4vw, 42px); }
+.ask__form { gap: 10px; }
+.ask__form .cs__btn { height: 50px; min-width: 90px; justify-content: center; }
+.ask__form .ask__input { height: 50px; font-size: 15px; }
+.ask__builderHandoff { margin: 24px 0 28px; padding: 15px 18px; background: #f6f8f6; }
+.ask__history { border-top: 1px solid var(--line-soft); padding-top: 24px; }
+
+@media (max-width: 700px) {
+  .ask__form { grid-template-columns: 1fr; grid-template-areas: 'label' 'input' 'button'; }
+  .ask__form .cs__btn { width: 100%; }
+  .ask__builderHandoff .cs__btn { width: 100%; justify-content: center; }
+}
+
 .vw__mfaIntro {
   padding: 30px 34px 24px;
   border-bottom: 1px solid var(--line);

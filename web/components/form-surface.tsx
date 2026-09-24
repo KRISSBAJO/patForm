@@ -416,7 +416,7 @@ export function Field({
       );
 
     case 'repeating_group':
-      return <RepeatingGroup field={field} value={value} error={error} nestedErrors={nestedErrors} onChange={onChange} onFileUpload={onFileUpload} />;
+      return <RepeatingGroup field={field} value={value} computed={computed} error={error} nestedErrors={nestedErrors} onChange={onChange} onFileUpload={onFileUpload} />;
 
     case 'address':
       return wrap(
@@ -510,6 +510,7 @@ function FileField({
 function RepeatingGroup({
   field,
   value,
+  computed,
   error,
   nestedErrors,
   onChange,
@@ -517,6 +518,7 @@ function RepeatingGroup({
 }: {
   field: PublicField;
   value: unknown;
+  computed?: unknown;
   error?: string;
   nestedErrors?: Record<string, string>;
   onChange: (v: unknown) => void;
@@ -545,6 +547,7 @@ function RepeatingGroup({
                 key={child.key}
                 field={child}
                 value={row[child.key]}
+                computed={Array.isArray(computed) ? (computed[index] as Record<string, unknown> | undefined)?.[child.key] : undefined}
                 error={nestedErrors?.[`${field.key}[${index}].${child.key}`]}
                 onChange={(v) => update(index, child.key, v)}
                 onFileUpload={onFileUpload}

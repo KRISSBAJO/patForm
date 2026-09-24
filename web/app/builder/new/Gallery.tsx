@@ -138,8 +138,7 @@ export function Gallery() {
         <div className="gl__headInner">
           <h1>Start from something that already works</h1>
           <p>
-            A whole process — the form, the approvals, the reminders and the dashboard — not a form
-            template. Installing opens it as a draft; nothing goes live until you publish it.
+            Choose a ready-made process. Review and edit your private draft before publishing.
           </p>
           <div className="gl__search">
             <label className="vw__srOnly" htmlFor="pack-search">
@@ -172,6 +171,15 @@ export function Gallery() {
       </div>
 
       <div className="gl__body" id="gallery-main">
+        <div className="gl__mobileFilter">
+          <label htmlFor="pack-category">Category</label>
+          <select id="pack-category" value={category} onChange={(e) => setCategory(e.target.value)}>
+            <option value="all">Everything ({packs?.length ?? 0})</option>
+            {categories.map(([name, count]) => (
+              <option key={name} value={name}>{name} ({count})</option>
+            ))}
+          </select>
+        </div>
         {/*
           * Categories run down the side rather than wrapping across the top.
           * Nineteen of them wrapped into three ragged rows that fought the
