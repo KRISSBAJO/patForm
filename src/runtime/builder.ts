@@ -587,8 +587,8 @@ export async function publishDraft(
     );
   }
 
-  // A scenario-failed AI proposal is saved only as a private review draft.
-  // Re-run its examples after every edit before allowing it to go live.
+  // Re-run AI draft examples at the final publish boundary. A draft that
+  // passed once can change in the editor or encounter a transient test race.
   const reviewGate = await pool.query<{ ai_review_required: boolean }>(
     'select ai_review_required from process_draft where id = $1 and tenant_id = $2',
     [draft.id, actor.tenantId],
@@ -733,7 +733,7 @@ export async function createDraft(
   const { rows } = await pool.query<{ id: string }>(
     `insert into process_draft (tenant_id, process_key, based_on_version, blueprint, created_by, ai_review_required)
      values ($1, $2, null, $3, $4, $5) returning id`,
-    [tenantId, input.key, JSON.stringify(blueprint), describe(principal), decision === 'review_required'],
+    [tenantId, input.key, JSON.stringify(blueprint), describe(principal), Boolean(decision)],
   );
 
   return { ...(await loadDraft(pool, principal, rows[0]!.id)), audit, decision, reviewNote };

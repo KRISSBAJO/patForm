@@ -40,6 +40,8 @@ alter table ai_draft_job add column if not exists stage text not null default 'w
 alter table ai_draft_job add column if not exists heartbeat_at timestamptz;
 create index if not exists ai_draft_job_queue on ai_draft_job (created_at) where status in ('queued', 'running');
 create unique index if not exists ai_draft_job_active_key on ai_draft_job (tenant_id, process_key) where status in ('queued', 'running');
+update process_draft set ai_review_required = true
+  where not ai_review_required and id in (select draft_id from ai_draft_job where draft_id is not null);
 
 create table if not exists file_deletion (
   storage_key text primary key,
