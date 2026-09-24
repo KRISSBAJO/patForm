@@ -137,6 +137,19 @@
   max-width: 640px;
 }
 
+@media (max-width: 640px) {
+  /* The phone already is the preview's device frame. Scaling a fixed 680px
+     form here clips its controls and makes the labels too small to read. */
+  .sp__body { padding: 14px 12px 28px; }
+  .sp__frame .fm {
+    width: 100%;
+    transform: none;
+    margin-bottom: 0;
+  }
+  .sp__frame .fm__shell { max-width: none; padding: 0 12px; }
+  .sp__frame .fm__card { padding: 22px 16px; }
+}
+
 /* ------------------------------------------------------------ versions */
 
 .sp__versions {

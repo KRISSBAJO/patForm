@@ -606,3 +606,21 @@ a.pg__edit {
     margin-left: 0;
   }
 }
+
+@media (max-width: 640px) {
+  .pg { width: 100%; min-width: 0; overflow: visible; padding: 18px 12px 40px; }
+  .pg__head { display: block; }
+  .pg__heading, .pg__tools { min-width: 0; }
+  .pg__title { font-size: 24px; overflow-wrap: anywhere; }
+  .pg__tools { margin-top: 16px; align-items: stretch; }
+  .pg__pick { flex: 1 1 100%; min-width: 0; }
+  .pg__pick select { max-width: 100%; }
+  .pg__card { min-width: 0; }
+  .pg__cardBar { padding: 12px; }
+  .pg__devices { max-width: 100%; overflow-x: auto; }
+  .pg__stage { min-width: 0; padding: 8px; }
+  .pv, .pv--desktop, .pv--tablet, .pv--phone { width: 100%; max-width: 100%; }
+  .pv--phone .sp__frame { border-width: 3px; border-radius: 14px; }
+  .pv .sp__frame .fm__shell { padding: 0 12px; }
+  .pv .sp__frame .fm__card { padding: 22px 16px; }
+}

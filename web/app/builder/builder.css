@@ -1788,6 +1788,75 @@ a.bd__newBtn {
   .sp { border-left: none; border-top: 1px solid var(--line); }
 }
 
+/* A phone needs one reading column. The desktop rail and independently
+   scrolling panes leave less than half the viewport for the form editor. */
+@media (max-width: 640px) {
+  .bd {
+    width: 100%;
+    min-width: 0;
+    min-height: 100dvh;
+    height: auto;
+    overflow: visible;
+  }
+
+  .bd__top { gap: 9px; padding: 0 12px; }
+  .bd__topWhere { font-size: 13px; }
+  .bd__topLink { font-size: 12px; text-align: right; }
+
+  .bd__shell { display: block; min-width: 0; overflow: visible; }
+  .bd__rail {
+    flex-direction: row;
+    width: 100%;
+    max-width: 100vw;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    padding: 4px 8px;
+    border-right: 0;
+    border-bottom: 1px solid var(--rail-line);
+    scrollbar-width: thin;
+  }
+  .bd__railItem { flex: 0 0 auto; min-width: 64px; padding: 8px 6px; }
+  .bd__railItem--on { box-shadow: inset 0 -2px 0 var(--green); }
+  .bd__railRule { flex: 0 0 1px; width: 1px; height: 26px; margin: auto 4px; }
+  .bd__railSpacer { display: none; }
+  .bd__railCount { right: 2px; }
+  .bd__switcher {
+    position: absolute;
+    top: 104px;
+    left: 8px;
+    width: min(340px, calc(100vw - 16px));
+    max-height: min(65dvh, 500px);
+    overflow-y: auto;
+  }
+
+  .bd__main { display: block; width: 100%; min-width: 0; min-height: 0; }
+  .bd__head { display: block; padding: 18px 16px; }
+  .bd__head > div:first-child { min-width: 0; }
+  .bd__title { font-size: 22px; line-height: 1.2; overflow-wrap: anywhere; }
+  .bd__sub, .bd__formLink { overflow-wrap: anywhere; }
+  .bd__formLink a { min-width: 0; overflow-wrap: anywhere; }
+  .bd__actions { flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+  .bd__actions .bd__btn { flex: 1 1 auto; min-height: 40px; }
+
+  .bd__start { overflow: visible; }
+  .bd__startInner { padding: 24px 16px 48px; }
+  .bd__startGrid { grid-template-columns: minmax(0, 1fr); }
+  .bd__recentRow { min-width: 0; }
+  .bd__recentText { min-width: 0; }
+
+  .bd__body, .bd__body[data-side='preview'] { display: block; min-width: 0; }
+  .bd__outline { max-height: 230px; overflow-y: auto; padding-bottom: 12px; }
+  .bd__editor { min-height: 280px; padding: 20px 16px 32px; overflow: visible; }
+  .bd__pair { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .bd__choice { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 28px; }
+  .bd__party { grid-template-columns: minmax(0, 1fr); }
+  .bd__input { min-width: 0; }
+  .sp { min-width: 0; }
+  .sp__scroll { overflow: visible; }
+  .sp__tabs { overflow-x: auto; }
+  .sp__tab { flex: 0 0 auto; min-width: 75px; }
+}
+
 .bd__add:disabled {
   opacity: 0.4;
   cursor: not-allowed;

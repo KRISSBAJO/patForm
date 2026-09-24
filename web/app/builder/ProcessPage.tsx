@@ -311,6 +311,9 @@ const DEVICES = [
 
 function PreviewBody({ view }: { view: ProcessView }) {
   const [device, setDevice] = useState<(typeof DEVICES)[number]['key']>('desktop');
+  useEffect(() => {
+    if (window.matchMedia('(max-width: 640px)').matches) setDevice('phone');
+  }, []);
   const questions = view.blueprint.data.fields.length;
   const pages = view.blueprint.experience?.pages?.length ?? 0;
   return (
