@@ -5,7 +5,9 @@ import { RulesEditor } from './Rules';
 import { BootScreen } from '../../components/boot-screen';
 import { useConfirm } from '../../components/confirm-dialog';
 import './builder.css';
+import './studio.css';
 import { FormPreview, TestsPanel, Versions, type VersionRow } from './SidePanel';
+import { PageEditor, DocumentEditor, ScenarioEditor, ConditionEditor } from './StudioEditors';
 import { useDialog } from '../useDialog';
 
 /**
@@ -40,7 +42,7 @@ export interface Diagnostic {
   fix?: string;
 }
 
-interface BpField {
+export interface BpField {
   key: string;
   type: string;
   label: string;
@@ -51,6 +53,7 @@ interface BpField {
   choices?: { value: string; label: string }[];
   setBy?: string;
   collectionReason?: string;
+  requiredWhen?: unknown;
   fields?: BpField[];
 }
 
@@ -129,7 +132,7 @@ interface BpBranding {
   footer?: string;
 }
 
-interface BpSection {
+export interface BpSection {
   key: string;
   title?: string;
   description?: string;
@@ -139,7 +142,7 @@ interface BpSection {
   [k: string]: unknown;
 }
 
-interface BpExperience {
+export interface BpExperience {
   showProgress?: boolean;
   saveAndResume?: boolean;
   confirmation?: { message: string; showStatusLink?: boolean };
@@ -148,7 +151,33 @@ interface BpExperience {
   [k: string]: unknown;
 }
 
-interface Blueprint {
+export interface BpDocument {
+  key: string;
+  name: string;
+  source: 'html' | 'docx';
+  templateRef: string;
+  mapping: Record<string, string>;
+  filename: string;
+  deliver: ('attach_to_record' | 'email')[];
+}
+
+export type BpTestStep =
+  | { step: 'submit'; answers: Record<string, unknown> }
+  | { step: 'decide'; approval: string; as: string; decision: 'approved' | 'rejected' | 'changes_requested'; reason?: string }
+  | { step: 'complete_task'; task: string; as: string; answers?: Record<string, unknown>; expectDenied?: boolean }
+  | { step: 'advance_hours'; hours: number }
+  | { step: 'manual'; transition: string; as: string }
+  | { step: 'attempt'; as: string; action: 'submit' | 'view' | 'edit' | 'approve' | 'export' | 'operate'; expectDenied: boolean };
+
+export interface BpScenario {
+  key: string;
+  name: string;
+  kind: 'happy_path' | 'rejection' | 'missing_data' | 'timeout' | 'duplicate' | 'permission';
+  steps: BpTestStep[];
+  expect: { state?: string; emails?: string[]; documents?: string[]; openTasks?: string[]; instanceCount?: number };
+}
+
+export interface Blueprint {
   key: string;
   name: string;
   description?: string;
@@ -168,7 +197,8 @@ interface Blueprint {
   /* Named rather than left in the index signature, because the automation
      editor offers these as choices and an untyped `{}` gives it nothing. */
   communications?: { email?: BpEmail[]; fromName?: string; [k: string]: unknown };
-  outputs?: { documents?: { key: string; name: string }[]; [k: string]: unknown };
+  outputs?: { documents?: BpDocument[]; [k: string]: unknown };
+  tests?: BpScenario[];
   [k: string]: unknown;
 }
 
@@ -231,7 +261,7 @@ interface ScenarioResult {
   failures: string[];
 }
 
-type Tab = 'fields' | 'states' | 'rules' | 'approvals' | 'tasks' | 'messages' | 'roles' | 'json';
+type Tab = 'pages' | 'fields' | 'states' | 'rules' | 'approvals' | 'tasks' | 'messages' | 'roles' | 'documents' | 'scenarios' | 'json';
 
 /*
  * The right-hand column. `checks` is what it always was; the other three are
@@ -361,11 +391,15 @@ const HEARTBEAT_MS = 40_000;
  */
 function locate(d: Diagnostic, bp: Blueprint | null): { tab: Tab; index: number } | null {
   const table: [RegExp, Tab][] = [
+    [/^experience\.pages\[(\d+)\]/, 'pages'],
     [/^data\.fields\[(\d+)\]/, 'fields'],
     [/^workflow\.states\[(\d+)\]/, 'states'],
     [/^workflow\.approvals\[(\d+)\]/, 'approvals'],
     [/^workflow\.tasks\[(\d+)\]/, 'tasks'],
     [/^roles\[(\d+)\]/, 'roles'],
+    [/^outputs\.documents\[(\d+)\]/, 'documents'],
+    [/^tests\[(\d+)\]/, 'scenarios'],
+    [/^communications\.email\[(\d+)\]/, 'messages'],
   ];
   for (const [pattern, tab] of table) {
     const m = d.at.match(pattern);
@@ -397,6 +431,9 @@ function locate(d: Diagnostic, bp: Blueprint | null): { tab: Tab; index: number 
       ['states', bp.workflow.states],
       ['roles', bp.roles],
       ['messages', bp.communications?.email ?? []],
+      ['pages', bp.experience?.pages ?? []],
+      ['documents', bp.outputs?.documents ?? []],
+      ['scenarios', bp.tests ?? []],
     ];
     for (const [tab, items] of lists) {
       const i = items.findIndex((item) => item.key === key);
@@ -655,6 +692,8 @@ export function Builder() {
       const next = structuredClone(blueprint);
       fn(next);
       setBlueprint(next);
+      setTests(null);
+      setImpact(null);
       scheduleSave(next, draft.id);
     },
     [blueprint, draft, frozen, scheduleSave],
@@ -673,7 +712,7 @@ export function Builder() {
   };
 
   const runTests = async () => {
-    if (!draft) return;
+    if (!draft || status === 'saving') return;
     setBusy('test');
     setImpact(null);
     setSide('tests');
@@ -1020,7 +1059,7 @@ export function Builder() {
                 <button className="bd__btn" onClick={discard} disabled={busy !== null || frozen}>
                   Discard
                 </button>
-                <button className="bd__btn" onClick={runTests} disabled={busy !== null || !publishable}>
+                <button className="bd__btn" onClick={runTests} disabled={busy !== null || !publishable || status === 'saving'}>
                   {busy === 'test' ? 'Running…' : 'Test'}
                 </button>
                 <button
@@ -1089,9 +1128,11 @@ export function Builder() {
                   * rather than a transparent overlay that only stops a mouse.
                   */}
                 <fieldset className="bd__freeze" disabled={frozen}>
+                {tab === 'pages' && <PageEditor blueprint={blueprint} index={index} onIndex={setIndex} onChange={mutate} onSelectField={(i) => { setTab('fields'); setIndex(i); setSide('preview'); }} />}
                 {tab === 'fields' && (
                   <FieldEditor
                     field={blueprint.data.fields[index]}
+                    fields={blueprint.data.fields.filter((f) => f.key !== blueprint.data.fields[index]?.key)}
                     isSubmitter={blueprint.data.submitterField === blueprint.data.fields[index]?.key}
                     onSubmitter={(next) =>
                       mutate((bp) => {
@@ -1215,6 +1256,8 @@ export function Builder() {
                 </fieldset>
                 </>
                 )}
+                {tab === 'documents' && <DocumentEditor document={blueprint.outputs?.documents?.[index]} fields={blueprint.data.fields} onChange={(fn) => mutate((bp) => fn(bp.outputs!.documents![index]!))} onRemove={() => removeAt('documents', index)} />}
+                {tab === 'scenarios' && <ScenarioEditor scenario={blueprint.tests?.[index]} blueprint={blueprint} onChange={(fn) => mutate((bp) => fn(bp.tests![index]!))} onRemove={() => removeAt('scenarios', index)} />}
               </section>
 
               {/*
@@ -1244,6 +1287,20 @@ export function Builder() {
 
                 <div className="sp__scroll">
                   {side === 'checks' && (
+                    <>
+                    <LaunchChecklist
+                      blueprint={blueprint}
+                      errors={errors.length}
+                      warnings={warnings.length}
+                      status={status}
+                      tests={tests}
+                      onPreview={() => setSide('preview')}
+                      onScenarios={() => { setOverview(false); setTab('scenarios'); setIndex(0); }}
+                      onTest={() => void runTests()}
+                      testing={busy === 'test'}
+                      canTest={publishable && status !== 'saving'}
+                      draftId={draft.id}
+                    />
                     <DiagnosticsPanel
                       blueprint={blueprint}
                       errors={errors}
@@ -1254,10 +1311,12 @@ export function Builder() {
                         setIndex(where.index);
                       }}
                     />
+                    </>
                   )}
                   {side === 'preview' && (
                     <FormPreview
                       blueprint={blueprint}
+                      previewKey={draft.processKey}
                       onBranding={(next) =>
                         mutate((bp) => {
                           bp.experience = { ...(bp.experience ?? {}), branding: next };
@@ -1330,6 +1389,8 @@ export function Builder() {
   function replaceAll(next: Blueprint) {
     if (!draft || frozen) return;
     setBlueprint(next);
+    setTests(null);
+    setImpact(null);
     scheduleSave(next, draft.id);
   }
 
@@ -1341,6 +1402,8 @@ export function Builder() {
       if (which === 'tasks') bp.workflow.tasks?.splice(at, 1);
       if (which === 'roles') bp.roles.splice(at, 1);
       if (which === 'messages') bp.communications?.email?.splice(at, 1);
+      if (which === 'documents') bp.outputs?.documents?.splice(at, 1);
+      if (which === 'scenarios') bp.tests?.splice(at, 1);
     });
     setIndex(Math.max(0, at - 1));
   }
@@ -1417,6 +1480,20 @@ export function Builder() {
           attachments: [],
         });
       }
+      if (which === 'pages') {
+        bp.experience = bp.experience ?? {};
+        bp.experience.pages = bp.experience.pages ?? [];
+        bp.experience.pages.push({ key: `page_${n}`, title: 'New page', sections: [{ key: `section_${n}`, title: 'New section', fields: [] }] });
+      }
+      if (which === 'documents') {
+        bp.outputs = bp.outputs ?? {};
+        bp.outputs.documents = bp.outputs.documents ?? [];
+        bp.outputs.documents.push({ key: `document_${n}`, name: 'New document', source: 'html', templateRef: `template_${n}`, mapping: {}, filename: 'document.pdf', deliver: ['attach_to_record'] });
+      }
+      if (which === 'scenarios') {
+        bp.tests = bp.tests ?? [];
+        bp.tests.push({ key: `scenario_${n}`, name: 'New scenario', kind: 'happy_path', steps: [{ step: 'submit', answers: {} }], expect: {} });
+      }
     });
     const counts: Record<string, number> = {
       fields: blueprint.data.fields.length,
@@ -1425,6 +1502,9 @@ export function Builder() {
       tasks: blueprint.workflow.tasks?.length ?? 0,
       roles: blueprint.roles.length,
       messages: blueprint.communications?.email?.length ?? 0,
+      pages: blueprint.experience?.pages?.length ?? 0,
+      documents: blueprint.outputs?.documents?.length ?? 0,
+      scenarios: blueprint.tests?.length ?? 0,
     };
     setTab(which);
     setIndex(counts[which] ?? 0);
@@ -2067,6 +2147,10 @@ function Outline({
   const [outlineQuery, setOutlineQuery] = useState('');
   const groups: { tab: Tab; label: string; items: { key: string; name: string; note?: string }[] }[] = [
     {
+      tab: 'pages', label: 'Form pages',
+      items: (blueprint.experience?.pages ?? []).map((p, i) => ({ key: p.key, name: p.title, note: `${i + 1} · ${p.sections?.length ?? 0} sections` })),
+    },
+    {
       tab: 'fields',
       label: 'Fields',
       items: blueprint.data.fields.map((f) => ({ key: f.key, name: f.label, note: f.type })),
@@ -2115,6 +2199,14 @@ function Outline({
       tab: 'roles',
       label: 'Roles',
       items: blueprint.roles.map((r) => ({ key: r.key, name: r.name, note: r.kind })),
+    },
+    {
+      tab: 'documents', label: 'Documents',
+      items: (blueprint.outputs?.documents ?? []).map((d) => ({ key: d.key, name: d.name, note: d.source.toUpperCase() })),
+    },
+    {
+      tab: 'scenarios', label: 'Test scenarios',
+      items: (blueprint.tests ?? []).map((s) => ({ key: s.key, name: s.name, note: s.kind.replaceAll('_', ' ') })),
     },
   ];
 
@@ -2186,7 +2278,7 @@ function Outline({
           onClick={() => onSelect('json', 0)}
         >
           <span className="bd__outlineName">Blueprint JSON</span>
-          <span className="bd__outlineNote">intent, documents, tests</span>
+          <span className="bd__outlineNote">advanced blueprint settings</span>
         </button>
       </section>
     </nav>
@@ -2215,6 +2307,7 @@ function num(value: string): number | undefined {
 
 function FieldEditor({
   field,
+  fields,
   width,
   onWidth,
   isSubmitter,
@@ -2223,6 +2316,7 @@ function FieldEditor({
   onRemove,
 }: {
   field: BpField | undefined;
+  fields: BpField[];
   /** Absent when this field is not on any form page, so there is no width to set. */
   width?: string;
   onWidth?: (next: string) => void;
@@ -2332,6 +2426,8 @@ function FieldEditor({
           </label>
         </Row>
       </div>
+
+      <ConditionEditor title="Require this answer when" value={field.requiredWhen} fields={fields} onChange={(next) => onChange((f) => { if (next) f.requiredWhen = next; else delete f.requiredWhen; })} />
 
       <Row label="Help text" hint="shown under the field">
         <input className="bd__input" value={field.help ?? ''} onChange={(e) => onChange((f) => void (f.help = e.target.value || undefined))} />
@@ -3511,6 +3607,29 @@ function JsonEditor({ blueprint, onReplace }: { blueprint: Blueprint; onReplace:
 }
 
 // ------------------------------------------------------------ diagnostics
+
+function LaunchChecklist({ blueprint, errors, warnings, status, tests, onPreview, onScenarios, onTest, testing, canTest, draftId }: {
+  blueprint: Blueprint;
+  errors: number;
+  warnings: number;
+  status: 'idle' | 'saving' | 'saved' | 'error';
+  tests: { passed: number; total: number } | null;
+  onPreview: () => void;
+  onScenarios: () => void;
+  onTest: () => void;
+  testing: boolean;
+  canTest: boolean;
+  draftId: string;
+}) {
+  const rows = [
+    { label: 'Draft saved', detail: status === 'saved' ? 'Latest edits saved' : status === 'saving' ? 'Saving latest edits' : status === 'error' ? 'Save failed' : 'Ready to edit', ok: status === 'saved', action: null },
+    { label: 'Form reviewed', detail: `${blueprint.experience?.pages?.length ?? 0} pages`, ok: null, action: <button type="button" onClick={onPreview}>Preview</button> },
+    { label: 'Blueprint checks', detail: `${errors} errors · ${warnings} warnings`, ok: errors === 0, action: null },
+    { label: 'Test scenarios', detail: tests ? `${tests.passed} of ${tests.total} passed` : `${blueprint.tests?.length ?? 0} defined · not run since last edit`, ok: tests && tests.total > 0 ? tests.passed === tests.total : false, action: <><button type="button" onClick={onScenarios}>Edit</button><button type="button" disabled={!canTest || testing} onClick={onTest}>{testing ? 'Running…' : 'Run'}</button></> },
+    { label: 'Setup and sharing', detail: 'Review roles, form access and notifications', ok: null, action: <a href={`/builder/launch?draft=${encodeURIComponent(draftId)}`}>Open</a> },
+  ];
+  return <section className="st__launch" aria-label="Launch checklist"><div className="st__launchTop"><span>BEFORE YOU PUBLISH</span><strong>Launch review</strong></div>{rows.map((row) => <div className="st__launchRow" key={row.label}><span className={row.ok === true ? 'st__launchMark st__launchMark--ok' : row.ok === false ? 'st__launchMark st__launchMark--wait' : 'st__launchMark'} aria-hidden="true">{row.ok === true ? '✓' : '·'}</span><div><strong>{row.label}</strong><small>{row.detail}</small></div>{row.action && <div className="st__launchActions">{row.action}</div>}</div>)}<p>Publishing is available when the blueprint has no errors. Review warnings and test results before you confirm.</p></section>;
+}
 
 function DiagnosticsPanel({
   blueprint,

@@ -87,13 +87,16 @@ function asPublic(field: PreviewField): PublicField {
 export function FormPreview({
   blueprint,
   onBranding,
+  previewKey,
 }: {
   blueprint: Shape;
   /** Absent means read-only; the gallery's detail view passes nothing. */
   onBranding?: (next: NonNullable<PublicForm['branding']>) => void;
+  previewKey?: string;
 }) {
   const [answers, setAnswers] = useState<Record<string, unknown>>({});
   const [editing, setEditing] = useState(false);
+  const [device, setDevice] = useState<'desktop' | 'phone'>('desktop');
   const [pageIndex, setPageIndex] = useState(0);
   const previewRef = useRef<HTMLDivElement>(null);
   const byKey = new Map(blueprint.data.fields.map((f) => [f.key, f]));
@@ -115,6 +118,13 @@ export function FormPreview({
         nothing is sent.
       </p>
 
+      <div className="sp__deviceSwitch" role="group" aria-label="Preview size">
+        <button type="button" aria-pressed={device === 'desktop'} onClick={() => setDevice('desktop')}>Desktop</button>
+        <button type="button" aria-pressed={device === 'phone'} onClick={() => setDevice('phone')}>Phone</button>
+      </div>
+
+      {previewKey && <a className="sp__fullPreview" href={`/builder/preview?process=${encodeURIComponent(previewKey)}&v=draft`}>Open full preview ↗</a>}
+
       {onBranding && (
         <button type="button" className="sp__link" onClick={() => setEditing((was) => !was)} aria-expanded={editing}>
           {editing ? 'Done with the header' : 'Edit the header'}
@@ -126,7 +136,7 @@ export function FormPreview({
       )}
 
       {/* The respondent's own controls; only the narrow builder side panel scales them. */}
-      <div className="sp__frame" ref={previewRef}>
+      <div className={`sp__frame ${device === 'phone' ? 'sp__frame--phone' : ''}`} ref={previewRef}>
         <div className="fm" style={accentStyle(blueprint.experience?.branding?.accent)}>
           <div className="fm__shell">
             <FormHeader branding={blueprint.experience?.branding} fallbackName={blueprint.name} />

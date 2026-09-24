@@ -1,0 +1,66 @@
+.st__editor { min-width: 0; color: #193329; }
+.st__head, .st__sectionTitle, .st__section > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.st__head { margin-bottom: 26px; padding-bottom: 22px; border-bottom: 1px solid #e4ebe5; }
+.st__head h2 { margin: 5px 0 6px; font-size: 24px; letter-spacing: -.03em; }
+.st__head p, .st__footnote { margin: 0; color: #62756a; font-size: 13px; line-height: 1.5; }
+.st__eyebrow { color: #367456; font-size: 11px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+.st__pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.st__pair > label, .st__label { display: flex; flex-direction: column; gap: 7px; margin-bottom: 17px; font-size: 13px; font-weight: 700; }
+.st__editor input:not([type="checkbox"]), .st__editor textarea, .st__editor select, .st__condition input, .st__condition select { box-sizing: border-box; min-width: 0; width: 100%; border: 1px solid #d6e2d9; border-radius: 8px; background: white; color: #193329; padding: 10px 11px; font: inherit; font-weight: 400; }
+.st__editor textarea { resize: vertical; }
+.st__editor input:focus, .st__editor textarea:focus, .st__editor select:focus, .st__condition input:focus, .st__condition select:focus { outline: 2px solid #83c9a5; outline-offset: 1px; }
+.st__editor input[readonly] { background: #f5f8f5; color: #62756a; }
+.st__sectionTitle { align-items: center; margin: 24px 0 12px; }
+.st__sectionTitle h3 { margin: 0; font-size: 16px; }
+.st__sectionTitle h3 span { color: #849188; font-weight: 500; }
+.st__sectionTitle button, .st__addRow button { border: 1px solid #b8d3c1; border-radius: 8px; background: #edf8f0; color: #14563b; padding: 8px 11px; font: inherit; font-weight: 700; cursor: pointer; }
+.st__section { min-width: 0; margin-bottom: 13px; padding: 18px; border: 1px solid #dce9df; border-radius: 12px; background: #fbfdfb; }
+.st__section > header { align-items: center; margin-bottom: 18px; }
+.st__actions { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+.st__actions button, .st__mapping > button, .st__conditionRow > button { border: 1px solid #d8e3da; border-radius: 7px; background: white; color: #3f5849; min-width: 30px; min-height: 30px; padding: 5px 8px; font: inherit; cursor: pointer; }
+.st__actions button:disabled, .st__addRow button:disabled { opacity: .4; cursor: default; }
+.st__danger { border: 1px solid #e3c9c4; border-radius: 8px; background: #fff; color: #a3483b; padding: 8px 11px; font: inherit; cursor: pointer; }
+.st__minor { display: block; margin: 15px 0 9px; color: #365646; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; }
+.st__item { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 0; margin: 6px 0; padding: 8px 10px; border: 1px solid #e3ebe4; border-radius: 8px; background: white; }
+.st__itemName { flex: 1; min-width: 0; border: 0; background: transparent; text-align: left; color: #1c4730; font: inherit; font-weight: 700; cursor: pointer; }
+.st__itemName small { display: block; color: #788a7e; font-size: 11px; font-weight: 400; }
+.st__addRow { display: flex; gap: 8px; flex-wrap: wrap; min-width: 0; margin-top: 10px; }
+.st__addRow > :first-child { flex: 1; min-width: 0; }
+.st__mapping { display: grid; grid-template-columns: minmax(80px, 1fr) auto minmax(110px, 1.5fr) auto; gap: 8px; align-items: center; min-width: 0; margin: 8px 0; }
+.st__mapping code { min-width: 0; overflow-wrap: anywhere; font-size: 12px; }
+.st__checks { display: flex; gap: 9px 18px; flex-wrap: wrap; margin: 8px 0 18px; }
+.st__checks label, .st__check { display: inline-flex !important; flex-direction: row !important; align-items: center; gap: 7px; font-size: 13px; font-weight: 500; }
+.st__checks input, .st__check input { accent-color: #1a7047; }
+.st__condition { margin: 14px 0 20px; padding: 14px; border: 1px solid #dfe9e1; border-radius: 10px; background: #f8fbf8; }
+.st__conditionHead { display: flex; gap: 8px; margin-bottom: 12px; font-size: 13px; }
+.st__conditionHead span { color: #798b7f; }
+.st__conditionRow { display: flex; align-items: center; gap: 7px; margin-bottom: 8px; }
+.st__conditionRow select, .st__conditionRow input { flex: 1; }
+.st__conditionRow button { flex: 0 0 auto; }
+.st__inline { display: flex; align-items: center; gap: 8px; margin-bottom: 9px; font-size: 13px; }
+.st__inline select { width: auto; }
+.st__quiet, .st__complex button { border: 0; background: transparent; color: #176a42; padding: 5px 0; font: inherit; font-weight: 700; cursor: pointer; }
+.st__complex p { margin: 0 0 8px; color: #576d5d; font-size: 13px; }
+.st__launch { margin: 14px 13px 6px; padding: 15px; border: 1px solid #d8e8dc; border-radius: 11px; background: #fff; }
+.st__launchTop { display: flex; flex-direction: column; gap: 3px; margin-bottom: 13px; }
+.st__launchTop span { color: #43805a; font-size: 10px; letter-spacing: .1em; font-weight: 800; }
+.st__launchTop strong { font-size: 17px; }
+.st__launchRow { display: flex; align-items: center; gap: 9px; padding: 10px 0; border-top: 1px solid #edf1ed; }
+.st__launchRow > div:nth-child(2) { flex: 1; min-width: 0; }
+.st__launchRow strong { display: block; font-size: 12px; }
+.st__launchRow small { display: block; color: #6b7b70; font-size: 11px; line-height: 1.35; }
+.st__launchMark { display: grid; place-items: center; flex: 0 0 21px; width: 21px; height: 21px; border-radius: 50%; background: #eff3ef; color: #73907b; font-weight: 800; }
+.st__launchMark--ok { background: #dff3e6; color: #11603d; }
+.st__launchMark--wait { background: #fff0da; color: #9c6619; }
+.st__launchActions { display: flex; gap: 5px; }
+.st__launchActions button, .st__launchActions a { border: 0; background: transparent; color: #176a42; padding: 4px; font: inherit; font-size: 11px; font-weight: 700; text-decoration: underline; cursor: pointer; }
+.st__launchActions button:disabled { opacity: .5; cursor: default; }
+.st__launch > p { margin: 12px 0 0; color: #6b7b70; font-size: 11px; line-height: 1.5; }
+@media (max-width: 720px) {
+  .st__pair { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .st__head { flex-wrap: wrap; }
+  .st__section { padding: 14px; }
+  .st__conditionRow { flex-wrap: wrap; }
+  .st__conditionRow select, .st__conditionRow input { flex: 1 1 44%; }
+  .st__mapping { grid-template-columns: minmax(70px, 1fr) auto minmax(95px, 1fr) auto; }
+}
