@@ -871,7 +871,7 @@ export function Builder() {
   }
 
   return (
-    <div className="bd">
+    <div className="bd" data-rule-focus={tab === 'rules' && ruleFocusIndex !== null ? 'true' : undefined}>
       <a className="skip-link" href="#builder-main">
         Skip to the editor
       </a>

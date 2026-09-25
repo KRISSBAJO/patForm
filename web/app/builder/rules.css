@@ -502,6 +502,9 @@
 .rl__stageHead h3 { margin: 0; color: #203d2a; font-size: 15px; font-weight: 650; letter-spacing: -.015em; }
 .rl__stageHead p { margin: 3px 0 0; color: #6a7b6f; font-size: 11.5px; line-height: 1.45; }
 .rl__stage .rl__row { gap: 10px; margin-bottom: 0; }
+.rl__control { display: grid; flex: 1 1 270px; gap: 6px; min-width: 0; }
+.rl__control > span { color: #405e4a; font-size: 11.5px; font-weight: 600; }
+.rl__control .bd__choiceMenu { width: 100%; max-width: none; }
 .rl__stage .rl__row--condition { padding-bottom: 0; border: 0; }
 .rl__stage .rl__word { color: #5f7466; font-size: 12px; }
 .rl__stage .bd__choiceMenu { flex: 0 1 440px; max-width: 100%; }
@@ -512,6 +515,8 @@
 .rl__stage .rl__actions > .rl__word { display: none; }
 .rl__stage .rl__actionList { gap: 9px; }
 .rl__stage .rl__action { padding: 11px; border: 1px solid #e1eae3; border-radius: 9px; background: #f8fbf8; }
+.rl__stage .rl__action .bd__choiceMenu { flex: 1 1 220px; }
+.rl__stage .rl__row--condition .bd__choiceMenu { flex: 1 1 260px; }
 .rl__stage .rl__actionList > .bd__btn { align-self: start; min-height: 38px; border-style: dashed; color: #245f3d; }
 .rl--detail .rl__diagnostics { margin-top: 16px; padding: 15px 18px 15px 32px; border: 1px solid #f0c8bb; border-radius: 9px; background: #fff8f4; }
 @media (max-width: 640px) {

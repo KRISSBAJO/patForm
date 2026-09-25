@@ -394,3 +394,11 @@
 .bd__body[data-rule-focus='true'] > .sp { display: none; }
 .bd .bd__body[data-rule-focus='true'] .bd__editor { grid-column: 1; background-color: #f6faf7; }
 .bd .bd__body[data-rule-focus='true'] .bd__editor > .bd__freeze { width: min(100%, 900px); padding: 0; border: 0; background: transparent; box-shadow: none; }
+.bd[data-rule-focus='true'] .bd__head { display: flex; align-items: center; gap: 18px; min-height: 66px; padding: 10px 23px; }
+.bd[data-rule-focus='true'] .bd__title { font-size: 17px; }
+.bd[data-rule-focus='true'] .bd__headIdentity .bd__formLink,
+.bd[data-rule-focus='true'] .bd__headSearch,
+.bd[data-rule-focus='true'] .bd__actions,
+.bd[data-rule-focus='true'] .bd__journey { display: none; }
+.bd[data-rule-focus='true'] .bd__headMetrics { width: auto; margin: 0 0 0 auto; border: 0; padding: 0; }
+@media (max-width: 640px) { .bd[data-rule-focus='true'] .bd__headMetrics { display: none; } }

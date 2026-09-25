@@ -72,6 +72,8 @@ const TRIGGERS = [
 ];
 
 const ACTIONS = [
+  { do: 'set_state', label: 'Set record status' },
+  { do: 'set_reference', label: 'Create a reference number' },
   { do: 'send_email', label: 'Send an email' },
   { do: 'request_approval', label: 'Ask somebody to decide' },
   { do: 'create_task', label: 'Create a task' },
@@ -486,7 +488,8 @@ function Rule({
       <section className="rl__stage">
         <div className="rl__stageHead"><span>01</span><div><h3>What starts this rule?</h3><p>Select the event the process waits for.</p></div></div>
       <div className="rl__row">
-        <ChoiceMenu label="Event that starts this rule" value={on} groups={[{ label: 'Events', options: TRIGGERS.map((t) => ({ value: t.on, label: t.label })) }]} onChange={changeTrigger} />
+        <div className="rl__control"><span>While the record is</span><ChoiceMenu label="Starting status" value={transition.from} groups={[{ label: 'Statuses', options: ctx.states.map((s) => ({ value: s.key, label: s.name, detail: s.type })) }]} onChange={(from) => set({ from })} /></div>
+        <div className="rl__control"><span>When this happens</span><ChoiceMenu label="Event that starts this rule" value={on} groups={[{ label: 'Events', options: TRIGGERS.map((t) => ({ value: t.on, label: t.label })) }]} onChange={changeTrigger} /></div>
 
         {on === 'approval_decided' && (
           <>
@@ -815,6 +818,10 @@ function Actions({
                     i,
                     next === 'send_email'
                       ? { do: next, key, template: ctx.templates[0]?.key ?? '' }
+                      : next === 'set_state'
+                        ? { do: next, key, state: ctx.states[0]?.key ?? '' }
+                      : next === 'set_reference'
+                        ? { do: next, key, field: ctx.fields.find((f) => f.type === 'short_text')?.key ?? ctx.fields[0]?.key ?? '', prefix: '' }
                       : next === 'request_approval'
                         ? { do: next, key, approval: ctx.approvals[0]?.key ?? '' }
                         : next === 'create_task'
@@ -829,6 +836,17 @@ function Actions({
                   );
                 }}
               />
+
+              {kind === 'set_state' && (
+                <ChoiceMenu label="Status to set" value={String(action.state ?? '')} groups={[{ label: 'Statuses', options: ctx.states.map((s) => ({ value: s.key, label: s.name })) }]} onChange={(state) => setAt(i, { ...action, state })} />
+              )}
+
+              {kind === 'set_reference' && (
+                <>
+                  <ChoiceMenu label="Reference field" value={String(action.field ?? '')} groups={[{ label: 'Fields', options: ctx.fields.map((f) => ({ value: f.key, label: f.label })) }]} onChange={(field) => setAt(i, { ...action, field })} />
+                  <input className="bd__input" aria-label="Reference prefix" placeholder="Prefix, e.g. PRJ-" value={String(action.prefix ?? '')} onChange={(e) => setAt(i, { ...action, prefix: e.target.value.toUpperCase() })} />
+                </>
+              )}
 
               {kind === 'send_email' && (
                 <select
