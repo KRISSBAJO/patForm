@@ -9,7 +9,8 @@
  * a memory test, and this is a page where somebody approves things.
  *
  * `aria-hidden`, always. The button's text is the accessible name; an icon
- * that also announces itself reads the label twice.
+ * that also announces itself reads the label twice. Icon-only buttons provide
+ * their own accessible label and title at the call site.
  */
 
 export type IconName =
@@ -25,6 +26,8 @@ export type IconName =
   | 'search'
   | 'sort'
   | 'filter'
+  | 'copy'
+  | 'note'
   | 'account'
   | 'logout';
 
@@ -43,6 +46,10 @@ export function Icon({ name }: { name: IconName }) {
   };
 
   switch (name) {
+    case 'copy':
+      return <svg {...p}><rect x="5.2" y="4.8" width="8" height="8.2" rx="1.2" /><path d="M10.7 4.8V3.7a1 1 0 0 0-1-1H3.5a1 1 0 0 0-1 1v6.2a1 1 0 0 0 1 1h1.7" /></svg>;
+    case 'note':
+      return <svg {...p}><path d="M3 2.5h10v8.2L10.2 13H3z" /><path d="M5.2 5.2h5.5M5.2 7.7h5.5M10.2 13v-2.3H13" /></svg>;
     case 'account':
       return (
         <svg {...p}>

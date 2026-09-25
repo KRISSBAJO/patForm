@@ -5113,3 +5113,48 @@ a.cs__navItem {
   .rc__toolbar { padding: 12px; }
   .rc__tableFoot { padding: 12px 18px; }
 }
+
+/* Record detail: keep the working document and its context in a flexible pair. */
+.rc__body { display: flex; align-items: flex-start; gap: 18px; }
+.rc__answers.cs__panel { flex: 1 1 0; min-width: 0; }
+.rc__side { flex: 0 0 258px; display: flex; flex-direction: column; gap: 12px; }
+.rc__head { min-height: 0; padding: 20px 25px; border-radius: 11px; background: #f6faf7; }
+.rc__head .rc__state { font-size: 22px; }
+.rc__tableIntro { padding: 18px 21px 14px; }
+.rc__tableIntro h3 { font-size: 16px; }
+.rc__toolbar { padding: 10px 14px; }
+.rc__answerTable { min-width: 620px; }
+.rc__answerTable thead th { padding: 10px 17px; font-size: 9px; }
+.rc__answerTable thead th:first-child { width: 31%; }
+.rc__answerTable thead th:nth-child(3) { width: 16%; }
+.rc__answerTable thead th:last-child { width: 10%; }
+.rc__answerTable .rc__field > th, .rc__answerTable .rc__field > td { padding: 12px 17px; }
+.rc__answerTable .rc__field:nth-child(even) { background: #fff; }
+.rc__answerTable .rc__field:hover { background: #f8fbf8; }
+.rc__answerTable .rc__label { color: #526258; font-size: 11.5px; font-weight: 500; }
+.rc__answerTable .rc__value { font-size: 12px; font-weight: 550; }
+.rc__rowActions { vertical-align: middle !important; }
+.rc__rowActions .rc__iconButton { display: inline-grid; place-items: center; width: 27px; height: 27px; margin: 0; padding: 0; border-color: transparent; border-radius: 6px; color: #536b5b; }
+.rc__rowActions .rc__iconButton:hover, .rc__rowActions .rc__iconButton:focus-visible { border-color: #b9d2c0; background: #edf7f0; color: #155f3d; }
+.rc__rowActions .rc__iconButton .cs__icon { width: 14px; height: 14px; margin: 0; }
+.rc__sidePanel { padding: 18px; border-radius: 10px; box-shadow: none; }
+.rc__noteComposer { display: grid; gap: 11px; max-width: 790px; padding: 20px; border: 1px solid #b9d7c2; border-radius: 11px; background: #f8fcf9; }
+.rc__noteComposer h3 { margin: 0; font: 650 14px var(--ui); }
+.rc__noteComposer p { margin: 4px 0 0; color: var(--muted); font-size: 11.5px; }
+.rc__noteComposer textarea { width: 100%; box-sizing: border-box; padding: 11px 12px; border: 1px solid #cbdccf; border-radius: 7px; background: #fff; color: var(--ink); font: 12px/1.5 var(--ui); resize: vertical; }
+.rc__noteComposer textarea:focus { outline: 2px solid #90c5a2; outline-offset: 1px; }
+.rc__noteComposerActions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+.rc__noteComposerActions span { margin-right: auto; color: var(--muted); font-size: 10px; }
+.rc__notesHead { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.rc__notesHead strong { color: var(--ink); font-size: 11.5px; }
+.rc__notesHead > span { display: grid; place-items: center; min-width: 20px; height: 20px; padding: 0 4px; border-radius: 5px; background: #edf5ef; color: #24583b; font-size: 10px; font-weight: 700; }
+.rc__notesSection { margin-top: 15px; padding-top: 13px; border-top: 1px solid #e6ece7; }
+.rc__notesEmpty { font-size: 11.5px; line-height: 1.5; }
+.rc__notesList { display: grid; gap: 11px; max-height: 350px; margin-top: 12px; overflow-y: auto; }
+.rc__notesList article { padding-top: 10px; border-top: 1px solid #e6ece7; }
+.rc__notesList article p { margin: 0; color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; }
+.rc__notesList article small { display: block; margin-top: 6px; color: var(--muted); font-size: 10px; }
+.rc__sidePanel .rc__noteLink { display: inline-flex; align-items: center; gap: 6px; margin-top: 13px; padding: 0; border: 0; background: none; color: var(--green-deep); font: 650 11px var(--ui); cursor: pointer; }
+.rc__noteLink:hover { text-decoration: underline; }
+@media (max-width: 1120px) { .rc__body { flex-direction: column; } .rc__answers.cs__panel, .rc__side { width: 100%; flex: none; } .rc__side { flex-direction: row; } .rc__sidePanel { flex: 1 1 0; } }
+@media (max-width: 680px) { .rc__side { flex-direction: column; } .rc__answerTable { min-width: 600px; } }

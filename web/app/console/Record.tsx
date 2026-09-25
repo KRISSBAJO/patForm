@@ -32,6 +32,8 @@ export interface RecordDetail {
   stateType?: string;
   completedAt?: string | null;
   viewerRoles: string[];
+  canAddNote?: boolean;
+  notes?: { id: number; text: string; actor: string | null; createdAt: string }[];
   fields: {
     key: string;
     label: string;
@@ -124,6 +126,10 @@ export function RecordPage({
   const [editableFields, setEditableFields] = useState<string[]>([]);
   const [hasRecordActions, setHasRecordActions] = useState(false);
   const [copyStatus, setCopyStatus] = useState('');
+  const [noteOpen, setNoteOpen] = useState(false);
+  const [noteText, setNoteText] = useState('');
+  const [noteBusy, setNoteBusy] = useState(false);
+  const [noteError, setNoteError] = useState('');
   // A majority vote reads as a vote: "Vote for", "Vote against".
   const voting = approval?.progress?.of !== undefined;
 
@@ -150,6 +156,26 @@ export function RecordPage({
     const term = query.trim().toLocaleLowerCase();
     return !term || `${f.label} ${f.key} ${f.value === '[redacted]' ? '' : f.text ?? (typeof f.value === 'string' ? f.value : '')}`.toLocaleLowerCase().includes(term);
   });
+  const saveNote = async () => {
+    if (!noteText.trim() || noteBusy) return;
+    setNoteBusy(true);
+    setNoteError('');
+    try {
+      const response = await fetch(`/api/records/${record.instanceId}/notes`, {
+        method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: noteText.trim() }),
+      });
+      if (!response.ok) {
+        const result = await response.json().catch(() => ({}));
+        throw new Error(result.error ?? 'The note could not be saved.');
+      }
+      setNoteText('');
+      setNoteOpen(false);
+      onActionDone();
+    } catch (error) {
+      setNoteError(error instanceof Error ? error.message : 'The note could not be saved.');
+    } finally { setNoteBusy(false); }
+  };
 
   return (
     <div className="rc">
@@ -168,6 +194,7 @@ export function RecordPage({
           <Icon name="table" />
           Export CSV
         </button>
+        {record.canAddNote && <button type="button" className="cs__btn" onClick={() => setNoteOpen((open) => !open)} aria-expanded={noteOpen} aria-controls="record-note-form"><Icon name="note" /> Add note</button>}
         {!isFinished && hasRecordActions && <button type="button" className="cs__btn cs__btn--primary" onClick={() => setActions({ kind: '', field: '' })}>Take action</button>}
       </div>
 
@@ -181,6 +208,14 @@ export function RecordPage({
         </div>
         <span className="rc__statePill"><span aria-hidden="true" />{record.stateName}</span>
       </header>
+
+      {noteOpen && record.canAddNote && <section id="record-note-form" className="rc__noteComposer" aria-label="Add a note to this record">
+        <div><h3>Add a record note</h3><p>Notes are saved with the record and visible to people who can operate this process.</p></div>
+        <label className="vw__srOnly" htmlFor="record-note-text">Record note</label>
+        <textarea id="record-note-text" value={noteText} onChange={(event) => setNoteText(event.target.value)} maxLength={2000} rows={3} placeholder="Write a short update or handover note…" />
+        {noteError && <p className="fm__error" role="alert">{noteError}</p>}
+        <div className="rc__noteComposerActions"><span>{noteText.length} / 2,000</span><button type="button" className="cs__btn" onClick={() => setNoteOpen(false)}>Cancel</button><button type="button" className="cs__btn cs__btn--primary" disabled={!noteText.trim() || noteBusy} onClick={saveNote}>{noteBusy ? 'Saving…' : 'Save note'}</button></div>
+      </section>}
 
       {/*
         * The decision, above everything.
@@ -384,7 +419,7 @@ export function RecordPage({
                     </span>
                   </td>
                   <td><span className={`rc__class rc__class--${f.classification}`} title={classOf(f.classification).long}>{classOf(f.classification).short}</span></td>
-                  <td className="rc__rowActions">{!isFinished && editableFields.includes(f.key) && <button type="button" onClick={() => setActions({ kind: 'set_answer', field: f.key })}>Edit</button>}{!conceal && f.value !== '[redacted]' && (typeof f.value === 'string' || typeof f.value === 'number' || typeof f.value === 'boolean') && <button type="button" onClick={async () => { try { await navigator.clipboard.writeText(f.text ?? String(f.value)); setCopyStatus(`${f.label} copied to clipboard.`); } catch { setCopyStatus('Clipboard access was unavailable.'); } }}>Copy</button>}</td>
+                  <td className="rc__rowActions">{!isFinished && editableFields.includes(f.key) && <button type="button" onClick={() => setActions({ kind: 'set_answer', field: f.key })}>Edit</button>}{!conceal && f.value !== '[redacted]' && (typeof f.value === 'string' || typeof f.value === 'number' || typeof f.value === 'boolean') && <button type="button" className="rc__iconButton" aria-label={`Copy ${f.label}`} title={`Copy ${f.label}`} onClick={async () => { try { await navigator.clipboard.writeText(f.text ?? String(f.value)); setCopyStatus(`${f.label} copied to clipboard.`); } catch { setCopyStatus('Clipboard access was unavailable.'); } }}><Icon name="copy" /></button>}</td>
                 </tr>
               ))}
           </tbody></table></div>
@@ -394,7 +429,8 @@ export function RecordPage({
 
         <div className="rc__side">
           <section className="rc__sidePanel rc__sidePanel--next"><span className="rc__eyebrow">CURRENT OUTCOME</span><h2>What happens next</h2><p>{record.nextAction}</p></section>
-          <section className="rc__sidePanel rc__sidePanel--history"><span className="rc__eyebrow">ACTIVITY</span><h2>Record history</h2><p>Events, decisions, and delivery attempts in order.</p>
+          <section className="rc__sidePanel rc__sidePanel--history"><span className="rc__eyebrow">ACTIVITY</span><h2>Record history</h2>
+            {record.canAddNote && <div className="rc__notesSection"><div className="rc__notesHead"><strong>Notes</strong><span>{record.notes?.length ?? 0}</span></div>{record.notes?.length ? <div className="rc__notesList">{record.notes.map((note) => <article key={note.id}><p>{note.text}</p><small>{note.actor ?? 'Workspace member'} · {new Date(note.createdAt).toLocaleString()}</small></article>)}</div> : <p className="rc__notesEmpty">No notes yet.</p>}<button type="button" className="rc__noteLink" onClick={() => { setNoteOpen(true); window.scrollTo({ top: 0, behavior: 'smooth' }); }}><Icon name="note" /> Add note</button></div>}
             <button type="button" className="cs__btn" aria-expanded={showTrail} aria-controls="record-trail" onClick={() => setShowTrail((w) => !w)}>
               <Icon name={showTrail ? 'hide' : 'trail'} />
               {showTrail ? 'Hide history' : 'Show history'}

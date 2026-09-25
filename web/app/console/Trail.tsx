@@ -146,7 +146,7 @@ export function RecordTrail({ instanceId }: { instanceId: string }) {
         {trace.steps.map((step) => (
           <li key={`${step.eventId}-${step.seq}`} className="tr__step">
             <div className="tr__stepHead">
-              <span className="tr__type">{step.type}</span>
+              <span className="tr__type">{step.type === 'record_note_added' ? 'Note added' : step.type}</span>
               <span className="tr__when">{new Date(step.occurredAt).toLocaleString()}</span>
             </div>
             <div className="tr__meta">

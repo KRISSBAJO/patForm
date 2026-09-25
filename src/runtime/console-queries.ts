@@ -3,6 +3,7 @@ import { answerText } from '../blueprint/display.js';
 import type { Client, Pool } from './db.js';
 import { inTransaction } from './db.js';
 import { authorize, redact, require_, type Principal } from './policy.js';
+import { currentRequestId } from './trace.js';
 
 /**
  * The reads behind the operator console.
@@ -375,14 +376,21 @@ export async function recordDetail(pool: Pool, principal: Principal, instanceId:
 
     const visible = redact(bp, decision.roles, instance.data, decision.workspaceRole);
     const state = bp.workflow.states.find((s) => s.key === instance.state);
+    const canAddNote = principal.kind === 'actor' && (await authorize(client, {
+      principal, action: 'operate', tenantId: instance.tenant_id,
+      processKey: instance.process_key, blueprint: bp, instanceId,
+    })).allowed;
 
-    const [events, approvals, tasks, emails, documents] = await Promise.all([
-      client.query('select seq, type, payload, actor, occurred_at from event where instance_id = $1 order by seq desc', [instanceId]),
-      client.query('select approval_key, approvers, status, decision, decided_by, decided_at, reason, due_at from approval_request where instance_id = $1 order by id', [instanceId]),
-      client.query('select task_key, assignee, status, due_at, completed_at, completed_by from task where instance_id = $1 order by id', [instanceId]),
-      client.query('select template_key, recipients, subject, status, sent_at from email_log where instance_id = $1 order by id', [instanceId]),
-      client.query('select document_key, filename, checksum, created_at from document where instance_id = $1 order by id', [instanceId]),
-    ]);
+    const events = await client.query('select seq, type, payload, actor, occurred_at from event where instance_id = $1 order by seq desc', [instanceId]);
+    const approvals = await client.query('select approval_key, approvers, status, decision, decided_by, decided_at, reason, due_at from approval_request where instance_id = $1 order by id', [instanceId]);
+    const tasks = await client.query('select task_key, assignee, status, due_at, completed_at, completed_by from task where instance_id = $1 order by id', [instanceId]);
+    const emails = await client.query('select template_key, recipients, subject, status, sent_at from email_log where instance_id = $1 order by id', [instanceId]);
+    const documents = await client.query('select document_key, filename, checksum, created_at from document where instance_id = $1 order by id', [instanceId]);
+    const notes = canAddNote ? await client.query<{ seq: number; text: string; actor_name: string | null; occurred_at: Date }>(
+        `select e.seq, e.payload->>'text' as text, a.display_name as actor_name, e.occurred_at
+           from event e left join actor a on e.actor = 'actor:' || a.id::text and a.tenant_id = e.tenant_id
+          where e.instance_id = $1 and e.type = 'record_note_added' order by e.seq desc`, [instanceId],
+      ) : { rows: [] };
 
     /*
      * What the record is waiting for, in words — and "in words" has to include
@@ -447,13 +455,47 @@ export async function recordDetail(pool: Pool, principal: Principal, instanceId:
               : {}),
           };
         }),
-      events: events.rows,
+      events: events.rows.filter((event) => canAddNote || event.type !== 'record_note_added'),
+      notes: notes.rows.map((note) => ({ id: note.seq, text: note.text, actor: note.actor_name,
+        createdAt: note.occurred_at.toISOString() })),
+      canAddNote,
       approvals: approvals.rows,
       tasks: tasks.rows,
       emails: emails.rows,
       documents: documents.rows,
       viewerRoles: decision.roles,
     };
+  });
+}
+
+/** An operator note is append-only record history, including on a finished record. */
+export async function addRecordNote(pool: Pool, principal: Principal, instanceId: string, rawText: unknown) {
+  if (typeof rawText !== 'string' || !rawText.trim() || rawText.trim().length > 2000) {
+    throw new Error('Note must contain 1 to 2,000 characters');
+  }
+  if (principal.kind !== 'actor') throw new Error('Only workspace members may add record notes');
+  const text = rawText.trim();
+  return inTransaction(pool, async (client) => {
+    const { rows } = await client.query<{ tenant_id: string; process_key: string; process_version_id: string }>(
+      'select tenant_id, process_key, process_version_id from instance where id = $1 for update', [instanceId],
+    );
+    const instance = rows[0];
+    if (!instance) throw new Error('no such record');
+    const { rows: versions } = await client.query<{ blueprint: Blueprint }>(
+      'select blueprint from process_version where id = $1', [instance.process_version_id],
+    );
+    await require_(client, {
+      principal, action: 'operate', tenantId: instance.tenant_id,
+      processKey: instance.process_key, blueprint: versions[0]!.blueprint, instanceId,
+    }, pool);
+    const now = new Date();
+    await client.query(
+      `insert into event (tenant_id, instance_id, seq, type, payload, actor, request_id, occurred_at)
+       values ($1, $2, (select coalesce(max(seq), 0) + 1 from event where instance_id = $2),
+               'record_note_added', $3, $4, $5, $6)`,
+      [instance.tenant_id, instanceId, JSON.stringify({ text }), `actor:${principal.actorId}`, currentRequestId(), now],
+    );
+    return { saved: true };
   });
 }
 

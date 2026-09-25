@@ -5,6 +5,7 @@ import { changePlatformPerson, grantPlatformOperator, platformAudit, platformInt
   renamePlatformWorkspace, retryPlatformJob, revokePlatformApiKey, revokePlatformOperator, revokePlatformSessions,
   setPlatformIntakePaused, setPlatformWebhookActive, platformTrace } from '../runtime/platform-admin.js';
 import { Engine } from '../runtime/engine.js';
+import { addRecordNote } from '../runtime/console-queries.js';
 import { aiDraftStatus, applyAiRevision, queueAiDraft, queueAiRevision } from '../runtime/ai-drafts.js';
 import { AuthorizationError, requireWorkspaceCapability, WORKSPACE_GRANTS, type Principal } from '../runtime/policy.js';
 import type { Capability } from '../blueprint/roles.js';
@@ -1113,6 +1114,15 @@ route('GET', /^\/api\/records$/, async ({ engine, principal, url }) => {
 route('GET', /^\/api\/records\/([0-9a-f-]{36})$/, async ({ engine, principal, url }) => {
   const id = url.pathname.split('/').pop()!;
   return engine.recordDetail(principal, id);
+});
+
+route('POST', /^\/api\/records\/([0-9a-f-]{36})\/notes$/, async ({ pool, principal, url }, body) => {
+  const id = url.pathname.split('/')[3]!;
+  const text = (body as { text?: unknown } | undefined)?.text;
+  if (typeof text !== 'string' || !text.trim() || text.trim().length > 2000) {
+    throw new HttpError(400, 'Note must contain 1 to 2,000 characters');
+  }
+  return addRecordNote(pool, principal, id, text);
 });
 
 route('GET', /^\/api\/records\/([0-9a-f-]{36})\/receipts\/([0-9a-f-]{36})$/, async ({ pool, principal, url }) => {
