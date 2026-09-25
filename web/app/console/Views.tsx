@@ -1467,20 +1467,26 @@ function answerValue(field: BulkField | undefined, raw: string): string | number
  * every record, because "done" over eleven rows where four were skipped is a
  * claim, not a report.
  */
-function BulkBar({
+export function BulkBar({
   processKey,
   selected,
   onClear,
   onDone,
+  initialKind = '',
+  initialField = '',
+  singleRecord = false,
 }: {
   processKey: string;
   selected: Map<string, string>;
   onClear: () => void;
   onDone: () => void;
+  initialKind?: BulkKind | '';
+  initialField?: string;
+  singleRecord?: boolean;
 }) {
   const [options, setOptions] = useState<BulkOptions | null>(null);
-  const [kind, setKind] = useState<BulkKind | ''>('');
-  const [choice, setChoice] = useState('');
+  const [kind, setKind] = useState<BulkKind | ''>(initialKind);
+  const [choice, setChoice] = useState(initialField);
   const [task, setTask] = useState('');
   const [answer, setAnswer] = useState('');
   const [listMode, setListMode] = useState<ListMode>('add');
@@ -1542,7 +1548,7 @@ function BulkBar({
       }>('/api/copilot/run', {
         plan: { processKey, filters: [{ kind: 'records', ids: [...selected.keys()] }], limit: 200 },
         action,
-        label: `bulk action on ${selected.size} selected record${selected.size === 1 ? '' : 's'}`,
+        label: selected.size === 1 ? `action on record ${[...selected.values()][0]}` : `bulk action on ${selected.size} selected records`,
       });
       if (!out.ok || !out.preview || !out.runId) {
         setProblem(out.diagnostics.map((d) => d.message).join(' ') || 'That cannot run.');
@@ -1580,7 +1586,7 @@ function BulkBar({
     <section className="bk" aria-label="Act on the selected records">
       <div className="bk__bar">
         <strong className="bk__count">
-          {selected.size} selected
+          {singleRecord ? 'This record' : `${selected.size} selected`}
         </strong>
         <label className="bk__field">
           <span className="cs__srOnly">What to do</span>
@@ -1595,7 +1601,7 @@ function BulkBar({
               setReport(null);
             }}
           >
-            <option value="">Do something to them…</option>
+            <option value="">{singleRecord ? 'Choose a record action…' : 'Do something to them…'}</option>
             <option value="send_reminder" disabled={!options?.templates.length}>
               Send a message
             </option>
@@ -1759,7 +1765,7 @@ function BulkBar({
           {busy && !preview ? 'Checking…' : 'Preview'}
         </button>
         <button type="button" className="bk__clear" onClick={onClear}>
-          Clear selection
+          {singleRecord ? 'Close actions' : 'Clear selection'}
         </button>
       </div>
 

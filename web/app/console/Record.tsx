@@ -14,8 +14,9 @@
  * page.
  */
 
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { RecordTrail } from './Trail';
+import { BulkBar } from './Views';
 import { Icon } from './Icon';
 import { answer, who } from './format';
 import { isSignature, SignatureView } from '../../components/signature-field';
@@ -28,6 +29,8 @@ export interface RecordDetail {
   version: number;
   stateName: string;
   nextAction: string;
+  stateType?: string;
+  completedAt?: string | null;
   viewerRoles: string[];
   fields: {
     key: string;
@@ -94,6 +97,7 @@ export function RecordPage({
   onDecide,
   onCompleteTask,
   onExport,
+  onActionDone,
 }: {
   record: RecordDetail;
   /** Set when this record is waiting on a decision from whoever is signed in. */
@@ -106,18 +110,46 @@ export function RecordPage({
   onDecide: (instanceId: string, approvalKey: string, decision: 'approved' | 'rejected' | 'changes_requested', reason: string) => void;
   onCompleteTask: (instanceId: string, taskKey: string, answers: Record<string, string>) => void;
   onExport: (instanceId: string, reference: string, format: 'json' | 'csv') => void;
+  onActionDone: () => void;
 }) {
   const [showTrail, setShowTrail] = useState(false);
   const [reason, setReason] = useState('');
   const [decisionMode, setDecisionMode] = useState<'rejected' | 'changes_requested' | null>(null);
   const [completionAnswers, setCompletionAnswers] = useState<Record<string, string>>({});
   const [receiptError, setReceiptError] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
+  const [classification, setClassification] = useState('all');
+  const [conceal, setConceal] = useState(false);
+  const [actions, setActions] = useState<{ kind: 'set_answer' | ''; field: string } | null>(null);
+  const [editableFields, setEditableFields] = useState<string[]>([]);
+  const [hasRecordActions, setHasRecordActions] = useState(false);
+  const [copyStatus, setCopyStatus] = useState('');
   // A majority vote reads as a vote: "Vote for", "Vote against".
   const voting = approval?.progress?.of !== undefined;
 
   const working = busy !== null;
   const shown = record.fields.filter((f) => f.value !== '[redacted]');
   const hidden = record.fields.length - shown.length;
+  const selectedRecord = useMemo(() => new Map([[record.instanceId, record.reference]]), [record.instanceId, record.reference]);
+  const isFinished = record.stateType === 'terminal' || Boolean(record.completedAt);
+  useEffect(() => {
+    if (isFinished) return;
+    let live = true;
+    fetch(`/api/bulk/options?process=${encodeURIComponent(record.processKey)}`, { credentials: 'same-origin' })
+      .then(async (response) => response.ok ? response.json() : null)
+      .then((options: { fields?: { key: string }[]; templates?: unknown[]; tasks?: unknown[]; moveTargets?: unknown[] } | null) => {
+        if (!live || !options) return;
+        setEditableFields(options.fields?.map((field) => field.key) ?? []);
+        setHasRecordActions(Boolean(options.fields?.length || options.templates?.length || options.tasks?.length || options.moveTargets?.length));
+      }).catch(() => {});
+    return () => { live = false; };
+  }, [record.processKey, isFinished]);
+  const classes = ['all', ...['public', 'internal', 'confidential', 'restricted'].filter((key) => record.fields.some((f) => f.classification === key))];
+  const filteredFields = record.fields.filter((f) => {
+    if (classification !== 'all' && f.classification !== classification) return false;
+    const term = query.trim().toLocaleLowerCase();
+    return !term || `${f.label} ${f.key} ${f.value === '[redacted]' ? '' : f.text ?? (typeof f.value === 'string' ? f.value : '')}`.toLocaleLowerCase().includes(term);
+  });
 
   return (
     <div className="rc">
@@ -136,16 +168,18 @@ export function RecordPage({
           <Icon name="table" />
           Export CSV
         </button>
+        {!isFinished && hasRecordActions && <button type="button" className="cs__btn cs__btn--primary" onClick={() => setActions({ kind: '', field: '' })}>Take action</button>}
       </div>
 
       <header className="rc__head">
         <div>
-          <span className="rc__eyebrow">CURRENT STATE</span>
-          <h2 className="rc__state">{record.stateName}</h2>
+          <span className="rc__eyebrow">{record.processName.toUpperCase()} · VERSION {record.version}</span>
+          <h2 className="rc__state">Submission answers</h2>
           <p className="rc__meta">
-            {record.processName} · Version {record.version} · Viewing as {record.viewerRoles.map((role) => role.replace(/_/g, ' ')).join(', ') || 'a workspace member'}
+            {record.fields.length} recorded {record.fields.length === 1 ? 'field' : 'fields'} · Viewing as {record.viewerRoles.map((role) => role.replace(/_/g, ' ')).join(', ') || 'a workspace member'}
           </p>
         </div>
+        <span className="rc__statePill"><span aria-hidden="true" />{record.stateName}</span>
       </header>
 
       {/*
@@ -283,26 +317,24 @@ export function RecordPage({
       )}
 
       <div className="rc__body">
-        <div className="rc__answers">
-          <div className="cs__panel">
-            <div className="cs__panelHead rc__answerHead">
-              <div><span className="rc__eyebrow">SUBMISSION</span><h2 className="cs__tab">Answers</h2></div>
-              <span className="cs__sort">{hidden > 0 ? `${hidden} ${hidden === 1 ? 'answer is' : 'answers are'} hidden from your role` : `${shown.length} ${shown.length === 1 ? 'answer' : 'answers'}`}</span>
-            </div>
-            <dl className="rc__fields">
-              {record.fields.map((f) => (
-                /*
-                  * The chip lives inside the <dd>, not beside it. A <div> in a
-                  * <dl> may hold a dt/dd pair and nothing else — a third
-                  * element makes the whole list malformed, and a screen reader
-                  * then has no reliable pairing between any label and any
-                  * value on the page.
-                  */
-                <div className="rc__field" key={f.key}>
-                  <dt className="rc__label">{f.label}</dt>
-                  <dd className="rc__value">
+        <div className="rc__answers cs__panel">
+          <div className="rc__tableIntro"><div><span className="rc__eyebrow">RECORDED RESPONSES</span><h3>Fields and answers</h3></div><span>{hidden > 0 ? `${hidden} hidden from your role` : `${shown.length} visible answers`}</span></div>
+          <div className="rc__toolbar">
+            <label className="rc__search"><Icon name="search"/><span className="vw__srOnly">Search fields and answers</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search fields and answers" type="search" /></label>
+            <div className="rc__filters" role="group" aria-label="Filter by classification">{classes.map((key) => <button key={key} type="button" className={classification === key ? 'rc__filter rc__filter--active' : 'rc__filter'} aria-pressed={classification === key} onClick={() => setClassification(key)}>{key === 'all' ? 'All' : classOf(key).short}<span>{key === 'all' ? record.fields.length : record.fields.filter((f) => f.classification === key).length}</span></button>)}</div>
+            <button className="rc__conceal" type="button" aria-pressed={conceal} onClick={() => setConceal((value) => !value)}><Icon name={conceal ? 'hide' : 'open'}/>{conceal ? 'Show sensitive values' : 'Hide sensitive values'}</button>
+          </div>
+          {copyStatus && <p className="rc__copyStatus" role="status">{copyStatus}</p>}
+          {actions && <BulkBar key={`${actions.kind}:${actions.field}`} processKey={record.processKey} selected={selectedRecord} initialKind={actions.kind} initialField={actions.field} singleRecord onClear={() => setActions(null)} onDone={() => { setActions(null); onActionDone(); }} />}
+          <div className="rc__tableScroll"><table className="rc__answerTable"><thead><tr><th scope="col">Field or question</th><th scope="col">Submitted value</th><th scope="col">Classification</th><th scope="col">Actions</th></tr></thead><tbody>
+              {filteredFields.map((f) => (
+                <tr className="rc__field" key={f.key}>
+                  <th scope="row" className="rc__label">{f.label}</th>
+                  <td className="rc__value">
                     <span className="rc__valueText">
-                      {f.value === '[redacted]' ? (
+                      {conceal && (f.classification === 'confidential' || f.classification === 'restricted') && f.value !== '[redacted]' ? (
+                        <span className="rc__concealed">Concealed on this screen</span>
+                      ) : f.value === '[redacted]' ? (
                         <span className="cs__redacted">hidden from your role</span>
                       ) : isSignature(f.value) ? (
                         <SignatureView value={f.value} />
@@ -350,15 +382,17 @@ export function RecordPage({
                         (answer(f.value) ?? <span className="rc__blank">not answered</span>)
                       )}
                     </span>
-                    <span className={`rc__class rc__class--${f.classification}`} title={classOf(f.classification).long}>{classOf(f.classification).short}</span>
-                  </dd>
-                </div>
+                  </td>
+                  <td><span className={`rc__class rc__class--${f.classification}`} title={classOf(f.classification).long}>{classOf(f.classification).short}</span></td>
+                  <td className="rc__rowActions">{!isFinished && editableFields.includes(f.key) && <button type="button" onClick={() => setActions({ kind: 'set_answer', field: f.key })}>Edit</button>}{!conceal && f.value !== '[redacted]' && (typeof f.value === 'string' || typeof f.value === 'number' || typeof f.value === 'boolean') && <button type="button" onClick={async () => { try { await navigator.clipboard.writeText(f.text ?? String(f.value)); setCopyStatus(`${f.label} copied to clipboard.`); } catch { setCopyStatus('Clipboard access was unavailable.'); } }}>Copy</button>}</td>
+                </tr>
               ))}
-            </dl>
-          </div>
+          </tbody></table></div>
+          {filteredFields.length === 0 && <p className="rc__noResults">No answers match your search and filter.</p>}
+          <div className="rc__tableFoot">Showing {filteredFields.length} of {record.fields.length} fields{conceal && <span> · Sensitive values are concealed on this screen only</span>}</div>
         </div>
 
-        <aside className="rc__side">
+        <div className="rc__side">
           <section className="rc__sidePanel rc__sidePanel--next"><span className="rc__eyebrow">CURRENT OUTCOME</span><h2>What happens next</h2><p>{record.nextAction}</p></section>
           <section className="rc__sidePanel rc__sidePanel--history"><span className="rc__eyebrow">ACTIVITY</span><h2>Record history</h2><p>Events, decisions, and delivery attempts in order.</p>
             <button type="button" className="cs__btn" aria-expanded={showTrail} aria-controls="record-trail" onClick={() => setShowTrail((w) => !w)}>
@@ -371,7 +405,7 @@ export function RecordPage({
               </div>
             )}
           </section>
-        </aside>
+        </div>
       </div>
     </div>
   );

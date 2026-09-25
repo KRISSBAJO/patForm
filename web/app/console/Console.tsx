@@ -70,6 +70,8 @@ interface RecordDetail {
   version: number;
   stateName: string;
   nextAction: string;
+  stateType?: string;
+  completedAt?: string | null;
   viewerRoles: string[];
   fields: { key: string; label: string; classification: string; value: unknown }[];
 }
@@ -709,6 +711,7 @@ export function Console() {
                 onDecide={(id, key, decision, reason) => void decide(id, key, decision, reason)}
                 onCompleteTask={(id, key, answers) => void completeTask(id, key, answers)}
                 onExport={(id, ref, format) => void exportRecord(id, ref, format)}
+                onActionDone={() => { void (async () => { try { setRecord(await call<RecordDetail>(`/api/records/${record.instanceId}`)); await load(); } catch (err) { setToast({ message: err instanceof Error ? err.message : String(err), refused: true }); } })(); }}
               />
             ) : view === 'integrations' ? (
               <IntegrationsView key={settingsRevision} />
