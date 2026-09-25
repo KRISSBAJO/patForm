@@ -89,18 +89,25 @@ export function FormPreview({
   onBranding,
   previewKey,
   draftId,
+  editHeaderRequest,
 }: {
   blueprint: Shape;
   /** Absent means read-only; the gallery's detail view passes nothing. */
   onBranding?: (next: NonNullable<PublicForm['branding']>) => void;
   previewKey?: string;
   draftId?: string;
+  editHeaderRequest?: number;
 }) {
   const [answers, setAnswers] = useState<Record<string, unknown>>({});
   const [editing, setEditing] = useState(false);
   const [device, setDevice] = useState<'desktop' | 'phone'>('desktop');
   const [pageIndex, setPageIndex] = useState(0);
   const previewRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!editHeaderRequest) return;
+    setEditing(true);
+    previewRef.current?.closest('.sp__scroll')?.scrollTo({ top: 0 });
+  }, [editHeaderRequest]);
   const byKey = new Map(blueprint.data.fields.map((f) => [f.key, f]));
   const pages = blueprint.experience?.pages ?? [];
   const currentIndex = Math.min(pageIndex, Math.max(0, pages.length - 1));
@@ -129,7 +136,7 @@ export function FormPreview({
 
       {onBranding && (
         <button type="button" className="sp__link" onClick={() => setEditing((was) => !was)} aria-expanded={editing}>
-          {editing ? 'Close appearance' : 'Customize appearance'}
+          {editing ? 'Close form header settings' : 'Edit form header'}
         </button>
       )}
 

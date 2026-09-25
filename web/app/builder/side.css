@@ -280,17 +280,23 @@
 /* ------------------------------------------------ editing the header */
 
 .sp__link {
-  display: inline-block;
-  margin-bottom: 10px;
-  padding: 0;
-  border: none;
-  background: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  margin-bottom: 12px;
+  padding: 0 12px;
+  border: 1px solid #c9ddd0;
+  border-radius: 8px;
+  background: #f2faf4;
   font-family: var(--ui);
-  font-size: 12.5px;
+  font-size: 12px;
+  font-weight: 600;
   color: var(--green-deep);
-  text-decoration: underline;
   cursor: pointer;
 }
+.sp__link:hover { background: #e7f4ea; border-color: #9fc8ac; }
+.sp__link:focus-visible { outline: 2px solid var(--green-deep); outline-offset: 2px; }
 
 .sp__brand {
   margin-bottom: 14px;

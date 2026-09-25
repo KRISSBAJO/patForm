@@ -506,6 +506,7 @@ export function Builder() {
   const [publishable, setPublishable] = useState(false);
   const [tab, setTab] = useState<Tab>('fields');
   const [side, setSide] = useState<Side>('checks');
+  const [headerEditRequest, setHeaderEditRequest] = useState(0);
   const [overview, setOverview] = useState(false);
   const [index, setIndex] = useState(0);
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
@@ -1156,6 +1157,7 @@ export function Builder() {
                 index={index}
                 overview={overview}
                 onOverview={() => { setOverview(true); setSide('checks'); }}
+                onEditHeader={() => { setSide('preview'); setHeaderEditRequest((request) => request + 1); }}
                 onSelect={(t, i) => {
                   setOverview(false);
                   setTab(t);
@@ -1422,6 +1424,7 @@ export function Builder() {
                       blueprint={blueprint}
                       previewKey={draft.processKey}
                       draftId={draft.id}
+                      editHeaderRequest={headerEditRequest}
                       onBranding={(next) =>
                         mutate((bp) => {
                           bp.experience = { ...(bp.experience ?? {}), branding: next };
@@ -2281,6 +2284,7 @@ function Outline({
   index,
   overview,
   onOverview,
+  onEditHeader,
   onSelect,
   onAdd,
   readOnly = false,
@@ -2291,6 +2295,7 @@ function Outline({
   index: number;
   overview: boolean;
   onOverview: () => void;
+  onEditHeader: () => void;
   onSelect: (t: Tab, i: number) => void;
   onAdd: (t: Tab) => void;
   /** Somebody else has the draft: the list still navigates, it just cannot add. */
@@ -2385,6 +2390,10 @@ function Outline({
         <button className="bd__outlineItem" aria-current={overview ? 'true' : undefined} onClick={() => { onOverview(); setMobileOpen(false); }}>
           <span className="bd__outlineName">Process overview</span>
           <span className="bd__outlineNote">form, decisions and work</span>
+        </button>
+        <button className="bd__outlineItem" onClick={() => { onEditHeader(); setMobileOpen(false); }}>
+          <span className="bd__outlineName">Edit form header</span>
+          <span className="bd__outlineNote">title, logo, banner and color</span>
         </button>
       </section>
       {groups.filter((g) => (query.trim() || (group === 'form' ? ['pages', 'fields'] : group === 'workflow' ? ['states', 'rules', 'approvals', 'tasks'] : ['messages', 'roles', 'documents', 'scenarios']).includes(g.tab)) && (!query.trim() || g.items.some((item) =>
