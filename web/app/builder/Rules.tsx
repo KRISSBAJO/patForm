@@ -27,6 +27,7 @@
 
 import { useMemo, useState } from 'react';
 import type { Diagnostic } from './Builder';
+import { ChoiceMenu } from './ChoiceMenu';
 import './rules.css';
 import { FlowMap } from './FlowMap';
 
@@ -167,6 +168,9 @@ export function ruleSentence(t: Transition, ctx: RuleContext): string {
 }
 
 export function RulesEditor({
+  selectedIndex,
+  onSelectRule,
+  onBack,
   transitions,
   ctx,
   diagnostics,
@@ -176,6 +180,9 @@ export function RulesEditor({
   onAppend,
   onRemove,
 }: {
+  selectedIndex: number | null;
+  onSelectRule: (index: number) => void;
+  onBack: () => void;
   transitions: Transition[];
   ctx: RuleContext;
   diagnostics: Diagnostic[];
@@ -219,16 +226,35 @@ export function RulesEditor({
       .map((s) => ({ state: s, rules: groups.get(s.key)! }));
   }, [transitions, ctx.states, focus]);
 
+  const issuesFor = (index: number, transition: Transition) => diagnostics.filter((d) =>
+    d.at.startsWith(`workflow.transitions[${index}]`) || d.at.includes(transition.key));
+
+  if (selectedIndex !== null) {
+    const transition = transitions[selectedIndex];
+    if (!transition) return <div className="rl rl--detail"><button type="button" className="rl__back" onClick={onBack}>← Back to workflow</button><p>This rule is no longer in the process.</p></div>;
+    return <div className="rl rl--detail">
+      <button type="button" className="rl__back" onClick={onBack}>← Back to workflow</button>
+      <div className="rl__detailIntro">
+        <span>Automation {selectedIndex + 1} of {transitions.length}</span>
+        <h2>Edit this rule</h2>
+        <p>Choose what starts it, when it applies, and what happens next. Changes save to this draft.</p>
+      </div>
+      <Rule
+        transition={transition}
+        ctx={ctx}
+        diagnostics={issuesFor(selectedIndex, transition)}
+        onChange={(next) => onChange(selectedIndex, next)}
+        onRemove={() => onRemove(selectedIndex)}
+      />
+    </div>;
+  }
+
   return (
-    <div className="rl">
+    <div className="rl rl--overview">
       <div className="rl__intro">
-        <p>
-          Everything the process does on its own. Each rule reads <strong>when</strong> something
-          happens, <strong>if</strong> a condition holds, <strong>then</strong> these things run —
-          and the record moves.
-        </p>
+        <div><span className="rl__eyebrow">Workflow</span><h2>Automation</h2><p>Decide what moves each record forward. Select a rule to edit its trigger, condition and outcome.</p></div>
         <button type="button" className="bd__btn" onClick={onAdd}>
-          Add a rule
+          + Add rule
         </button>
       </div>
 
@@ -273,16 +299,14 @@ export function RulesEditor({
             )}
           </h3>
 
-          {rules.map(({ index, transition }) => (
-            <Rule
-              key={`${transition.key}-${index}`}
-              transition={transition}
-              ctx={ctx}
-              diagnostics={diagnostics.filter((d) => d.at.includes(transition.key))}
-              onChange={(next) => onChange(index, next)}
-              onRemove={() => onRemove(index)}
-            />
-          ))}
+          <div className="rl__ruleList">{rules.map(({ index, transition }) => (
+            <button type="button" className="rl__ruleSummary" key={`${transition.key}-${index}`} onClick={() => onSelectRule(index)}>
+              <span className="rl__ruleOrdinal">{String(index + 1).padStart(2, '0')}</span>
+              <span className="rl__ruleSummaryText"><strong>{ruleSentence(transition, ctx)}</strong><small>{transition.actions.length ? `${transition.actions.length} additional ${transition.actions.length === 1 ? 'action' : 'actions'}` : 'Moves the record only'}</small></span>
+              {issuesFor(index, transition).some((d) => d.severity === 'error') && <span className="rl__ruleIssue">Needs attention</span>}
+              <span className="rl__ruleArrow" aria-hidden="true">→</span>
+            </button>
+          ))}</div>
         </section>
       ))}
 
@@ -434,55 +458,35 @@ function Rule({
 
   const set = (patch: Partial<Transition>) => onChange({ ...transition, ...patch });
   const setTrigger = (next: Record<string, unknown>) => set({ trigger: next });
+  const changeTrigger = (next: string) => setTrigger(
+    next === 'approval_decided'
+      ? { on: next, approval: ctx.approvals[0]?.key ?? '', decision: 'approved' }
+      : next === 'task_completed'
+        ? { on: next, task: ctx.tasks[0]?.key ?? '' }
+        : next === 'tasks_completed'
+          ? { on: next, tasks: ctx.tasks.slice(0, 2).map((x) => x.key) }
+          : next === 'timer'
+            ? { on: next, afterHoursInState: 72 }
+            : next === 'inbound_webhook'
+              ? { on: next, event: 'something.happened' }
+              : next === 'manual'
+                ? { on: next, by: [ctx.roles[0]?.key ?? ''] }
+                : { on: next },
+  );
 
   return (
     <article className={`rl__rule${errors.length ? ' rl__rule--bad' : ''}`}>
       <header className="rl__head">
-        <span className="rl__sentence">{ruleSentence(transition, ctx)}</span>
+        <div><span className="rl__eyebrow">Current behavior</span><p className="rl__sentence">{ruleSentence(transition, ctx)}</p></div>
         <button type="button" className="rl__remove" onClick={onRemove} aria-label={`Remove ${transition.key}`}>
-          Remove
+          Delete rule
         </button>
       </header>
 
+      <section className="rl__stage">
+        <div className="rl__stageHead"><span>01</span><div><h3>What starts this rule?</h3><p>Select the event the process waits for.</p></div></div>
       <div className="rl__row">
-        <span className="rl__word">When</span>
-        <label className="vw__srOnly" htmlFor={`trigger-${transition.key}`}>
-          What starts this rule
-        </label>
-        <select
-          id={`trigger-${transition.key}`}
-          className="bd__input"
-          value={on}
-          onChange={(e) => {
-            const next = e.target.value;
-            // Each trigger carries different fields, and the schema is strict
-            // — so switching starts from a valid shape rather than keeping
-            // whatever the last one had.
-            setTrigger(
-              next === 'approval_decided'
-                ? { on: next, approval: ctx.approvals[0]?.key ?? '', decision: 'approved' }
-                : next === 'task_completed'
-                  ? { on: next, task: ctx.tasks[0]?.key ?? '' }
-                  : next === 'tasks_completed'
-                    // Two is the minimum the schema takes; a set of one is a
-                    // `task_completed` and should say so.
-                    ? { on: next, tasks: ctx.tasks.slice(0, 2).map((x) => x.key) }
-                  : next === 'timer'
-                    ? { on: next, afterHoursInState: 72 }
-                    : next === 'inbound_webhook'
-                      ? { on: next, event: 'something.happened' }
-                      : next === 'manual'
-                        ? { on: next, by: [ctx.roles[0]?.key ?? ''] }
-                        : { on: next },
-            );
-          }}
-        >
-          {TRIGGERS.map((t) => (
-            <option key={t.on} value={t.on}>
-              {t.label}
-            </option>
-          ))}
-        </select>
+        <ChoiceMenu label="Event that starts this rule" value={on} groups={[{ label: 'Events', options: TRIGGERS.map((t) => ({ value: t.on, label: t.label })) }]} onChange={changeTrigger} />
 
         {on === 'approval_decided' && (
           <>
@@ -592,37 +596,32 @@ function Rule({
           />
         )}
       </div>
+      </section>
 
+      <section className="rl__stage">
+        <div className="rl__stageHead"><span>02</span><div><h3>When should it apply?</h3><p>Leave this as “Always” unless only some records should follow this rule.</p></div></div>
       <Condition
         when={transition.when}
         ctx={ctx}
         onChange={(next) => set({ when: next })}
       />
+      </section>
 
+      <section className="rl__stage">
+        <div className="rl__stageHead"><span>03</span><div><h3>Where does the record go?</h3><p>Choose its next status after the event.</p></div></div>
       <div className="rl__row">
-        <span className="rl__word">Then move to</span>
-        <label className="vw__srOnly" htmlFor={`to-${transition.key}`}>
-          Which state it moves to
-        </label>
-        <select
-          id={`to-${transition.key}`}
-          className="bd__input"
-          value={transition.to}
-          onChange={(e) => set({ to: e.target.value })}
-        >
-          {ctx.states.map((s) => (
-            <option key={s.key} value={s.key}>
-              {s.name}
-            </option>
-          ))}
-        </select>
+        <ChoiceMenu label="Next status" value={transition.to} groups={[{ label: 'Statuses', options: ctx.states.map((s) => ({ value: s.key, label: s.name, detail: s.type })) }]} onChange={(to) => set({ to })} />
       </div>
+      </section>
 
+      <section className="rl__stage">
+        <div className="rl__stageHead"><span>04</span><div><h3>What else should happen?</h3><p>Messages, approvals and tasks run when this rule fires. This step is optional.</p></div></div>
       <Actions
         actions={transition.actions}
         ctx={ctx}
         onChange={(next) => set({ actions: next })}
       />
+      </section>
 
       {diagnostics.length > 0 && (
         <ul className="rl__diagnostics">
@@ -705,13 +704,15 @@ function Condition({
 
   return (
     <div className="rl__row rl__row--condition">
-      <span className="rl__word">If</span>
-      <select
-        className="bd__input"
-        aria-label="Which answer the condition looks at"
+      <ChoiceMenu
+        label="Condition"
         value={subject}
-        onChange={(e) => {
-          const next = e.target.value;
+        groups={[
+          { label: 'Default', options: [{ value: '', label: 'Always — no condition' }] },
+          { label: 'Form answers', options: ctx.fields.filter((f) => f.type !== 'repeating_group').map((f) => ({ value: `f:${f.key}`, label: f.label })) },
+          { label: 'Repeating rows', options: groups.flatMap((g) => [{ value: `any:${g.key}`, label: `Any row of ${g.label}` }, { value: `all:${g.key}`, label: `Every row of ${g.label}` }]) },
+        ]}
+        onChange={(next) => {
           if (!next) return onChange(undefined);
           const [kind, key] = next.split(':');
           if (kind === 'f') return onChange(comparison(key!, op || 'eq', ''));
@@ -719,22 +720,7 @@ function Condition({
           const first = ctx.fields.find((f) => f.key === key)?.fields?.[0];
           onChange(first ? build(next, comparison(first.key, 'eq', '')) : undefined);
         }}
-      >
-        <option value="">always — no condition</option>
-        {ctx.fields
-          .filter((f) => f.type !== 'repeating_group')
-          .map((f) => (
-            <option key={f.key} value={`f:${f.key}`}>
-              {f.label}
-            </option>
-          ))}
-        {groups.map((g) => (
-          <optgroup key={g.key} label={g.label}>
-            <option value={`any:${g.key}`}>any row of {g.label}</option>
-            <option value={`all:${g.key}`}>every row of {g.label}</option>
-          </optgroup>
-        ))}
-      </select>
+      />
 
       {quantified && (
         <>
@@ -756,22 +742,16 @@ function Condition({
 
       {fieldKey && (
         <>
-          <select
-            className="bd__input"
-            aria-label="How to compare"
+          <ChoiceMenu
+            label="Comparison"
             value={op}
-            onChange={(e) => onChange(build(subject, comparison(fieldKey, e.target.value, right?.literal)))}
-          >
-            {COMPARISONS.filter(
+            onChange={(next) => onChange(build(subject, comparison(fieldKey, next, right?.literal)))}
+            groups={[{ label: 'Compare answer', options: COMPARISONS.filter(
               // Comparing a name against "more than" is a type error the
               // compiler would reject, so it is not offered.
               (c) => !NUMERIC.has(c.op) || !field || NUMERIC_FIELDS.has(field.type),
-            ).map((c) => (
-              <option key={c.op} value={c.op}>
-                {c.label}
-              </option>
-            ))}
-          </select>
+            ).map((c) => ({ value: c.op, label: c.label })) }]}
+          />
 
           {op !== 'is_present' && op !== 'is_empty' && (
             <input
@@ -825,12 +805,11 @@ function Actions({
           const kind = String(action.do);
           return (
             <div className="rl__action" key={i}>
-              <select
-                className="bd__input"
-                aria-label="What to do"
+              <ChoiceMenu
+                label="Action"
                 value={kind}
-                onChange={(e) => {
-                  const next = e.target.value;
+                groups={[{ label: 'Actions', options: ACTIONS.map((a) => ({ value: a.do, label: a.label })) }]}
+                onChange={(next) => {
                   const key = String(action.key);
                   setAt(
                     i,
@@ -849,13 +828,7 @@ function Actions({
                                 : { do: next, key, hours: 24 },
                   );
                 }}
-              >
-                {ACTIONS.map((a) => (
-                  <option key={a.do} value={a.do}>
-                    {a.label}
-                  </option>
-                ))}
-              </select>
+              />
 
               {kind === 'send_email' && (
                 <select

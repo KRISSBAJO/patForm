@@ -505,6 +505,9 @@ export function Builder() {
   const [diagnostics, setDiagnostics] = useState<Diagnostic[]>([]);
   const [publishable, setPublishable] = useState(false);
   const [tab, setTab] = useState<Tab>('fields');
+  const [ruleFocusIndex, setRuleFocusIndex] = useState<number | null>(null);
+  const editorRef = useRef<HTMLElement>(null);
+  useEffect(() => { editorRef.current?.scrollTo({ top: 0 }); }, [ruleFocusIndex]);
   const [side, setSide] = useState<Side>('checks');
   const [headerEditRequest, setHeaderEditRequest] = useState(0);
   const [overview, setOverview] = useState(false);
@@ -606,6 +609,7 @@ export function Builder() {
     setDiagnostics(detail.diagnostics);
     setPublishable(detail.publishable);
     setTab('fields');
+    setRuleFocusIndex(null);
     setSide('checks');
     setOverview(false);
     setIndex(0);
@@ -1150,18 +1154,19 @@ export function Builder() {
               </button>
             </nav>
 
-            <div className="bd__body" data-side={side}>
+            <div className="bd__body" data-side={side} data-rule-focus={tab === 'rules' && ruleFocusIndex !== null ? 'true' : undefined}>
               <Outline
                 blueprint={blueprint}
                 tab={tab}
                 index={index}
                 overview={overview}
-                onOverview={() => { setOverview(true); setSide('checks'); }}
+                onOverview={() => { setRuleFocusIndex(null); setOverview(true); setSide('checks'); }}
                 onEditHeader={() => { setSide('preview'); setHeaderEditRequest((request) => request + 1); }}
                 onSelect={(t, i) => {
                   setOverview(false);
                   setTab(t);
                   setIndex(i);
+                  setRuleFocusIndex(t === 'rules' ? i : null);
                   if (side === 'preview') setSide('checks');
                 }}
                 onAdd={(t) => addItem(t)}
@@ -1169,7 +1174,7 @@ export function Builder() {
                 query={workspaceQuery}
               />
 
-              <section className="bd__editor" data-tab={tab}>
+              <section className="bd__editor" data-tab={tab} ref={editorRef}>
                 {overview ? (
                   <ProcessOverview
                     blueprint={blueprint}
@@ -1184,8 +1189,7 @@ export function Builder() {
                       setSide('checks');
                     }}
                     onEditApprovals={() => { setOverview(false); setTab('approvals'); setIndex(0); setSide('checks'); }}
-                    onEditRules={() => { const firstSubmission = blueprint.workflow.transitions.findIndex((rule) =>
-                      (rule.trigger as { on?: string }).on === 'submission'); setOverview(false); setTab('rules'); setIndex(Math.max(0, firstSubmission)); setSide('checks'); }}
+                    onEditRules={() => { setOverview(false); setTab('rules'); setRuleFocusIndex(null); setSide('checks'); }}
                     onEditAdvanced={() => { setOverview(false); setTab('json'); setIndex(0); setSide('checks'); }}
                     onSetLetterGrade={(show) => mutate((bp) => {
                       if (bp.experience) bp.experience.quizResult = { ...bp.experience.quizResult, showLetterGrade: show };
@@ -1319,6 +1323,9 @@ export function Builder() {
                 )}
                 {tab === 'rules' && (
                   <RulesEditor
+                    selectedIndex={ruleFocusIndex}
+                    onSelectRule={(i) => { setRuleFocusIndex(i); setIndex(i); }}
+                    onBack={() => { setRuleFocusIndex(null); setSide('checks'); }}
                     transitions={(blueprint.workflow.transitions ?? []) as never}
                     ctx={{
                       states: blueprint.workflow.states.map((s2) => ({ key: s2.key, name: s2.name, type: s2.type })),
@@ -1336,22 +1343,24 @@ export function Builder() {
                     }}
                     diagnostics={diagnostics}
                     draftId={draft?.id}
-                    onAppend={(rule) =>
+                    onAppend={(rule) => {
+                      setRuleFocusIndex(blueprint.workflow.transitions.length);
                       mutate((bp) => {
                         bp.workflow.transitions = [...(bp.workflow.transitions ?? []), rule as never];
-                      })
-                    }
+                      });
+                    }}
                     onChange={(i, next) =>
                       mutate((bp) => {
                         bp.workflow.transitions[i] = next as never;
                       })
                     }
-                    onAdd={() => addItem('rules')}
-                    onRemove={(i) =>
+                    onAdd={() => { setRuleFocusIndex(blueprint.workflow.transitions.length); addItem('rules'); }}
+                    onRemove={(i) => {
+                      setRuleFocusIndex(null);
                       mutate((bp) => {
                         bp.workflow.transitions.splice(i, 1);
-                      })
-                    }
+                      });
+                    }}
                   />
                 )}
                 {tab === 'json' && <JsonEditor blueprint={blueprint} onReplace={(bp) => replaceAll(bp)} />}
@@ -1398,6 +1407,7 @@ export function Builder() {
                         setOverview(false);
                         setTab(where.tab);
                         setIndex(where.index);
+                        setRuleFocusIndex(where.tab === 'rules' ? where.index : null);
                       }}
                       onAcceptAssumption={(at) => mutate((bp) => {
                         const item = bp.intent?.assumptions?.[at];
@@ -3894,7 +3904,7 @@ function DiagnosticsPanel({
               ? <button type="button" className="bd__insightAction" onClick={() => onAcceptAssumption(assumptionIndex)}>Confirm reviewed</button>
               : <details className="bd__insightDetail"><summary>Review full assumption</summary><p>{assumptionText}</p><button type="button" className="bd__insightAction" onClick={() => onAcceptAssumption(assumptionIndex)}>Confirm reviewed</button></details>)}
             {isDecision && <button type="button" className="bd__insightAction" onClick={() => onGo({ tab: decisionIsAssignment ? 'roles' : 'states', index: 0 })}>{decisionIsAssignment ? 'Configure assignment' : 'Review workflow'}</button>}
-            {!isAssumption && !isDecision && where && <button type="button" className="bd__insightAction" onClick={() => onGo(where)}>Open {where.tab === 'fields' ? 'field' : where.tab === 'roles' ? 'role' : 'setting'}</button>}
+            {!isAssumption && !isDecision && where && <button type="button" className="bd__insightAction" onClick={() => onGo(where)}>Edit {where.tab === 'fields' ? 'field' : where.tab === 'rules' ? 'rule' : where.tab === 'roles' ? 'role' : 'setting'} →</button>}
             {d.fix && <details className="bd__insightDetail"><summary>Why this matters</summary><p>{d.fix}</p></details>}
           </article>
         );

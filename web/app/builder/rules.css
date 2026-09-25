@@ -463,3 +463,62 @@
   font-size: 12.5px;
   color: var(--muted);
 }
+
+/* Workflow overview: rules are a scannable list; only the chosen rule expands. */
+.rl--overview, .rl--detail { max-width: none; font-family: var(--ui); }
+.rl__eyebrow { display: block; color: #577664; font-size: 11px; font-weight: 650; letter-spacing: .02em; }
+.rl--overview .rl__intro { align-items: center; margin-bottom: 20px; }
+.rl--overview .rl__intro h2 { margin: 4px 0 6px; color: #183c28; font-size: 24px; font-weight: 650; letter-spacing: -.035em; }
+.rl--overview .rl__intro p { max-width: 62ch; font-size: 13px; line-height: 1.5; }
+.rl--overview .rl__group { margin-bottom: 25px; }
+.rl--overview .rl__groupName { margin-bottom: 10px; color: #506458; font-size: 12px; }
+.rl--overview .rl__groupName strong { color: #173b28; }
+.rl__ruleList { overflow: hidden; border: 1px solid #dce8df; border-radius: 11px; background: #fff; }
+.rl__ruleSummary { display: flex; align-items: center; gap: 14px; width: 100%; min-height: 75px; padding: 14px 17px; border: 0; border-bottom: 1px solid #e8eee9; background: #fff; color: #1b3b2a; font-family: var(--ui); text-align: left; cursor: pointer; }
+.rl__ruleSummary:last-child { border-bottom: 0; }
+.rl__ruleSummary:hover, .rl__ruleSummary:focus-visible { background: #f1f8f3; outline: 0; }
+.rl__ruleOrdinal { display: grid; place-items: center; flex: 0 0 32px; height: 32px; border-radius: 9px; background: #e8f4eb; color: #286543; font-size: 11px; font-weight: 700; }
+.rl__ruleSummaryText { display: grid; gap: 4px; min-width: 0; flex: 1; }
+.rl__ruleSummaryText strong { font-size: 13px; font-weight: 600; line-height: 1.4; }
+.rl__ruleSummaryText small { color: #617467; font-size: 11px; }
+.rl__ruleIssue { flex: 0 0 auto; padding: 5px 8px; border-radius: 6px; background: #fff2e9; color: #9b501c; font-size: 10.5px; font-weight: 650; }
+.rl__ruleArrow { color: #377451; font-size: 18px; }
+
+/* A focused rule reads like a short guided page, with one decision per section. */
+.rl--detail { max-width: 900px; margin: 0 auto; }
+.rl__back { min-height: 38px; padding: 0 12px; border: 1px solid #d1e2d6; border-radius: 8px; background: #fff; color: #225c3a; font: 600 12px var(--ui); cursor: pointer; }
+.rl__back:hover, .rl__back:focus-visible { background: #ebf6ee; outline: 0; border-color: #9fc8aa; }
+.rl__detailIntro { margin: 20px 0 21px; }
+.rl__detailIntro > span { color: #588169; font-size: 11px; font-weight: 650; }
+.rl__detailIntro h2 { margin: 4px 0 5px; color: #183b29; font-size: 27px; font-weight: 650; letter-spacing: -.04em; }
+.rl__detailIntro p { margin: 0; color: #5c7464; font-size: 13px; line-height: 1.5; }
+.rl--detail .rl__rule { padding: 0; border: 0; background: transparent; box-shadow: none; }
+.rl--detail .rl__head { align-items: center; margin: 0 0 16px; padding: 15px 18px; border: 1px solid #d6e5da; border-radius: 10px; background: #ecf7ef; }
+.rl--detail .rl__sentence { margin: 5px 0 0; font-size: 13px; font-weight: 550; line-height: 1.45; }
+.rl--detail .rl__remove { min-height: 34px; padding: 0 11px; border-radius: 7px; background: #fff; color: #9a4c43; font-size: 11px; }
+.rl__stage { margin-bottom: 12px; padding: 21px 23px 22px; border: 1px solid #dce8df; border-radius: 11px; background: #fff; box-shadow: 0 4px 16px #214a3008; }
+.rl__stageHead { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 18px; padding-bottom: 15px; border-bottom: 1px solid #e8efe9; }
+.rl__stageHead > span { display: grid; place-items: center; flex: 0 0 32px; height: 32px; border-radius: 8px; background: #e8f5eb; color: #277048; font-size: 11px; font-weight: 700; }
+.rl__stageHead h3 { margin: 0; color: #203d2a; font-size: 15px; font-weight: 650; letter-spacing: -.015em; }
+.rl__stageHead p { margin: 3px 0 0; color: #6a7b6f; font-size: 11.5px; line-height: 1.45; }
+.rl__stage .rl__row { gap: 10px; margin-bottom: 0; }
+.rl__stage .rl__row--condition { padding-bottom: 0; border: 0; }
+.rl__stage .rl__word { color: #5f7466; font-size: 12px; }
+.rl__stage .bd__choiceMenu { flex: 0 1 440px; max-width: 100%; }
+.rl__stage .bd__choiceTrigger { min-height: 42px; font-size: 13px; font-weight: 500; }
+.rl__stage .bd__input, .rl__assistInput { min-height: 42px; padding-inline: 12px; border-color: #d1dfd5; border-radius: 8px; background: #fbfdfb; font-size: 12.5px; }
+.rl__stage .bd__input:focus, .rl__assistInput:focus { outline: 2px solid #a8d5b4; outline-offset: 1px; border-color: #79b38d; }
+.rl__stage .rl__hours { width: 100px; max-width: 100px; }
+.rl__stage .rl__actions > .rl__word { display: none; }
+.rl__stage .rl__actionList { gap: 9px; }
+.rl__stage .rl__action { padding: 11px; border: 1px solid #e1eae3; border-radius: 9px; background: #f8fbf8; }
+.rl__stage .rl__actionList > .bd__btn { align-self: start; min-height: 38px; border-style: dashed; color: #245f3d; }
+.rl--detail .rl__diagnostics { margin-top: 16px; padding: 15px 18px 15px 32px; border: 1px solid #f0c8bb; border-radius: 9px; background: #fff8f4; }
+@media (max-width: 640px) {
+  .rl--overview .rl__intro { align-items: flex-start; }
+  .rl--overview .rl__intro h2, .rl__detailIntro h2 { font-size: 22px; }
+  .rl__ruleSummary { gap: 9px; padding: 13px 11px; }
+  .rl__ruleIssue { display: none; }
+  .rl__stage { padding: 17px 15px; }
+  .rl--detail .rl__head { align-items: flex-start; }
+}
