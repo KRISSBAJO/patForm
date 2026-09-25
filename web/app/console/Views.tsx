@@ -68,7 +68,15 @@ function formatted(m: Measurement): string {
   return String(m.value);
 }
 
-export function DashboardView({ processKey }: { processKey: string }) {
+export function DashboardView({
+  processKey,
+  automation,
+  onOpenAutomation,
+}: {
+  processKey: string;
+  automation?: { runs: number; failing: number } | null;
+  onOpenAutomation: () => void;
+}) {
   const [data, setData] = useState<DashboardData | null>(null);
   const [days, setDays] = useState(30);
   const [error, setError] = useState<string | null>(null);
@@ -100,81 +108,94 @@ export function DashboardView({ processKey }: { processKey: string }) {
   if (!data) return <div className="cs__panel"><div className="cs__empty">Loading…</div></div>;
 
   const notComputed = data.declared.filter((d) => !d.computed);
+  const intake = data.metrics.find((m) => m.key === 'intake');
+  const available = data.metrics.filter((m) => m.key !== 'intake' && m.value !== null);
+  const unavailable = data.metrics.filter((m) => m.key !== 'intake' && m.value === null);
+  const openCount = data.standing.reduce((total, state) => total + state.count, 0);
+  const finishedCount = data.series.reduce((total, point) => total + point.finished, 0);
+  const range = `${new Date(data.from).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} – ${new Date(data.to).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}`;
 
   return (
-    <div className="cs__panel">
-      <div className="cs__panelHead">
-        <h2 className="cs__tab">{data.processName}</h2>
-        <span className="cs__sort">
-          <label htmlFor="dash-days" className="vw__srOnly">
-            Period
-          </label>
-          <select
-            id="dash-days"
-            className="vw__period"
-            value={days}
-            onChange={(e) => setDays(Number(e.target.value))}
-          >
-            <option value={7}>last 7 days</option>
-            <option value={30}>last 30 days</option>
-            <option value={90}>last 90 days</option>
+    <div className="db">
+      <header className="db__intro">
+        <div>
+          <span className="db__eyebrow">Process overview</span>
+          <h2>{data.processName}</h2>
+          <p>A clear view of what came in, what finished, and what needs attention.</p>
+        </div>
+        <div className="db__period">
+          <label htmlFor="dash-days">Reporting period</label>
+          <select id="dash-days" value={days} onChange={(e) => setDays(Number(e.target.value))}>
+            <option value={7}>Last 7 days</option>
+            <option value={30}>Last 30 days</option>
+            <option value={90}>Last 90 days</option>
           </select>
-        </span>
-      </div>
+          <span>{range}</span>
+        </div>
+      </header>
 
-      <div className="vw__metrics">
-        {data.metrics.map((m) => (
-          <button
-            key={m.key}
-            className={`vw__metric${m.suppressed ? ' vw__metric--withheld' : ''}`}
-            onClick={() => setOpen(open === m.key ? null : m.key)}
-            aria-expanded={open === m.key}
-          >
-            <span className="vw__metricLabel">{m.name}</span>
-            <span className="vw__metricValue">{formatted(m)}</span>
-            {m.percentiles && (
-              <span className="vw__metricMeta">
-                p75 {m.percentiles.p75}h · p95 {m.percentiles.p95}h · n={m.of}
-              </span>
-            )}
-            {!m.percentiles && m.of !== null && !m.suppressed && (
-              <span className="vw__metricMeta">of {m.of}</span>
-            )}
-            {/* A suppressed rate says why, where the number would be. A dash
-                reads as zero, and this one means something quite different. */}
-            {m.suppressed && <span className="vw__metricWithheld">{m.suppressed}</span>}
-          </button>
-        ))}
-      </div>
+      <section className="db__summary" aria-label="At a glance">
+        <div className="db__summaryLead">
+          <span className="db__summaryIcon" aria-hidden="true"><Icon name="table" /></span>
+          <span className="db__summaryLabel">New records</span>
+          <strong>{intake?.value ?? 0}</strong>
+          <span className="db__summaryCaption">Created during this period</span>
+        </div>
+        <div className="db__summaryStat">
+          <span className="db__summaryIcon" aria-hidden="true"><Icon name="trail" /></span>
+          <span className="db__summaryLabel">Open now</span>
+          <strong>{openCount}</strong>
+          <span className="db__summaryCaption">Across the active stages</span>
+        </div>
+        <div className="db__summaryStat">
+          <span className="db__summaryIcon" aria-hidden="true"><Icon name="done" /></span>
+          <span className="db__summaryLabel">Finished</span>
+          <strong>{finishedCount}</strong>
+          <span className="db__summaryCaption">Reached an end during this period</span>
+        </div>
+      </section>
 
-      {open && (
-        <p className="vw__definition" role="status">
-          <strong>{data.metrics.find((m) => m.key === open)!.name}.</strong>{' '}
-          {data.metrics.find((m) => m.key === open)!.definition}
-        </p>
+      {automation && (
+        <section className={`db__health${automation.failing ? ' db__health--alert' : ''}`} aria-label="Automation status">
+          <span className="db__healthIcon" aria-hidden="true"><Icon name={automation.failing ? 'reject' : 'done'} /></span>
+          <div>
+            <strong>{automation.failing ? `${automation.failing} automation ${automation.failing === 1 ? 'failure needs' : 'failures need'} attention` : 'Automations are running normally'}</strong>
+            <p>{automation.runs} actions run · {automation.failing ? 'See what failed and what to do next.' : 'No permanently failed actions.'}</p>
+          </div>
+          <button type="button" onClick={onOpenAutomation}>View automation health <span aria-hidden="true">→</span></button>
+        </section>
       )}
 
-      {/*
-        * Under the numbers, the two questions they leave open: where the work
-        * is, and which way it is going. The panel below them was empty, and
-        * an empty half-page under nine tiles reads as a dashboard that has
-        * not been finished.
-        */}
-      <WhereItSits standing={data.standing} />
-      <Trend series={data.series} bucketDays={data.bucketDays} />
+      <div className="db__charts">
+        <div className="db__chart"><Trend series={data.series} bucketDays={data.bucketDays} /></div>
+        <div className="db__chart"><WhereItSits standing={data.standing} /></div>
+      </div>
 
-      <p className="vw__footnote">
-        {data.from.slice(0, 10)} to {data.to.slice(0, 10)} · version
-        {data.versions.length > 1 ? 's' : ''} {data.versions.join(', ')} · definitions{' '}
-        <code>{data.metricsVersion}</code> · rates over fewer than {data.minCohort} records are withheld.
-        {notComputed.length > 0 && (
-          <>
-            {' '}
-            This process also asks for {notComputed.map((d) => d.name).join(', ')}, which{' '}
-            {notComputed.length === 1 ? 'is' : 'are'} not computed yet.
-          </>
+      <section className="db__insights">
+        <div className="db__sectionHead">
+          <div><span className="db__eyebrow">Deeper insight</span><h3>Performance measures</h3></div>
+          <span>{available.length} available · {unavailable.length} waiting for data</span>
+        </div>
+        {available.length > 0 && (
+          <div className="db__measures">
+            {available.map((m) => (
+              <button type="button" key={m.key} className="db__measure" onClick={() => setOpen(open === m.key ? null : m.key)} aria-expanded={open === m.key}>
+                <span>{m.name}</span><strong>{formatted(m)}</strong>
+                <small>{m.percentiles ? `75th percentile ${m.percentiles.p75}h · 95th ${m.percentiles.p95}h` : m.of !== null ? `Based on ${m.of} ${m.of === 1 ? 'record' : 'records'}` : 'View definition'}</small>
+              </button>
+            ))}
+          </div>
         )}
-      </p>
+        {open && <p className="db__definition" role="status"><strong>{data.metrics.find((m) => m.key === open)?.name}:</strong> {data.metrics.find((m) => m.key === open)?.definition}</p>}
+        {unavailable.length > 0 && (
+          <details className="db__unavailable">
+            <summary><span className="db__unavailableIcon" aria-hidden="true">i</span><span><strong>More insight as this process grows</strong><small>Measures based on fewer than {data.minCohort} records stay private. Open to see which measures are waiting.</small></span><span className="db__chevron" aria-hidden="true">⌄</span></summary>
+            <ul>{unavailable.map((m) => <li key={m.key}><span><strong>{m.name}</strong><small>{m.suppressed ?? 'Not available in this period'}</small></span><span>{m.definition}</span></li>)}</ul>
+          </details>
+        )}
+      </section>
+
+      <footer className="db__footer">{range} · Process version{data.versions.length > 1 ? 's' : ''} {data.versions.join(', ')} · Metrics {data.metricsVersion}{notComputed.length > 0 && <> · Not yet computed: {notComputed.map((d) => d.name).join(', ')}</>}</footer>
     </div>
   );
 }

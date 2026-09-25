@@ -693,7 +693,7 @@ export function Console() {
           </button>}
         </div>
 
-        <div className={`cs__body ${view === 'security' ? 'cs__body--security' : ''} ${view === 'ask' ? 'cs__body--ask' : ''} ${view === 'processes' ? 'cs__body--processes' : ''} ${view === 'held' ? 'cs__body--held' : ''} ${view === 'integrations' ? 'cs__body--integrations' : ''} ${view === 'data' ? 'cs__body--data' : ''}`}>
+        <div className={`cs__body ${view === 'security' ? 'cs__body--security' : ''} ${view === 'ask' ? 'cs__body--ask' : ''} ${view === 'dashboard' ? 'cs__body--dashboard' : ''} ${view === 'processes' ? 'cs__body--processes' : ''} ${view === 'held' ? 'cs__body--held' : ''} ${view === 'integrations' ? 'cs__body--integrations' : ''} ${view === 'data' ? 'cs__body--data' : ''}`}>
           <div className="cs__left">
             {view === 'record' && record ? (
               <RecordPage
@@ -744,7 +744,7 @@ export function Console() {
               // is only offered to somebody the server will accept it from.
               <HealthView canAdminister={['owner', 'admin', 'builder'].includes(me.workspace_role)} />
             ) : view === 'dashboard' ? (
-              <DashboardView processKey={processKey} />
+              <DashboardView processKey={processKey} automation={health ? health.totals : null} onOpenAutomation={() => setView('health')} />
             ) : view === 'records' ? (
               <RecordsView
                 processKey={processKey}
@@ -802,7 +802,7 @@ export function Console() {
 
           {/* The record page carries its own side column; two of them would
               be a column of cards about a different subject. */}
-          {view !== 'record' && view !== 'security' && view !== 'ask' && view !== 'processes' && view !== 'held' && view !== 'integrations' && view !== 'data' && (
+          {view !== 'record' && view !== 'security' && view !== 'ask' && view !== 'dashboard' && view !== 'processes' && view !== 'held' && view !== 'integrations' && view !== 'data' && (
           <div className="cs__right">
             {!processKey ? null : health ? (
               <div className="cs__card">
@@ -853,9 +853,7 @@ export function Console() {
                     ? 'Who is in this workspace and what they may do. An invitation is emailed, works once, and expires in seven days — the link is never shown here, because anybody who can invite could otherwise mint one for an address whose owner never sees it.'
                   : view === 'invite'
                     ? 'One person, a pasted list, or a spreadsheet. Every row is checked before anything is sent: typos, duplicates, people already here and roles you cannot give are set aside, and only the rest go. Each invitation works once and expires in seven days.'
-                  : view === 'dashboard'
-                    ? 'Nine measures from section 13.1, over the period you choose. A rate over fewer than five records is withheld rather than shown, because a percentage of three people identifies them.'
-                    : view === 'records'
+                  : view === 'records'
                       ? 'Every record you are allowed to see, newest first. The same cursor pagination the public API uses, so one behaviour is tested twice.'
                       : 'Four questions, in order: what arrived, what needs you, what is late, what failed. Sign in as someone else and the same records offer different actions — every one of them checked by the runtime, not by this page.'}
               </p>

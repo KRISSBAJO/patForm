@@ -445,12 +445,12 @@ export async function dashboard(
        select b.bucket,
               (select count(*)::int from instance i
                 where i.tenant_id = $1 and i.process_key = $2
-                  and i.created_at >= b.bucket
-                  and i.created_at < b.bucket + make_interval(days => $5)) as arrived,
+                  and i.created_at >= greatest(b.bucket, $3::timestamptz)
+                  and i.created_at < least(b.bucket + make_interval(days => $5), $4::timestamptz)) as arrived,
               (select count(*)::int from instance i
                 where i.tenant_id = $1 and i.process_key = $2
-                  and i.completed_at >= b.bucket
-                  and i.completed_at < b.bucket + make_interval(days => $5)) as finished
+                  and i.completed_at >= greatest(b.bucket, $3::timestamptz)
+                  and i.completed_at < least(b.bucket + make_interval(days => $5), $4::timestamptz)) as finished
          from buckets b
         order by b.bucket`,
       [tenantId, args.processKey, from, now, bucketDays],
