@@ -47,7 +47,7 @@ export function ChoiceMenu({ label, value, groups, onChange, searchable = false 
     if (!open) setQuery('');
   }, [open, searchable]);
 
-  return <div className="bd__choice" ref={root} onKeyDown={event => {
+  return <div className="bd__choiceMenu" ref={root} onKeyDown={event => {
     if (event.key === 'Escape' && open) {
       event.preventDefault();
       setOpen(false);

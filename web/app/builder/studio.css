@@ -156,7 +156,7 @@
 .bd__studioCard .bd__rowLabel { margin-bottom: 4px; font-size: 11px; font-weight: 700; }
 .bd__studioCard .bd__rowLabel em { display: inline; margin-left: 5px; font-size: 10px; }
 .bd__studioCard .bd__input { min-height: 34px; height: 34px; font-size: 12px; }
-.bd__choice { position: relative; width: 100%; min-width: 0; font-family: var(--ui); }
+.bd__choiceMenu { position: relative; width: 100%; min-width: 0; font-family: var(--ui); }
 .bd__choiceTrigger { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; inline-size: 100%; min-height: 39px; padding: 0 12px; border: 1px solid #d2ded5; border-radius: 8px; background: #fff; color: #20382a; font: 600 13px var(--ui); text-align: left; cursor: pointer; transition: border-color .16s, box-shadow .16s, background .16s; }
 .bd__choiceTrigger:hover, .bd__choiceTrigger[aria-expanded='true'] { border-color: #80ad91; background: #fbfefb; }
 .bd__choiceTrigger:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
