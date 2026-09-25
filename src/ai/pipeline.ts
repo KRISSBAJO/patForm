@@ -161,7 +161,7 @@ export async function generateBlueprint(
     }
 
     // ------------------------------------------------------------ gate two
-    const compiled = validate(parsed.data);
+    const compiled = validate(parsed.data, options.description);
     diagnostics = [...compiled.items, ...undeclaredAssumptions(parsed.data)];
     const candidateErrors = diagnostics.filter((item) => item.severity === 'error');
     if (candidateErrors.length && (!editable || candidateErrors.length < editable.errors.length)) {
@@ -172,7 +172,7 @@ export async function generateBlueprint(
       meta: response.meta,
       shapeOk: true,
       shapeIssues: [],
-      errors: compiled.errors,
+      errors: candidateErrors,
       warnings: compiled.warnings,
     });
 
@@ -191,8 +191,7 @@ export async function generateBlueprint(
      * a person decided everything deliberately — which is why this lives here
      * and not in the compiler.
      */
-    const undeclared = undeclaredAssumptions(parsed.data);
-    if (compiled.publishable && !undeclared.length) {
+    if (compiled.publishable && !candidateErrors.length) {
       blueprint = parsed.data;
       // A failed scenario is repairable too. Previously this gate ran only
       // after the final model turn, so its diagnostics could never reach the

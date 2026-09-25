@@ -395,6 +395,7 @@ function locate(d: Diagnostic, bp: Blueprint | null): { tab: Tab; index: number 
     [/^experience\.pages\[(\d+)\]/, 'pages'],
     [/^data\.fields\[(\d+)\]/, 'fields'],
     [/^workflow\.states\[(\d+)\]/, 'states'],
+    [/^workflow\.transitions\[(\d+)\]/, 'rules'],
     [/^workflow\.approvals\[(\d+)\]/, 'approvals'],
     [/^workflow\.tasks\[(\d+)\]/, 'tasks'],
     [/^roles\[(\d+)\]/, 'roles'],
@@ -413,6 +414,12 @@ function locate(d: Diagnostic, bp: Blueprint | null): { tab: Tab; index: number 
   // The path is therefore useless for navigation in exactly the cases that
   // matter most. The keys are in the message, so resolve by those instead.
   if (!bp) return null;
+
+  if (d.code === 'AIQ001' || d.code === 'AIQ002') {
+    const firstQuestion = bp.data.fields.findIndex((field) => (field.type === 'single_choice' || field.type === 'dropdown') &&
+      (/^q\d+(?:_|$)/i.test(field.key) || /^\s*\d+[.)\s]/.test(field.label) || field.label.includes('?')));
+    return { tab: 'fields', index: Math.max(0, firstQuestion) };
+  }
 
   // "Template "x" puts restricted field "y" into an email body" is about the
   // template, whatever else it names — the field is where it came from, the
@@ -1132,15 +1139,18 @@ export function Builder() {
                   <ProcessOverview
                     blueprint={blueprint}
                     onEditFields={() => {
-                      const firstSpecific = blueprint.data.fields.findIndex((field) =>
-                        field.setBy !== 'operator' && !['submitter_name', 'submitter_email', 'decision_note'].includes(field.key),
-                      );
+                      const firstQuestion = blueprint.data.fields.findIndex((field) => field.correctValue !== undefined ||
+                        /^q\d+(?:_|$)/i.test(field.key) || /^\s*\d+[.)\s]/.test(field.label));
+                      const firstSpecific = firstQuestion >= 0 ? firstQuestion : blueprint.data.fields.findIndex((field) =>
+                        field.setBy !== 'operator' && !['submitter_name', 'submitter_email', 'decision_note'].includes(field.key));
                       setOverview(false);
                       setTab('fields');
                       setIndex(Math.max(0, firstSpecific));
                       setSide('checks');
                     }}
                     onEditApprovals={() => { setOverview(false); setTab('approvals'); setIndex(0); setSide('checks'); }}
+                    onEditRules={() => { const firstSubmission = blueprint.workflow.transitions.findIndex((rule) =>
+                      (rule.trigger as { on?: string }).on === 'submission'); setOverview(false); setTab('rules'); setIndex(Math.max(0, firstSubmission)); setSide('checks'); }}
                     onEditTasks={() => { setOverview(false); setTab('tasks'); setIndex(0); setSide('checks'); }}
                     onPreview={() => setSide('preview')}
                   />
@@ -2110,12 +2120,14 @@ function ProcessOverview({
   blueprint,
   onEditFields,
   onEditApprovals,
+  onEditRules,
   onEditTasks,
   onPreview,
 }: {
   blueprint: Blueprint;
   onEditFields: () => void;
   onEditApprovals: () => void;
+  onEditRules: () => void;
   onEditTasks: () => void;
   onPreview: () => void;
 }) {
@@ -2128,6 +2140,16 @@ function ProcessOverview({
   const approvals = blueprint.workflow.approvals ?? [];
   const tasks = blueprint.workflow.tasks ?? [];
   const finish = blueprint.workflow.states.find((state) => state.outcome === 'success');
+  const quiz = /\b(quiz|exam)\b/i.test(`${blueprint.name} ${blueprint.description ?? ''}`);
+  const quizQuestions = questions.filter((field) => (field.type === 'single_choice' || field.type === 'dropdown') &&
+    (/^\s*\d+[.)\s]/.test(field.label) || /^q\d+(?:_|$)/i.test(field.key) || field.label.includes('?')));
+  const requestedQuestions = blueprint.description?.match(/\b(\d{1,2})\s+(?:multiple[ -]choice\s+)?questions?\b/i)?.[1];
+  const fourChoices = quizQuestions.filter((field) => field.choices?.length === 4).length;
+  const keyed = quizQuestions.filter((field) => field.correctValue !== undefined).length;
+  const initial = blueprint.workflow.states.find((state) => state.type === 'initial');
+  const directResult = blueprint.workflow.transitions.some((rule) =>
+    rule.from === initial?.key && rule.to === blueprint.intent?.completionState &&
+    (rule.trigger as { on?: string }).on === 'submission');
   const conditionFor = (approvalKey: string) => {
     const rule = blueprint.workflow.transitions.find((transition) =>
       Array.isArray(transition.actions) && transition.actions.some((action: unknown) => {
@@ -2150,6 +2172,14 @@ function ProcessOverview({
       <h2>{blueprint.name}</h2>
       {blueprint.description && <p className="bd__overviewIntro">{blueprint.description}</p>}
       {blueprint.intent?.outcome && <p className="bd__overviewOutcome"><span>OUTCOME</span><strong>{blueprint.intent.outcome}</strong></p>}
+
+      {quiz && quizQuestions.length > 0 && <section className="bd__setupMap" aria-label="Quiz setup map">
+        <div className="bd__setupMapHead"><div><span>REQUEST MAP</span><h3>Quiz setup</h3></div><p>What the draft contains and where to adjust it.</p></div>
+        <div className="bd__setupMapRow"><span>Questions</span><strong>{quizQuestions.length}{requestedQuestions ? ` of ${requestedQuestions} requested` : ' added'}</strong><button type="button" onClick={onEditFields}>View</button></div>
+        <div className="bd__setupMapRow"><span>Four options each</span><strong>{fourChoices} of {quizQuestions.length}</strong><button type="button" onClick={onEditFields}>View</button></div>
+        <div className="bd__setupMapRow"><span>Correct answers set</span><strong>{keyed} of {quizQuestions.length}</strong><button type="button" onClick={onEditFields}>View</button></div>
+        <div className="bd__setupMapRow"><span>Submission reaches results</span><strong>{directResult ? 'Direct route' : 'Needs review'}</strong><button type="button" onClick={onEditRules}>View</button></div>
+      </section>}
 
       <ol className="bd__flow">
         <li>

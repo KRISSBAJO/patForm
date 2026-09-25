@@ -13,6 +13,7 @@ import {
   type Transition,
 } from '../blueprint/index.js';
 import { Diagnostics } from './diagnostics.js';
+import { qualityDiagnostics } from './quality.js';
 
 type ValueKind = (typeof VALUE_KIND)[keyof typeof VALUE_KIND];
 
@@ -36,7 +37,7 @@ const CHOICE_TYPES = new Set(['single_choice', 'multi_choice', 'dropdown', 'matr
  * but do not block, because a process that stalls is a business decision while
  * a process that leaks data is not.
  */
-export function validate(bp: Blueprint): Diagnostics {
+export function validate(bp: Blueprint, requestedDescription?: string): Diagnostics {
   const d = new Diagnostics();
 
   // ---------------------------------------------------------------- indexes
@@ -794,6 +795,12 @@ export function validate(bp: Blueprint): Diagnostics {
      * sort of thing anyway.
      */
     if (t.trigger.on === 'timer') {
+      if (from?.type === 'initial' && bp.workflow.transitions.some((other) =>
+        other.from === t.from && other.trigger.on === 'submission' && !other.when)) {
+        d.error('TIME003', at,
+          `Timer "${t.key}" cannot run from the initial state because every valid submission leaves that state immediately.`,
+          'Move the timer to a state a submitted record can occupy. An unsubmitted form has no record to time out.');
+      }
       const byState = typeof t.trigger.afterHoursInState === 'number';
       const byDate = Boolean(t.trigger.relativeTo);
 
@@ -1121,6 +1128,10 @@ export function validate(bp: Blueprint): Diagnostics {
   }
   for (const [ti, test] of bp.tests.entries()) {
     const at = `tests[${ti}]`;
+    if (test.kind === 'rejection' && !bp.workflow.states.some((state) => state.outcome === 'rejected')) {
+      d.error('TEST006', at, 'A rejection scenario cannot run because this process has no rejected outcome.',
+        'Remove this scenario or add a real rejection path only if the process needs one.');
+    }
     for (const step of test.steps) {
       if (step.step === 'decide') {
         if (!approvalByKey.has(step.approval)) d.error('TEST002', at, `Unknown approval "${step.approval}".`);
@@ -1175,6 +1186,10 @@ export function validate(bp: Blueprint): Diagnostics {
     }
   }
 
+  for (const item of qualityDiagnostics(bp,
+    [requestedDescription, bp.name, bp.description, bp.intent.outcome].filter(Boolean).join(' '))) {
+    d.items.push(item);
+  }
   return d;
 }
 

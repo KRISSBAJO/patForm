@@ -9,7 +9,7 @@ import type { Diagnostic } from '../compiler/diagnostics.js';
  * record says exactly which instructions produced it. Eval results are only
  * comparable within a version.
  */
-export const PROMPT_VERSION = 'blueprint-gen@9';
+export const PROMPT_VERSION = 'blueprint-gen@10';
 
 export const SYSTEM_PROMPT = `You design business processes for an operations platform.
 
@@ -69,7 +69,7 @@ Form and data
 - Every required field the RESPONDENT enters must appear in exactly one page section. Hidden and calculated fields are never placed.
 - A value someone fills in later — a triage severity, a reference number, a reviewer's note — is a field with "setBy": "operator" (or "system" for one the runtime writes). Those do not go on a page. Use this instead of leaving a field unplaced.
 - A single_choice, multi_choice, dropdown or matrix field must declare "choices".
-- For a scored quiz, put "correctValue" on each single_choice question. It must equal exactly one choice value. The server keeps the answer key out of the public form, scores after a valid submission, and shows percentage plus correct answers for missed questions. Do not add respondent-entered Score, Percentage, or Answer Review fields: those are produced by the runtime. A quiz with requested automatic scoring but no correctValue on its questions is incomplete.
+- For a scored quiz, create exactly the requested number of questions and put "correctValue" on EVERY single_choice question. It must equal exactly one choice value. The server keeps the answer key out of the public form, scores after a valid submission, and shows percentage plus correct answers for missed questions. Do not add Score, Percentage, Missed Questions or Answer Review fields: those are produced by the runtime. Submission should move directly to the successful terminal state; do not make a Scoring state that waits for a record edit. Send a results email only if requested.
 - A calculated field must have "compute", must not refer to itself, and may only do arithmetic over numeric or repeating-group fields.
 - For a total of personally paid expense rows, use {"op":"sum","over":"expense_items","of":"item_total","where":{"op":"eq","left":{"field":"item_payment_method"},"right":{"literal":"personal_card"}}}. Calculated child fields are evaluated in each row before the total.
 - Comparisons must be type-compatible: gt/gte/lt/lte need a number, currency, rating, date or time. Comparing a choice field against a value that is not one of its options is rejected.
@@ -97,11 +97,13 @@ Permissions and data protection
 Timers and reminders
 - If a state declares slaHours, give it a timer transition so something actually happens when the SLA passes.
 - Express a repeating reminder as a timer transition from a state back to itself.
+- An unsubmitted public form has no record yet. Do not invent an abandonment state or timer for a visitor who never submitted. A timeout test for that case can advance the clock and expect zero instances. A timer from the initial state cannot run when every valid submission leaves it immediately.
 
 Tests
 - Include happy_path, missing_data, timeout, duplicate, and permission scenarios. Include a rejection scenario only when the workflow has an actual rejected outcome. A scenario names only the answers that matter to it.
 - A permission scenario asserts that a role is allowed or refused one of: submit, view, edit, approve, export, operate.
 - "missing_data" means the FORM is incomplete so nothing starts. A valid submission that takes a different legitimate route is a second happy_path, not missing_data.
+- Do not include a rejection scenario unless the workflow has a real rejected outcome. Do not write an expectation that the runtime cannot reach.
 
 # How to design well
 

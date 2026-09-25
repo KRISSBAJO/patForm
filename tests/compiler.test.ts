@@ -43,6 +43,23 @@ test('a process without a rejected outcome does not need an invented rejection s
   assert.equal(validate(bp).errors.some((diagnostic) => diagnostic.code === 'TEST001' && diagnostic.message.includes('rejection')), false);
 });
 
+test('a timer cannot run from an initial state that submission leaves immediately', () => {
+  const bp = load('employee-onboarding.blueprint.json');
+  const initial = bp.workflow.states.find((state) => state.type === 'initial')!;
+  bp.workflow.transitions.push({
+    key: 'impossible_abandonment', from: initial.key, to: bp.intent.completionState,
+    trigger: { on: 'timer', afterHoursInState: 168 }, actions: [],
+  });
+  assert.ok(validate(bp).errors.some((item) => item.code === 'TIME003'));
+});
+
+test('a rejection scenario cannot be claimed without a rejected outcome', () => {
+  const bp = load('employee-onboarding.blueprint.json');
+  bp.workflow.states = bp.workflow.states.map((state) =>
+    state.outcome === 'rejected' ? { ...state, outcome: 'cancelled' as const } : state);
+  assert.ok(validate(bp).errors.some((item) => item.code === 'TEST006'));
+});
+
 test('a reviewed assumption clears only its own builder warning', () => {
   const bp = load(realProcesses[0]!);
   bp.intent.assumptions = [

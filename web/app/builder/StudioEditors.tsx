@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useConfirm } from '../../components/confirm-dialog';
 import type { Blueprint, BpDocument, BpField, BpScenario, BpTestStep } from './Builder';
 
 type Change = (fn: (bp: Blueprint) => void) => void;
@@ -55,6 +56,7 @@ export function ConditionEditor({ title, value, fields, onChange }: { title: str
 }
 
 export function PageEditor({ blueprint, index, onIndex, onChange, onSelectField }: { blueprint: Blueprint; index: number; onIndex: (i: number) => void; onChange: Change; onSelectField: (i: number) => void }) {
+  const [askConfirm, confirmDialog] = useConfirm();
   const page = blueprint.experience?.pages?.[index];
   const [newField, setNewField] = useState<Record<string, string>>({});
   if (!page) return <p className="bd__none">Choose a page or add one in the process map.</p>;
@@ -63,13 +65,14 @@ export function PageEditor({ blueprint, index, onIndex, onChange, onSelectField 
   const available = blueprint.data.fields.filter((f) => (f.setBy ?? 'respondent') === 'respondent' && !placed.has(f.key));
   const mutatePage = (fn: (p: NonNullable<typeof page>) => void) => onChange((bp) => fn(bp.experience!.pages![index]!));
   return <div className="st__editor">
-    <header className="st__head"><div><span className="st__eyebrow">FORM PAGE {index + 1} OF {pages.length}</span><h2>{page.title || 'Untitled page'}</h2><p>Arrange what people see and when they see it.</p></div><div className="st__actions"><button type="button" aria-label="Move page up" disabled={index === 0} onClick={() => { onChange((bp) => move(bp.experience!.pages!, index, index - 1)); onIndex(index - 1); }}>↑</button><button type="button" aria-label="Move page down" disabled={index === pages.length - 1} onClick={() => { onChange((bp) => move(bp.experience!.pages!, index, index + 1)); onIndex(index + 1); }}>↓</button><button type="button" disabled={pages.length <= 1} onClick={() => { if (window.confirm('Remove this page from the form? Its fields stay in the process.')) { onChange((bp) => { bp.experience!.pages!.splice(index, 1); }); onIndex(Math.max(0, index - 1)); } }}>Remove page</button></div></header>
+    {confirmDialog}
+    <header className="st__head"><div><span className="st__eyebrow">FORM PAGE {index + 1} OF {pages.length}</span><h2>{page.title || 'Untitled page'}</h2><p>Arrange what people see and when they see it.</p></div><div className="st__actions"><button type="button" aria-label="Move page up" disabled={index === 0} onClick={() => { onChange((bp) => move(bp.experience!.pages!, index, index - 1)); onIndex(index - 1); }}>↑</button><button type="button" aria-label="Move page down" disabled={index === pages.length - 1} onClick={() => { onChange((bp) => move(bp.experience!.pages!, index, index + 1)); onIndex(index + 1); }}>↓</button><button type="button" disabled={pages.length <= 1} onClick={() => void (async () => { if (!(await askConfirm({ title: 'Remove this page?', body: 'Its fields will stay in the process.', confirmLabel: 'Remove page', tone: 'danger' }))) return; onChange((bp) => { bp.experience!.pages!.splice(index, 1); }); onIndex(Math.max(0, index - 1)); })()}>Remove page</button></div></header>
     <div className="st__pair"><label>Page title<input value={page.title} onChange={(e) => mutatePage((p) => { p.title = e.target.value; })} /></label><label>Page key<input value={page.key} readOnly title="Used by saved references" /></label></div>
     <label className="st__label">Introduction<textarea rows={2} value={page.description ?? ''} onChange={(e) => mutatePage((p) => { p.description = e.target.value || undefined; })} /></label>
     <ConditionEditor title="Show this page when" value={page.visibleWhen} fields={blueprint.data.fields} onChange={(next) => mutatePage((p) => { if (next) p.visibleWhen = next; else delete p.visibleWhen; })} />
     <div className="st__sectionTitle"><h3>Sections <span>{page.sections?.length ?? 0}</span></h3><button type="button" onClick={() => mutatePage((p) => { p.sections = p.sections ?? []; p.sections.push({ key: keyFor('section'), title: 'New section', fields: [] }); })}>+ Add section</button></div>
     {(page.sections ?? []).map((section, si) => <section className="st__section" key={section.key}>
-      <header><span className="st__eyebrow">SECTION {si + 1}</span><div className="st__actions"><button type="button" aria-label="Move section up" disabled={si === 0} onClick={() => mutatePage((p) => move(p.sections!, si, si - 1))}>↑</button><button type="button" aria-label="Move section down" disabled={si === page.sections!.length - 1} onClick={() => mutatePage((p) => move(p.sections!, si, si + 1))}>↓</button><button type="button" aria-label="Remove section" disabled={page.sections!.length <= 1} onClick={() => { if (window.confirm('Remove this section from the form? Its fields stay in the process.')) mutatePage((p) => p.sections!.splice(si, 1)); }}>Remove</button></div></header>
+      <header><span className="st__eyebrow">SECTION {si + 1}</span><div className="st__actions"><button type="button" aria-label="Move section up" disabled={si === 0} onClick={() => mutatePage((p) => move(p.sections!, si, si - 1))}>↑</button><button type="button" aria-label="Move section down" disabled={si === page.sections!.length - 1} onClick={() => mutatePage((p) => move(p.sections!, si, si + 1))}>↓</button><button type="button" aria-label="Remove section" disabled={page.sections!.length <= 1} onClick={() => void (async () => { if (await askConfirm({ title: 'Remove this section?', body: 'Its fields will stay in the process.', confirmLabel: 'Remove section', tone: 'danger' })) mutatePage((p) => p.sections!.splice(si, 1)); })()}>Remove</button></div></header>
       <label className="st__label">Section title<input value={section.title ?? ''} onChange={(e) => mutatePage((p) => { p.sections![si]!.title = e.target.value || undefined; })} /></label>
       <label className="st__label">Description<textarea rows={2} value={section.description ?? ''} onChange={(e) => mutatePage((p) => { p.sections![si]!.description = e.target.value || undefined; })} /></label>
       <ConditionEditor title="Show this section when" value={section.visibleWhen} fields={blueprint.data.fields} onChange={(next) => mutatePage((p) => { if (next) p.sections![si]!.visibleWhen = next; else delete p.sections![si]!.visibleWhen; })} />
@@ -82,9 +85,10 @@ export function PageEditor({ blueprint, index, onIndex, onChange, onSelectField 
 }
 
 export function DocumentEditor({ document: doc, fields, onChange, onRemove }: { document?: BpDocument; fields: BpField[]; onChange: (fn: (d: BpDocument) => void) => void; onRemove: () => void }) {
+  const [askConfirm, confirmDialog] = useConfirm();
   const [placeholder, setPlaceholder] = useState('');
   if (!doc) return <p className="bd__none">Choose a document or add one in the process map.</p>;
-  return <div className="st__editor"><header className="st__head"><div><span className="st__eyebrow">GENERATED DOCUMENT</span><h2>{doc.name}</h2><p>Map process answers into a registered document template.</p></div><button type="button" className="st__danger" onClick={() => { if (window.confirm('Remove this document from the draft?')) onRemove(); }}>Remove</button></header>
+  return <div className="st__editor">{confirmDialog}<header className="st__head"><div><span className="st__eyebrow">GENERATED DOCUMENT</span><h2>{doc.name}</h2><p>Map process answers into a registered document template.</p></div><button type="button" className="st__danger" onClick={() => void (async () => { if (await askConfirm({ title: 'Remove this document?', body: 'It will be removed from this draft.', confirmLabel: 'Remove document', tone: 'danger' })) onRemove(); })()}>Remove</button></header>
     <div className="st__pair"><label>Name<input value={doc.name} onChange={(e) => onChange((d) => { d.name = e.target.value; })} /></label><label>Source<select value={doc.source} onChange={(e) => onChange((d) => { d.source = e.target.value as BpDocument['source']; })}><option value="html">HTML</option><option value="docx">Word document</option></select></label></div>
     <div className="st__pair"><label>Template reference<input value={doc.templateRef} onChange={(e) => onChange((d) => { d.templateRef = e.target.value; })} /></label><label>Output filename<input value={doc.filename} onChange={(e) => onChange((d) => { d.filename = e.target.value; })} /></label></div>
     <p className="st__footnote">The referenced template must already be registered. This editor connects and fills it; it does not upload a new template.</p>
@@ -115,12 +119,13 @@ function answerFromInput(field: BpField | undefined, input: string): unknown {
   return input;
 }
 export function ScenarioEditor({ scenario, blueprint, onChange, onRemove }: { scenario?: BpScenario; blueprint: Blueprint; onChange: (fn: (s: BpScenario) => void) => void; onRemove: () => void }) {
+  const [askConfirm, confirmDialog] = useConfirm();
   const [newAnswer, setNewAnswer] = useState<Record<number, string>>({});
   if (!scenario) return <p className="bd__none">Choose a scenario or add one in the process map.</p>;
   const roles = blueprint.roles.filter((r) => r.kind === 'internal');
   const fields = blueprint.data.fields.flatMap((f) => [f, ...(f.fields ?? [])]);
   const changeStep = (i: number, fn: (step: BpTestStep) => void) => onChange((s) => fn(s.steps[i]!));
-  return <div className="st__editor"><header className="st__head"><div><span className="st__eyebrow">TEST SCENARIO</span><h2>{scenario.name}</h2><p>Simulate a request and verify the outcome before launch.</p></div><button type="button" className="st__danger" onClick={() => { if (window.confirm('Remove this test scenario?')) onRemove(); }}>Remove</button></header>
+  return <div className="st__editor">{confirmDialog}<header className="st__head"><div><span className="st__eyebrow">TEST SCENARIO</span><h2>{scenario.name}</h2><p>Simulate a request and verify the outcome before launch.</p></div><button type="button" className="st__danger" onClick={() => void (async () => { if (await askConfirm({ title: 'Remove this test scenario?', body: 'It will be removed from this draft.', confirmLabel: 'Remove scenario', tone: 'danger' })) onRemove(); })()}>Remove</button></header>
     <div className="st__pair"><label>Scenario name<input value={scenario.name} onChange={(e) => onChange((s) => { s.name = e.target.value; })} /></label><label>Type<select value={scenario.kind} onChange={(e) => onChange((s) => { s.kind = e.target.value as BpScenario['kind']; })}>{kinds.map((k) => <option value={k} key={k}>{k.replaceAll('_', ' ')}</option>)}</select></label></div>
     <div className="st__sectionTitle"><h3>Steps <span>{scenario.steps.length}</span></h3><button type="button" onClick={() => onChange((s) => { s.steps.push(newStep('submit', blueprint)); })}>+ Add step</button></div>
     {scenario.steps.map((step, i) => <section className="st__section" key={i}><header><span className="st__eyebrow">STEP {i + 1}</span><div className="st__actions"><button type="button" disabled={i === 0} onClick={() => onChange((s) => move(s.steps, i, i - 1))}>↑</button><button type="button" disabled={i === scenario.steps.length - 1} onClick={() => onChange((s) => move(s.steps, i, i + 1))}>↓</button><button type="button" disabled={scenario.steps.length === 1} onClick={() => onChange((s) => { s.steps.splice(i, 1); })}>Remove</button></div></header>
