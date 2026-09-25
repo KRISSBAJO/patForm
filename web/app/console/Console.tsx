@@ -123,6 +123,7 @@ export function Console() {
     | 'data'
     | 'held'
   >('work');
+  const recordOrigin = useRef<'work' | 'records' | 'ask' | 'processes'>('work');
   const [settingsRevision, setSettingsRevision] = useState(0);
   /*
    * How many public submissions are waiting on a person. Fetched on its own:
@@ -374,6 +375,7 @@ export function Console() {
    * people are sent to in order to decide something.
    */
   const open = async (instanceId: string) => {
+    recordOrigin.current = view === 'records' || view === 'ask' || view === 'processes' ? view : 'work';
     try {
       const detail = await call<RecordDetail>(`/api/records/${instanceId}`);
       setRecord(detail);
@@ -386,7 +388,7 @@ export function Console() {
     }
   };
 
-  /** Back to the work list, and out of the address bar with it. */
+  /** Return to the page that opened the record, and clear its URL. */
   const closeRecord = useCallback(() => {
     setRecord(null);
     setShowTrail(false);
@@ -420,7 +422,7 @@ export function Console() {
     setProcessPickerOpen(false);
     setProcessSearch('');
     setRecord(null);
-    setView('work');
+    setView(recordOrigin.current);
   };
 
   return (
@@ -693,7 +695,7 @@ export function Console() {
           </button>}
         </div>
 
-        <div className={`cs__body ${view === 'security' ? 'cs__body--security' : ''} ${view === 'ask' ? 'cs__body--ask' : ''} ${view === 'dashboard' ? 'cs__body--dashboard' : ''} ${view === 'people' ? 'cs__body--people' : ''} ${view === 'records' ? 'cs__body--records' : ''} ${view === 'work' ? 'cs__body--work' : ''} ${view === 'processes' ? 'cs__body--processes' : ''} ${view === 'held' ? 'cs__body--held' : ''} ${view === 'integrations' ? 'cs__body--integrations' : ''} ${view === 'data' ? 'cs__body--data' : ''}`}>
+        <div className={`cs__body ${view === 'security' ? 'cs__body--security' : ''} ${view === 'ask' ? 'cs__body--ask' : ''} ${view === 'record' ? 'cs__body--record' : ''} ${view === 'dashboard' ? 'cs__body--dashboard' : ''} ${view === 'people' ? 'cs__body--people' : ''} ${view === 'records' ? 'cs__body--records' : ''} ${view === 'work' ? 'cs__body--work' : ''} ${view === 'processes' ? 'cs__body--processes' : ''} ${view === 'held' ? 'cs__body--held' : ''} ${view === 'integrations' ? 'cs__body--integrations' : ''} ${view === 'data' ? 'cs__body--data' : ''}`}>
           <div className="cs__left">
             {view === 'record' && record ? (
               <RecordPage
@@ -703,6 +705,7 @@ export function Console() {
                 task={work?.tasks.find((t) => t.instanceId === record.instanceId)}
                 busy={busy}
                 onBack={closeRecord}
+                backLabel={recordOrigin.current === 'records' ? 'Back to records' : recordOrigin.current === 'ask' ? 'Back to Ask' : recordOrigin.current === 'processes' ? 'Back to processes' : 'Back to My work'}
                 onDecide={(id, key, decision, reason) => void decide(id, key, decision, reason)}
                 onCompleteTask={(id, key, answers) => void completeTask(id, key, answers)}
                 onExport={(id, ref, format) => void exportRecord(id, ref, format)}

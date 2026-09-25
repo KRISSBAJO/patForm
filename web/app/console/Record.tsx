@@ -90,6 +90,7 @@ export function RecordPage({
   task,
   busy,
   onBack,
+  backLabel,
   onDecide,
   onCompleteTask,
   onExport,
@@ -101,6 +102,7 @@ export function RecordPage({
   task?: PendingTask;
   busy: string | null;
   onBack: () => void;
+  backLabel: string;
   onDecide: (instanceId: string, approvalKey: string, decision: 'approved' | 'rejected' | 'changes_requested', reason: string) => void;
   onCompleteTask: (instanceId: string, taskKey: string, answers: Record<string, string>) => void;
   onExport: (instanceId: string, reference: string, format: 'json' | 'csv') => void;
@@ -123,29 +125,28 @@ export function RecordPage({
         {receiptError && <span role="alert" className="fm__error">{receiptError}</span>}
         <button type="button" className="rc__back" onClick={onBack}>
           <Icon name="back" />
-          Back to your work
+          {backLabel}
         </button>
         <span style={{ flexGrow: 1 }} />
         <button type="button" className="cs__btn" onClick={() => onExport(record.instanceId, record.reference, 'json')}>
           <Icon name="export" />
-          Export
+          Export JSON
         </button>
         <button type="button" className="cs__btn" onClick={() => onExport(record.instanceId, record.reference, 'csv')}>
           <Icon name="table" />
-          CSV
+          Export CSV
         </button>
       </div>
 
       <header className="rc__head">
         <div>
-          {/* The reference is in the page heading already; repeating it here
-              made the page open with the same string twice. */}
+          <span className="rc__eyebrow">CURRENT STATE</span>
           <h2 className="rc__state">{record.stateName}</h2>
           <p className="rc__meta">
-            Version {record.version} · you are seeing this as{' '}
-            {record.viewerRoles.join(', ') || 'somebody with no role in this process'}
+            {record.processName} · Version {record.version} · Viewing as {record.viewerRoles.map((role) => role.replace(/_/g, ' ')).join(', ') || 'a workspace member'}
           </p>
         </div>
+        <div className="rc__nextStep"><span>WHAT HAPPENS NEXT</span><strong>{record.nextAction}</strong></div>
       </header>
 
       {/*
@@ -285,25 +286,21 @@ export function RecordPage({
       <div className="rc__body">
         <div className="rc__answers">
           <div className="cs__panel">
-            <div className="cs__panelHead">
-              <h2 className="cs__tab">What they sent</h2>
-              {hidden > 0 && (
-                <span className="cs__sort">
-                  {hidden} {hidden === 1 ? 'answer is' : 'answers are'} hidden from your role
-                </span>
-              )}
+            <div className="cs__panelHead rc__answerHead">
+              <div><span className="rc__eyebrow">SUBMISSION</span><h2 className="cs__tab">Answers</h2></div>
+              <span className="cs__sort">{hidden > 0 ? `${hidden} ${hidden === 1 ? 'answer is' : 'answers are'} hidden from your role` : `${shown.length} ${shown.length === 1 ? 'answer' : 'answers'}`}</span>
             </div>
             <dl className="rc__fields">
               {record.fields.map((f) => (
                 /*
-                  * The chip lives inside the <dd>, not beside it. A <div> in a
+                  * The chip lives inside the <dt>, not beside it. A <div> in a
                   * <dl> may hold a dt/dd pair and nothing else — a third
                   * element makes the whole list malformed, and a screen reader
                   * then has no reliable pairing between any label and any
                   * value on the page.
                   */
-                <div className="rc__field" key={f.key}>
-                  <dt className="rc__label">{f.label}</dt>
+                <div className={`rc__field${f.table || isSignature(f.value) || (typeof f.value === 'string' && f.value.length > 90) ? ' rc__field--wide' : ''}`} key={f.key}>
+                  <dt className="rc__label">{f.label}<span className={`rc__class rc__class--${f.classification}`} title={classOf(f.classification).long}>{classOf(f.classification).short}</span></dt>
                   <dd className="rc__value">
                     <span className="rc__valueText">
                       {f.value === '[redacted]' ? (
@@ -354,9 +351,6 @@ export function RecordPage({
                         (answer(f.value) ?? <span className="rc__blank">not answered</span>)
                       )}
                     </span>
-                    <span className={`rc__class rc__class--${f.classification}`} title={classOf(f.classification).long}>
-                      {classOf(f.classification).short}
-                    </span>
                   </dd>
                 </div>
               ))}
@@ -364,31 +358,20 @@ export function RecordPage({
           </div>
         </div>
 
-        <aside className="rc__side">
-          <div className="cs__card">
-            <span className="cs__cardLabel">WHAT HAPPENS NEXT</span>
-            <p className="rc__next">{record.nextAction}</p>
-          </div>
-
-          <div className={`cs__card rc__trailCard${showTrail ? ' rc__trailCard--open' : ''}`}>
-            <span className="cs__cardLabel">THE TRAIL</span>
-            {!showTrail && (
-              <p className="rc__sideNote">
-                Every event, job, attempt and result for this record — what ran, in what order, and what failed.
-              </p>
-            )}
+      </div>
+      <section className={`rc__history${showTrail ? ' rc__history--open' : ''}`}>
+          <div className="rc__historyIntro"><div><span className="rc__eyebrow">ACTIVITY</span><h2>Record history</h2><p>Events, decisions, and delivery attempts in the order they happened.</p></div>
             <button type="button" className="cs__btn" aria-expanded={showTrail} aria-controls="record-trail" onClick={() => setShowTrail((w) => !w)}>
               <Icon name={showTrail ? 'hide' : 'trail'} />
-              {showTrail ? 'Hide the trail' : 'Show the trail'}
+              {showTrail ? 'Hide history' : 'Show history'}
             </button>
+          </div>
             {showTrail && (
               <div id="record-trail" className="rc__trailContent" role="region" aria-label="The trail">
                 <RecordTrail instanceId={record.instanceId} />
               </div>
             )}
-          </div>
-        </aside>
-      </div>
+      </section>
     </div>
   );
 }
