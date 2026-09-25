@@ -1107,6 +1107,9 @@ export function validate(bp: Blueprint): Diagnostics {
   // ------------------------------------------------------------------- tests
   const kinds = new Set(bp.tests.map((t) => t.kind));
   for (const kind of REQUIRED_TEST_KINDS) {
+    // A quiz or other automatic flow may have no rejection outcome. Requiring
+    // a rejection test there asks authors to invent behavior the process lacks.
+    if (kind === 'rejection' && !bp.workflow.states.some((state) => state.outcome === 'rejected')) continue;
     if (!kinds.has(kind)) {
       d.error(
         'TEST001',

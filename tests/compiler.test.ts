@@ -36,6 +36,13 @@ for (const file of realProcesses) {
   });
 }
 
+test('a process without a rejected outcome does not need an invented rejection scenario', () => {
+  const bp = load(realProcesses[0]!);
+  bp.workflow.states = bp.workflow.states.map((state) => state.outcome === 'rejected' ? { ...state, outcome: 'cancelled' as const } : state);
+  bp.tests = bp.tests.filter((scenario) => scenario.kind !== 'rejection');
+  assert.equal(validate(bp).errors.some((diagnostic) => diagnostic.code === 'TEST001' && diagnostic.message.includes('rejection')), false);
+});
+
 test('a reviewed assumption clears only its own builder warning', () => {
   const bp = load(realProcesses[0]!);
   bp.intent.assumptions = [

@@ -9,7 +9,7 @@ import type { Diagnostic } from '../compiler/diagnostics.js';
  * record says exactly which instructions produced it. Eval results are only
  * comparable within a version.
  */
-export const PROMPT_VERSION = 'blueprint-gen@8';
+export const PROMPT_VERSION = 'blueprint-gen@9';
 
 export const SYSTEM_PROMPT = `You design business processes for an operations platform.
 
@@ -99,7 +99,7 @@ Timers and reminders
 - Express a repeating reminder as a timer transition from a state back to itself.
 
 Tests
-- Include all six scenario kinds: happy_path, rejection, missing_data, timeout, duplicate, permission. A scenario names only the answers that matter to it.
+- Include happy_path, missing_data, timeout, duplicate, and permission scenarios. Include a rejection scenario only when the workflow has an actual rejected outcome. A scenario names only the answers that matter to it.
 - A permission scenario asserts that a role is allowed or refused one of: submit, view, edit, approve, export, operate.
 - "missing_data" means the FORM is incomplete so nothing starts. A valid submission that takes a different legitimate route is a second happy_path, not missing_data.
 
