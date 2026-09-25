@@ -756,9 +756,6 @@
 .ask__label { grid-area: label; margin-bottom: 0; }
 .ask__input { grid-area: input; }
 .ask__form > button { grid-area: button; }
-.ask__builderHandoff { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 12px 0 18px; padding: 12px 14px; border: 1px solid var(--line-soft); border-radius: 8px; background: var(--paper-2); font-size: 13px; }
-.ask__builderHandoff .cs__btn { flex: none; }
-@media (max-width: 700px) { .ask__builderHandoff { flex-direction: column; align-items: flex-start; } }
 
 .ask__input {
   flex: 1;
@@ -1160,13 +1157,11 @@
 .ask__form { gap: 10px; }
 .ask__form .cs__btn { height: 50px; min-width: 90px; justify-content: center; }
 .ask__form .ask__input { height: 50px; font-size: 15px; }
-.ask__builderHandoff { margin: 24px 0 28px; padding: 15px 18px; background: #f6f8f6; }
 .ask__history { border-top: 1px solid var(--line-soft); padding-top: 24px; }
 
 @media (max-width: 700px) {
   .ask__form { grid-template-columns: 1fr; grid-template-areas: 'label' 'input' 'button'; }
   .ask__form .cs__btn { width: 100%; }
-  .ask__builderHandoff .cs__btn { width: 100%; justify-content: center; }
 }
 
 .vw__mfaIntro {
@@ -4419,10 +4414,6 @@ a.cs__navItem {
 .ask__contentHead h3 { margin: 6px 0 0; font-size: 20px; letter-spacing: -.02em; }
 .ask__history { margin-top: 20px; padding-top: 0; border-top: 0; }
 .ask__historyTitle { display: none; }
-.ask__builderHandoff { margin: 30px 0 0; padding: 18px 20px; border-radius: 12px; background: #f7faf7; }
-.ask__builderHandoff span { display: grid; gap: 3px; }
-.ask__builderHandoff strong { font-size: 14px; }
-.ask__builderHandoff small { font-size: 12.5px; color: var(--muted); }
 @media (max-width: 700px) {
   .ask__hero { min-height: 0; padding: 22px 14px; }
   .ask__heroCard { padding: 24px 18px; border-radius: 16px; }
@@ -4430,6 +4421,58 @@ a.cs__navItem {
   .ask__prompt { min-height: 56px; padding-left: 12px; }
   .ask__form .ask__input { height: 42px; font-size: 14px; }
   .ask__send { width: 42px; height: 42px; }
-  .ask__builderHandoff { align-items: stretch; }
 }
 @media (prefers-reduced-motion: reduce) { .ask__spinner { animation: none; } }
+
+/* A separate creation path in the Ask header. */
+.cs .cs__btn--create { border-color: #b9d9c4; background: #edf8f0; color: var(--green-deep); }
+.cs .cs__btn--create:hover { border-color: var(--green); background: #e1f3e7; }
+.cs__createMark { font-size: 17px; line-height: 1; color: var(--green); }
+
+/* Saved Ask runs: searchable, status-led, and paged by the server. */
+.ah { min-width: 0; }
+.ah__tools { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; }
+.ah__search { display: flex; align-items: center; gap: 9px; flex: 1; min-width: 0; height: 42px; padding: 4px 5px 4px 12px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+.ah__search:focus-within { border-color: var(--green); box-shadow: 0 0 0 3px var(--green-pale); }
+.ah__search .cs__icon { margin: 0; color: var(--muted); }
+.ah__search input { flex: 1; min-width: 0; height: 100%; border: 0; outline: 0; background: transparent; color: var(--ink); font: 13px var(--ui); }
+.ah__search .cs__btn { min-height: 31px; }
+.ah__filter { flex: none; height: 42px; min-width: 155px; padding: 0 12px; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--ink-soft); font: 13px var(--ui); }
+.ah__filter:focus-visible, .ah__action:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+.ah__empty { margin: 0; padding: 34px 20px; border: 1px dashed var(--line); border-radius: 10px; text-align: center; color: var(--muted); font-size: 13px; }
+.ah__list { margin: 0; padding: 0; list-style: none; border: 1px solid var(--line-soft); border-radius: 11px; overflow: hidden; }
+.ah__item { display: flex; align-items: flex-start; gap: 13px; padding: 17px 18px; background: #fff; }
+.ah__item + .ah__item { border-top: 1px solid var(--line-soft); }
+.ah__item:hover { background: #fbfdfb; }
+.ah__icon { display: grid; place-items: center; flex: none; width: 34px; height: 34px; border-radius: 9px; background: #edf7f0; color: var(--green-deep); }
+.ah__icon .cs__icon { margin: 0; }
+.ah__icon--review { background: #fff5e5; color: #956521; }
+.ah__icon--issue { background: #fdf0ed; color: var(--red-text); }
+.ah__main { flex: 1; min-width: 0; }
+.ah__titleRow { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; }
+.ah__titleRow strong { min-width: 0; color: var(--ink); font-size: 14px; font-weight: 650; line-height: 1.4; overflow-wrap: anywhere; }
+.ah__titleRow time { flex: none; color: var(--muted); font-size: 11.5px; white-space: nowrap; }
+.ah__summary { display: flex; align-items: center; gap: 9px; margin-top: 5px; color: var(--muted); font-size: 12px; }
+.ah__status { display: inline-flex; align-items: center; padding: 3px 8px; border-radius: 999px; background: #e9f5ec; color: var(--green-deep); font-size: 11px; font-weight: 700; }
+.ah__status--review { background: #fff5e5; color: #8e5c14; }
+.ah__status--issue { background: #fdf0ed; color: var(--red-text); }
+.ah__reading, .ah__error { margin: 9px 0 0; font-size: 12.5px; line-height: 1.45; color: var(--ink-soft); }
+.ah__error { color: var(--red-text); }
+.ah__actions { display: flex; flex-wrap: wrap; gap: 15px; margin-top: 10px; }
+.ah__action { display: inline-flex; align-items: center; gap: 4px; padding: 0; border: 0; background: transparent; color: var(--green-deep); font: 600 12px var(--ui); cursor: pointer; }
+.ah__action:hover { text-decoration: underline; }
+.ah__action .cs__icon { width: 13px; height: 13px; margin: 0; }
+.ah__detail { margin-top: 12px; padding: 12px; border: 1px solid var(--line-soft); border-radius: 8px; background: var(--paper-2); color: var(--muted); font-size: 11.5px; }
+.ah__detail .st__pre { max-height: 240px; margin: 8px 0 0; overflow: auto; }
+.ah__pager { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-top: 16px; color: var(--muted); font-size: 12px; }
+.ah__pager > div { display: flex; align-items: center; gap: 10px; }
+.ah__pager .cs__btn:disabled { opacity: .5; cursor: not-allowed; }
+@media (max-width: 700px) {
+  .ah__tools { flex-wrap: wrap; }
+  .ah__search { flex-basis: 100%; }
+  .ah__filter { width: 100%; }
+  .ah__item { padding: 14px 12px; gap: 10px; }
+  .ah__titleRow { display: block; }
+  .ah__titleRow time { display: block; margin-top: 4px; }
+  .ah__pager { align-items: flex-start; }
+}

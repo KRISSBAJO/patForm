@@ -10,6 +10,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
+import { Icon, type IconName } from './Icon';
 
 async function get<T>(path: string): Promise<T> {
   const res = await fetch(path, { credentials: 'same-origin' });
@@ -270,10 +271,24 @@ interface Run {
   created_at: string;
   confirmed_at: string | null;
   plan: unknown;
+  action_plan: unknown | null;
   model: string | null;
   prompt_version: string | null;
   latency_ms: number | null;
   error: string | null;
+}
+
+interface RunPage { runs: Run[]; total: number; page: number; pageSize: number }
+
+function runState(status: string): { label: string; icon: IconName; tone: string } {
+  switch (status) {
+    case 'answered': return { label: 'Answered', icon: 'done', tone: 'done' };
+    case 'previewed': return { label: 'Ready to review', icon: 'trail', tone: 'review' };
+    case 'executed': return { label: 'Action completed', icon: 'done', tone: 'done' };
+    case 'failed': return { label: 'Failed', icon: 'reject', tone: 'issue' };
+    case 'refused': return { label: 'Could not answer', icon: 'reject', tone: 'issue' };
+    default: return { label: status.replace(/_/g, ' '), icon: 'trail', tone: 'review' };
+  }
 }
 
 /**
@@ -283,73 +298,82 @@ interface Run {
  * It was written faithfully from the first day and had no reader. An AI audit
  * log nobody can open is a compliance claim rather than a control.
  */
-export function AskHistory({ onRerun }: { onRerun: (run: Run) => void }) {
-  const [runs, setRuns] = useState<Run[] | null>(null);
+export function AskHistory({ processKey, onRerun }: { processKey: string; onRerun: (run: Run) => void }) {
+  const [data, setData] = useState<RunPage | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    try {
-      setRuns(await get<Run[]>('/api/copilot/runs'));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    }
-  }, []);
+  const [search, setSearch] = useState('');
+  const [query, setQuery] = useState('');
+  const [status, setStatus] = useState('');
+  const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    void load();
-  }, [load]);
-
-  if (error) {
-    return (
-      <p className="tr__note" role="alert">
-        {error}
-      </p>
-    );
-  }
-  if (!runs?.length) {
-    return (
-      <p className="tr__note">
-        Nothing asked yet. Every question is recorded here with the model, the prompt version, the
-        plan it produced and whether a person approved it.
-      </p>
-    );
-  }
+    let live = true;
+    const params = new URLSearchParams({ process: processKey, page: String(page), pageSize: '10' });
+    if (query) params.set('q', query);
+    if (status) params.set('status', status);
+    setLoading(true);
+    setError(null);
+    setData(null);
+    void get<RunPage>(`/api/copilot/runs?${params}`).then((next) => {
+      if (live) setData(next);
+    }).catch((err: Error) => {
+      if (live) setError(err.message);
+    }).finally(() => {
+      if (live) setLoading(false);
+    });
+    return () => { live = false; };
+  }, [processKey, page, query, status]);
 
   return (
-    <ul className="tr__runs">
-      {runs.slice(0, 15).map((r) => (
-        <li key={r.id} className="tr__run">
-          <div className="tr__runHead">
-            <span className="tr__runQ">{r.question}</span>
-            <span className="tr__when">{new Date(r.created_at).toLocaleString()}</span>
-          </div>
-          <div className="tr__meta">
-            {r.asked_by ?? 'unknown'} · {r.status}
-            {r.confirmed_at ? ' · approved' : ''}
-            {r.latency_ms ? ` · ${r.latency_ms}ms` : ''}
-            {r.model ? ` · ${r.model}` : ''}
-            {r.prompt_version ? ` · ${r.prompt_version}` : ''}
-          </div>
-          {r.error && <div className="tr__error">{r.error}</div>}
-          <div className="mg__rowActions" style={{ marginTop: 8 }}>
-            <button
-              type="button"
-              className="cs__btn"
-              onClick={() => setOpen(open === r.id ? null : r.id)}
-              aria-expanded={open === r.id}
-            >
-              {open === r.id ? 'Hide the plan' : 'Show the plan'}
-            </button>
-            {r.plan != null && (
-              <button type="button" className="cs__btn" onClick={() => onRerun(r)}>
-                Run it again
-              </button>
-            )}
-          </div>
-          {open === r.id && <pre className="st__pre">{JSON.stringify(r.plan, null, 2)}</pre>}
-        </li>
-      ))}
-    </ul>
+    <div className="ah">
+      <div className="ah__tools">
+        <form className="ah__search" onSubmit={(event) => { event.preventDefault(); setPage(1); setQuery(search.trim()); }}>
+          <Icon name="search" />
+          <label className="ask__srOnly" htmlFor="ask-history-search">Search recent questions</label>
+          <input id="ask-history-search" type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search questions…" />
+          <button type="submit" className="cs__btn">Search</button>
+        </form>
+        <label className="ask__srOnly" htmlFor="ask-history-status">Filter activity</label>
+        <select id="ask-history-status" className="ah__filter" value={status} onChange={(event) => { setPage(1); setStatus(event.target.value); }}>
+          <option value="">All activity</option>
+          <option value="answered">Answered</option>
+          <option value="previewed">Ready to review</option>
+          <option value="executed">Action completed</option>
+          <option value="issues">Issues</option>
+        </select>
+      </div>
+      {loading ? <p className="ah__empty" role="status">Loading activity…</p> : error ? <p className="ah__empty" role="alert">Could not load activity: {error}</p> : !data?.runs.length ? (
+        <p className="ah__empty">{query || status ? 'No questions match these filters.' : 'No questions yet for this process. Ask one above to get started.'}</p>
+      ) : (
+        <ul className="ah__list">
+          {data.runs.map((r) => {
+            const state = runState(r.status);
+            return <li key={r.id} className="ah__item">
+              <span className={`ah__icon ah__icon--${state.tone}`} aria-hidden="true"><Icon name={state.icon} /></span>
+              <div className="ah__main">
+                <div className="ah__titleRow"><strong>{r.question}</strong><time dateTime={r.created_at}>{new Date(r.created_at).toLocaleString()}</time></div>
+                <div className="ah__summary"><span className={`ah__status ah__status--${state.tone}`}>{state.label}</span><span>{r.asked_by ?? 'Workspace member'}</span></div>
+                {r.reading && <p className="ah__reading">{r.reading}</p>}
+                {r.error && <p className="ah__error">{r.error}</p>}
+                <div className="ah__actions">
+                  {r.plan != null && <button type="button" className="ah__action" onClick={() => onRerun(r)}><Icon name="search" /> Review again</button>}
+                  <button type="button" className="ah__action" onClick={() => setOpen(open === r.id ? null : r.id)} aria-expanded={open === r.id}><Icon name="trail" /> {open === r.id ? 'Hide details' : 'Plan & audit'}</button>
+                </div>
+                {open === r.id && <div className="ah__detail">
+                  <div>{r.model ?? 'Model unavailable'}{r.prompt_version ? ` · ${r.prompt_version}` : ''}{r.latency_ms != null ? ` · ${r.latency_ms}ms` : ''}{r.confirmed_at ? ` · confirmed ${new Date(r.confirmed_at).toLocaleString()}` : ''}</div>
+                  <pre className="st__pre">{JSON.stringify(r.plan, null, 2)}</pre>
+                </div>}
+              </div>
+            </li>;
+          })}
+        </ul>
+      )}
+      {!loading && data && data.total > 0 && <div className="ah__pager">
+        <span>Showing {(data.page - 1) * data.pageSize + 1}–{Math.min(data.page * data.pageSize, data.total)} of {data.total}</span>
+        <div><button type="button" className="cs__btn" disabled={page <= 1 || loading} onClick={() => { setOpen(null); setPage((n) => n - 1); }}>Previous</button><span>Page {page} of {Math.ceil(data.total / data.pageSize)}</span><button type="button" className="cs__btn" disabled={page * data.pageSize >= data.total || loading} onClick={() => { setOpen(null); setPage((n) => n + 1); }}>Next</button></div>
+      </div>}
+    </div>
   );
 }

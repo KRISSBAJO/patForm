@@ -682,7 +682,11 @@ export function Console() {
             <span className="cs__version">{view === 'record' && record ? record.processName : work?.processName}</span>
           )}
           <span className="cs__headSpacer" />
-          {view !== 'security' && <button type="button" className="cs__btn" onClick={() => void load()}>
+          {view === 'ask' ? (
+            <button type="button" className="cs__btn cs__btn--create" onClick={() => { sessionStorage.removeItem('patform:new-process-description'); window.location.href = '/builder/ai'; }}>
+              <span className="cs__createMark" aria-hidden="true">✦</span> Build with AI
+            </button>
+          ) : view !== 'security' && <button type="button" className="cs__btn" onClick={() => void load()}>
             Refresh
           </button>}
         </div>

@@ -91,11 +91,6 @@ export function Ask({ processKey, onOpenRecord }: { processKey: string; onOpenRe
   const [error, setError] = useState<string | null>(null);
   const [showPlan, setShowPlan] = useState(false);
 
-  const startForm = () => {
-    sessionStorage.removeItem('patform:new-process-description');
-    window.location.href = '/builder/ai';
-  };
-
   /**
    * Runs a plan from the history directly, without asking a model again.
    *
@@ -104,14 +99,14 @@ export function Ask({ processKey, onOpenRecord }: { processKey: string; onOpenRe
    * produce a different plan — which is the whole reason the plan, and not the
    * question, is what gets confirmed.
    */
-  const rerun = async (plan: unknown) => {
+  const rerun = async (plan: unknown, action: unknown | null) => {
     setBusy('ask');
     setError(null);
     setReport(null);
     try {
       const ran = await call<AskResult>('/api/copilot/run', {
         method: 'POST',
-        body: JSON.stringify({ plan }),
+        body: JSON.stringify({ plan, action }),
       });
       setResult(ran);
     } catch (err) {
@@ -221,9 +216,11 @@ export function Ask({ processKey, onOpenRecord }: { processKey: string; onOpenRe
           <div className="ask__history">
             <h3 className="ask__historyTitle">What has been asked here</h3>
             <AskHistory
+              key={processKey}
+              processKey={processKey}
               onRerun={(run) => {
                 setQuestion(run.question);
-                void rerun(run.plan);
+                void rerun(run.plan, run.action_plan);
               }}
             />
           </div>
@@ -321,10 +318,6 @@ export function Ask({ processKey, onOpenRecord }: { processKey: string; onOpenRe
             {report && <Result report={report} />}
           </>
         )}
-        <div className="ask__builderHandoff">
-          <span><strong>Need a new process?</strong><small>Describe a form and its approvals to create a private draft.</small></span>
-          <button type="button" className="cs__btn" onClick={startForm}>Build with AI <span aria-hidden="true">↗</span></button>
-        </div>
       </div>
     </div>
   );
