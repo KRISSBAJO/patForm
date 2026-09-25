@@ -1254,7 +1254,7 @@ export function HeldView({ onChanged }: { onChanged: (count: number) => void }) 
   }
 
   return (
-    <div className="cs__panel">
+    <div className="hd__page">
       {confirmDialog}
       {reviewing && (
         <HeldReview
@@ -1273,26 +1273,30 @@ export function HeldView({ onChanged }: { onChanged: (count: number) => void }) 
           }}
         />
       )}
-      <div className="cs__panelHead">
-        <h2 className="cs__tab">Held for a person to check</h2>
-        <span className="cs__sort">{rows.length} waiting</span>
+      <div className="hd__intro">
+        <div>
+          <span className="hd__eyebrow">PUBLIC FORM SCREENING</span>
+          <h2>Held submissions</h2>
+          <p>Review submissions that need a human check before they become records.</p>
+        </div>
+        <span className="hd__count"><strong>{rows.length}</strong> waiting for review</span>
       </div>
-      <p className="vw__note">
-        These came in through a public form and looked automated. <strong>None of them has done anything yet</strong> —
-        no record, no receipt, no email to anyone they name. Release one and it becomes a record as if it had just
-        arrived. Anything left here is deleted after thirty days.
-      </p>
 
       {note && (
-        <p className="vw__note vw__note--done" role="status">
+        <p className="hd__notice" role="status">
           {note}
         </p>
       )}
 
       {!rows.length ? (
-        <div className="cs__empty">Nothing is held. Every public submission so far looked like a person filled it in.</div>
+        <div className="hd__empty">
+          <span className="hd__emptyIcon" aria-hidden="true"><Icon name="done" /></span>
+          <h3>All clear</h3>
+          <p>There are no submissions to review right now.</p>
+          <span>New submissions that need checking will appear here automatically.</span>
+        </div>
       ) : (
-        <ul className="hd__list">
+        <ul className="hd__list" aria-label="Submissions waiting for review">
           {rows.map((row) => {
             // A glance on the card: short answers only. The rest, signatures
             // and long text included, are in the review.
@@ -1341,6 +1345,18 @@ export function HeldView({ onChanged }: { onChanged: (count: number) => void }) 
           })}
         </ul>
       )}
+      <div className="hd__guide" aria-labelledby="hd-guide-title">
+        <div className="hd__guideHead">
+          <span className="hd__eyebrow">HOW IT WORKS</span>
+          <h3 id="hd-guide-title">A pause before anything goes out</h3>
+        </div>
+        <ol className="hd__steps">
+          <li><span className="hd__stepNumber">1</span><div><strong>A form is submitted</strong><p>Screening checks public submissions for signs of automation.</p></div></li>
+          <li><span className="hd__stepNumber">2</span><div><strong>You review what was held</strong><p>See why it paused and read the answers before deciding.</p></div></li>
+          <li><span className="hd__stepNumber">3</span><div><strong>Release or discard</strong><p>Release creates the record and starts its workflow. Discard deletes the answers.</p></div></li>
+        </ol>
+        <p className="hd__guideFoot">While held, no record is created and no receipt or workflow email is sent. Unreviewed submissions are deleted after 30 days.</p>
+      </div>
     </div>
   );
 }

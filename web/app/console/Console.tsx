@@ -691,7 +691,7 @@ export function Console() {
           </button>}
         </div>
 
-        <div className={`cs__body ${view === 'security' ? 'cs__body--security' : ''} ${view === 'ask' ? 'cs__body--ask' : ''} ${view === 'processes' ? 'cs__body--processes' : ''}`}>
+        <div className={`cs__body ${view === 'security' ? 'cs__body--security' : ''} ${view === 'ask' ? 'cs__body--ask' : ''} ${view === 'processes' ? 'cs__body--processes' : ''} ${view === 'held' ? 'cs__body--held' : ''}`}>
           <div className="cs__left">
             {view === 'record' && record ? (
               <RecordPage
@@ -800,7 +800,7 @@ export function Console() {
 
           {/* The record page carries its own side column; two of them would
               be a column of cards about a different subject. */}
-          {view !== 'record' && view !== 'security' && view !== 'ask' && view !== 'processes' && (
+          {view !== 'record' && view !== 'security' && view !== 'ask' && view !== 'processes' && view !== 'held' && (
           <div className="cs__right">
             {!processKey ? null : health ? (
               <div className="cs__card">
