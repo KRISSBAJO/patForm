@@ -356,3 +356,20 @@
   line-height: 1.55;
   color: var(--muted);
 }
+
+.sp__assets { display: grid; gap: 11px; margin: 15px 0; }
+.sp__asset { overflow: hidden; border: 1px solid #dce9df; border-radius: 10px; background: #f9fcfa; }
+.sp__assetTop { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; padding: 11px 12px 8px; }
+.sp__assetTop strong { color: #163f2a; font: 700 12px var(--ui); }
+.sp__assetTop small { color: #6c7b71; font-size: 10px; text-align: right; }
+.sp__assetImage { margin: 0 12px 8px; overflow: hidden; border: 1px solid #dfebe2; border-radius: 7px; background: #edf4ee; }
+.sp__assetImage--logo { display: grid; place-items: center; width: 64px; height: 64px; }
+.sp__assetImage--banner { height: 86px; }
+.sp__assetImage img { width: 100%; height: 100%; object-fit: contain; }
+.sp__assetImage--banner img { object-fit: cover; }
+.sp__assetActions { display: flex; gap: 10px; align-items: center; padding: 0 12px 11px; }
+.sp__uploadButton, .sp__assetActions button { display: inline-flex; align-items: center; justify-content: center; min-height: 31px; padding: 0 10px; border: 1px solid #bbd8c4; border-radius: 6px; background: #fff; color: #125538; font: 700 11px var(--ui); cursor: pointer; }
+.sp__uploadButton:hover, .sp__assetActions button:hover { background: #ebf6ee; }
+.sp__uploadButton:focus-within { outline: 2px solid #248353; outline-offset: 2px; }
+.sp__uploadButton input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.sp__assetActions button { border-color: transparent; background: transparent; color: #86534c; }

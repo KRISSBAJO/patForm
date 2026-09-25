@@ -88,11 +88,13 @@ export function FormPreview({
   blueprint,
   onBranding,
   previewKey,
+  draftId,
 }: {
   blueprint: Shape;
   /** Absent means read-only; the gallery's detail view passes nothing. */
   onBranding?: (next: NonNullable<PublicForm['branding']>) => void;
   previewKey?: string;
+  draftId?: string;
 }) {
   const [answers, setAnswers] = useState<Record<string, unknown>>({});
   const [editing, setEditing] = useState(false);
@@ -132,7 +134,7 @@ export function FormPreview({
       )}
 
       {onBranding && editing && (
-        <BrandingEditor branding={blueprint.experience?.branding} onChange={onBranding} />
+        <BrandingEditor branding={blueprint.experience?.branding} onChange={onBranding} draftId={draftId} />
       )}
 
       {/* The respondent's own controls; only the narrow builder side panel scales them. */}
@@ -242,11 +244,15 @@ export function FormPreview({
 function BrandingEditor({
   branding,
   onChange,
+  draftId,
 }: {
   branding?: PublicForm['branding'];
   onChange: (next: NonNullable<PublicForm['branding']>) => void;
+  draftId?: string;
 }) {
   const b = branding ?? {};
+  const [uploading, setUploading] = useState<'logo' | 'banner' | null>(null);
+  const [uploadError, setUploadError] = useState('');
   const set = (k: keyof NonNullable<PublicForm['branding']>, v: string) => {
     const next = { ...b } as Record<string, string>;
     if (v.trim()) next[k] = v;
@@ -255,6 +261,34 @@ function BrandingEditor({
   };
 
   const accentOk = !b.accent || /^#[0-9a-fA-F]{6}$/.test(b.accent);
+
+  const upload = async (kind: 'logo' | 'banner', file?: File) => {
+    if (!file || !draftId) return;
+    setUploadError('');
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || file.size > 3 * 1024 * 1024) {
+      setUploadError('Choose a PNG, JPEG or WebP image up to 3 MB.');
+      return;
+    }
+    setUploading(kind);
+    try {
+      const encoded = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result).split(',')[1] ?? '');
+        reader.onerror = () => reject(new Error('The image could not be read.'));
+        reader.readAsDataURL(file);
+      });
+      const response = await fetch(`/api/builder/drafts/${draftId}/brand-assets`, {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ kind, base64: encoded }),
+      });
+      const result = await response.json() as { url?: string; error?: string; reason?: string };
+      if (!response.ok || !result.url) throw new Error(result.reason ?? result.error ?? 'The image could not be uploaded.');
+      set(kind === 'logo' ? 'logoUrl' : 'bannerUrl', new URL(result.url, window.location.origin).href);
+    } catch (error) {
+      setUploadError(error instanceof Error ? error.message : 'The image could not be uploaded.');
+    } finally {
+      setUploading(null);
+    }
+  };
 
   return (
     <div className="sp__brand">
@@ -278,25 +312,17 @@ function BrandingEditor({
         />
       </label>
 
-      <label className="sp__brandRow">
-        <span>Logo image address</span>
-        <input
-          className="sp__brandInput"
-          value={b.logoUrl ?? ''}
-          placeholder="https://…"
-          onChange={(e) => set('logoUrl', e.target.value)}
-        />
-      </label>
-
-      <label className="sp__brandRow">
-        <span>Banner image address</span>
-        <input
-          className="sp__brandInput"
-          value={b.bannerUrl ?? ''}
-          placeholder="https://…"
-          onChange={(e) => set('bannerUrl', e.target.value)}
-        />
-      </label>
+      <div className="sp__assets">
+        {(['logo', 'banner'] as const).map((kind) => {
+          const url = kind === 'logo' ? b.logoUrl : b.bannerUrl;
+          return <div className="sp__asset" key={kind}>
+            <div className="sp__assetTop"><strong>{kind === 'logo' ? 'Logo' : 'Banner'}</strong><small>{kind === 'logo' ? 'Square image recommended' : 'Wide image recommended'}</small></div>
+            {url && <div className={`sp__assetImage sp__assetImage--${kind}`}><img src={url} alt={`${kind} preview`} /></div>}
+            <div className="sp__assetActions"><label className="sp__uploadButton">{uploading === kind ? 'Uploading…' : url ? 'Replace image' : 'Upload image'}<input type="file" accept="image/png,image/jpeg,image/webp" disabled={!!uploading || !draftId} onChange={(event) => { void upload(kind, event.target.files?.[0]); event.target.value = ''; }} /></label>{url && <button type="button" onClick={() => set(kind === 'logo' ? 'logoUrl' : 'bannerUrl', '')}>Remove</button>}</div>
+          </div>;
+        })}
+      </div>
+      {uploadError && <p className="sp__warn" role="alert">{uploadError}</p>}
 
       <label className="sp__brandRow">
         <span>Colour</span>
@@ -329,9 +355,7 @@ function BrandingEditor({
         />
       </label>
 
-      <p className="sp__brandNote">
-        Images are loaded by whoever opens the form, from wherever you point them. Use an address you control.
-      </p>
+      <p className="sp__brandNote">PNG, JPEG or WebP · 3 MB maximum. Images are stored with this process.</p>
     </div>
   );
 }

@@ -70,7 +70,7 @@ export const Experience = z
         title: z.string().min(1).optional(),
         /** One line under the title. */
         tagline: z.string().max(200).optional(),
-        /** An organization's mark. A URL, because we do not host it. */
+        /** An organization's mark, uploaded to workspace image storage. */
         logoUrl: z.string().url().optional(),
         /** A photograph behind the title. */
         bannerUrl: z.string().url().optional(),

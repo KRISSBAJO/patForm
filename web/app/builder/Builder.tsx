@@ -1095,7 +1095,7 @@ export function Builder() {
             </header>
 
             <nav className="bd__journey" aria-label="Process launch steps">
-              <button type="button" className="bd__journeyStep" data-state={status === 'saved' || status === 'idle' ? 'done' : 'current'} onClick={() => setOverview(true)}>
+              <button type="button" className="bd__journeyStep" data-state={status === 'saved' || status === 'idle' ? 'done' : 'current'} onClick={() => { setOverview(true); setSide('checks'); }}>
                 <span className="bd__journeyNumber">1</span><span><strong>Draft</strong><small>{status === 'saving' ? 'Saving…' : status === 'error' ? 'Save needs attention' : 'Saved privately'}</small></span>
               </button>
               <button type="button" className="bd__journeyStep" data-state={errors.length ? 'needs-work' : 'done'} onClick={() => setSide('checks')}>
@@ -1115,11 +1115,12 @@ export function Builder() {
                 tab={tab}
                 index={index}
                 overview={overview}
-                onOverview={() => setOverview(true)}
+                onOverview={() => { setOverview(true); setSide('checks'); }}
                 onSelect={(t, i) => {
                   setOverview(false);
                   setTab(t);
                   setIndex(i);
+                  if (side === 'preview') setSide('checks');
                 }}
                 onAdd={(t) => addItem(t)}
                 readOnly={frozen}
@@ -1137,9 +1138,11 @@ export function Builder() {
                       setOverview(false);
                       setTab('fields');
                       setIndex(Math.max(0, firstSpecific));
+                      setSide('checks');
                     }}
-                    onEditApprovals={() => { setOverview(false); setTab('approvals'); setIndex(0); }}
-                    onEditTasks={() => { setOverview(false); setTab('tasks'); setIndex(0); }}
+                    onEditApprovals={() => { setOverview(false); setTab('approvals'); setIndex(0); setSide('checks'); }}
+                    onEditTasks={() => { setOverview(false); setTab('tasks'); setIndex(0); setSide('checks'); }}
+                    onPreview={() => setSide('preview')}
                   />
                 ) : (
                 <>
@@ -1371,6 +1374,7 @@ export function Builder() {
                     <FormPreview
                       blueprint={blueprint}
                       previewKey={draft.processKey}
+                      draftId={draft.id}
                       onBranding={(next) =>
                         mutate((bp) => {
                           bp.experience = { ...(bp.experience ?? {}), branding: next };
@@ -2107,11 +2111,13 @@ function ProcessOverview({
   onEditFields,
   onEditApprovals,
   onEditTasks,
+  onPreview,
 }: {
   blueprint: Blueprint;
   onEditFields: () => void;
   onEditApprovals: () => void;
   onEditTasks: () => void;
+  onPreview: () => void;
 }) {
   const questions = blueprint.data.fields.filter((field) => field.setBy !== 'operator');
   const distinctiveQuestions = questions.filter((field) =>
@@ -2138,22 +2144,22 @@ function ProcessOverview({
 
   return (
     <div className="bd__overview">
-      <span className="bd__kind">Process overview</span>
+      <div className="bd__overviewTop"><span className="bd__kind">PROCESS MAP</span><span className="bd__overviewCounts">{questions.length} questions · {approvals.length} approvals · {tasks.length} tasks</span></div>
       <h2>{blueprint.name}</h2>
       {blueprint.description && <p className="bd__overviewIntro">{blueprint.description}</p>}
-      {blueprint.intent?.outcome && <p className="bd__overviewOutcome"><strong>What this completes:</strong> {blueprint.intent.outcome}</p>}
+      {blueprint.intent?.outcome && <p className="bd__overviewOutcome"><span>OUTCOME</span><strong>{blueprint.intent.outcome}</strong></p>}
 
       <ol className="bd__flow">
         <li>
           <span className="bd__flowNumber">1</span>
           <div>
-            <h3>Someone fills in the form</h3>
+            <h3>Collect answers</h3>
             {blueprint.intent?.respondents && <p>{blueprint.intent.respondents}</p>}
             <p>
               {questions.length} questions
-              {distinctiveQuestions.length > 0 && `, including ${distinctiveQuestions.slice(0, 4).map((field) => field.label.toLowerCase()).join(', ')}${distinctiveQuestions.length > 4 ? '…' : '.'}`}
+              {distinctiveQuestions.length > 0 && `, including ${distinctiveQuestions.slice(0, 2).map((field) => field.label.toLowerCase()).join(' and ')}${distinctiveQuestions.length > 2 ? '…' : '.'}`}
             </p>
-            <button type="button" onClick={onEditFields}>Edit form fields →</button>
+            <div className="bd__flowActions"><button type="button" onClick={onEditFields}>Edit questions</button><button type="button" onClick={onPreview}>Preview form</button></div>
           </div>
         </li>
         {approvals.length > 0 && (
@@ -2161,9 +2167,8 @@ function ProcessOverview({
             <span className="bd__flowNumber">2</span>
             <div>
               <h3>Review and decide</h3>
-              <p>Approval steps are opened by the process rules when their conditions apply.</p>
               <ul>{approvals.map((approval) => <li key={approval.key}>{approval.name}{conditionFor(approval.key) ? ` — ${conditionFor(approval.key)}` : ''}</li>)}</ul>
-              <button type="button" onClick={onEditApprovals}>Edit approvals →</button>
+              <button type="button" onClick={onEditApprovals}>Edit approvals</button>
             </div>
           </li>
         )}
@@ -2173,7 +2178,7 @@ function ProcessOverview({
             <div>
               <h3>Complete the follow-up work</h3>
               <ul>{tasks.map((task) => <li key={task.key}>{task.name}{task.description ? ` — ${task.description}` : ''}</li>)}</ul>
-              <button type="button" onClick={onEditTasks}>Edit tasks →</button>
+              <button type="button" onClick={onEditTasks}>Edit tasks</button>
             </div>
           </li>
         )}
@@ -2181,11 +2186,11 @@ function ProcessOverview({
           <span className="bd__flowNumber">{2 + Number(approvals.length > 0) + Number(tasks.length > 0)}</span>
           <div>
             <h3>{finish?.name ?? 'Finish'}</h3>
-            <p>The record reaches its completed state. Rejected or withdrawn records follow their own outcome.</p>
+            <p>The record reaches its final state.</p>
           </div>
         </li>
       </ol>
-      <p className="bd__overviewHint">The form people fill in is shown in the Preview panel. Choose any item on the left to change this process.</p>
+      <p className="bd__overviewHint">Choose an item in the process map to edit its details.</p>
     </div>
   );
 }

@@ -41,6 +41,7 @@ import { DraftConflict } from '../runtime/errors.js';
 import { assertScreeningConfigured, issueTicket, screen, TRAP_FIELD } from '../runtime/screening.js';
 import { resolveForm } from '../runtime/form-links.js';
 import { receiptDownload, receiptStatus, uploadReceipt } from '../runtime/receipt-files.js';
+import { brandAssetUrl, uploadBrandAsset } from '../runtime/brand-assets.js';
 import { assertSecretKeyConfigured } from '../runtime/secret-box.js';
 import { isFresh, reauthenticate, stepUpFor } from '../runtime/step-up.js';
 import { isEnabled as mfaIsEnabled } from '../runtime/mfa.js';
@@ -308,6 +309,11 @@ route('POST', /^\/api\/builder\/drafts\/([0-9a-f-]{36})\/discard$/, async ({ poo
 route('GET', /^\/api\/builder\/drafts\/([0-9a-f-]{36})$/, async ({ pool, principal, url }) =>
   loadProcessDraft(pool, principal, url.pathname.split('/').pop()!),
 );
+
+route('POST', /^\/api\/builder\/drafts\/([0-9a-f-]{36})\/brand-assets$/, async ({ pool, principal, url }, body) => {
+  const { kind, base64 } = body as { kind?: string; base64?: string };
+  return uploadBrandAsset(pool, principal, { draftId: url.pathname.split('/')[4]!, kind: kind ?? '', base64: base64 ?? '' });
+});
 
 route('GET', /^\/api\/builder\/drafts\/([0-9a-f-]{36})\/fields\/([A-Za-z0-9_.-]+)\/history$/, async ({ pool, principal, url }) => {
   const parts = url.pathname.split('/');
@@ -1270,6 +1276,11 @@ async function main(): Promise<void> {
       if (url.pathname === '/api/health') return send(res, 200, { ok: true });
 
       try {
+        const assetId = /^\/api\/brand-assets\/([0-9a-f-]{36})$/.exec(url.pathname)?.[1];
+        if (assetId && req.method === 'GET') {
+          res.writeHead(302, { location: await brandAssetUrl(pool, assetId), 'cache-control': 'no-store' });
+          return res.end();
+        }
         /*
          * Six routes precede authentication, and each has a reason.
          *
@@ -1552,7 +1563,7 @@ async function main(): Promise<void> {
         const match = routes.find((r) => r.method === req.method && r.pattern.test(url.pathname));
         if (!match) throw new HttpError(404, `no route for ${req.method} ${url.pathname}`);
 
-        const body = req.method === 'POST' ? await readBody(req) : {};
+        const body = req.method === 'POST' ? await readBody(req, url.pathname.endsWith('/brand-assets') ? 4 * 1024 * 1024 + 1024 : Number.MAX_SAFE_INTEGER) : {};
 
         /*
          * Actions that grant access or destroy data ask for a recent sign-in.

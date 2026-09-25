@@ -326,6 +326,17 @@ create table process_draft (
 
 create index draft_open on process_draft (tenant_id, process_key) where published_as is null;
 
+create table brand_asset (
+  id uuid primary key,
+  tenant_id uuid not null references tenant(id),
+  draft_id uuid not null references process_draft(id) on delete cascade,
+  kind text not null check (kind in ('logo', 'banner')),
+  storage_key text not null unique,
+  content_type text not null,
+  byte_size int not null,
+  created_at timestamptz not null default now()
+);
+
 -- Every saved blueprint revision is retained for field-level history in the builder.
 create table process_draft_history (
   draft_id uuid not null references process_draft(id) on delete cascade,

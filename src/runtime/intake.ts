@@ -463,7 +463,9 @@ export async function submitForm(
     duplicate: result.duplicate,
     resumeToken,
     confirmation: bp.experience.confirmation,
-    quiz: scoreQuiz(bp.data.fields, answers),
+    // A duplicate keeps the original record. Its new answers were not stored,
+    // so showing a score for them would misrepresent the saved attempt.
+    quiz: result.duplicate ? undefined : scoreQuiz(bp.data.fields, answers),
   };
 }
 

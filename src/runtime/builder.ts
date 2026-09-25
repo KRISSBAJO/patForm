@@ -817,6 +817,15 @@ export async function discardDraft(
 
   // Not out from under somebody who is editing it.
   const { rowCount } = await inTransaction(pool, async (client) => {
+    // Only queue image deletion if this same transaction can remove the draft.
+    await client.query(
+      `insert into file_deletion (storage_key)
+         select a.storage_key from brand_asset a join process_draft d on d.id = a.draft_id
+          where d.id = $1 and d.tenant_id = $2 and d.published_as is null
+            and (d.locked_by is null or d.locked_by = $3 or d.locked_until < now())
+       on conflict do nothing`,
+      [args.draftId, principal.tenantId, principal.actorId],
+    );
     const removed = await client.query<{ process_key: string }>(
       `delete from process_draft
         where id = $1 and tenant_id = $2 and published_as is null

@@ -19,6 +19,17 @@ update tenant set is_scenario = true where name like 'scenario:%' and not is_sce
 -- scenarios pass again at the final publish boundary.
 alter table process_draft add column if not exists ai_review_required boolean not null default false;
 
+create table if not exists brand_asset (
+  id uuid primary key,
+  tenant_id uuid not null references tenant(id),
+  draft_id uuid not null references process_draft(id) on delete cascade,
+  kind text not null check (kind in ('logo', 'banner')),
+  storage_key text not null unique,
+  content_type text not null,
+  byte_size int not null,
+  created_at timestamptz not null default now()
+);
+
 create table if not exists process_draft_history (
   draft_id uuid not null references process_draft(id) on delete cascade,
   revision int not null,

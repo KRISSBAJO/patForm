@@ -31,6 +31,10 @@ async function forward(req: Request, path: string[]): Promise<Response> {
     redirect: 'manual',
   });
 
+  if (res.status >= 300 && res.status < 400 && res.headers.get('location')) {
+    return new Response(null, { status: res.status, headers: { location: res.headers.get('location')!, 'cache-control': 'no-store' } });
+  }
+
   const out = new Headers({ 'content-type': 'application/json' });
   // getSetCookie keeps multiple Set-Cookie headers separate; joining them
   // would corrupt cookies whose values contain a comma.
