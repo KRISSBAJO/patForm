@@ -146,7 +146,6 @@ export function RecordPage({
             {record.processName} · Version {record.version} · Viewing as {record.viewerRoles.map((role) => role.replace(/_/g, ' ')).join(', ') || 'a workspace member'}
           </p>
         </div>
-        <div className="rc__nextStep"><span>WHAT HAPPENS NEXT</span><strong>{record.nextAction}</strong></div>
       </header>
 
       {/*
@@ -293,14 +292,14 @@ export function RecordPage({
             <dl className="rc__fields">
               {record.fields.map((f) => (
                 /*
-                  * The chip lives inside the <dt>, not beside it. A <div> in a
+                  * The chip lives inside the <dd>, not beside it. A <div> in a
                   * <dl> may hold a dt/dd pair and nothing else — a third
                   * element makes the whole list malformed, and a screen reader
                   * then has no reliable pairing between any label and any
                   * value on the page.
                   */
-                <div className={`rc__field${f.table || isSignature(f.value) || (typeof f.value === 'string' && f.value.length > 90) ? ' rc__field--wide' : ''}`} key={f.key}>
-                  <dt className="rc__label">{f.label}<span className={`rc__class rc__class--${f.classification}`} title={classOf(f.classification).long}>{classOf(f.classification).short}</span></dt>
+                <div className="rc__field" key={f.key}>
+                  <dt className="rc__label">{f.label}</dt>
                   <dd className="rc__value">
                     <span className="rc__valueText">
                       {f.value === '[redacted]' ? (
@@ -351,6 +350,7 @@ export function RecordPage({
                         (answer(f.value) ?? <span className="rc__blank">not answered</span>)
                       )}
                     </span>
+                    <span className={`rc__class rc__class--${f.classification}`} title={classOf(f.classification).long}>{classOf(f.classification).short}</span>
                   </dd>
                 </div>
               ))}
@@ -358,20 +358,21 @@ export function RecordPage({
           </div>
         </div>
 
-      </div>
-      <section className={`rc__history${showTrail ? ' rc__history--open' : ''}`}>
-          <div className="rc__historyIntro"><div><span className="rc__eyebrow">ACTIVITY</span><h2>Record history</h2><p>Events, decisions, and delivery attempts in the order they happened.</p></div>
+        <aside className="rc__side">
+          <section className="rc__sidePanel rc__sidePanel--next"><span className="rc__eyebrow">CURRENT OUTCOME</span><h2>What happens next</h2><p>{record.nextAction}</p></section>
+          <section className="rc__sidePanel rc__sidePanel--history"><span className="rc__eyebrow">ACTIVITY</span><h2>Record history</h2><p>Events, decisions, and delivery attempts in order.</p>
             <button type="button" className="cs__btn" aria-expanded={showTrail} aria-controls="record-trail" onClick={() => setShowTrail((w) => !w)}>
               <Icon name={showTrail ? 'hide' : 'trail'} />
               {showTrail ? 'Hide history' : 'Show history'}
             </button>
-          </div>
             {showTrail && (
               <div id="record-trail" className="rc__trailContent" role="region" aria-label="The trail">
                 <RecordTrail instanceId={record.instanceId} />
               </div>
             )}
-      </section>
+          </section>
+        </aside>
+      </div>
     </div>
   );
 }
