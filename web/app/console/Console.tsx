@@ -392,7 +392,7 @@ export function Console() {
   const closeRecord = useCallback(() => {
     setRecord(null);
     setShowTrail(false);
-    setView('work');
+    setView(recordOrigin.current);
     window.history.pushState({}, '', window.location.pathname);
   }, []);
 
@@ -422,7 +422,7 @@ export function Console() {
     setProcessPickerOpen(false);
     setProcessSearch('');
     setRecord(null);
-    setView(recordOrigin.current);
+    setView('work');
   };
 
   return (
