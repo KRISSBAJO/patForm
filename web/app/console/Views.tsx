@@ -288,7 +288,7 @@ export function RecordsView({
 
   return (
     <div className="rv">
-      <header className="rv__intro"><div><span className="db__eyebrow">PROCESS RECORDS</span><h2>Every case, in one place</h2><p>Search the answers you can see, then open a record to review its full history.</p></div><span className="rv__count">{busy ? 'Searching…' : `${rows.length}${hasMore ? '+' : ''} records shown`}</span></header>
+      <header className="rv__intro"><div><span className="db__eyebrow">PROCESS RECORDS</span><h2>Every case, in one place</h2><p>Search the answers you can see, then open a record to review its full history.</p></div><span className="rv__count">{busy ? 'Searching…' : `${rows.length}${hasMore ? '+' : ''} ${rows.length === 1 && !hasMore ? 'record' : 'records'} shown`}</span></header>
       <div className="cs__panel rv__panel">
 
       {/*

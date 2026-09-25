@@ -4835,7 +4835,7 @@ a.cs__navItem {
 .pp2__detailSection label { display: block; margin-bottom: 6px; color: var(--ink-soft); font-size: 11.5px; font-weight: 600; }
 .pp2__roleEdit { display: flex; flex-wrap: wrap; gap: 9px; }
 .pp2__roleEdit select { min-width: 180px; height: 36px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: 7px; background: #fff; color: var(--ink); font: 13px var(--ui); }
-.pp2__value { margin-bottom: 16px; color: var(--ink); font-size: 14px; font-weight: 600; text-transform: capitalize; }
+.pp2__value { margin-bottom: 16px; color: var(--ink); font-size: 14px; font-weight: 600; }
 .pp2__value small { display: block; margin-top: 4px; color: var(--muted); font-size: 11px; font-weight: 400; }
 .pp2__accessAction { display: flex; align-items: center; justify-content: space-between; gap: 15px; padding: 19px 24px; border-top: 1px solid var(--line); background: #fcfbf9; }
 .pp2__accessAction strong { font-size: 12.5px; }
