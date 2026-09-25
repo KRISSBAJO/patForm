@@ -7,7 +7,8 @@ import { DashboardView, HealthView, HeldView, RecordsView, SecurityView } from '
 import { PeopleView, ProcessesView } from './Manage';
 import { InviteView } from './Invite';
 import { BootScreen } from '../../components/boot-screen';
-import { DataView, IntegrationsView } from './Settings';
+import { DataView } from './Data';
+import { IntegrationsView } from './Integrations';
 import { RecordTrail } from './Trail';
 import { RecordPage } from './Record';
 import { WorkList } from './WorkList';
@@ -122,6 +123,7 @@ export function Console() {
     | 'data'
     | 'held'
   >('work');
+  const [settingsRevision, setSettingsRevision] = useState(0);
   /*
    * How many public submissions are waiting on a person. Fetched on its own:
    * it spans every process, where the work counts are per process, and a
@@ -686,12 +688,12 @@ export function Console() {
             <button type="button" className="cs__btn cs__btn--create" onClick={() => { sessionStorage.removeItem('patform:new-process-description'); window.location.href = '/builder/ai'; }}>
               <span className="cs__createMark" aria-hidden="true">✦</span> Build with AI
             </button>
-          ) : view !== 'security' && <button type="button" className="cs__btn" onClick={() => void load()}>
+          ) : view !== 'security' && <button type="button" className="cs__btn" onClick={() => { if (view === 'integrations' || view === 'data') setSettingsRevision(value => value + 1); void load(); }}>
             Refresh
           </button>}
         </div>
 
-        <div className={`cs__body ${view === 'security' ? 'cs__body--security' : ''} ${view === 'ask' ? 'cs__body--ask' : ''} ${view === 'processes' ? 'cs__body--processes' : ''} ${view === 'held' ? 'cs__body--held' : ''}`}>
+        <div className={`cs__body ${view === 'security' ? 'cs__body--security' : ''} ${view === 'ask' ? 'cs__body--ask' : ''} ${view === 'processes' ? 'cs__body--processes' : ''} ${view === 'held' ? 'cs__body--held' : ''} ${view === 'integrations' ? 'cs__body--integrations' : ''} ${view === 'data' ? 'cs__body--data' : ''}`}>
           <div className="cs__left">
             {view === 'record' && record ? (
               <RecordPage
@@ -706,9 +708,9 @@ export function Console() {
                 onExport={(id, ref, format) => void exportRecord(id, ref, format)}
               />
             ) : view === 'integrations' ? (
-              <IntegrationsView />
+              <IntegrationsView key={settingsRevision} />
             ) : view === 'data' ? (
-              <DataView processes={session.processes} />
+              <DataView key={settingsRevision} processes={session.processes} />
             ) : view === 'people' ? (
               <PeopleView
                 canAdminister={['owner', 'admin', 'builder'].includes(me.workspace_role)}
@@ -800,7 +802,7 @@ export function Console() {
 
           {/* The record page carries its own side column; two of them would
               be a column of cards about a different subject. */}
-          {view !== 'record' && view !== 'security' && view !== 'ask' && view !== 'processes' && view !== 'held' && (
+          {view !== 'record' && view !== 'security' && view !== 'ask' && view !== 'processes' && view !== 'held' && view !== 'integrations' && view !== 'data' && (
           <div className="cs__right">
             {!processKey ? null : health ? (
               <div className="cs__card">
@@ -851,10 +853,6 @@ export function Console() {
                     ? 'Who is in this workspace and what they may do. An invitation is emailed, works once, and expires in seven days — the link is never shown here, because anybody who can invite could otherwise mint one for an address whose owner never sees it.'
                   : view === 'invite'
                     ? 'One person, a pasted list, or a spreadsheet. Every row is checked before anything is sent: typos, duplicates, people already here and roles you cannot give are set aside, and only the rest go. Each invitation works once and expires in seven days.'
-                  : view === 'integrations'
-                    ? 'Everything outside this workspace that can reach it, or that it reaches. Keys and signing secrets are shown once and stored as hashes, so a copy of our database is not a set of working credentials.'
-                  : view === 'data'
-                    ? 'Getting records in from a spreadsheet, what this workspace holds and where each value travels, and deleting what is past its retention. The dry run executes the whole thing and rolls it back — the only honest way to answer what would this delete.'
                   : view === 'dashboard'
                     ? 'Nine measures from section 13.1, over the period you choose. A rate over fewer than five records is withheld rather than shown, because a percentage of three people identifies them.'
                     : view === 'records'
