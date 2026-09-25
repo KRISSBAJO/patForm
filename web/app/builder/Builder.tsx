@@ -9,6 +9,7 @@ import './studio.css';
 import { FormPreview, TestsPanel, Versions, type VersionRow } from './SidePanel';
 import { PageEditor, DocumentEditor, ScenarioEditor, ConditionEditor } from './StudioEditors';
 import { useDialog } from '../useDialog';
+import { ChoiceMenu, type ChoiceMenuGroup } from './ChoiceMenu';
 
 /**
  * The builder.
@@ -314,13 +315,43 @@ interface PackDetail extends Pack {
   warnings: { code: string; message: string }[];
 }
 
-const FIELD_TYPES = [
-  'short_text', 'long_text', 'email', 'phone', 'number', 'currency', 'url', 'address',
-  'date', 'time', 'single_choice', 'multi_choice', 'dropdown', 'yes_no', 'rating',
-  'matrix', 'file', 'signature_ack', 'signature', 'content', 'hidden', 'calculated', 'repeating_group',
+const FIELD_TYPE_GROUPS: ChoiceMenuGroup[] = [
+  { label: 'Text & contact', options: [
+    { value: 'short_text', label: 'Short answer', detail: 'One line of text' },
+    { value: 'long_text', label: 'Paragraph', detail: 'A longer written response' },
+    { value: 'email', label: 'Email address' }, { value: 'phone', label: 'Phone number' },
+    { value: 'url', label: 'Website link' }, { value: 'address', label: 'Postal address' },
+  ] },
+  { label: 'Numbers & dates', options: [
+    { value: 'number', label: 'Number' }, { value: 'currency', label: 'Money amount' },
+    { value: 'date', label: 'Date' }, { value: 'time', label: 'Time' },
+  ] },
+  { label: 'Choices', options: [
+    { value: 'single_choice', label: 'One answer', detail: 'Choose one visible option' },
+    { value: 'multi_choice', label: 'Multiple answers', detail: 'Choose several options' },
+    { value: 'dropdown', label: 'Dropdown choice', detail: 'Choose one from a compact list' },
+    { value: 'yes_no', label: 'Yes or no' }, { value: 'rating', label: 'Rating scale' },
+    { value: 'matrix', label: 'Answer grid' },
+  ] },
+  { label: 'Files & signatures', options: [
+    { value: 'file', label: 'File upload' },
+    { value: 'signature_ack', label: 'Acknowledgment' },
+    { value: 'signature', label: 'Signature' },
+  ] },
+  { label: 'Advanced', options: [
+    { value: 'content', label: 'Information block' },
+    { value: 'hidden', label: 'Hidden value' },
+    { value: 'calculated', label: 'Calculated value' },
+    { value: 'repeating_group', label: 'Repeatable group' },
+  ] },
 ];
 const CHOICE_TYPES = new Set(['single_choice', 'multi_choice', 'dropdown', 'matrix']);
-const CLASSES = ['public', 'internal', 'confidential', 'restricted'];
+const CLASS_GROUPS: ChoiceMenuGroup[] = [{ label: 'Who may see this answer', options: [
+  { value: 'public', label: 'Public', detail: 'Safe to share openly' },
+  { value: 'internal', label: 'Internal', detail: 'For your organization' },
+  { value: 'confidential', label: 'Confidential', detail: 'Limited to permitted roles' },
+  { value: 'restricted', label: 'Restricted', detail: 'Most sensitive access level' },
+] }];
 const CAPABILITIES = ['submit', 'view', 'edit', 'approve', 'operate', 'report', 'administer'];
 
 // --------------------------------------------------------------------- api
@@ -2408,16 +2439,9 @@ function Outline({
   );
 }
 
-function Row({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
-  return (
-    <label className="bd__row">
-      <span className="bd__rowLabel">
-        {label}
-        {hint && <em>{hint}</em>}
-      </span>
-      {children}
-    </label>
-  );
+function Row({ label, hint, children, unbound = false }: { label: string; hint?: string; children: React.ReactNode; unbound?: boolean }) {
+  const body = <><span className="bd__rowLabel">{label}{hint && <em>{hint}</em>}</span>{children}</>;
+  return unbound ? <div className="bd__row">{body}</div> : <label className="bd__row">{body}</label>;
 }
 
 function num(value: string): number | undefined {
@@ -2476,7 +2500,7 @@ function FieldEditor({
     <>
       <div className="bd__fieldIntro">
         <EditorHead title={field.label || field.key} kind="Form field" onRemove={onRemove} />
-        <div className="bd__fieldMeta"><code>{field.key}</code><span>{field.type.replaceAll('_', ' ')}</span><span>{field.classification}</span></div>
+        <div className="bd__fieldMeta"><code>{field.key}</code><span>{FIELD_TYPE_GROUPS.flatMap(group => group.options).find(option => option.value === field.type)?.label ?? field.type.replaceAll('_', ' ')}</span><span>{CLASS_GROUPS[0]!.options.find(option => option.value === field.classification)?.label ?? field.classification}</span></div>
         <div className="bd__fieldTools" role="group" aria-label="Field tools">
           <button type="button" onClick={onDuplicate}>Duplicate</button>
           <button type="button" onClick={() => document.getElementById('field-conditional-rules')?.scrollIntoView({ behavior: 'smooth', block: 'center' })}>Conditional rules</button>
@@ -2513,26 +2537,12 @@ function FieldEditor({
       </Row>
 
       <div className="bd__pair">
-        <Row label="Type">
-          <select className="bd__input" value={field.type} onChange={(e) => onChange((f) => void (f.type = e.target.value))}>
-            {FIELD_TYPES.map((t) => (
-              <option key={t} value={t}>
-                {t.replace(/_/g, ' ')}
-              </option>
-            ))}
-          </select>
+        <Row label="Field type" unbound>
+          <ChoiceMenu label="Field type" value={field.type} groups={FIELD_TYPE_GROUPS} searchable onChange={value => onChange(f => void (f.type = value))} />
         </Row>
 
-        <Row label="Classification" hint="checked against the process ceiling">
-          <select
-            className="bd__input"
-            value={field.classification}
-            onChange={(e) => onChange((f) => void (f.classification = e.target.value))}
-          >
-            {CLASSES.map((t) => (
-              <option key={t}>{t}</option>
-            ))}
-          </select>
+        <Row label="Data sensitivity" hint="controls who can view this answer" unbound>
+          <ChoiceMenu label="Data sensitivity" value={field.classification} groups={CLASS_GROUPS} onChange={value => onChange(f => void (f.classification = value))} />
         </Row>
       </div>
       </section>

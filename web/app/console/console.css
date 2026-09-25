@@ -1304,9 +1304,7 @@
 */
 
 .cs {
-  --ui:
-    system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
-    'Noto Sans', sans-serif;
+  --ui: var(--font-body);
 
   /* The rail */
   --rail: #ffffff;
@@ -4669,4 +4667,31 @@ a.cs__navItem {
   .ah__detailHeader h3 { font-size: 19px; }
   .ah__auditGrid { grid-template-columns: 1fr; }
   .ah__pager { align-items: flex-start; }
+}
+
+/* The dashboard and builder share one readable workspace type scale. */
+.cs { font-size: 14px; line-height: 1.5; }
+.cs__top { min-height: 52px; }
+.cs__topBrand { font-size: 16px; }
+.cs__topWorkspace { font-size: 14px; }
+.cs__head { min-height: 68px; height: auto; padding-block: 14px; }
+.cs__head h1 { font-size: 23px; line-height: 1.25; }
+.cs__body { gap: 24px; padding: 28px 32px; }
+.cs__side { width: 256px; padding: 18px 13px; }
+.cs__navItem { min-height: 43px; font-size: 14px; line-height: 1.4; }
+.cs__process { min-height: 42px; font-size: 13.5px; line-height: 1.4; }
+.cs__processBrowse { font-size: 12.5px; }
+.cs__tile { padding: 20px; }
+.cs__tileLabel, .cs__cardLabel { font-family: var(--ui); font-size: 11px; font-weight: 700; letter-spacing: .08em; }
+.cs__tileMeta { font-size: 12.5px; line-height: 1.45; }
+.cs__panelHead { min-height: 52px; }
+.cs__tab { min-height: 42px; font-size: 13px; }
+.cs__card p { font-size: 13px; line-height: 1.55; }
+.cs .cs__input { min-height: 42px; font-family: var(--ui); font-size: 13.5px; }
+@media (max-width: 760px) {
+  .cs__top { min-height: 56px; }
+  .cs__side { width: min(82vw, 300px); }
+  .cs__head { min-height: 60px; padding: 12px 18px; }
+  .cs__head h1 { font-size: 20px; }
+  .cs__body { padding: 18px; gap: 18px; }
 }
