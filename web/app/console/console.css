@@ -5117,12 +5117,15 @@ a.cs__navItem {
 /* Record detail: keep the working document and its context in a flexible pair. */
 .rc__body { display: flex; align-items: flex-start; gap: 18px; }
 .rc__answers.cs__panel { flex: 1 1 0; min-width: 0; }
-.rc__side { flex: 0 0 258px; display: flex; flex-direction: column; gap: 12px; }
+.rc__side { flex: 0 0 238px; display: flex; flex-direction: column; gap: 12px; }
 .rc__head { min-height: 0; padding: 20px 25px; border-radius: 11px; background: #f6faf7; }
 .rc__head .rc__state { font-size: 22px; }
 .rc__tableIntro { padding: 18px 21px 14px; }
 .rc__tableIntro h3 { font-size: 16px; }
 .rc__toolbar { padding: 10px 14px; }
+.rc__toolbar .rc__search { order: 1; flex: 1 1 270px; }
+.rc__toolbar .rc__conceal { order: 2; margin-left: 0; }
+.rc__toolbar .rc__filters { order: 3; width: 100%; padding-top: 9px; border-top: 1px solid #edf1ed; }
 .rc__answerTable { min-width: 620px; }
 .rc__answerTable thead th { padding: 10px 17px; font-size: 9px; }
 .rc__answerTable thead th:first-child { width: 31%; }
