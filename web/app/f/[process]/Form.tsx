@@ -23,6 +23,7 @@ import {
 
 type Answers = Record<string, unknown>;
 type Errors = Record<string, string>;
+type QuizResult = { correct: number; total: number; percentage: number; missed: { question: string; correctAnswer: string }[] };
 
 interface CheckResult {
   errors: { field: string; message: string }[];
@@ -61,7 +62,7 @@ export function Form({ processKey: fromUrl }: { processKey: string }) {
   const draftCreation = useRef<Promise<string> | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const trapRef = useRef<HTMLInputElement>(null);
-  const [done, setDone] = useState<{ reference: string; statusUrl: string | null } | null>(null);
+  const [done, setDone] = useState<{ reference: string; statusUrl: string | null; quiz?: QuizResult } | null>(null);
 
   const dirty = useRef(false);
 
@@ -264,6 +265,7 @@ export function Form({ processKey: fromUrl }: { processKey: string }) {
         errors?: { field: string; message: string }[];
         instanceId?: string;
         resumeToken?: string;
+        quiz?: QuizResult;
       }>(`/api/forms/${processKey}/submit`, {
         method: 'POST',
         body: JSON.stringify({ token, answers, ticket: form?.ticket, trap: trapRef.current?.value ?? '' }),
@@ -280,6 +282,7 @@ export function Form({ processKey: fromUrl }: { processKey: string }) {
       setDone({
         reference: result.instanceId!.slice(0, 8).toUpperCase(),
         statusUrl: result.resumeToken ? `/f/status?resume=${encodeURIComponent(result.resumeToken)}` : null,
+        quiz: result.quiz,
       });
     } catch (err) {
       setErrors({ _: err instanceof Error ? err.message : String(err) });
@@ -310,8 +313,13 @@ export function Form({ processKey: fromUrl }: { processKey: string }) {
               <path d="M5 13.5L10.5 19L21 7" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </div>
-          <h1 className="fm__title">Thank you</h1>
+          <h1 className="fm__title">{done.quiz ? 'Your quiz result' : 'Thank you'}</h1>
           <p className="fm__lede">{form.confirmation.message}</p>
+          {done.quiz && <section className="fm__quizResult" aria-label="Quiz result">
+            <strong className="fm__quizScore">{done.quiz.percentage}%</strong>
+            <p>{done.quiz.correct} of {done.quiz.total} correct</p>
+            {done.quiz.missed.length > 0 && <div className="fm__quizReview"><h2>Answers to review</h2><ul>{done.quiz.missed.map((item, index) => <li key={index}><span>{item.question}</span><strong>{item.correctAnswer}</strong></li>)}</ul></div>}
+          </section>}
           <p className="fm__ref">
             Your reference is <strong>{done.reference}</strong>
           </p>

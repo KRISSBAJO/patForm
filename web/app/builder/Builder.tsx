@@ -51,6 +51,7 @@ export interface BpField {
   classification: string;
   constraints?: Record<string, unknown>;
   choices?: { value: string; label: string }[];
+  correctValue?: string;
   setBy?: string;
   collectionReason?: string;
   requiredWhen?: unknown;
@@ -2576,7 +2577,7 @@ function FieldEditor({
                 className="bd__input bd__mono"
                 value={choice.value}
                 placeholder="value"
-                onChange={(e) => onChange((f) => void (f.choices![i]!.value = e.target.value))}
+                onChange={(e) => onChange((f) => { const old = f.choices![i]!.value; f.choices![i]!.value = e.target.value; if (f.correctValue === old) f.correctValue = e.target.value; })}
               />
               <input
                 className="bd__input"
@@ -2584,11 +2585,17 @@ function FieldEditor({
                 placeholder="label"
                 onChange={(e) => onChange((f) => void (f.choices![i]!.label = e.target.value))}
               />
-              <button className="bd__iconBtn" onClick={() => onChange((f) => void f.choices!.splice(i, 1))} title="Remove">
+              <button className="bd__iconBtn" onClick={() => onChange((f) => { if (f.correctValue === f.choices![i]!.value) delete f.correctValue; f.choices!.splice(i, 1); })} title="Remove">
                 ×
               </button>
             </div>
           ))}
+          {(field.type === 'single_choice' || field.type === 'dropdown') && <label className="bd__label">Correct answer for quiz scoring
+            <select className="bd__input" value={field.correctValue ?? ''} onChange={(e) => onChange((f) => { if (e.target.value) f.correctValue = e.target.value; else delete f.correctValue; })}>
+              <option value="">No answer key</option>
+              {(field.choices ?? []).map((choice, i) => <option key={i} value={choice.value}>{choice.label}</option>)}
+            </select>
+          </label>}
           <button
             className="bd__btn bd__btn--small"
             onClick={() =>

@@ -266,6 +266,16 @@ export function validate(bp: Blueprint): Diagnostics {
     if (CHOICE_TYPES.has(field.type) && !field.choices?.length) {
       d.error('TYPE003', at, `Field "${field.key}" is a ${field.type} but declares no choices.`);
     }
+    if (field.correctValue !== undefined) {
+      if (field.type !== 'single_choice' && field.type !== 'dropdown') {
+        d.error('TYPE008', at, 'Only a single-choice or dropdown field can have a quiz answer key.');
+      } else if (field.choices?.filter((choice) => choice.value === field.correctValue).length !== 1) {
+        d.error('TYPE008', at, `The correct answer for "${field.key}" must match exactly one choice.`);
+      }
+      if (!field.required || (field.setBy && field.setBy !== 'respondent')) {
+        d.error('TYPE008', at, `Quiz question "${field.key}" must be required and answered by the respondent.`);
+      }
+    }
     if (field.type === 'calculated') {
       if (!field.compute) {
         d.error('TYPE004', at, `Calculated field "${field.key}" has no compute expression.`);

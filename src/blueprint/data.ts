@@ -101,6 +101,8 @@ export interface Field {
   classification: DataClass;
   constraints?: z.infer<typeof Constraints>;
   choices?: z.infer<typeof Choice>[];
+  /** Answer key for a scored single-choice quiz question. Never sent with the public form. */
+  correctValue?: string;
   default?: string | number | boolean | null;
   /** calculated fields only */
   compute?: Calc;
@@ -133,6 +135,7 @@ export const Field: z.ZodType<Field> = z.lazy(() =>
       classification: DataClass,
       constraints: Constraints.optional(),
       choices: z.array(Choice).optional(),
+      correctValue: z.string().min(1).optional(),
       default: z.union([z.string(), z.number(), z.boolean(), z.null()]).optional(),
       compute: Calc.optional(),
       fields: z.array(Field).optional(),

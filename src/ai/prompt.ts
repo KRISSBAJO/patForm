@@ -9,7 +9,7 @@ import type { Diagnostic } from '../compiler/diagnostics.js';
  * record says exactly which instructions produced it. Eval results are only
  * comparable within a version.
  */
-export const PROMPT_VERSION = 'blueprint-gen@7';
+export const PROMPT_VERSION = 'blueprint-gen@8';
 
 export const SYSTEM_PROMPT = `You design business processes for an operations platform.
 
@@ -69,6 +69,7 @@ Form and data
 - Every required field the RESPONDENT enters must appear in exactly one page section. Hidden and calculated fields are never placed.
 - A value someone fills in later — a triage severity, a reference number, a reviewer's note — is a field with "setBy": "operator" (or "system" for one the runtime writes). Those do not go on a page. Use this instead of leaving a field unplaced.
 - A single_choice, multi_choice, dropdown or matrix field must declare "choices".
+- For a scored quiz, put "correctValue" on each single_choice question. It must equal exactly one choice value. The server keeps the answer key out of the public form, scores after a valid submission, and shows percentage plus correct answers for missed questions. Do not add respondent-entered Score, Percentage, or Answer Review fields: those are produced by the runtime. A quiz with requested automatic scoring but no correctValue on its questions is incomplete.
 - A calculated field must have "compute", must not refer to itself, and may only do arithmetic over numeric or repeating-group fields.
 - For a total of personally paid expense rows, use {"op":"sum","over":"expense_items","of":"item_total","where":{"op":"eq","left":{"field":"item_payment_method"},"right":{"literal":"personal_card"}}}. Calculated child fields are evaluated in each row before the total.
 - Comparisons must be type-compatible: gt/gte/lt/lte need a number, currency, rating, date or time. Comparing a choice field against a value that is not one of its options is rejected.

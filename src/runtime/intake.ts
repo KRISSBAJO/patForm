@@ -9,6 +9,7 @@ import { Engine } from './engine.js';
 import { issueResumeToken } from './auth.js';
 import { checkReceiptReferences, referencedFileIds } from './receipt-files.js';
 import { requireIntakeOpen } from './intake-control.js';
+import { scoreQuiz, type QuizResult } from './quiz.js';
 
 /**
  * The respondent side: the public form, its draft, and its submission.
@@ -319,6 +320,7 @@ export interface SubmitResult {
   duplicate?: boolean;
   resumeToken?: string;
   confirmation?: { message: string; showStatusLink: boolean };
+  quiz?: QuizResult;
   /**
    * Screening held it rather than making a record. Never sent to the
    * respondent: the route strips it, so the answer a script gets back is the
@@ -461,6 +463,7 @@ export async function submitForm(
     duplicate: result.duplicate,
     resumeToken,
     confirmation: bp.experience.confirmation,
+    quiz: scoreQuiz(bp.data.fields, answers),
   };
 }
 

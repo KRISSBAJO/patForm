@@ -92,6 +92,15 @@
   text-align: center;
 }
 
+.fm__quizResult { margin: 28px 0 8px; padding: 22px; border: 1px solid var(--line-soft); border-radius: 14px; background: var(--green-pale); text-align: center; }
+.fm__quizScore { display: block; color: var(--green); font-size: clamp(38px, 8vw, 58px); line-height: 1; }
+.fm__quizResult p { margin: 8px 0 0; }
+.fm__quizReview { margin-top: 22px; padding-top: 20px; border-top: 1px solid var(--line-soft); text-align: left; }
+.fm__quizReview h2 { margin: 0 0 10px; font-size: 17px; }
+.fm__quizReview ul { margin: 0; padding-left: 20px; }
+.fm__quizReview li { padding: 7px 0; }
+.fm__quizReview li span, .fm__quizReview li strong { display: block; }
+
 .fm__tick {
   width: 56px;
   height: 56px;
