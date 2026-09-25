@@ -2674,7 +2674,7 @@ html {
 .processDemo__screenBar strong { color:#183f2d; }
 .processDemo__screenBar > span:nth-of-type(2) { overflow:hidden; padding-left:9px; border-left:1px solid #dce8de; color:#607468; white-space:nowrap; text-overflow:ellipsis; }
 .processDemo__screenMark { display:grid; place-items:center; width:21px; height:21px; border-radius:5px; background:#176346; color:#fff; font-size:15px; }
-.processDemo__screenBar i { margin-left:auto; color:#688778; font:9px var(--font-mono),monospace; letter-spacing:.08em; }
+.processDemo__screenBar i { margin-left:auto; color:#4a5a50; font:9px var(--font-mono),monospace; letter-spacing:.08em; }
 .processDemo__mock { padding:24px; }
 .processDemo__mock > small { color:#2a7652; font:10px var(--font-mono),monospace; letter-spacing:.1em; }
 .processDemo__prompt { min-height:146px; margin-top:16px; padding:17px 18px; border:1px solid #d5e3d9; border-radius:8px; color:#253a2e; background:#fff; font-size:14px; line-height:1.55; }

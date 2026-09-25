@@ -178,7 +178,8 @@ export function Console() {
     if (!session?.actor.id) { setSiteAdmin(false); return; }
     try {
       const response = await fetch('/api/platform/me', { credentials: 'same-origin' });
-      setSiteAdmin(response.ok);
+      const body = response.ok ? ((await response.json()) as { role?: string | null }) : {};
+      setSiteAdmin(Boolean(body.role));
     } catch {
       setSiteAdmin(false);
     }

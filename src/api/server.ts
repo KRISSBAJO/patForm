@@ -909,8 +909,14 @@ route('POST', /^\/api\/invitations\/([0-9a-f-]{36})\/revoke$/, async ({ pool, pr
 // ------------------------------------------------------------------ session
 
 // A separate operator boundary: customer workspace roles never grant these routes.
-route('GET', /^\/api\/platform\/me$/, async ({ pool, actorId }) =>
-  ({ role: await requirePlatformRole(pool, actorId) }));
+route('GET', /^\/api\/platform\/me$/, async ({ pool, actorId }) => {
+  try {
+    return { role: await requirePlatformRole(pool, actorId) };
+  } catch (err) {
+    if (err instanceof AuthorizationError) return { role: null };
+    throw err;
+  }
+});
 route('GET', /^\/api\/platform\/overview$/, async ({ pool, actorId }) => {
   await requirePlatformRole(pool, actorId);
   return platformOverview(pool);

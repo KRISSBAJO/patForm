@@ -38,7 +38,11 @@ async function actorFor(email: string) {
 
 if (process.argv[2] === 'restore') {
   await pool.query('update actor set email_verified_at = now() where lower(email) = lower($1)', [SCAN_EMAIL]);
-  console.log('restored');
+  // And take the invitation and the throwaway account away again. They were
+  // left behind on every run, and a scanned workspace filled up with them.
+  const { cleanTestData } = await import('./clean-test-data.js');
+  const done = await cleanTestData(pool);
+  console.log(`restored; removed ${done.invitations} invitation(s) and ${done.scanAccounts} scan account(s)`);
 } else {
   const scan = await actorFor(SCAN_EMAIL);
 

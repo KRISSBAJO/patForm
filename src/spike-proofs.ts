@@ -2021,7 +2021,17 @@ export async function proveApprovalModes({ pool, bp, T0, record, completeFor }: 
     return instanceId;
   };
   const decideHr = (id: string, who: string, decision: 'approved' | 'rejected') =>
-    attempt(() => engine.decide({ instanceId: id, approvalKey: 'hr_approval', decision, principal: as(q, who), now: T0 }));
+    attempt(() =>
+      engine.decide({
+        instanceId: id,
+        approvalKey: 'hr_approval',
+        decision,
+        // The HR approval asks for a reason on anything but a yes.
+        reason: decision === 'rejected' ? 'Not eligible' : undefined,
+        principal: as(q, who),
+        now: T0,
+      }),
+    );
   const stateOf = async (id: string) => (await engine.instance(id)).state;
   const queueHas = async (who: string, id: string) =>
     (await myWork(pool, { principal: as(q, who), actorId: who, processKey: bp.key })).approvals.some((a) => a.instanceId === id);

@@ -1354,7 +1354,7 @@ function HeldReview({
           </ul>
         </div>
 
-        <dl className="hr__answers">
+        <dl className="hr__answers" tabIndex={0} aria-label="Every answer on this submission">
           {row.answers.map((a) => (
             <div key={a.label} className={`hr__answer${a.long || a.signature ? ' hr__answer--wide' : ''}`}>
               <dt>{a.label}</dt>

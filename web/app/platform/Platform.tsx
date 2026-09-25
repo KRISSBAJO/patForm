@@ -110,13 +110,17 @@ export function Platform() {
   }, [section, search, page, traceQuery, workspaceScope, peopleStatus]);
 
   useEffect(() => {
-    api('me').then((v) => setRole(v.role)).catch((e) => setError(e.status === 401
+    api('me').then((v) => {
+      if (v.role) return setRole(v.role);
+      setRole('none');
+      setError('Site administration requires a site role, a verified email and two-step verification.');
+    }).catch((e) => { setRole('none'); setError(e.status === 401
       ? 'Sign in to your account first.'
       : e.status === 403
         ? 'Site administration requires a site role, a verified email and two-step verification.'
-        : e.message));
+        : e.message); });
   }, []);
-  useEffect(() => { if (role) void load(); }, [role, load]);
+  useEffect(() => { if (role && role !== 'none') void load(); }, [role, load]);
 
   const selectWorkspace = useCallback(async (id: string, updateAddress = true) => {
     if (updateAddress) {
@@ -206,7 +210,7 @@ export function Platform() {
           <p className="platform__navLabel">{group}</p>
           {sections.filter((s) => s.group === group).map((s) => <button key={s.key} type="button" className={`platform__navItem ${section === s.key ? 'active' : ''}`} aria-current={section === s.key ? 'page' : undefined} onClick={() => navigate(s.key)}><Icon name={s.icon}/><span>{s.label}</span></button>)}
         </div>)}
-        <div className="platform__navIdentity"><span className="platform__identityIcon"><Icon name="shield" size={17}/></span><div><strong>Platform access</strong><span>{role || 'Checking access…'}</span></div></div>
+        <div className="platform__navIdentity"><span className="platform__identityIcon"><Icon name="shield" size={17}/></span><div><strong>Platform access</strong><span>{role === 'none' ? 'No site role' : role || 'Checking access…'}</span></div></div>
       </nav>
       <div className="platform__main">
         <div className="platform__heading">

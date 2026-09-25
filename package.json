@@ -36,6 +36,7 @@
     "packs": "node --env-file=.env node_modules/tsx/dist/cli.mjs src/packs-cli.ts",
     "a11y:fixtures": "node --env-file=.env node_modules/tsx/dist/cli.mjs scripts/account-fixtures.ts",
     "reachable": "node scripts/reachable.mjs",
+    "clean:test-data": "node --env-file=.env node_modules/tsx/dist/cli.mjs scripts/clean-test-data.ts",
     "packs:check": "tsx src/packs/check.ts",
     "packs:prove": "node --env-file=.env node_modules/tsx/dist/cli.mjs src/packs/prove.ts",
     "mail:check": "node --env-file=.env node_modules/tsx/dist/cli.mjs src/mail-check.ts"

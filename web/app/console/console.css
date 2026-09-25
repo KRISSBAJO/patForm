@@ -2025,7 +2025,7 @@ a.cs__navItem {
 .cs__processCurrent:focus-visible, .cs__processPicker input:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
 .cs__processCurrent > span:first-child { min-width: 0; }
 .cs__processCurrent small, .cs__processCurrent strong { display: block; overflow: hidden; text-overflow: ellipsis; }
-.cs__processCurrent small { margin-bottom: 3px; color: #5e7b69; font-size: 10px; }
+.cs__processCurrent small { margin-bottom: 3px; color: var(--green-deep, #0f4e30); font-size: 10px; }
 .cs__processCurrent strong { font-size: 12px; line-height: 1.25; }
 .cs__processCurrent > span:last-child { flex: 0 0 auto; font-size: 18px; line-height: 1; }
 .cs__processPicker { padding: 8px; border: 1px solid var(--rail-line); border-radius: 8px; background: #fff; box-shadow: 0 6px 16px #173e2612; }

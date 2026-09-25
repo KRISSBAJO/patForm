@@ -397,7 +397,7 @@ export function AskHistory({ processKey, onRerun, onDetailChange }: { processKey
           <option value="issues">Issues</option>
         </select>
       </div>
-      {loading ? <p className="ah__empty" role="status">Loading activity…</p> : error ? <p className="ah__empty" role="alert">Could not load activity: {error}</p> : !data?.runs.length ? (
+      {loading ? <p className="ah__empty" role="status">Loading activity…</p> : error ? <p className="ah__empty" role="alert">Could not load activity: {error}</p> : !data?.runs?.length ? (
         <p className="ah__empty">{query || status ? 'No questions match these filters.' : 'No questions yet for this process. Ask one above to get started.'}</p>
       ) : (
         <ul className="ah__list">

@@ -90,6 +90,7 @@ export function FormPreview({
   previewKey,
   draftId,
   editHeaderRequest,
+  hideDeviceSwitch = false,
 }: {
   blueprint: Shape;
   /** Absent means read-only; the gallery's detail view passes nothing. */
@@ -97,6 +98,8 @@ export function FormPreview({
   previewKey?: string;
   draftId?: string;
   editHeaderRequest?: number;
+  /** The full-page preview has its own desktop/tablet/phone control, so this one steps aside. */
+  hideDeviceSwitch?: boolean;
 }) {
   const [answers, setAnswers] = useState<Record<string, unknown>>({});
   const [editing, setEditing] = useState(false);
@@ -127,10 +130,12 @@ export function FormPreview({
         nothing is sent.
       </p>
 
-      <div className="sp__deviceSwitch" role="group" aria-label="Preview size">
-        <button type="button" aria-pressed={device === 'desktop'} onClick={() => setDevice('desktop')}>Desktop</button>
-        <button type="button" aria-pressed={device === 'phone'} onClick={() => setDevice('phone')}>Phone</button>
-      </div>
+      {!hideDeviceSwitch && (
+        <div className="sp__deviceSwitch" role="group" aria-label="Preview size">
+          <button type="button" aria-pressed={device === 'desktop'} onClick={() => setDevice('desktop')}>Desktop</button>
+          <button type="button" aria-pressed={device === 'phone'} onClick={() => setDevice('phone')}>Phone</button>
+        </div>
+      )}
 
       {previewKey && <a className="sp__fullPreview" href={`/builder/preview?process=${encodeURIComponent(previewKey)}&v=draft`}>Open full preview ↗</a>}
 

@@ -953,6 +953,22 @@ The accessibility scan was meant to cover this queue. It submitted its test entr
 
 **Generalisable:** the schema of a database that already holds data is a sequence of changes, not a description. A project that only has the description has chosen, without saying so, to throw the data away on every change.
 
+### 91. A header with nothing on the right
+
+The landing page hid its sign-in and sign-up buttons until the session check had answered, so a visitor who had not signed in saw an empty header for as long as that request took. On the development server the first request through the proxy compiles it and took nine seconds. On staging the API sleeps on a free instance and a cold start takes longer. It was reported as the sign-in link having disappeared.
+
+**Fixed** by showing the public buttons from the first paint. Not knowing yet reads as signed out, which is the safe default, and a signed-in visitor sees the swap a moment later.
+
+### 92. The console two days ahead of its server
+
+The web app reloads itself as the code changes. The API does not. After two days of commits the console was calling endpoints the running API had never heard of: one page crashed the whole console on an answer in an old shape, and every page load logged a refusal for a route that did not exist. Nothing in the app said "your server is old"; it looked like the new code was broken.
+
+**Fixed** for the crash by guarding the one panel, so a bad answer is an error in that panel rather than a dead console. The wider lesson is operational: after pulling, restart the API, and read a burst of unexplained errors as a version mismatch before reading it as a bug.
+
+### 93. What the checks leave behind
+
+The accessibility scan mints an invitation and a throwaway account every run and never removed them. A development workspace that had been scanned a dozen times showed twelve invitations waiting and twelve "Scan Fixture" members, which read as a bug in People. Its restore step now removes what it made, and `npm run clean:test-data` clears a workspace of everything the scripts leave behind. The same scan had also gone from clean to 24 failing screens in two days, all but one of them captions a shade too light, because nobody ran it.
+
 ---
 
 ## What the compiler structurally cannot catch

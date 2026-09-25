@@ -48,14 +48,14 @@
 .st__launchRow { display: flex; align-items: center; gap: 9px; padding: 10px 0; border-top: 1px solid #edf1ed; }
 .st__launchRow > div:nth-child(2) { flex: 1; min-width: 0; }
 .st__launchRow strong { display: block; font-size: 12px; }
-.st__launchRow small { display: block; color: #6b7b70; font-size: 11px; line-height: 1.35; }
+.st__launchRow small { display: block; color: var(--muted, #5a6159); font-size: 11px; line-height: 1.35; }
 .st__launchMark { display: grid; place-items: center; flex: 0 0 21px; width: 21px; height: 21px; border-radius: 50%; background: #eff3ef; color: #73907b; font-weight: 800; }
 .st__launchMark--ok { background: #dff3e6; color: #11603d; }
 .st__launchMark--wait { background: #fff0da; color: #9c6619; }
 .st__launchActions { display: flex; gap: 5px; }
 .st__launchActions button, .st__launchActions a { border: 0; background: transparent; color: #176a42; padding: 4px; font: inherit; font-size: 11px; font-weight: 700; text-decoration: underline; cursor: pointer; }
 .st__launchActions button:disabled { opacity: .5; cursor: default; }
-.st__launch > p { margin: 12px 0 0; color: #6b7b70; font-size: 11px; line-height: 1.5; }
+.st__launch > p { margin: 12px 0 0; color: var(--muted, #5a6159); font-size: 11px; line-height: 1.5; }
 @media (max-width: 720px) {
   .st__pair { grid-template-columns: minmax(0, 1fr); gap: 0; }
   .st__head { flex-wrap: wrap; }
@@ -151,7 +151,7 @@
 .bd__studioCardHead { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; padding-bottom: 13px; border-bottom: 1px solid #eaf0eb; }
 .bd__studioCardIcon { display: grid; place-items: center; width: 29px; height: 29px; flex: 0 0 29px; border-radius: 7px; background: #e7f5ea; color: #167146; font: 800 10px var(--font-mono), monospace; }
 .bd__studioCardHead h3 { margin: 0; color: #17372a; font-size: 14px; letter-spacing: -.01em; }
-.bd__studioCardHead p { margin: 2px 0 0; color: #6d7f72; font-size: 11px; }
+.bd__studioCardHead p { margin: 2px 0 0; color: var(--muted, #5a6159); font-size: 11px; }
 .bd__studioCard .bd__row { margin-bottom: 11px; }
 .bd__studioCard .bd__rowLabel { margin-bottom: 4px; font-size: 11px; font-weight: 700; }
 .bd__studioCard .bd__rowLabel em { display: inline; margin-left: 5px; font-size: 10px; }
@@ -191,7 +191,7 @@
 .bd .sp__tab { min-height: 34px; font-size: 11px; }
 .bd .bd__diag { padding: 12px 10px 14px; }
 .bd__insightsIntro { display: flex; flex-direction: column; gap: 3px; padding: 2px 3px 10px; }
-.bd__insightsIntro span { color: #4b8061; font-size: 10px; font-weight: 600; letter-spacing: 0; }
+.bd__insightsIntro span { color: var(--green-deep, #0f4e30); font-size: 10px; font-weight: 600; letter-spacing: 0; }
 .bd__insightsIntro strong { color: #163f2a; font-size: 14px; }
 .bd .bd__diagHead { gap: 8px; margin-bottom: 9px; padding: 8px 10px; background: #eaf6ed; font-size: 11px; }
 .bd .bd__diagItem { margin-bottom: 6px; padding: 9px 10px; border-radius: 7px; }
@@ -252,7 +252,7 @@
 .bd__journeyStep > span:last-child { min-width: 0; }
 .bd__journeyStep strong, .bd__journeyStep small { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .bd__journeyStep strong { font-size: 12px; }
-.bd__journeyStep small { margin-top: 1px; color: #6a7f70; font-size: 10px; }
+.bd__journeyStep small { margin-top: 1px; color: var(--muted, #5a6159); font-size: 10px; }
 
 /* Preview is a workspace, not a miniature form squeezed into an inspector. */
 .bd .bd__body[data-side='preview'] { grid-template-columns: 252px minmax(0, 1fr); }

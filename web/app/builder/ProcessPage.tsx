@@ -333,7 +333,7 @@ function PreviewBody({ view }: { view: ProcessView }) {
       </div>
       <div className="pg__stage">
         <div className={`pv pv--${device}`}>
-          <FormPreview blueprint={view.blueprint} />
+          <FormPreview blueprint={view.blueprint} hideDeviceSwitch />
         </div>
       </div>
     </section>

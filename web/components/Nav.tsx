@@ -84,7 +84,14 @@ export function Nav() {
 
         {/* Hidden rather than absent while unknown, so the row does not
             jump width when the answer arrives. */}
-        <div className="nav__actions" style={session === null ? { visibility: 'hidden' } : undefined}>
+        {/*
+          * Shown from the first paint. This hid itself until the session check
+          * answered, and on the development server that first answer took nine
+          * seconds — a header with nothing on the right, long enough to be
+          * reported as missing. Not knowing yet reads as signed out, which is
+          * the safe default; a signed-in visitor sees the swap a moment later.
+          */}
+        <div className="nav__actions">
           {signedIn ? (
             <>
               <span className="nav__who">{signedIn.actor.display_name}</span>
