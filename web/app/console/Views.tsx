@@ -287,13 +287,9 @@ export function RecordsView({
   }, [load]);
 
   return (
-    <div className="cs__panel">
-      <div className="cs__panelHead">
-        <h2 className="cs__tab">Records</h2>
-        <span className="cs__sort">
-          {busy ? 'searching…' : `${rows.length}${hasMore ? '+' : ''} shown`}
-        </span>
-      </div>
+    <div className="rv">
+      <header className="rv__intro"><div><span className="db__eyebrow">PROCESS RECORDS</span><h2>Every case, in one place</h2><p>Search the answers you can see, then open a record to review its full history.</p></div><span className="rv__count">{busy ? 'Searching…' : `${rows.length}${hasMore ? '+' : ''} records shown`}</span></header>
+      <div className="cs__panel rv__panel">
 
       {/*
         * Searching, filtering and ordering all happen on the server, against
@@ -302,7 +298,7 @@ export function RecordsView({
         * ones, which would answer "which record contains this value" without
         * showing it.
         */}
-      <div className="wk__controls">
+      <div className="wk__controls rv__controls">
         <div className="wk__search">
           <Icon name="search" />
           <input
@@ -355,89 +351,14 @@ export function RecordsView({
         />
       )}
 
-      <table className="vw__table">
-        <thead>
-          <tr>
-            <th className="bk__pick">
-              <input
-                type="checkbox"
-                aria-label="Select every record shown"
-                checked={rows.length > 0 && rows.every((r) => selected.has(r.id))}
-                onChange={(e) =>
-                  setSelected((prev) => {
-                    const next = new Map(prev);
-                    for (const r of rows) {
-                      if (e.target.checked) next.set(r.id, r.reference);
-                      else next.delete(r.id);
-                    }
-                    return next;
-                  })
-                }
-              />
-            </th>
-            <th>Reference</th>
-            <th>State</th>
-            <th>Opened</th>
-            <th>Finished</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r) => (
-            <tr key={r.id} aria-selected={selected.has(r.id)}>
-              <td className="bk__pick">
-                <input
-                  type="checkbox"
-                  aria-label={`Select ${r.reference}`}
-                  checked={selected.has(r.id)}
-                  onChange={(e) =>
-                    setSelected((prev) => {
-                      const next = new Map(prev);
-                      if (e.target.checked) next.set(r.id, r.reference);
-                      else next.delete(r.id);
-                      return next;
-                    })
-                  }
-                />
-              </td>
-              <td>
-                <button className="ask__ref" onClick={() => onOpenRecord(r.id)}>
-                  <code>{r.reference}</code>
-                  <span className="ask__srOnly"> — open this record</span>
-                </button>
-              </td>
-              <td>
-                {r.state_name}
-                {r.outcome && <span className="vw__outcome">{r.outcome}</span>}
-              </td>
-              <td>{r.created_at.slice(0, 10)}</td>
-              <td>{r.completed_at ? r.completed_at.slice(0, 10) : '—'}</td>
-            </tr>
-          ))}
-          {!rows.length && !busy && (
-            <tr>
-              <td colSpan={5} className="ask__empty">
-                {query || filter !== 'all' ? (
-                  <>
-                    Nothing matches that.{' '}
-                    <button
-                      type="button"
-                      className="cs__linkBtn cs__linkBtn--onLight"
-                      onClick={() => {
-                        setTyped('');
-                        setFilter('all');
-                      }}
-                    >
-                      Clear the filters
-                    </button>
-                  </>
-                ) : (
-                  'No records yet. They arrive when somebody submits the form.'
-                )}
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
+      {rows.length > 0 && <div className="rv__selectAll"><label><input type="checkbox" aria-label="Select every record shown" checked={rows.every((r) => selected.has(r.id))} onChange={(e) => setSelected((prev) => { const next = new Map(prev); for (const r of rows) { if (e.target.checked) next.set(r.id, r.reference); else next.delete(r.id); } return next; })} /> Select all shown</label><span>Reference · current stage · dates</span></div>}
+      <div className="rv__list" role="list" aria-label="Records">
+        {rows.map((r) => <div key={r.id} className="rv__row" role="listitem" data-selected={selected.has(r.id) ? 'true' : undefined}>
+          <input type="checkbox" aria-label={`Select ${r.reference}`} checked={selected.has(r.id)} onChange={(e) => setSelected((prev) => { const next = new Map(prev); if (e.target.checked) next.set(r.id, r.reference); else next.delete(r.id); return next; })} />
+          <button type="button" className="rv__open" onClick={() => onOpenRecord(r.id)}><span className="rv__recordIcon" aria-hidden="true"><Icon name="table" /></span><span className="rv__recordMain"><strong>{r.reference}</strong><small>Opened {new Date(r.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</small></span><span className="rv__state"><b>{r.state_name}</b>{r.outcome && <small>{r.outcome}</small>}</span><span className="rv__finished">{r.completed_at ? `Finished ${new Date(r.completed_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}` : 'In progress'}</span><span className="rv__arrow" aria-hidden="true">→</span></button>
+        </div>)}
+        {!rows.length && !busy && <div className="rv__empty">{query || filter !== 'all' ? <>No records match your search or filters. <button type="button" className="cs__linkBtn cs__linkBtn--onLight" onClick={() => { setTyped(''); setFilter('all'); }}>Clear the filters</button></> : 'No records yet. They arrive when somebody submits the form.'}</div>}
+      </div>
 
       <div className="vw__more">
         {hasMore ? (
@@ -457,6 +378,7 @@ export function RecordsView({
           </span>
         ) : null}
       </div>
+    </div>
     </div>
   );
 }

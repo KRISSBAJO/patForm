@@ -57,6 +57,7 @@ export function WorkList({
   onOpen,
   onDecide,
   onCompleteTask,
+  onBrowseRecords,
 }: {
   approvals: WorkApproval[];
   tasks: WorkTask[];
@@ -64,6 +65,7 @@ export function WorkList({
   onOpen: (instanceId: string) => void;
   onDecide: (instanceId: string, approvalKey: string, decision: 'approved' | 'rejected') => void;
   onCompleteTask: (instanceId: string, taskKey: string) => void;
+  onBrowseRecords: () => void;
 }) {
   const [query, setQuery] = useState('');
   const [show, setShow] = useState<Show>('all');
@@ -125,7 +127,7 @@ export function WorkList({
   const filtering = query.trim() !== '' || show !== 'all';
 
   return (
-    <div className="cs__panel">
+    <div className="cs__panel mw__queue">
       <div className="cs__panelHead">
         <h2 className="cs__tab">Needs you</h2>
         <span className="cs__sort">
@@ -199,7 +201,7 @@ export function WorkList({
               </button>
             </>
           ) : (
-            'Nothing is waiting on you in this process.'
+            <div className="mw__empty"><span className="mw__emptyIcon" aria-hidden="true"><Icon name="done" /></span><strong>No work is waiting</strong><p>New decisions and tasks will appear here when a process needs you.</p><button type="button" onClick={onBrowseRecords}>Explore records →</button></div>
           )}
         </div>
       ) : (

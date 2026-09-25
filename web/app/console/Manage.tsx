@@ -149,6 +149,9 @@ export function PeopleView({ canAdminister, onInvite }: { canAdminister: boolean
   const [roleFilter, setRoleFilter] = useState('all');
   const [showInactive, setShowInactive] = useState(false);
   const [tab, setTab] = useState<'members' | 'waiting'>('members');
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedRole, setSelectedRole] = useState('');
+  const [page, setPage] = useState(1);
 
   const load = useCallback(async () => {
     try {
@@ -197,27 +200,20 @@ export function PeopleView({ canAdminister, onInvite }: { canAdminister: boolean
       (roleFilter === 'all' || m.workspace_role === roleFilter) &&
       (!q || m.display_name.toLowerCase().includes(q) || m.email.toLowerCase().includes(q)),
   );
+  const selected = members.find((m) => m.id === selectedId);
+  const pageSize = 12;
+  const pageCount = Math.max(1, Math.ceil(shown.length / pageSize));
+  const currentPage = Math.min(page, pageCount);
+  const pageRows = shown.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const waiting = open;
 
   return (
-    <>
+    <div className="pp2">
       <section className="pp__head">
         <div>
-          <h2 className="pp__title">Your workspace</h2>
-          <p className="pp__stats">
-            <span>
-              <strong>{active.length}</strong> {active.length === 1 ? 'member' : 'members'}
-            </span>
-            {canAdminister && open.length > 0 && (
-              <button type="button" className="pp__statLink" onClick={() => setTab('waiting')}>
-                <strong>{open.length}</strong> {open.length === 1 ? 'invitation' : 'invitations'} waiting
-              </button>
-            )}
-            {inactive > 0 && (
-              <span>
-                <strong>{inactive}</strong> deactivated
-              </span>
-            )}
-          </p>
+          <span className="pp2__eyebrow">WORKSPACE DIRECTORY</span>
+          <h2 className="pp__title">People & access</h2>
+          <p>Find teammates, review access, and manage invitations in one place.</p>
         </div>
         {canAdminister && (
           <button type="button" className="cs__btn cs__btn--primary pp__invite" onClick={onInvite}>
@@ -230,13 +226,47 @@ export function PeopleView({ canAdminister, onInvite }: { canAdminister: boolean
         )}
       </section>
 
+      <section className="pp2__overview" aria-label="People overview">
+        <div><span>Active members</span><strong>{active.length}</strong><small>Can sign in to this workspace</small></div>
+        {canAdminister && <button type="button" onClick={() => { setSelectedId(null); setTab('waiting'); }}><span>Pending invitations</span><strong>{open.length}</strong><small>Waiting to join <span aria-hidden="true">→</span></small></button>}
+        <div><span>Deactivated</span><strong>{inactive}</strong><small>Access is turned off</small></div>
+      </section>
+
       {note && (
         <p className="pp__note" role="status">
           {note}
         </p>
       )}
 
-      <div className="cs__panel">
+      {selected ? (
+        <section className="pp2__detail" aria-label={`Profile for ${selected.display_name}`}>
+          <button type="button" className="pp2__back" onClick={() => setSelectedId(null)}>← All people</button>
+          <div className="pp2__profile">
+            <span className="pp__avatar" aria-hidden="true">{initials(selected.display_name)}</span>
+            <div><span className="pp2__eyebrow">MEMBER PROFILE</span><h3>{selected.display_name}</h3><p>{selected.email}</p></div>
+            <span className={`pp2__status${selected.active ? '' : ' pp2__status--off'}`}>{selected.active ? 'Active' : 'Deactivated'}</span>
+          </div>
+          <div className="pp2__detailGrid">
+            <div className="pp2__detailSection">
+              <h4>Workspace access</h4>
+              <p>The workspace role controls what this person can see and manage.</p>
+              {canAdminister && selected.provisioned_by !== 'scim' ? <>
+                <label htmlFor="pp2-role">Role</label>
+                <div className="pp2__roleEdit"><select id="pp2-role" value={selectedRole} disabled={busy === selected.id} onChange={(e) => setSelectedRole(e.target.value)}>
+                  {[...new Set([...grantable, selected.workspace_role])].map((r) => <option key={r} value={r}>{roleName(r)}</option>)}
+                </select><button type="button" className="cs__btn cs__btn--primary" disabled={busy === selected.id || selectedRole === selected.workspace_role} onClick={() => void act(selected.id, async () => { await post(`/api/members/${selected.id}/role`, { workspaceRole: selectedRole }); return `${selected.display_name} is now ${roleName(selectedRole)}.`; })}>Save role</button></div>
+              </> : <div className="pp2__value">{roleName(selected.workspace_role)}{selected.provisioned_by === 'scim' && <small>Managed by your directory</small>}</div>}
+            </div>
+            <div className="pp2__detailSection">
+              <h4>Sign-in activity</h4>
+              <p>Last active {lastSeen(selected.last_seen_at).toLowerCase()}.</p>
+              <div className="pp2__value">{selected.sessions} signed-in {selected.sessions === 1 ? 'device' : 'devices'}</div>
+              {canAdminister && selected.sessions > 0 && <button type="button" className="cs__btn" disabled={busy === selected.id} onClick={() => void act(selected.id, async () => { const done = await post<{ revoked: number }>(`/api/members/${selected.id}/revoke-sessions`); return `Signed ${selected.display_name} out of ${done.revoked} session(s).`; })}>Sign out devices</button>}
+            </div>
+          </div>
+          {canAdminister && selected.provisioned_by !== 'scim' && <div className="pp2__accessAction"><div><strong>{selected.active ? 'Deactivate access' : 'Restore access'}</strong><p>{selected.active ? 'They will be signed out and unable to use this workspace.' : 'They will be able to sign in again.'}</p></div><button type="button" className="cs__btn" disabled={busy === selected.id} onClick={() => void act(selected.id, async () => { await post(`/api/members/${selected.id}/${selected.active ? 'deactivate' : 'reactivate'}`); return selected.active ? `${selected.display_name} is deactivated, and their sessions are revoked.` : `${selected.display_name} can sign in again.`; })}>{selected.active ? 'Deactivate' : 'Reactivate'}</button></div>}
+        </section>
+      ) : <div className="cs__panel pp2__directory">
         <div className="pp__tabs" role="tablist" aria-label="People in this workspace">
           <button
             type="button"
@@ -262,18 +292,14 @@ export function PeopleView({ canAdminister, onInvite }: { canAdminister: boolean
               Waiting to accept <span className="pp__count">{open.length}</span>
             </button>
           )}
-          {tab === 'members' && (
-            <span className="cs__sort pp__shown">
-              {shown.length} of {showInactive ? members.length : active.length} shown
-            </span>
-          )}
+          <span className="cs__sort pp__shown">{tab === 'members' ? `${shown.length} ${shown.length === 1 ? 'person' : 'people'}` : `${waiting.length} ${waiting.length === 1 ? 'invitation' : 'invitations'}`}</span>
         </div>
 
         <div id="pp-panel" role="tabpanel" aria-labelledby={tab === 'waiting' ? 'pp-tab-waiting' : 'pp-tab-members'}>
         {tab === 'waiting' ? (
-          open.length ? (
+          waiting.length ? (
           <ul className="pp__invites">
-            {open.map((i) => {
+            {waiting.map((i) => {
               const days = Math.max(0, Math.ceil((new Date(i.expires_at).getTime() - Date.now()) / 86_400_000));
               return (
                 <li key={i.id} className="pp__invitation">
@@ -314,7 +340,7 @@ export function PeopleView({ canAdminister, onInvite }: { canAdminister: boolean
           )
         ) : (
         <>
-        <div className="wk__controls">
+        <div className="wk__controls pp2__controls">
           <div className="wk__search">
             <svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" aria-hidden="true" className="mg__icon">
               <circle cx="9" cy="9" r="5.5" />
@@ -326,7 +352,7 @@ export function PeopleView({ canAdminister, onInvite }: { canAdminister: boolean
               value={query}
               placeholder="Search by name or email"
               aria-label="Search people"
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={(e) => { setQuery(e.target.value); setPage(1); }}
             />
           </div>
           <label className="wk__pick">
@@ -334,7 +360,7 @@ export function PeopleView({ canAdminister, onInvite }: { canAdminister: boolean
             <svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" aria-hidden="true" className="mg__icon">
               <path d="M3.5 5h13M6 10h8M8.5 15h3" />
             </svg>
-            <select className="wk__select" value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)}>
+            <select className="wk__select" value={roleFilter} onChange={(e) => { setRoleFilter(e.target.value); setPage(1); }}>
               <option value="all">Every role</option>
               {roles.map((r) => (
                 <option key={r} value={r}>
@@ -345,127 +371,30 @@ export function PeopleView({ canAdminister, onInvite }: { canAdminister: boolean
           </label>
           {inactive > 0 && (
             <label className="pp__toggle">
-              <input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} />
+              <input type="checkbox" checked={showInactive} onChange={(e) => { setShowInactive(e.target.checked); setPage(1); }} />
               Show deactivated
             </label>
           )}
         </div>
 
-        <table className="vw__table pp__table">
-          <thead>
-            <tr>
-              <th scope="col">Person</th>
-              <th scope="col">Role</th>
-              <th scope="col">Last active</th>
-              {canAdminister && <th scope="col">Actions</th>}
-            </tr>
-          </thead>
-          <tbody>
-            {shown.map((m) => (
-              <tr key={m.id} className={m.active ? undefined : 'vw__rowOff'}>
-                <th scope="row">
-                  <span className="pp__person">
-                    <span className="pp__avatar" aria-hidden="true">
-                      {initials(m.display_name)}
-                    </span>
-                    <span className="pp__who">
-                      <span className="pp__name">{m.display_name}</span>
-                      <span className="pp__meta">{m.email}</span>
-                      {/* Said as words, not only as a quieter row. */}
-                      {!m.active && <span className="mg__tag">deactivated</span>}
-                      {m.provisioned_by === 'scim' && <span className="mg__tag">managed by your directory</span>}
-                    </span>
-                  </span>
-                </th>
-                <td>
-                  {canAdminister && m.provisioned_by !== 'scim' ? (
-                    <>
-                      <label className="vw__srOnly" htmlFor={`role-${m.id}`}>
-                        Role for {m.display_name}
-                      </label>
-                      <select
-                        id={`role-${m.id}`}
-                        className="cs__input mg__inlineSelect"
-                        value={m.workspace_role}
-                        disabled={busy === m.id}
-                        onChange={(e) =>
-                          void act(m.id, async () => {
-                            await post(`/api/members/${m.id}/role`, { workspaceRole: e.target.value });
-                            return `${m.display_name} is now ${roleName(e.target.value)}.`;
-                          })
-                        }
-                      >
-                        {[...new Set([...grantable, m.workspace_role])].map((r) => (
-                          <option key={r} value={r}>
-                            {roleName(r)}
-                          </option>
-                        ))}
-                      </select>
-                    </>
-                  ) : (
-                    <span className="pp__role">{roleName(m.workspace_role)}</span>
-                  )}
-                </td>
-                <td>
-                  <span className="pp__seen">{lastSeen(m.last_seen_at)}</span>
-                  {m.sessions > 0 && (
-                    <span className="pp__meta">
-                      {m.sessions} signed-in {m.sessions === 1 ? 'device' : 'devices'}
-                    </span>
-                  )}
-                </td>
-                {canAdminister && (
-                  <td>
-                    <div className="mg__rowActions">
-                      {m.sessions > 0 && (
-                        <button
-                          type="button"
-                          className="cs__btn"
-                          disabled={busy === m.id}
-                          onClick={() =>
-                            void act(m.id, async () => {
-                              const done = await post<{ revoked: number }>(`/api/members/${m.id}/revoke-sessions`);
-                              return `Signed ${m.display_name} out of ${done.revoked} session(s).`;
-                            })
-                          }
-                        >
-                          Sign out
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        className="cs__btn"
-                        disabled={busy === m.id || m.provisioned_by === 'scim'}
-                        onClick={() =>
-                          void act(m.id, async () => {
-                            await post(`/api/members/${m.id}/${m.active ? 'deactivate' : 'reactivate'}`);
-                            return m.active
-                              ? `${m.display_name} is deactivated, and their sessions are revoked.`
-                              : `${m.display_name} can sign in again.`;
-                          })
-                        }
-                      >
-                        {m.active ? 'Deactivate' : 'Reactivate'}
-                      </button>
-                    </div>
-                  </td>
-                )}
-              </tr>
-            ))}
-            {!shown.length && (
-              <tr>
-                <td colSpan={canAdminister ? 4 : 3} className="ask__empty">
-                  Nobody matches that.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+        <div className="pp2__list" role="list" aria-label="Workspace members">
+          {pageRows.map((m) => (
+            <div role="listitem" key={m.id}><button type="button" className={`pp2__personRow${m.active ? '' : ' pp2__personRow--off'}`} onClick={() => { setSelectedId(m.id); setSelectedRole(m.workspace_role); }}>
+              <span className="pp__avatar" aria-hidden="true">{initials(m.display_name)}</span>
+              <span className="pp2__identity"><strong>{m.display_name}</strong><small>{m.email}</small></span>
+              <span className="pp2__roleBadge">{roleName(m.workspace_role)}</span>
+              <span className="pp2__lastSeen">{m.active ? lastSeen(m.last_seen_at) : 'Deactivated'}</span>
+              <span className="pp2__rowArrow" aria-hidden="true">→</span>
+            </button></div>
+          ))}
+          {!shown.length && <div className="pp2__noResults">No people match your search or filters.</div>}
+        </div>
+        {pageCount > 1 && <div className="pp2__pager"><span>Page {currentPage} of {pageCount}</span><button type="button" className="cs__btn" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>Previous</button><button type="button" className="cs__btn" disabled={currentPage === pageCount} onClick={() => setPage(currentPage + 1)}>Next</button></div>}
         </>
         )}
         </div>
-      </div>
-    </>
+      </div>}
+    </div>
   );
 }
 

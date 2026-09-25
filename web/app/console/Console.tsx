@@ -693,7 +693,7 @@ export function Console() {
           </button>}
         </div>
 
-        <div className={`cs__body ${view === 'security' ? 'cs__body--security' : ''} ${view === 'ask' ? 'cs__body--ask' : ''} ${view === 'dashboard' ? 'cs__body--dashboard' : ''} ${view === 'processes' ? 'cs__body--processes' : ''} ${view === 'held' ? 'cs__body--held' : ''} ${view === 'integrations' ? 'cs__body--integrations' : ''} ${view === 'data' ? 'cs__body--data' : ''}`}>
+        <div className={`cs__body ${view === 'security' ? 'cs__body--security' : ''} ${view === 'ask' ? 'cs__body--ask' : ''} ${view === 'dashboard' ? 'cs__body--dashboard' : ''} ${view === 'people' ? 'cs__body--people' : ''} ${view === 'records' ? 'cs__body--records' : ''} ${view === 'work' ? 'cs__body--work' : ''} ${view === 'processes' ? 'cs__body--processes' : ''} ${view === 'held' ? 'cs__body--held' : ''} ${view === 'integrations' ? 'cs__body--integrations' : ''} ${view === 'data' ? 'cs__body--data' : ''}`}>
           <div className="cs__left">
             {view === 'record' && record ? (
               <RecordPage
@@ -776,7 +776,8 @@ export function Console() {
               </div>
             ) : (
               <>
-                <div className="cs__tiles">
+                <section className="mw__intro"><div><span className="db__eyebrow">YOUR QUEUE</span><h2>{counts.needsYou ? `${counts.needsYou} ${counts.needsYou === 1 ? 'item needs' : 'items need'} your attention` : 'You’re all caught up'}</h2><p>{counts.needsYou ? 'Review the next decisions and tasks in your queue.' : 'There are no decisions or tasks waiting on you in this process.'}</p></div><button type="button" className="mw__browse" onClick={() => setView('records')}>Browse records <span aria-hidden="true">→</span></button></section>
+                <div className="cs__tiles mw__tiles">
                   <Tile label="ARRIVED" value={counts.arrived} meta="last 30 days" />
                   <Tile
                     label="NEEDS YOU"
@@ -788,6 +789,8 @@ export function Console() {
                   <Tile label="FAILED" value={counts.failed} meta="safe to replay" tone="failed" />
                 </div>
 
+                {health && health.totals.failing > 0 && <div className="mw__health"><span aria-hidden="true">!</span><div><strong>{health.totals.failing} automation {health.totals.failing === 1 ? 'failure' : 'failures'} to review</strong><p>See the delivery issues and next steps in Automation health.</p></div><button type="button" onClick={() => setView('health')}>Review failures →</button></div>}
+
                 <WorkList
                   approvals={work?.approvals ?? []}
                   tasks={work?.tasks ?? []}
@@ -795,6 +798,7 @@ export function Console() {
                   onOpen={(id) => void open(id)}
                   onDecide={(id, key, decision) => void decide(id, key, decision)}
                   onCompleteTask={(id, key) => void completeTask(id, key)}
+                  onBrowseRecords={() => setView('records')}
                 />
               </>
             )}
@@ -802,7 +806,7 @@ export function Console() {
 
           {/* The record page carries its own side column; two of them would
               be a column of cards about a different subject. */}
-          {view !== 'record' && view !== 'security' && view !== 'ask' && view !== 'dashboard' && view !== 'processes' && view !== 'held' && view !== 'integrations' && view !== 'data' && (
+          {view !== 'record' && view !== 'security' && view !== 'ask' && view !== 'dashboard' && view !== 'people' && view !== 'records' && view !== 'work' && view !== 'processes' && view !== 'held' && view !== 'integrations' && view !== 'data' && (
           <div className="cs__right">
             {!processKey ? null : health ? (
               <div className="cs__card">
@@ -849,13 +853,9 @@ export function Console() {
               <p style={{ marginTop: 10, fontSize: 13.5, lineHeight: 1.5, color: 'var(--on-dark-2)' }}>
                 {view === 'health'
                   ? 'What the automation did, and who it can no longer reach. A hard bounce or a spam complaint stops this deployment writing to that address — the record will say "skipped" and this is the page that says why.'
-                  : view === 'people'
-                    ? 'Who is in this workspace and what they may do. An invitation is emailed, works once, and expires in seven days — the link is never shown here, because anybody who can invite could otherwise mint one for an address whose owner never sees it.'
                   : view === 'invite'
                     ? 'One person, a pasted list, or a spreadsheet. Every row is checked before anything is sent: typos, duplicates, people already here and roles you cannot give are set aside, and only the rest go. Each invitation works once and expires in seven days.'
-                  : view === 'records'
-                      ? 'Every record you are allowed to see, newest first. The same cursor pagination the public API uses, so one behaviour is tested twice.'
-                      : 'Four questions, in order: what arrived, what needs you, what is late, what failed. Sign in as someone else and the same records offer different actions — every one of them checked by the runtime, not by this page.'}
+                  : 'The actions available here are checked against your role by the runtime.'}
               </p>
             </div>
           </div>
