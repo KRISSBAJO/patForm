@@ -1,0 +1,35 @@
+Create a state-of-the-art Training Attendance, Participation & Certification Form for an organization. The form should manage the complete training attendance lifecycle, not just collect names.
+
+Collect training details including training title, training ID, course/category, department, trainer/facilitator, training location, delivery method (in-person, virtual, or hybrid), training date, scheduled start/end time, actual start/end time, duration, training objectives, and maximum capacity.
+
+Collect detailed participant information including full name, employee/student ID, email, phone number, organization, department, job title/role, manager/supervisor, employment type, and location/branch. Allow multiple participants to be registered where appropriate.
+
+Include attendance tracking with registration status, check-in date/time, check-out date/time, attendance method, late arrival, early departure, breaks, total time attended, attendance percentage, and attendance status. Attendance statuses should include Registered, Present, Late, Partially Attended, Absent, Excused, Completed, and No-Show.
+
+Support QR-code or unique attendance-code check-in/check-out where available, while also allowing authorized staff to record attendance manually. Prevent duplicate check-ins and flag unusual attendance records for review.
+
+Include training requirements and prerequisites. Ask whether required prerequisite courses have been completed and allow supporting evidence to be attached when necessary. Flag participants who do not meet mandatory prerequisites.
+
+Include a participation and assessment section containing participation level, assessment required (Yes/No), pre-training score, post-training score, passing score, actual score, pass/fail result, practical assessment result, trainer comments, and competency demonstrated. Automatically calculate improvement between pre- and post-training assessments where applicable.
+
+Include acknowledgments and compliance declarations. Participants should confirm attendance, acknowledge applicable training policies, certify that the information submitted is accurate, and provide an electronic signature and date when required.
+
+Allow supporting documents such as course materials, attendance sheets, assessment results, certificates, identification documents, trainer reports, photographs where appropriate, and other training evidence.
+
+After training, the trainer should review each participant and record whether they Completed, Passed, Failed, Require Retraining, or Did Not Complete the training. Require comments when a participant fails or requires retraining.
+
+If a participant satisfies the required attendance percentage and passes all mandatory assessments, automatically mark the training as successfully completed. If either requirement is not met, do not issue a completion certificate and route the record for review or retraining.
+
+For successful participants, generate a unique certificate number, completion date, certificate issue date, expiration date where applicable, training hours/credits earned, and certification status. Allow the completion certificate to be generated or attached to the participant record.
+
+Include conditional logic so irrelevant fields remain hidden. For example, show virtual-session details only for virtual/hybrid training, assessment fields only when an assessment is required, failure/retraining fields only when applicable, and certification expiration fields only for certifications that expire.
+
+Include approval workflow where required: Trainer Verification → Training Coordinator/HR Review → Compliance/Safety Approval for regulated training. Allow Approve, Reject, Return for Correction, and Require Retraining actions with mandatory comments for rejection or return.
+
+Send appropriate notifications and reminders for registration confirmation, upcoming training, incomplete prerequisites, training-day reminders, missed attendance, pending assessments, retraining requirements, successful completion, and certificate availability/expiration.
+
+Provide an administrative attendance summary showing total registered, attended, completed, absent/no-show, late arrivals, pass rate, failure rate, average assessment score, total training hours, and certificates issued.
+
+Maintain a complete audit trail recording who registered participants, attendance/check-in changes, manual overrides, assessment changes, approvals, comments, signatures, document uploads, certificate issuance, timestamps, and status changes.
+
+The form should be modern, mobile-friendly, accessible, responsive, professionally organized into logical sections, and easy to complete. Use dropdowns, date/time pickers, searchable participant selection, repeatable participant records, conditional fields, validation, calculated fields, file uploads, signatures, status badges, and progress indicators where appropriate. Avoid displaying unnecessary fields and prevent submission when mandatory information is incomplete or logically inconsistent.

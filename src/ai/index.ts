@@ -53,6 +53,10 @@ export function withProviderFallback(providers: Provider[]): Provider {
           return response;
         } catch (error) {
           lastError = error;
+          // Said out loud: a chain that silently hands a repair turn to a
+          // smaller model leaves nothing to explain the change of author.
+          console.warn(`AI provider ${providers[index]!.name} failed, ${index + 1 < providers.length ? `trying ${providers[index + 1]!.name}` : 'none left'}:`,
+            error instanceof Error ? error.message : String(error));
           selected = Math.min(index + 1, providers.length - 1);
         }
       }

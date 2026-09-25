@@ -9,7 +9,7 @@ import type { Diagnostic } from '../compiler/diagnostics.js';
  * record says exactly which instructions produced it. Eval results are only
  * comparable within a version.
  */
-export const PROMPT_VERSION = 'blueprint-gen@12';
+export const PROMPT_VERSION = 'blueprint-gen@13';
 
 export const SYSTEM_PROMPT = `You design business processes for an operations platform.
 
@@ -46,7 +46,10 @@ Calculated fields use a SEPARATE numeric language in "compute":
   { "op": "sum", "over": "<repeating_group key>", "of": "<child field key>" }
   { "op": "count", "over": "<repeating_group key>" }
   { "op": "add"|"subtract"|"multiply"|"divide", "operands": [ ... ] }
+  { "op": "duration", "from": "<time or date field>", "to": "<time or date field>", "unit": "minutes"|"hours"|"days" }
   { "field": "<key>" } or { "literal": <number> }
+
+Time attended, hours worked, days between two dates: use "duration". Arithmetic cannot subtract two times.
 
 # Rules the compiler enforces. Break one and your blueprint is rejected.
 
@@ -73,6 +76,8 @@ Form and data
 - A calculated field must have "compute", must not refer to itself, and may only do arithmetic over numeric or repeating-group fields.
 - For a total of personally paid expense rows, use {"op":"sum","over":"expense_items","of":"item_total","where":{"op":"eq","left":{"field":"item_payment_method"},"right":{"literal":"personal_card"}}}. Calculated child fields are evaluated in each row before the total.
 - Comparisons must be type-compatible: gt/gte/lt/lte need a number, currency, rating, date or time. Comparing a choice field against a value that is not one of its options is rejected.
+- A yes_no field compares against { "literal": true } or { "literal": false }, never "yes" or "no". A choice field compares against one of its choice VALUES, spelled exactly.
+- A question inside a repeating_group has one answer per row. Outside the group it can only be reached through { "op": "any"|"all", "over": "<group>", "where": <condition on the row's fields> }. Never name a row field directly in a transition condition or a section's visibleWhen.
 - Name the fields in data.identity that together identify a duplicate submission (usually an email plus a date or reference). Exception: if a quiz allows retakes, leave data.identity empty so every attempt becomes a record. Unless the request limits attempts, allow quiz retakes. An email-only identity silently blocks them.
 - File uploads use a field of type "file". The form uploads real PDF, PNG or JPEG bytes (maximum 5 MB per file), checks the malware scan, and stores a protected reference. Do not substitute a text receipt reference for a requested upload.
 - Field "required" is unconditional. For a conditional receipt on each expense row, use a file child field inside a repeating_group with "requiredWhen": {"op":"gte","left":{"field":"amount"},"right":{"literal":25}}. The field key in the condition must name the numeric child in the same row. Add scenarios for both sides of the threshold.
@@ -80,7 +85,7 @@ Form and data
 Tasks and approvals
 - A task with "blocking": true must have a transition triggered by its completion. A blocking task nothing waits for is a control that does nothing.
 - A transition triggered by task completion must name a task some transition actually creates.
-- In a complete_task test step, "answers" may contain ONLY fields named by that task's "requiredFields". Omit "answers" if the task collects nothing. If the task records an operator field, put that field in "requiredFields" and allow the completing role to edit it.
+- In a complete_task test step, "answers" may contain ONLY fields named by that task's "requiredFields". Omit "answers" if the task collects nothing. If the task records an operator field, put that field in "requiredFields" and allow the completing role to edit it. A task can collect operator-set text, choice, yes/no, number, date, time or rating fields — a reviewer's decision and their comments — but not files or repeating groups.
 - A role completing a task with answers needs the "edit" capability and every answered field in "editableFields", even when the task is assigned through an email field.
 - A transition for an approved task must explicitly require the task's decision field to equal "approved". Reject and return transitions must have their own conditions, so they never overlap approval routing.
 - If the process has approvals, some role must have the "approve" capability.

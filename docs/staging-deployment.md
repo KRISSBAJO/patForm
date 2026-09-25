@@ -32,10 +32,14 @@ Set `DATABASE_URL` to the separate staging database URL. Render generates
 `MFA_ENCRYPTION_KEY` and `FORM_TICKET_SECRET`; preserve both across deployments
 so existing MFA enrolments and open forms remain valid. Set `APP_URL` and
 `CONSOLE_ORIGIN` to the eventual Vercel staging URL, including `https://`.
-The staging database's self-signed TLS certificate is pinned in
-`certs/renviq-staging.pem`. If Renviq rotates it, replace the pin only after
-verifying the new certificate through the database operator; a changed
-certificate deliberately stops staging rather than silently trusting it.
+The database connection accepts exactly two certificates: the self-signed one
+pinned in `certs/renviq-staging.pem`, byte for byte, or a certificate a public
+authority has issued for the host in `DATABASE_URL`, verified the ordinary way
+with the hostname checked. Renviq moved `db.renviq.com` to a Let's Encrypt
+certificate on 25 September 2026; the pin alone refused it and every deploy
+that morning failed to start. Anything else — a different self-signed
+certificate, a public certificate for another name — still stops staging
+rather than being trusted silently.
 
 The combined service runs the API and worker while it is awake. Render Free
 spins down after idle time. Approvals still exist in the database, but email,

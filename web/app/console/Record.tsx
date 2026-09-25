@@ -61,7 +61,7 @@ export interface PendingTask {
   taskKey: string;
   taskName: string;
   description?: string;
-  requiredFields?: { key: string; label: string; type: string }[];
+  requiredFields?: { key: string; label: string; type: string; choices?: { value: string; label: string }[] }[];
   assignee: string | null;
   late: boolean;
   summary: string;
@@ -110,7 +110,7 @@ export function RecordPage({
   onBack: () => void;
   backLabel: string;
   onDecide: (instanceId: string, approvalKey: string, decision: 'approved' | 'rejected' | 'changes_requested', reason: string) => void;
-  onCompleteTask: (instanceId: string, taskKey: string, answers: Record<string, string>) => void;
+  onCompleteTask: (instanceId: string, taskKey: string, answers: Record<string, unknown>) => void;
   onExport: (instanceId: string, reference: string, format: 'json' | 'csv') => void;
   onActionDone: () => void;
 }) {
@@ -118,6 +118,24 @@ export function RecordPage({
   const [reason, setReason] = useState('');
   const [decisionMode, setDecisionMode] = useState<'rejected' | 'changes_requested' | null>(null);
   const [completionAnswers, setCompletionAnswers] = useState<Record<string, string>>({});
+  /** What is typed for a task field, or what the record already holds, as text for the control. */
+  const taskValue = (key: string): string => {
+    if (completionAnswers[key] !== undefined) return completionAnswers[key]!;
+    const recorded = record.fields.find((f) => f.key === key)?.value;
+    if (recorded === null || recorded === undefined || recorded === '[redacted]') return '';
+    return typeof recorded === 'object' ? '' : String(recorded);
+  };
+  /** The answers as the field types want them: a yes/no is a boolean, a number is a number. */
+  const taskAnswers = (): Record<string, unknown> => {
+    const out: Record<string, unknown> = {};
+    for (const field of task?.requiredFields ?? []) {
+      const raw = taskValue(field.key);
+      if (raw === '') continue;
+      out[field.key] =
+        field.type === 'yes_no' ? raw === 'true' : ['number', 'currency', 'rating'].includes(field.type) ? Number(raw) : raw;
+    }
+    return out;
+  };
   const [receiptError, setReceiptError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [classification, setClassification] = useState('all');
@@ -307,25 +325,32 @@ export function RecordPage({
             </p>
             {task.description && <p>{task.description}</p>}
             {task.requiredFields?.map((field) => {
-              const recorded = record.fields.find((f) => f.key === field.key)?.value;
-              const value = completionAnswers[field.key] ?? (typeof recorded === 'string' && recorded !== '[redacted]' ? recorded : '');
+              const value = taskValue(field.key);
+              const set = (v: string) => setCompletionAnswers((was) => ({ ...was, [field.key]: v }));
+              const id = `task-${field.key}`;
+              const choice = field.type === 'dropdown' || field.type === 'single_choice';
               return (
                 <div key={field.key} style={{ marginTop: 12 }}>
-                  <label htmlFor={`task-${field.key}`}>{field.label} <span aria-hidden="true">*</span></label>
+                  <label htmlFor={id}>{field.label} <span aria-hidden="true">*</span></label>
                   {field.type === 'long_text' ? (
-                    <textarea
-                      id={`task-${field.key}`}
-                      className="rc__reasonBox"
-                      value={value}
-                      onChange={(e) => setCompletionAnswers((was) => ({ ...was, [field.key]: e.target.value }))}
-                      required
-                    />
+                    <textarea id={id} className="rc__reasonBox" value={value} onChange={(e) => set(e.target.value)} required />
+                  ) : choice || field.type === 'yes_no' ? (
+                    <select id={id} className="rc__reasonBox" value={value} onChange={(e) => set(e.target.value)} required>
+                      <option value="">Choose…</option>
+                      {(choice ? (field.choices ?? []) : [{ value: 'true', label: 'Yes' }, { value: 'false', label: 'No' }]).map((c) => (
+                        <option key={c.value} value={c.value}>
+                          {c.label}
+                        </option>
+                      ))}
+                    </select>
                   ) : (
                     <input
-                      id={`task-${field.key}`}
+                      id={id}
                       className="rc__reasonBox"
+                      type={field.type === 'date' ? 'date' : field.type === 'time' ? 'time' : ['number', 'currency', 'rating'].includes(field.type) ? 'number' : 'text'}
+                      step={field.type === 'currency' ? '0.01' : undefined}
                       value={value}
-                      onChange={(e) => setCompletionAnswers((was) => ({ ...was, [field.key]: e.target.value }))}
+                      onChange={(e) => set(e.target.value)}
                       required
                     />
                   )}
@@ -337,12 +362,8 @@ export function RecordPage({
             <button
               type="button"
               className="cs__btn cs__btn--primary"
-              disabled={working || task.requiredFields?.some((field) => {
-                const recorded = record.fields.find((f) => f.key === field.key)?.value;
-                const value = completionAnswers[field.key] ?? (typeof recorded === 'string' && recorded !== '[redacted]' ? recorded : '');
-                return !value.trim();
-              })}
-              onClick={() => onCompleteTask(record.instanceId, task.taskKey, completionAnswers)}
+              disabled={working || task.requiredFields?.some((field) => !taskValue(field.key).trim())}
+              onClick={() => onCompleteTask(record.instanceId, task.taskKey, taskAnswers())}
             >
               <Icon name="done" />
               Mark done

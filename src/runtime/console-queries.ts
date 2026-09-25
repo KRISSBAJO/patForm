@@ -231,7 +231,7 @@ export async function myWork(
         description: declared?.description,
         requiredFields: (declared?.requiredFields ?? []).map((key) => {
           const field = bp.data.fields.find((f) => f.key === key);
-          return { key, label: field?.label ?? key, type: field?.type ?? 'short_text' };
+          return { key, label: field?.label ?? key, type: field?.type ?? 'short_text', choices: field?.choices };
         }),
         assignee: row.assignee,
         dueAt: row.due_at?.toISOString() ?? null,

@@ -4,8 +4,18 @@ import type { Diagnostic } from '../compiler/diagnostics.js';
 /** Checks promises in the request that the blueprint schema cannot infer. */
 export function qualityDiagnostics(bp: Blueprint, description: string): Diagnostic[] {
   const diagnostics: Diagnostic[] = [];
+  /*
+   * A scored quiz is a form that ASKS questions and marks them. A description
+   * that records assessment results — "pre-training score", "pass/fail
+   * result", "passing score" — mentions scores and assessments without wanting
+   * a single question written, and this rule used to demand quiz questions of
+   * it anyway, an error no model could repair. So the rule now needs the
+   * description to ask for questions: a count of them, an answer key, or
+   * multiple choice.
+   */
   const scoredQuiz = /\b(quiz|exam|test|assessment)s?\b/i.test(description) &&
-    /\b(scor\w*|grad\w*|correct answers?|percent\w*)\b/i.test(description);
+    /\b(scor\w*|grad\w*|correct answers?|percent\w*)\b/i.test(description) &&
+    /\b(\d{1,2}|two|three|four|five|six|seven|eight|nine|ten|twelve|fifteen|twenty)[ -]+(?:multiple[ -]choice\s+|short\s+)?questions?\b|\banswer keys?\b|\bcorrect answers?\b|\bmultiple[ -]choice\b/i.test(description);
   if (!scoredQuiz) return diagnostics;
 
   const permitsRetakes = bp.intent.assumptions?.some(({ statement }) =>

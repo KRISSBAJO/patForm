@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import tls from 'node:tls';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import pg from 'pg';
@@ -52,7 +53,7 @@ export function describeTarget(url = connectionString()): string {
 export function createPool(max = 10, url = connectionString()): Pool {
   const pinnedCertificatePath = process.env.DATABASE_TLS_CERT_PATH;
   let connectionUrl = url;
-  let ssl: { rejectUnauthorized: boolean; ca?: string; checkServerIdentity?: (host: string, cert: { raw?: Buffer }) => Error | undefined } | undefined;
+  let ssl: { rejectUnauthorized: boolean; ca?: string | string[]; checkServerIdentity?: (host: string, cert: { raw?: Buffer }) => Error | undefined } | undefined;
   if (pinnedCertificatePath) {
     const parsed = new URL(url);
     if (parsed.searchParams.get('sslmode') !== 'require') {
@@ -63,15 +64,24 @@ export function createPool(max = 10, url = connectionString()): Pool {
     connectionUrl = parsed.toString();
     const pem = readFileSync(pinnedCertificatePath, 'utf8');
     const pinned = new X509Certificate(pem).raw;
+    /*
+     * Two ways to be trusted, and nothing else.
+     *
+     * The pinned certificate, byte for byte — Renviq's self-signed standby
+     * certificate, which names its host rather than db.renviq.com, so the
+     * hostname check is skipped for it. Or a certificate a public authority
+     * issued for the host being connected to, checked the ordinary way. The
+     * pin alone took staging down the morning Renviq moved to Let's Encrypt:
+     * a certificate any browser would trust was refused for not being the
+     * self-signed one, and every deploy after it failed to start.
+     */
     ssl = {
       rejectUnauthorized: true,
-      ca: pem,
-      // Renviq's current database certificate names its host, not its public
-      // db.renviq.com endpoint. Accept only this exact certificate instead.
-      checkServerIdentity: (_host, cert) =>
+      ca: [...tls.rootCertificates, pem],
+      checkServerIdentity: (host, cert) =>
         cert.raw && cert.raw.length === pinned.length && timingSafeEqual(cert.raw, pinned)
           ? undefined
-          : new Error('Database TLS certificate differs from the pinned certificate'),
+          : tls.checkServerIdentity(host, cert as tls.PeerCertificate),
     };
   } else if (url.includes('sslmode=require')) {
     // Retain the existing local/development behavior until those connections

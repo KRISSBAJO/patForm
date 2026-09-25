@@ -327,7 +327,7 @@ export function Console() {
       },
     );
 
-  const completeTask = (instanceId: string, taskKey: string, answers: Record<string, string> = {}) =>
+  const completeTask = (instanceId: string, taskKey: string, answers: Record<string, unknown> = {}) =>
     act(
       `${instanceId}:${taskKey}`,
       () => call(`/api/records/${instanceId}/tasks/${taskKey}/complete`, {

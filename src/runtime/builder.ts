@@ -741,6 +741,9 @@ export async function createDraft(
           description: input.description,
           pack: input.pack,
           pool,
+          // A page-long description produces a page-long blueprint, and one
+          // repair is rarely enough to settle it. Two is still bounded.
+          maxRepairs: input.description.length > 1500 ? 2 : 1,
           onProgress: args.onProgress,
         });
         if (proposed.blueprint) { outcome = proposed; break; }
@@ -774,7 +777,11 @@ export async function createDraft(
     }
     if (!outcome?.blueprint && !reviewCandidate && !editableCandidate) {
       console.warn('AI draft exhausted providers:', lastProblem);
-      throw new InvalidInput('AI could not complete a draft that passed the builder checks. Nothing was saved. Please try again.');
+      // Say what went wrong, not only that it did. "Please try again" with no
+      // reason had people retrying the same description into the same wall.
+      throw new InvalidInput(
+        `AI could not complete a draft that passed the builder checks, so nothing was saved. ${lastProblem ? `Last attempt: ${lastProblem}.` : ''}`.trim().slice(0, 480),
+      );
     }
     audit = outcome?.audit ?? reviewCandidate?.audit ?? editableCandidate!.audit;
     decision = outcome?.decision ?? (editableCandidate ? 'needs_fixes' : 'review_required');

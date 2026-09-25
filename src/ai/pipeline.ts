@@ -5,6 +5,7 @@ import { runScenarios, type ScenarioResult } from '../runtime/scenarios.js';
 import type { Pool } from '../runtime/db.js';
 import { PROMPT_VERSION, SYSTEM_PROMPT, repairTurn, userTurn } from './prompt.js';
 import { extractJson, type Provider, type ProviderMeta } from './provider.js';
+import { normalizeBlueprint, type Normalization } from './normalize.js';
 
 export type Decision =
   | 'publishable' // compiled clean, and scenarios passed if they were run
@@ -20,6 +21,8 @@ export interface Attempt {
   shapeIssues: string[];
   errors: Diagnostic[];
   warnings: Diagnostic[];
+  /** Spelling-level corrections made before compiling; see normalize.ts. */
+  normalized?: Normalization[];
 }
 
 export interface GenerationOutcome {
@@ -161,11 +164,14 @@ export async function generateBlueprint(
     }
 
     // ------------------------------------------------------------ gate two
-    const compiled = validate(parsed.data, options.description);
-    diagnostics = [...compiled.items, ...undeclaredAssumptions(parsed.data)];
+    // Mechanical slips are corrected first, so the repair turn is spent on
+    // design mistakes rather than on "yes" where true was meant.
+    const { blueprint: candidateBp, changes: normalized } = normalizeBlueprint(parsed.data);
+    const compiled = validate(candidateBp, options.description);
+    diagnostics = [...compiled.items, ...undeclaredAssumptions(candidateBp)];
     const candidateErrors = diagnostics.filter((item) => item.severity === 'error');
     if (candidateErrors.length && (!editable || candidateErrors.length < editable.errors.length)) {
-      editable = { blueprint: parsed.data, errors: candidateErrors };
+      editable = { blueprint: candidateBp, errors: candidateErrors };
     }
     attempts.push({
       attempt,
@@ -174,6 +180,7 @@ export async function generateBlueprint(
       shapeIssues: [],
       errors: candidateErrors,
       warnings: compiled.warnings,
+      normalized,
     });
 
     /*
@@ -192,12 +199,12 @@ export async function generateBlueprint(
      * and not in the compiler.
      */
     if (compiled.publishable && !candidateErrors.length) {
-      blueprint = parsed.data;
+      blueprint = candidateBp;
       // A failed scenario is repairable too. Previously this gate ran only
       // after the final model turn, so its diagnostics could never reach the
       // one repair turn promised by the pipeline.
       if (options.pool) {
-        scenarios = await runScenarios(options.pool, parsed.data);
+        scenarios = await runScenarios(options.pool, candidateBp);
         const scenarioErrors = scenarios.filter((s) => !s.passed).map((s): Diagnostic => ({
           code: 'SCENARIO', severity: 'error', at: `tests.${s.test}`,
           message: `The blueprint's "${s.kind}" scenario failed: ${s.failures.join('; ')}`,
@@ -206,10 +213,10 @@ export async function generateBlueprint(
         diagnostics = [...diagnostics, ...scenarioErrors];
         if (scenarioErrors.length) {
           if (!reviewable || scenarioErrors.length < reviewable.scenarios.filter((item) => !item.passed).length) {
-            reviewable = { blueprint: parsed.data, scenarios };
+            reviewable = { blueprint: candidateBp, scenarios };
           }
           decision = 'blocked';
-          user = `${baseUser}\n\nYou returned this blueprint:\n\n${JSON.stringify(parsed.data)}\n\n${repairTurn(diagnostics)}`;
+          user = `${baseUser}\n\nYou returned this blueprint:\n\n${JSON.stringify(candidateBp)}\n\n${repairTurn(diagnostics)}`;
           continue;
         }
       }
@@ -219,11 +226,11 @@ export async function generateBlueprint(
     if (compiled.publishable) {
       // It compiles; it is only under-declared. Keep it, so a second refusal
       // to answer still hands back a working process rather than nothing.
-      blueprint = parsed.data;
+      blueprint = candidateBp;
     }
 
     decision = 'blocked';
-    user = `${baseUser}\n\nYou returned this blueprint:\n\n${JSON.stringify(parsed.data)}\n\n${repairTurn(diagnostics)}`;
+    user = `${baseUser}\n\nYou returned this blueprint:\n\n${JSON.stringify(candidateBp)}\n\n${repairTurn(diagnostics)}`;
   }
 
   const totals = attempts.reduce(

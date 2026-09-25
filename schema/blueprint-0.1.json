@@ -85,6 +85,9 @@
                   "affects": {
                     "type": "string",
                     "minLength": 1
+                  },
+                  "confirmed": {
+                    "type": "boolean"
                   }
                 },
                 "required": [
@@ -244,6 +247,220 @@
                   "required": {
                     "type": "boolean"
                   },
+                  "requiredWhen": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "op": {
+                            "type": "string",
+                            "enum": [
+                              "and",
+                              "or"
+                            ]
+                          },
+                          "operands": {
+                            "type": "array",
+                            "items": {
+                              "$ref": "#/definitions/ProcessBlueprint/properties/data/properties/fields/items/properties/requiredWhen"
+                            },
+                            "minItems": 1
+                          }
+                        },
+                        "required": [
+                          "op",
+                          "operands"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "op": {
+                            "type": "string",
+                            "const": "not"
+                          },
+                          "operand": {
+                            "$ref": "#/definitions/ProcessBlueprint/properties/data/properties/fields/items/properties/requiredWhen"
+                          }
+                        },
+                        "required": [
+                          "op",
+                          "operand"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "op": {
+                            "type": "string",
+                            "enum": [
+                              "eq",
+                              "ne",
+                              "gt",
+                              "gte",
+                              "lt",
+                              "lte"
+                            ]
+                          },
+                          "left": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "field": {
+                                    "$ref": "#/definitions/ProcessBlueprint/properties/key"
+                                  }
+                                },
+                                "required": [
+                                  "field"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "literal": {
+                                    "type": [
+                                      "string",
+                                      "number",
+                                      "boolean",
+                                      "null"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "literal"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "context": {
+                                    "type": "string",
+                                    "enum": [
+                                      "now",
+                                      "today",
+                                      "actor",
+                                      "current_state"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "context"
+                                ],
+                                "additionalProperties": false
+                              }
+                            ]
+                          },
+                          "right": {
+                            "$ref": "#/definitions/ProcessBlueprint/properties/data/properties/fields/items/properties/requiredWhen/anyOf/2/properties/left"
+                          }
+                        },
+                        "required": [
+                          "op",
+                          "left",
+                          "right"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "op": {
+                            "type": "string",
+                            "enum": [
+                              "in",
+                              "not_in"
+                            ]
+                          },
+                          "left": {
+                            "$ref": "#/definitions/ProcessBlueprint/properties/data/properties/fields/items/properties/requiredWhen/anyOf/2/properties/left"
+                          },
+                          "right": {
+                            "type": "array",
+                            "items": {
+                              "$ref": "#/definitions/ProcessBlueprint/properties/data/properties/fields/items/properties/requiredWhen/anyOf/2/properties/left"
+                            },
+                            "minItems": 1
+                          }
+                        },
+                        "required": [
+                          "op",
+                          "left",
+                          "right"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "op": {
+                            "type": "string",
+                            "const": "contains"
+                          },
+                          "left": {
+                            "$ref": "#/definitions/ProcessBlueprint/properties/data/properties/fields/items/properties/requiredWhen/anyOf/2/properties/left"
+                          },
+                          "right": {
+                            "$ref": "#/definitions/ProcessBlueprint/properties/data/properties/fields/items/properties/requiredWhen/anyOf/2/properties/left"
+                          }
+                        },
+                        "required": [
+                          "op",
+                          "left",
+                          "right"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "op": {
+                            "type": "string",
+                            "enum": [
+                              "is_empty",
+                              "is_present"
+                            ]
+                          },
+                          "left": {
+                            "$ref": "#/definitions/ProcessBlueprint/properties/data/properties/fields/items/properties/requiredWhen/anyOf/2/properties/left"
+                          }
+                        },
+                        "required": [
+                          "op",
+                          "left"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "op": {
+                            "type": "string",
+                            "enum": [
+                              "any",
+                              "all"
+                            ]
+                          },
+                          "over": {
+                            "$ref": "#/definitions/ProcessBlueprint/properties/key"
+                          },
+                          "where": {
+                            "$ref": "#/definitions/ProcessBlueprint/properties/data/properties/fields/items/properties/requiredWhen"
+                          }
+                        },
+                        "required": [
+                          "op",
+                          "over",
+                          "where"
+                        ],
+                        "additionalProperties": false
+                      }
+                    ]
+                  },
                   "classification": {
                     "$ref": "#/definitions/ProcessBlueprint/properties/intent/properties/sensitivityCeiling"
                   },
@@ -325,6 +542,14 @@
                       "additionalProperties": false
                     }
                   },
+                  "correctValue": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "answerExplanation": {
+                    "type": "string",
+                    "minLength": 1
+                  },
                   "default": {
                     "type": [
                       "string",
@@ -366,6 +591,36 @@
                         "properties": {
                           "op": {
                             "type": "string",
+                            "const": "duration"
+                          },
+                          "from": {
+                            "$ref": "#/definitions/ProcessBlueprint/properties/key"
+                          },
+                          "to": {
+                            "$ref": "#/definitions/ProcessBlueprint/properties/key"
+                          },
+                          "unit": {
+                            "type": "string",
+                            "enum": [
+                              "minutes",
+                              "hours",
+                              "days"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "op",
+                          "from",
+                          "to",
+                          "unit"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "op": {
+                            "type": "string",
                             "enum": [
                               "sum",
                               "count"
@@ -376,6 +631,9 @@
                           },
                           "of": {
                             "$ref": "#/definitions/ProcessBlueprint/properties/key"
+                          },
+                          "where": {
+                            "$ref": "#/definitions/ProcessBlueprint/properties/data/properties/fields/items/properties/requiredWhen"
                           }
                         },
                         "required": [
@@ -508,218 +766,7 @@
                           }
                         },
                         "visibleWhen": {
-                          "anyOf": [
-                            {
-                              "type": "object",
-                              "properties": {
-                                "op": {
-                                  "type": "string",
-                                  "enum": [
-                                    "and",
-                                    "or"
-                                  ]
-                                },
-                                "operands": {
-                                  "type": "array",
-                                  "items": {
-                                    "$ref": "#/definitions/ProcessBlueprint/properties/experience/properties/pages/items/properties/sections/items/properties/visibleWhen"
-                                  },
-                                  "minItems": 1
-                                }
-                              },
-                              "required": [
-                                "op",
-                                "operands"
-                              ],
-                              "additionalProperties": false
-                            },
-                            {
-                              "type": "object",
-                              "properties": {
-                                "op": {
-                                  "type": "string",
-                                  "const": "not"
-                                },
-                                "operand": {
-                                  "$ref": "#/definitions/ProcessBlueprint/properties/experience/properties/pages/items/properties/sections/items/properties/visibleWhen"
-                                }
-                              },
-                              "required": [
-                                "op",
-                                "operand"
-                              ],
-                              "additionalProperties": false
-                            },
-                            {
-                              "type": "object",
-                              "properties": {
-                                "op": {
-                                  "type": "string",
-                                  "enum": [
-                                    "eq",
-                                    "ne",
-                                    "gt",
-                                    "gte",
-                                    "lt",
-                                    "lte"
-                                  ]
-                                },
-                                "left": {
-                                  "anyOf": [
-                                    {
-                                      "type": "object",
-                                      "properties": {
-                                        "field": {
-                                          "$ref": "#/definitions/ProcessBlueprint/properties/key"
-                                        }
-                                      },
-                                      "required": [
-                                        "field"
-                                      ],
-                                      "additionalProperties": false
-                                    },
-                                    {
-                                      "type": "object",
-                                      "properties": {
-                                        "literal": {
-                                          "type": [
-                                            "string",
-                                            "number",
-                                            "boolean",
-                                            "null"
-                                          ]
-                                        }
-                                      },
-                                      "required": [
-                                        "literal"
-                                      ],
-                                      "additionalProperties": false
-                                    },
-                                    {
-                                      "type": "object",
-                                      "properties": {
-                                        "context": {
-                                          "type": "string",
-                                          "enum": [
-                                            "now",
-                                            "today",
-                                            "actor",
-                                            "current_state"
-                                          ]
-                                        }
-                                      },
-                                      "required": [
-                                        "context"
-                                      ],
-                                      "additionalProperties": false
-                                    }
-                                  ]
-                                },
-                                "right": {
-                                  "$ref": "#/definitions/ProcessBlueprint/properties/experience/properties/pages/items/properties/sections/items/properties/visibleWhen/anyOf/2/properties/left"
-                                }
-                              },
-                              "required": [
-                                "op",
-                                "left",
-                                "right"
-                              ],
-                              "additionalProperties": false
-                            },
-                            {
-                              "type": "object",
-                              "properties": {
-                                "op": {
-                                  "type": "string",
-                                  "enum": [
-                                    "in",
-                                    "not_in"
-                                  ]
-                                },
-                                "left": {
-                                  "$ref": "#/definitions/ProcessBlueprint/properties/experience/properties/pages/items/properties/sections/items/properties/visibleWhen/anyOf/2/properties/left"
-                                },
-                                "right": {
-                                  "type": "array",
-                                  "items": {
-                                    "$ref": "#/definitions/ProcessBlueprint/properties/experience/properties/pages/items/properties/sections/items/properties/visibleWhen/anyOf/2/properties/left"
-                                  },
-                                  "minItems": 1
-                                }
-                              },
-                              "required": [
-                                "op",
-                                "left",
-                                "right"
-                              ],
-                              "additionalProperties": false
-                            },
-                            {
-                              "type": "object",
-                              "properties": {
-                                "op": {
-                                  "type": "string",
-                                  "const": "contains"
-                                },
-                                "left": {
-                                  "$ref": "#/definitions/ProcessBlueprint/properties/experience/properties/pages/items/properties/sections/items/properties/visibleWhen/anyOf/2/properties/left"
-                                },
-                                "right": {
-                                  "$ref": "#/definitions/ProcessBlueprint/properties/experience/properties/pages/items/properties/sections/items/properties/visibleWhen/anyOf/2/properties/left"
-                                }
-                              },
-                              "required": [
-                                "op",
-                                "left",
-                                "right"
-                              ],
-                              "additionalProperties": false
-                            },
-                            {
-                              "type": "object",
-                              "properties": {
-                                "op": {
-                                  "type": "string",
-                                  "enum": [
-                                    "is_empty",
-                                    "is_present"
-                                  ]
-                                },
-                                "left": {
-                                  "$ref": "#/definitions/ProcessBlueprint/properties/experience/properties/pages/items/properties/sections/items/properties/visibleWhen/anyOf/2/properties/left"
-                                }
-                              },
-                              "required": [
-                                "op",
-                                "left"
-                              ],
-                              "additionalProperties": false
-                            },
-                            {
-                              "type": "object",
-                              "properties": {
-                                "op": {
-                                  "type": "string",
-                                  "enum": [
-                                    "any",
-                                    "all"
-                                  ]
-                                },
-                                "over": {
-                                  "$ref": "#/definitions/ProcessBlueprint/properties/key"
-                                },
-                                "where": {
-                                  "$ref": "#/definitions/ProcessBlueprint/properties/experience/properties/pages/items/properties/sections/items/properties/visibleWhen"
-                                }
-                              },
-                              "required": [
-                                "op",
-                                "over",
-                                "where"
-                              ],
-                              "additionalProperties": false
-                            }
-                          ]
+                          "$ref": "#/definitions/ProcessBlueprint/properties/data/properties/fields/items/properties/requiredWhen"
                         }
                       },
                       "required": [
@@ -731,7 +778,7 @@
                     "minItems": 1
                   },
                   "visibleWhen": {
-                    "$ref": "#/definitions/ProcessBlueprint/properties/experience/properties/pages/items/properties/sections/items/properties/visibleWhen"
+                    "$ref": "#/definitions/ProcessBlueprint/properties/data/properties/fields/items/properties/requiredWhen"
                   }
                 },
                 "required": [
@@ -766,6 +813,15 @@
               "required": [
                 "message"
               ],
+              "additionalProperties": false
+            },
+            "quizResult": {
+              "type": "object",
+              "properties": {
+                "showLetterGrade": {
+                  "type": "boolean"
+                }
+              },
               "additionalProperties": false
             },
             "locales": {
@@ -1035,7 +1091,7 @@
                     ]
                   },
                   "when": {
-                    "$ref": "#/definitions/ProcessBlueprint/properties/experience/properties/pages/items/properties/sections/items/properties/visibleWhen"
+                    "$ref": "#/definitions/ProcessBlueprint/properties/data/properties/fields/items/properties/requiredWhen"
                   },
                   "actions": {
                     "type": "array",
@@ -1059,6 +1115,33 @@
                             "do",
                             "key",
                             "state"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "do": {
+                              "type": "string",
+                              "const": "set_reference"
+                            },
+                            "key": {
+                              "$ref": "#/definitions/ProcessBlueprint/properties/key"
+                            },
+                            "field": {
+                              "$ref": "#/definitions/ProcessBlueprint/properties/key"
+                            },
+                            "prefix": {
+                              "type": "string",
+                              "maxLength": 24,
+                              "pattern": "^[A-Z0-9-]*$",
+                              "default": ""
+                            }
+                          },
+                          "required": [
+                            "do",
+                            "key",
+                            "field"
                           ],
                           "additionalProperties": false
                         },
@@ -1312,7 +1395,7 @@
                   "approvers": {
                     "type": "array",
                     "items": {
-                      "$ref": "#/definitions/ProcessBlueprint/properties/workflow/properties/transitions/items/properties/actions/items/anyOf/1/properties/to"
+                      "$ref": "#/definitions/ProcessBlueprint/properties/workflow/properties/transitions/items/properties/actions/items/anyOf/2/properties/to"
                     },
                     "minItems": 1
                   },
@@ -1380,7 +1463,7 @@
                     "type": "string"
                   },
                   "assignee": {
-                    "$ref": "#/definitions/ProcessBlueprint/properties/workflow/properties/transitions/items/properties/actions/items/anyOf/1/properties/to"
+                    "$ref": "#/definitions/ProcessBlueprint/properties/workflow/properties/transitions/items/properties/actions/items/anyOf/2/properties/to"
                   },
                   "dueInHours": {
                     "type": "number",
@@ -1453,19 +1536,19 @@
                   "to": {
                     "type": "array",
                     "items": {
-                      "$ref": "#/definitions/ProcessBlueprint/properties/workflow/properties/transitions/items/properties/actions/items/anyOf/1/properties/to"
+                      "$ref": "#/definitions/ProcessBlueprint/properties/workflow/properties/transitions/items/properties/actions/items/anyOf/2/properties/to"
                     },
                     "minItems": 1
                   },
                   "cc": {
                     "type": "array",
                     "items": {
-                      "$ref": "#/definitions/ProcessBlueprint/properties/workflow/properties/transitions/items/properties/actions/items/anyOf/1/properties/to"
+                      "$ref": "#/definitions/ProcessBlueprint/properties/workflow/properties/transitions/items/properties/actions/items/anyOf/2/properties/to"
                     },
                     "default": []
                   },
                   "replyTo": {
-                    "$ref": "#/definitions/ProcessBlueprint/properties/workflow/properties/transitions/items/properties/actions/items/anyOf/1/properties/to"
+                    "$ref": "#/definitions/ProcessBlueprint/properties/workflow/properties/transitions/items/properties/actions/items/anyOf/2/properties/to"
                   },
                   "subject": {
                     "type": "string",
@@ -1483,7 +1566,7 @@
                     "default": []
                   },
                   "skipWhen": {
-                    "$ref": "#/definitions/ProcessBlueprint/properties/experience/properties/pages/items/properties/sections/items/properties/visibleWhen"
+                    "$ref": "#/definitions/ProcessBlueprint/properties/data/properties/fields/items/properties/requiredWhen"
                   }
                 },
                 "required": [
@@ -1765,6 +1848,27 @@
                       "required": [
                         "step",
                         "hours"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "step": {
+                          "type": "string",
+                          "const": "manual"
+                        },
+                        "transition": {
+                          "$ref": "#/definitions/ProcessBlueprint/properties/key"
+                        },
+                        "as": {
+                          "$ref": "#/definitions/ProcessBlueprint/properties/key"
+                        }
+                      },
+                      "required": [
+                        "step",
+                        "transition",
+                        "as"
                       ],
                       "additionalProperties": false
                     },

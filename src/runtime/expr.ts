@@ -12,6 +12,8 @@ export function calculate(calc: Calc, answers: Answers): number {
   if ('field' in calc) return toNumber(answers[calc.field]);
 
   switch (calc.op) {
+    case 'duration':
+      return duration(answers[calc.from], answers[calc.to], calc.unit);
     case 'sum':
     case 'count': {
       const rows = answers[calc.over];
@@ -40,6 +42,30 @@ export function calculate(calc: Calc, answers: Answers): number {
       }
     }
   }
+}
+
+/**
+ * Minutes, hours or days between two answers. Two times ("HH:MM") are a span
+ * within a day, crossing midnight when the end is earlier; two dates
+ * ("YYYY-MM-DD") are whole days apart. Anything unreadable is 0, the same
+ * answer arithmetic gives a blank.
+ */
+function duration(from: unknown, to: unknown, unit: 'minutes' | 'hours' | 'days'): number {
+  const minutesOf = (v: unknown): number | null => {
+    if (typeof v !== 'string') return null;
+    const time = /^(\d{1,2}):(\d{2})$/.exec(v.trim());
+    if (time) return Number(time[1]) * 60 + Number(time[2]);
+    const date = /^\d{4}-\d{2}-\d{2}$/.test(v.trim()) ? Date.parse(`${v.trim()}T00:00:00Z`) : NaN;
+    return Number.isNaN(date) ? null : date / 60_000;
+  };
+  const a = minutesOf(from);
+  const b = minutesOf(to);
+  if (a === null || b === null) return 0;
+  const bothTimes = typeof from === 'string' && from.includes(':');
+  let minutes = b - a;
+  if (bothTimes && minutes < 0) minutes += 24 * 60;
+  const scale = unit === 'minutes' ? 1 : unit === 'hours' ? 60 : 24 * 60;
+  return Math.round((minutes / scale) * 100) / 100;
 }
 
 function toNumber(value: unknown): number {

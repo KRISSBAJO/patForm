@@ -4,6 +4,7 @@ import {
   VALUE_KIND,
   fieldsInCalc,
   fieldsInExpr,
+  type Calc,
   flattenFields,
   placeholdersIn,
   type Action,
@@ -37,6 +38,19 @@ const CHOICE_TYPES = new Set(['single_choice', 'multi_choice', 'dropdown', 'matr
  * but do not block, because a process that stalls is a business decision while
  * a process that leaks data is not.
  */
+/** Every duration inside a calculation, at any depth. */
+function durationsIn(calc: Calc): Extract<Calc, { op: 'duration' }>[] {
+  if (!('op' in calc)) return [];
+  if (calc.op === 'duration') return [calc];
+  if (calc.op === 'add' || calc.op === 'subtract' || calc.op === 'multiply' || calc.op === 'divide') {
+    return calc.operands.flatMap(durationsIn);
+  }
+  return [];
+}
+
+/** Field types a task can collect when it is completed. */
+export const TASK_ANSWER_TYPES = new Set(['short_text', 'long_text', 'dropdown', 'single_choice', 'yes_no', 'number', 'currency', 'date', 'time', 'rating']);
+
 export function validate(bp: Blueprint, requestedDescription?: string): Diagnostics {
   const d = new Diagnostics();
 
@@ -285,11 +299,30 @@ export function validate(bp: Blueprint, requestedDescription?: string): Diagnost
         if ('op' in calc && (calc.op === 'sum' || calc.op === 'count')) {
           if (calc.where) checkExpr(calc.where, `${at}.compute.where`, new Set([calc.over]));
         }
+        // "Hours attended minus breaks" nests a duration inside arithmetic, so
+        // every duration in the tree is checked, and the times it reads are
+        // not then refused as non-numbers.
+        const timed = new Set<string>();
+        for (const span of durationsIn(calc)) {
+          timed.add(span.from);
+          timed.add(span.to);
+          const ends = [span.from, span.to].map((k) => requireField(k, at, `Calculation for "${field.key}"`));
+          const kinds = ends.map((f) => (f ? VALUE_KIND[f.type] : undefined));
+          if (ends.every(Boolean) && (kinds[0] !== kinds[1] || !['time', 'date'].includes(kinds[0]!))) {
+            d.error(
+              'TYPE004',
+              at,
+              `Calculation for "${field.key}" measures the time between "${span.from}" (${ends[0]!.type}) and "${span.to}" (${ends[1]!.type}).`,
+              'A duration runs between two time fields, or between two date fields.',
+            );
+          }
+        }
         for (const ref of fieldsInCalc(field.compute)) {
           if (ref === field.key) {
             d.error('TYPE005', at, `Calculated field "${field.key}" refers to itself.`);
             continue;
           }
+          if (timed.has(ref)) continue;
           const src = requireField(ref, at, `Calculation for "${field.key}"`);
           if (src && !['number', 'list'].includes(VALUE_KIND[src.type])) {
             d.error(
@@ -309,7 +342,21 @@ export function validate(bp: Blueprint, requestedDescription?: string): Diagnost
   detectCalcCycles(d, allFields);
 
   for (const key of bp.data.identity ?? []) {
-    requireField(key, 'data.identity', 'Duplicate identity');
+    const field = requireField(key, 'data.identity', 'Duplicate identity');
+    /*
+     * A duplicate is recognised by what the person typed. A generated
+     * reference is different on every submission, so an identity built on
+     * one never matches, and the duplicate scenario fails after a full run
+     * for a reason the compiler could have said up front.
+     */
+    if (field && ((field.setBy ?? 'respondent') !== 'respondent' || field.type === 'calculated')) {
+      d.error(
+        'OPS008',
+        'data.identity',
+        `Identity field "${key}" is ${field.type === 'calculated' ? 'calculated' : `set by the ${field.setBy}`}, so it can never match a second submission.`,
+        'Identify a duplicate by answers the respondent gives: an email and a date, a reference they were sent, a name and a date of birth.',
+      );
+    }
   }
   if (!bp.data.identity?.length) {
     d.warn(
@@ -987,8 +1034,18 @@ export function validate(bp: Blueprint, requestedDescription?: string): Diagnost
       const at = `workflow.tasks[${i}].requiredFields`;
       const field = requireField(key, at, `Task "${task.key}" completion`);
       if (!field) continue;
-      if (field.setBy !== 'operator' || !['short_text', 'long_text'].includes(field.type)) {
-        d.error('TASK001', at, `Task "${task.key}" requires "${key}", which must be an operator text field.`);
+      /*
+       * A trainer's review records a completion status, a yes/no on
+       * competency, a score. Only text was allowed here, so every draft that
+       * asked the natural thing was refused. Anything a person can type or
+       * pick on the record panel is allowed; files and lists are not.
+       */
+      if (field.setBy !== 'operator' || !TASK_ANSWER_TYPES.has(field.type)) {
+        d.error(
+          'TASK001',
+          at,
+          `Task "${task.key}" requires "${key}", which must be a field the completing person fills in: an operator-set text, choice, yes/no, number, date, time or rating.`,
+        );
       }
       if ('role' in task.assignee) {
         const role = roleByKey.get(task.assignee.role);

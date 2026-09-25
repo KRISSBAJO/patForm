@@ -85,6 +85,12 @@ export const Expr: z.ZodType<Expr> = z.lazy(() =>
  */
 export type Calc =
   | { op: 'add' | 'subtract' | 'multiply' | 'divide'; operands: Calc[] }
+  /**
+   * The time between two answers: check-in to check-out in hours, start to
+   * end date in days. Both must be times, or both dates. A time that ends
+   * before it starts is taken to cross midnight.
+   */
+  | { op: 'duration'; from: string; to: string; unit: 'minutes' | 'hours' | 'days' }
   | { op: 'sum' | 'count'; over: string; of?: string; where?: Expr }
   | { field: string }
   | { literal: number };
@@ -94,6 +100,7 @@ export const Calc: z.ZodType<Calc> = z.lazy(() =>
     z
       .object({ op: z.enum(['add', 'subtract', 'multiply', 'divide']), operands: z.array(Calc).min(2) })
       .strict(),
+    z.object({ op: z.literal('duration'), from: Key, to: Key, unit: z.enum(['minutes', 'hours', 'days']) }).strict(),
     z.object({ op: z.enum(['sum', 'count']), over: Key, of: Key.optional(), where: Expr.optional() }).strict(),
     z.object({ field: Key }).strict(),
     z.object({ literal: z.number() }).strict(),
@@ -148,6 +155,9 @@ export function fieldsInCalc(calc: Calc): string[] {
     }
     if ('literal' in c) return;
     switch (c.op) {
+      case 'duration':
+        out.push(c.from, c.to);
+        return;
       case 'sum':
       case 'count':
         out.push(c.over);

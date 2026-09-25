@@ -38,8 +38,8 @@ export class AnthropicProvider implements Provider {
     // Zero-arg construction resolves ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN,
     // or a signed-in CLI profile. The key is never read into this process.
     this.client = opts.apiKey
-      ? new Anthropic({ apiKey: opts.apiKey, timeout: 120_000, maxRetries: 0 })
-      : new Anthropic({ timeout: 120_000, maxRetries: 0 });
+      ? new Anthropic({ apiKey: opts.apiKey, timeout: 600_000, maxRetries: 0 })
+      : new Anthropic({ timeout: 600_000, maxRetries: 0 });
     this.model = opts.model ?? process.env.ANTHROPIC_MODEL ?? 'claude-opus-5';
   }
 
@@ -47,7 +47,10 @@ export class AnthropicProvider implements Provider {
     const started = Date.now();
     // Bound the whole fallback, including a structured-output retry. A stream
     // can keep delivering chunks without hitting the SDK's per-request timeout.
-    const signal = AbortSignal.timeout(120_000);
+    // Ten minutes. A page-long description becomes a 25,000-token blueprint,
+    // and at two minutes every such request was aborted before it finished —
+    // the strongest model configured could never answer the largest requests.
+    const signal = AbortSignal.timeout(600_000);
 
     if (this.structuredOutputWorks) {
       try {
@@ -71,7 +74,9 @@ export class AnthropicProvider implements Provider {
   private async structured(request: GenerationRequest, started: number, signal: AbortSignal): Promise<ProviderResponse> {
     const response = await this.client.messages.parse({
       model: this.model,
-      max_tokens: 32000,
+      // Thinking counts against this. At 32,000 a page-long blueprint was cut
+      // off mid-object twice out of three, and read as no blueprint at all.
+      max_tokens: 64000,
       system: [{ type: 'text', text: request.system, cache_control: { type: 'ephemeral' } }],
       messages: [{ role: 'user', content: request.user }],
       thinking: { type: 'adaptive' },
@@ -89,7 +94,7 @@ export class AnthropicProvider implements Provider {
     // at this max_tokens risks an HTTP timeout.
     const stream = this.client.messages.stream({
       model: this.model,
-      max_tokens: 32000,
+      max_tokens: 64000,
       system: [
         { type: 'text', text: request.system, cache_control: { type: 'ephemeral' } },
         {

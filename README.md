@@ -73,6 +73,13 @@ or point `DATABASE_URL` in `.env` at a [Renviq](https://renviq.com) connection
 string and run `npm run spike` against managed Postgres. Nothing in the runtime
 is specific to either.
 
+**Trying a description through Build with AI.** `npm run ai:try -- <file>`
+runs a description through the same pipeline the builder uses and prints
+every attempt's compiler errors, the scenario results and the token cost,
+then saves the blueprint under `output/ai/`. `AI_PROVIDER=anthropic` and
+`MAX_REPAIRS=2` choose the provider and the number of repair turns. Scenarios
+run against `PROOF_DATABASE_URL` when it is set.
+
 **Updating templates in a running workspace.** The catalogue is generated
 from `src/packs/catalogue.ts`. After changing it, `npm run packs -- --catalogue`
 publishes a new version of each template that changed and leaves the rest

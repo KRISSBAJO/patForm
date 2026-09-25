@@ -945,6 +945,28 @@ The accessibility scan was meant to cover this queue. It submitted its test entr
 
 **Generalisable:** a gate that sets up its own fixture must check the fixture arrived. "Nothing to scan" and "scanned, no problems" print the same green line.
 
+### 94. An error no model could repair
+
+A rule decided that any description mentioning an assessment and a score was a scored quiz, and demanded quiz questions with answer keys. A training-attendance process records pre- and post-training scores and a pass/fail result. It asks no questions. Every draft of it, from every provider, came back with the same error, and the repair turn — told to add quiz questions to an attendance form — could only make it worse. Because nothing compiled, nothing was saved either: the user saw "could not complete a draft" with no reason after ten minutes of three providers trying.
+
+**Fixed** by making the rule require that the description asks for questions to be written: a count of them, an answer key, multiple choice. Recording results is not a quiz. The failure message now says what the last provider ran into, and the trial command `npm run ai:try -- <file>` shows every attempt's errors for a description, which is how this was found in a minute rather than by watching a screen.
+
+**Generalisable:** a rule that fires from the description, not the blueprint, has to be tested against descriptions that only sound like its case. It is also the one kind of error a repair loop cannot fix, because the fix it asks for is wrong.
+
+### 95. Three more walls in front of a natural draft
+
+Each of these was a compiler refusal of something the description reasonably asked for, so the model was right and the platform was short:
+
+- A task could only collect operator *text*. A trainer's review records a completion status, a yes/no on competency, a score. Tasks now collect text, choice, yes/no, number, date, time and rating fields, and the record panel shows the right control for each.
+- Arithmetic could not subtract two times. "Hours attended" from check-in and check-out is the first thing an attendance form wants. A `duration` calculation now measures minutes, hours or days between two times or two dates, and "check_out minus check_in" written as arithmetic is read as one.
+- An identity built on a generated reference never matches a second submission, so the duplicate scenario failed after a full run. The compiler now refuses it up front, with what to use instead.
+
+And two mechanical slips that cost a repair turn each — `"yes"` against a yes/no field, a choice written as its label — are corrected before the compiler sees them, with each correction recorded in the audit.
+
+### 96. The strongest model configured could never answer the largest requests
+
+The Anthropic provider aborted every request at two minutes. A page-long description becomes a 25,000-token blueprint, which takes longer than that to write, so the model that would have produced the best draft of the hardest descriptions timed out on all of them, and the fallback chain moved on. Ten minutes now; the drafting worker's heartbeat already covers long jobs.
+
 ### 90. Every new column needed a re-seed
 
 `schema.sql` describes a database created from nothing, and there was no other way to change one. Each release that added a table or a column reached a running database only by dropping it and seeding again, which signed every member out and emptied the workspace — in development that was several times a day, and it was part of why somebody could not sign in. A deployed database had no path at all.
