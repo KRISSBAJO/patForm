@@ -90,7 +90,7 @@ import {
   submitForm,
 } from '../runtime/intake.js';
 import type { Answers } from '../blueprint/answers.js';
-import { ask, bulkOptions, confirm, recentRuns, runDirect } from '../runtime/copilot.js';
+import { ask, bulkOptions, confirm, readRun, recentRuns, runDirect } from '../runtime/copilot.js';
 import { askerFor } from '../copilot/ask.js';
 import { availableProviders, preferredProvider } from '../ai/index.js';
 import { proposeRule } from '../ai/rule.js';
@@ -456,7 +456,14 @@ route('GET', /^\/api\/copilot\/runs$/, async ({ pool, principal, url }) => {
     status: status || undefined,
     page,
     pageSize,
+    summary: url.searchParams.get('summary') === '1',
   });
+});
+
+route('GET', /^\/api\/copilot\/runs\/([0-9a-f-]{36})$/, async ({ pool, principal, url }) => {
+  const run = await readRun(pool, principal, url.pathname.split('/').pop()!);
+  if (!run) throw new HttpError(404, 'question not found');
+  return run;
 });
 
 // What the Records page may offer to do to a selection. See bulkOptions.

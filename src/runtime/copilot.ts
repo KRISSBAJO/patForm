@@ -1169,7 +1169,7 @@ export async function runDirect(
 export async function recentRuns(
   pool: Pool,
   principal: Principal,
-  options: { processKey?: string; query?: string; status?: string; page?: number; pageSize?: number } = {},
+  options: { processKey?: string; query?: string; status?: string; page?: number; pageSize?: number; summary?: boolean } = {},
 ) {
   if (principal.kind !== 'actor') throw new Error('the copilot answers to signed-in members');
   const page = Math.max(1, Math.floor(options.page ?? 1));
@@ -1194,14 +1194,31 @@ export async function recentRuns(
   const count = await pool.query<{ count: number }>(`select count(*)::int as count from copilot_run r where ${where}`, params);
   const total = count.rows[0]?.count ?? 0;
   const pageParams = [...params, pageSize, (page - 1) * pageSize];
+  const fields = options.summary
+    ? 'r.id, r.question, r.status, r.created_at, a.display_name as asked_by'
+    : `r.id, r.question, r.reading, r.process_key, r.status, r.plan, r.action_plan,
+       r.result, r.provider, r.model, r.prompt_version, r.latency_ms, r.error,
+       r.created_at, r.confirmed_at, a.display_name as asked_by`;
   const { rows } = await pool.query(
-    `select r.id, r.question, r.reading, r.process_key, r.status, r.plan, r.action_plan,
-            r.result, r.provider, r.model, r.prompt_version, r.latency_ms, r.error,
-            r.created_at, r.confirmed_at, a.display_name as asked_by
+    `select ${fields}
        from copilot_run r left join actor a on a.id = r.actor_id
       where ${where}
       order by r.created_at desc, r.id desc limit $${pageParams.length - 1} offset $${pageParams.length}`,
     pageParams,
   );
   return { runs: rows, total, page, pageSize };
+}
+
+/** Full details are loaded for one selected run, scoped to the caller's workspace. */
+export async function readRun(pool: Pool, principal: Principal, id: string) {
+  if (principal.kind !== 'actor') throw new Error('the copilot answers to signed-in members');
+  const { rows } = await pool.query(
+    `select r.id, r.question, r.reading, r.process_key, r.status, r.plan, r.action_plan,
+            r.result, r.provider, r.model, r.prompt_version, r.latency_ms, r.error,
+            r.created_at, r.confirmed_at, a.display_name as asked_by
+       from copilot_run r left join actor a on a.id = r.actor_id
+      where r.tenant_id = $1 and r.id = $2`,
+    [principal.tenantId, id],
+  );
+  return rows[0] ?? null;
 }

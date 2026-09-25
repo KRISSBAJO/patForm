@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { Pool } from '../src/runtime/db.js';
-import { recentRuns } from '../src/runtime/copilot.js';
+import { readRun, recentRuns } from '../src/runtime/copilot.js';
 
 test('Ask activity searches and pages within the selected workspace and process', async () => {
   const calls: { sql: string; params: unknown[] }[] = [];
@@ -13,7 +13,7 @@ test('Ask activity searches and pages within the selected workspace and process'
   } as unknown as Pool;
   const search = "receipt%' OR true --";
   const result = await recentRuns(pool, { kind: 'actor', tenantId: 'workspace-1', actorId: 'person-1' }, {
-    processKey: 'expense', query: search, page: 20, pageSize: 10,
+    processKey: 'expense', query: search, page: 20, pageSize: 10, summary: true,
   });
 
   assert.equal(result.total, 200);
@@ -24,6 +24,21 @@ test('Ask activity searches and pages within the selected workspace and process'
   assert.deepEqual(calls[1]?.params, ['workspace-1', 'expense', search, 10, 190]);
   assert.ok(calls.every(({ sql }) => sql.includes('r.tenant_id = $1') && sql.includes('r.process_key = $2')));
   assert.ok(calls.every(({ sql }) => !sql.includes(search)));
+  assert.ok(!calls[1]?.sql.includes('r.plan'), 'the list should not load full plans');
+});
+
+test('one Ask activity detail is fetched within the caller workspace', async () => {
+  const calls: { sql: string; params: unknown[] }[] = [];
+  const pool = {
+    query: async (sql: string, params: unknown[]) => {
+      calls.push({ sql, params });
+      return { rows: [{ id: 'run-1', question: 'What is overdue?', plan: { filters: [] } }] };
+    },
+  } as unknown as Pool;
+  const run = await readRun(pool, { kind: 'actor', tenantId: 'workspace-1', actorId: 'person-1' }, 'run-1');
+  assert.equal((run as { id: string }).id, 'run-1');
+  assert.deepEqual(calls[0]?.params, ['workspace-1', 'run-1']);
+  assert.ok(calls[0]?.sql.includes('r.tenant_id = $1 and r.id = $2'));
 });
 
 test('Ask activity issue filter includes failed and refused runs before pagination', async () => {
