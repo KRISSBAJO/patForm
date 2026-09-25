@@ -129,7 +129,7 @@ export function FormPreview({
 
       {onBranding && (
         <button type="button" className="sp__link" onClick={() => setEditing((was) => !was)} aria-expanded={editing}>
-          {editing ? 'Done with the header' : 'Edit the header'}
+          {editing ? 'Close appearance' : 'Customize appearance'}
         </button>
       )}
 
@@ -292,8 +292,9 @@ function BrandingEditor({
 
   return (
     <div className="sp__brand">
+      <div className="sp__brandHeading"><strong>Form appearance</strong><span>Make the form recognizable to your organization.</span></div>
       <label className="sp__brandRow">
-        <span>Name shown on the form</span>
+        <span>Form title</span>
         <input
           className="sp__brandInput"
           value={b.title ?? ''}
@@ -303,7 +304,7 @@ function BrandingEditor({
       </label>
 
       <label className="sp__brandRow">
-        <span>One line under it</span>
+        <span>Subtitle</span>
         <input
           className="sp__brandInput"
           value={b.tagline ?? ''}
@@ -325,7 +326,7 @@ function BrandingEditor({
       {uploadError && <p className="sp__warn" role="alert">{uploadError}</p>}
 
       <label className="sp__brandRow">
-        <span>Colour</span>
+        <span>Accent color</span>
         <span className="sp__brandColour">
           <input
             type="color"
@@ -346,7 +347,7 @@ function BrandingEditor({
       {!accentOk && <p className="sp__warn">A colour has to be six hex digits after a #, like #14663f.</p>}
 
       <label className="sp__brandRow">
-        <span>Small print at the bottom</span>
+        <span>Footer note</span>
         <input
           className="sp__brandInput"
           value={b.footer ?? ''}

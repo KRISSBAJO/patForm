@@ -300,6 +300,10 @@
   border-radius: 9px;
 }
 
+.sp__brandHeading { display: grid; gap: 3px; grid-column: 1 / -1; padding-bottom: 12px; border-bottom: 1px solid #e2ece4; }
+.sp__brandHeading strong { color: #153e2a; font: 700 15px var(--ui); }
+.sp__brandHeading span { color: #687c6d; font-size: 11.5px; }
+
 .sp__brandRow {
   display: block;
   margin-bottom: 9px;
