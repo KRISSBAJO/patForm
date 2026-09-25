@@ -9,7 +9,7 @@
  * the people who need it cannot use.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Icon, type IconName } from './Icon';
 
 async function get<T>(path: string): Promise<T> {
@@ -262,23 +262,28 @@ export function MessageTrail({ providerMessageId }: { providerMessageId: string 
 
 // ------------------------------------------------------------------ copilot
 
-interface Run {
+interface RunSummary {
   id: string;
   question: string;
-  reading: string | null;
   status: string;
   asked_by: string | null;
   created_at: string;
+}
+
+interface Run extends RunSummary {
+  reading: string | null;
   confirmed_at: string | null;
   plan: unknown;
   action_plan: unknown | null;
+  result: unknown | null;
+  provider: string | null;
   model: string | null;
   prompt_version: string | null;
   latency_ms: number | null;
   error: string | null;
 }
 
-interface RunPage { runs: Run[]; total: number; page: number; pageSize: number }
+interface RunPage { runs: RunSummary[]; total: number; page: number; pageSize: number }
 
 function runState(status: string): { label: string; icon: IconName; tone: string } {
   switch (status) {
@@ -298,10 +303,14 @@ function runState(status: string): { label: string; icon: IconName; tone: string
  * It was written faithfully from the first day and had no reader. An AI audit
  * log nobody can open is a compliance claim rather than a control.
  */
-export function AskHistory({ processKey, onRerun }: { processKey: string; onRerun: (run: Run) => void }) {
+export function AskHistory({ processKey, onRerun, onDetailChange }: { processKey: string; onRerun: (run: Run) => void; onDetailChange: (open: boolean) => void }) {
   const [data, setData] = useState<RunPage | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [open, setOpen] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Run | null>(null);
+  const [detailError, setDetailError] = useState<string | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const listScroll = useRef(0);
   const [search, setSearch] = useState('');
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState('');
@@ -310,7 +319,7 @@ export function AskHistory({ processKey, onRerun }: { processKey: string; onReru
 
   useEffect(() => {
     let live = true;
-    const params = new URLSearchParams({ process: processKey, page: String(page), pageSize: '10' });
+    const params = new URLSearchParams({ process: processKey, page: String(page), pageSize: '10', summary: '1' });
     if (query) params.set('q', query);
     if (status) params.set('status', status);
     setLoading(true);
@@ -325,6 +334,50 @@ export function AskHistory({ processKey, onRerun }: { processKey: string; onReru
     });
     return () => { live = false; };
   }, [processKey, page, query, status]);
+
+  useEffect(() => {
+    if (!selectedId) return;
+    let live = true;
+    setSelected(null);
+    setDetailError(null);
+    setDetailLoading(true);
+    void get<Run>(`/api/copilot/runs/${encodeURIComponent(selectedId)}`).then((run) => {
+      if (live) setSelected(run);
+    }).catch((err: Error) => {
+      if (live) setDetailError(err.message);
+    }).finally(() => {
+      if (live) setDetailLoading(false);
+    });
+    return () => { live = false; };
+  }, [selectedId]);
+
+  useEffect(() => { onDetailChange(Boolean(selectedId)); }, [selectedId, onDetailChange]);
+
+  useEffect(() => {
+    if (selectedId) requestAnimationFrame(() => window.scrollTo(0, 0));
+  }, [selectedId]);
+
+  const backToList = () => {
+    setSelectedId(null);
+    requestAnimationFrame(() => window.scrollTo(0, listScroll.current));
+  };
+
+  if (selectedId) {
+    const state = selected ? runState(selected.status) : null;
+    return <div className="ah__detailPage">
+      <button type="button" className="ah__back" onClick={backToList}><Icon name="back" /> Back to questions</button>
+      {detailLoading ? <p className="ah__empty" role="status">Loading question…</p> : detailError ? <p className="ah__empty" role="alert">Could not load this question: {detailError}</p> : selected && state ? <>
+        <div className="ah__detailHeader">
+          <span className={`ah__icon ah__icon--${state.tone}`} aria-hidden="true"><Icon name={state.icon} /></span>
+          <div><span className={`ah__status ah__status--${state.tone}`}>{state.label}</span><h3>{selected.question}</h3><p>Asked by {selected.asked_by ?? 'Workspace member'} · {new Date(selected.created_at).toLocaleString()}</p></div>
+        </div>
+        <section className="ah__detailSection"><h4>Answer</h4><p>{selected.reading ?? 'No answer was saved for this question.'}</p>{selected.error && <p className="ah__error">{selected.error}</p>}</section>
+        {selected.plan != null && <section className="ah__detailSection"><div className="ah__detailSectionHead"><h4>Review the plan</h4><button type="button" className="cs__btn" onClick={() => onRerun(selected)}><Icon name="search" /> Review again</button></div><p>Rechecks this saved plan against current records. Any proposed action still needs your confirmation.</p><details className="ah__technical"><summary>Technical plan</summary><pre className="st__pre">{JSON.stringify(selected.plan, null, 2)}</pre></details></section>}
+        {selected.result != null && <section className="ah__detailSection"><h4>Action result</h4><pre className="st__pre">{JSON.stringify(selected.result, null, 2)}</pre></section>}
+        <section className="ah__detailSection"><h4>Audit details</h4><dl className="ah__auditGrid"><div><dt>Status</dt><dd>{state.label}</dd></div><div><dt>Model</dt><dd>{selected.model ?? 'Unavailable'}</dd></div><div><dt>Provider</dt><dd>{selected.provider ?? 'Unavailable'}</dd></div><div><dt>Prompt version</dt><dd>{selected.prompt_version ?? 'Unavailable'}</dd></div><div><dt>Response time</dt><dd>{selected.latency_ms == null ? 'Unavailable' : `${selected.latency_ms} ms`}</dd></div>{selected.confirmed_at && <div><dt>Confirmed</dt><dd>{new Date(selected.confirmed_at).toLocaleString()}</dd></div>}</dl></section>
+      </> : null}
+    </div>;
+  }
 
   return (
     <div className="ah">
@@ -350,29 +403,17 @@ export function AskHistory({ processKey, onRerun }: { processKey: string; onReru
         <ul className="ah__list">
           {data.runs.map((r) => {
             const state = runState(r.status);
-            return <li key={r.id} className="ah__item">
+            return <li key={r.id} className="ah__item"><button type="button" className="ah__rowButton" onClick={() => { listScroll.current = window.scrollY; setSelectedId(r.id); }} aria-label={`View details for ${r.question}`}>
               <span className={`ah__icon ah__icon--${state.tone}`} aria-hidden="true"><Icon name={state.icon} /></span>
-              <div className="ah__main">
-                <div className="ah__titleRow"><strong>{r.question}</strong><time dateTime={r.created_at}>{new Date(r.created_at).toLocaleString()}</time></div>
-                <div className="ah__summary"><span className={`ah__status ah__status--${state.tone}`}>{state.label}</span><span>{r.asked_by ?? 'Workspace member'}</span></div>
-                {r.reading && <p className="ah__reading">{r.reading}</p>}
-                {r.error && <p className="ah__error">{r.error}</p>}
-                <div className="ah__actions">
-                  {r.plan != null && <button type="button" className="ah__action" onClick={() => onRerun(r)}><Icon name="search" /> Review again</button>}
-                  <button type="button" className="ah__action" onClick={() => setOpen(open === r.id ? null : r.id)} aria-expanded={open === r.id}><Icon name="trail" /> {open === r.id ? 'Hide details' : 'Plan & audit'}</button>
-                </div>
-                {open === r.id && <div className="ah__detail">
-                  <div>{r.model ?? 'Model unavailable'}{r.prompt_version ? ` · ${r.prompt_version}` : ''}{r.latency_ms != null ? ` · ${r.latency_ms}ms` : ''}{r.confirmed_at ? ` · confirmed ${new Date(r.confirmed_at).toLocaleString()}` : ''}</div>
-                  <pre className="st__pre">{JSON.stringify(r.plan, null, 2)}</pre>
-                </div>}
-              </div>
-            </li>;
+              <span className="ah__rowText"><strong>{r.question}</strong><span className="ah__summary"><span className={`ah__status ah__status--${state.tone}`}>{state.label}</span><span>{r.asked_by ?? 'Workspace member'}</span></span></span>
+              <time dateTime={r.created_at}>{new Date(r.created_at).toLocaleString()}</time><span className="ah__chevron" aria-hidden="true">›</span>
+            </button></li>;
           })}
         </ul>
       )}
       {!loading && data && data.total > 0 && <div className="ah__pager">
         <span>Showing {(data.page - 1) * data.pageSize + 1}–{Math.min(data.page * data.pageSize, data.total)} of {data.total}</span>
-        <div><button type="button" className="cs__btn" disabled={page <= 1 || loading} onClick={() => { setOpen(null); setPage((n) => n - 1); }}>Previous</button><span>Page {page} of {Math.ceil(data.total / data.pageSize)}</span><button type="button" className="cs__btn" disabled={page * data.pageSize >= data.total || loading} onClick={() => { setOpen(null); setPage((n) => n + 1); }}>Next</button></div>
+        <div><button type="button" className="cs__btn" disabled={page <= 1 || loading} onClick={() => setPage((n) => n - 1)}>Previous</button><span>Page {page} of {Math.ceil(data.total / data.pageSize)}</span><button type="button" className="cs__btn" disabled={page * data.pageSize >= data.total || loading} onClick={() => setPage((n) => n + 1)}>Next</button></div>
       </div>}
     </div>
   );

@@ -90,6 +90,7 @@ export function Ask({ processKey, onOpenRecord }: { processKey: string; onOpenRe
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showPlan, setShowPlan] = useState(false);
+  const [historyDetail, setHistoryDetail] = useState(false);
 
   /**
    * Runs a plan from the history directly, without asking a model again.
@@ -156,7 +157,7 @@ export function Ask({ processKey, onOpenRecord }: { processKey: string; onOpenRe
 
   return (
     <div className="cs__panel ask__panel">
-      <div className="ask__hero">
+      {!historyDetail && <div className="ask__hero">
         <svg className="ask__map" viewBox="0 0 1000 400" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
           <path d="M0 72 112 36 230 128 360 35 498 98 620 22 778 108 1000 30M0 231 112 36 205 275 360 35 485 253 620 22 730 279 1000 30M0 72 205 275 230 128 485 253 498 98 730 279 778 108 1000 245M0 353 205 275 360 355 485 253 620 360 730 279 1000 245M112 36 230 128 498 98 778 108M205 275 360 355 620 360 1000 245" />
           {[112,230,360,498,620,778,205,485,730].map((x, index) => (
@@ -198,12 +199,12 @@ export function Ask({ processKey, onOpenRecord }: { processKey: string; onOpenRe
             ))}
           </div>}
         </div>
-      </div>
+      </div>}
 
       <div className="ask__content">
         <div className="ask__contentHead">
-          <div><span className="ask__sectionEyebrow">YOUR ACTIVITY</span><h3>{result ? 'Answer and next steps' : 'Recent questions'}</h3></div>
-          {result && <button type="button" className="cs__btn" onClick={() => { setResult(null); setReport(null); setError(null); setQuestion(''); setShowPlan(false); document.getElementById('ask-question')?.focus(); }}>New question</button>}
+          <div><span className="ask__sectionEyebrow">YOUR ACTIVITY</span><h3>{result ? 'Answer and next steps' : historyDetail ? 'Question details' : 'Recent questions'}</h3></div>
+          {result && <button type="button" className="cs__btn" onClick={() => { setResult(null); setReport(null); setError(null); setQuestion(''); setShowPlan(false); setHistoryDetail(false); document.getElementById('ask-question')?.focus(); }}>New question</button>}
         </div>
 
         {/*
@@ -218,6 +219,7 @@ export function Ask({ processKey, onOpenRecord }: { processKey: string; onOpenRe
             <AskHistory
               key={processKey}
               processKey={processKey}
+              onDetailChange={setHistoryDetail}
               onRerun={(run) => {
                 setQuestion(run.question);
                 void rerun(run.plan, run.action_plan);
