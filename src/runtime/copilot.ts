@@ -1165,17 +1165,43 @@ export async function runDirect(
   return { runId, rows: outcome.rows, diagnostics: outcome.diagnostics, ok: outcome.ok, preview: outcome.preview };
 }
 
-/** The §7.3 record of what was asked and what happened, newest first. */
-export async function recentRuns(pool: Pool, principal: Principal, limit = 25) {
+/** A bounded, searchable audit view. Filtering happens in SQL before paging. */
+export async function recentRuns(
+  pool: Pool,
+  principal: Principal,
+  options: { processKey?: string; query?: string; status?: string; page?: number; pageSize?: number } = {},
+) {
   if (principal.kind !== 'actor') throw new Error('the copilot answers to signed-in members');
+  const page = Math.max(1, Math.floor(options.page ?? 1));
+  const pageSize = Math.min(50, Math.max(1, Math.floor(options.pageSize ?? 10)));
+  const params: unknown[] = [principal.tenantId];
+  const conditions = ['r.tenant_id = $1'];
+  if (options.processKey) {
+    params.push(options.processKey);
+    conditions.push(`r.process_key = $${params.length}`);
+  }
+  if (options.query) {
+    params.push(options.query);
+    conditions.push(`position(lower($${params.length}) in lower(r.question)) > 0`);
+  }
+  if (options.status === 'issues') {
+    conditions.push("r.status in ('failed', 'refused')");
+  } else if (options.status) {
+    params.push(options.status);
+    conditions.push(`r.status = $${params.length}`);
+  }
+  const where = conditions.join(' and ');
+  const count = await pool.query<{ count: number }>(`select count(*)::int as count from copilot_run r where ${where}`, params);
+  const total = count.rows[0]?.count ?? 0;
+  const pageParams = [...params, pageSize, (page - 1) * pageSize];
   const { rows } = await pool.query(
     `select r.id, r.question, r.reading, r.process_key, r.status, r.plan, r.action_plan,
             r.result, r.provider, r.model, r.prompt_version, r.latency_ms, r.error,
             r.created_at, r.confirmed_at, a.display_name as asked_by
        from copilot_run r left join actor a on a.id = r.actor_id
-      where r.tenant_id = $1
-      order by r.created_at desc limit $2`,
-    [principal.tenantId, Math.min(limit, 100)],
+      where ${where}
+      order by r.created_at desc, r.id desc limit $${pageParams.length - 1} offset $${pageParams.length}`,
+    pageParams,
   );
-  return rows;
+  return { runs: rows, total, page, pageSize };
 }

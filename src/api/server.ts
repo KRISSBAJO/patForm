@@ -438,7 +438,26 @@ route('POST', /^\/api\/copilot\/confirm$/, async ({ pool, principal }, body) => 
   return confirm(pool, { principal, runId, digest });
 });
 
-route('GET', /^\/api\/copilot\/runs$/, async ({ pool, principal }) => recentRuns(pool, principal));
+route('GET', /^\/api\/copilot\/runs$/, async ({ pool, principal, url }) => {
+  const page = Number(url.searchParams.get('page') ?? '1');
+  const pageSize = Number(url.searchParams.get('pageSize') ?? '10');
+  if (!Number.isSafeInteger(page) || page < 1 || page > 1_000_000 || !Number.isSafeInteger(pageSize) || pageSize < 1 || pageSize > 50) {
+    throw new HttpError(400, 'page must be between 1 and 1,000,000; pageSize must be between 1 and 50');
+  }
+  const query = url.searchParams.get('q')?.trim() ?? '';
+  if (query.length > 120) throw new HttpError(400, 'search must be 120 characters or fewer');
+  const status = url.searchParams.get('status') ?? '';
+  if (status && !['answered', 'previewed', 'executed', 'issues'].includes(status)) {
+    throw new HttpError(400, 'unknown run status');
+  }
+  return recentRuns(pool, principal, {
+    processKey: url.searchParams.get('process') ?? undefined,
+    query: query || undefined,
+    status: status || undefined,
+    page,
+    pageSize,
+  });
+});
 
 // What the Records page may offer to do to a selection. See bulkOptions.
 route('GET', /^\/api\/bulk\/options$/, async ({ pool, principal, url }) => {
