@@ -2120,9 +2120,11 @@ function ProcessOverview({
   onPreview: () => void;
 }) {
   const questions = blueprint.data.fields.filter((field) => field.setBy !== 'operator');
-  const distinctiveQuestions = questions.filter((field) =>
+  const gradedQuestions = questions.filter((field) => field.correctValue !== undefined);
+  const distinctiveQuestions = gradedQuestions.length ? gradedQuestions : questions.filter((field) =>
     !['submitter_name', 'submitter_email', 'decision_note'].includes(field.key),
   );
+  const questionCount = distinctiveQuestions.length || questions.length;
   const approvals = blueprint.workflow.approvals ?? [];
   const tasks = blueprint.workflow.tasks ?? [];
   const finish = blueprint.workflow.states.find((state) => state.outcome === 'success');
@@ -2144,7 +2146,7 @@ function ProcessOverview({
 
   return (
     <div className="bd__overview">
-      <div className="bd__overviewTop"><span className="bd__kind">PROCESS MAP</span><span className="bd__overviewCounts">{questions.length} questions · {approvals.length} approvals · {tasks.length} tasks</span></div>
+      <div className="bd__overviewTop"><span className="bd__kind">PROCESS MAP</span><span className="bd__overviewCounts">{questionCount} questions · {approvals.length} approvals · {tasks.length} tasks</span></div>
       <h2>{blueprint.name}</h2>
       {blueprint.description && <p className="bd__overviewIntro">{blueprint.description}</p>}
       {blueprint.intent?.outcome && <p className="bd__overviewOutcome"><span>OUTCOME</span><strong>{blueprint.intent.outcome}</strong></p>}
@@ -2156,7 +2158,7 @@ function ProcessOverview({
             <h3>Collect answers</h3>
             {blueprint.intent?.respondents && <p>{blueprint.intent.respondents}</p>}
             <p>
-              {questions.length} questions
+              {questionCount} questions
               {distinctiveQuestions.length > 0 && `, including ${distinctiveQuestions.slice(0, 2).map((field) => field.label.toLowerCase()).join(' and ')}${distinctiveQuestions.length > 2 ? '…' : '.'}`}
             </p>
             <div className="bd__flowActions"><button type="button" onClick={onEditFields}>Edit questions</button><button type="button" onClick={onPreview}>Preview form</button></div>
