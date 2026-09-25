@@ -1304,7 +1304,7 @@
 */
 
 .cs {
-  --ui: var(--font-body);
+  --ui: var(--font-ui);
 
   /* The rail */
   --rail: #ffffff;

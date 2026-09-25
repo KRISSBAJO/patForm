@@ -447,8 +447,8 @@
   gap: 7px;
   padding: 0 14px 5px;
   font-size: 11px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  letter-spacing: 0;
+  text-transform: none;
   color: var(--muted-2);
 }
 
@@ -582,8 +582,8 @@
 .bd__kind {
   display: block;
   font-size: 10.5px;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
+  letter-spacing: 0;
+  text-transform: none;
   color: var(--muted-2);
   margin-bottom: 3px;
 }
@@ -1101,7 +1101,7 @@
 */
 
 .bd {
-  --ui: var(--font-body);
+  --ui: var(--font-ui);
   --rail: #ffffff;
   --rail-line: #e6e4df;
   --rail-ink: #1c1f1d;

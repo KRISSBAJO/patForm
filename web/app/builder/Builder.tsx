@@ -2212,7 +2212,7 @@ function ProcessOverview({
 
   return (
     <div className="bd__overview">
-      <div className="bd__overviewTop"><span className="bd__kind">PROCESS MAP</span><span className="bd__overviewCounts">{questionCount} questions · {approvals.length} approvals · {tasks.length} tasks</span></div>
+      <div className="bd__overviewTop"><span className="bd__kind">Process map</span><span className="bd__overviewCounts">{questionCount} questions · {approvals.length} approvals · {tasks.length} tasks</span></div>
       <h2>{blueprint.name}</h2>
       {blueprint.description && <p className="bd__overviewIntro">{blueprint.description}</p>}
       {blueprint.intent?.outcome && <p className="bd__overviewOutcome"><span>OUTCOME</span><strong>{blueprint.intent.outcome}</strong></p>}
@@ -2371,7 +2371,7 @@ function Outline({
     <nav className={`bd__outline${mobileOpen ? ' bd__outline--open' : ''}`} aria-label="Process map">
       <div className="bd__mobileMap"><span><strong>Process map</strong><small>{overview ? 'Process overview' : groups.find((g) => g.tab === tab)?.items[index]?.name ?? 'Choose a step'}</small></span><button type="button" aria-expanded={mobileOpen} onClick={() => setMobileOpen((was) => !was)}>{mobileOpen ? 'Close' : 'Browse steps'}</button></div>
       <div className="bd__outlineIntro">
-        <span className="bd__outlineEyebrow">PROCESS MAP</span>
+        <span className="bd__outlineEyebrow">Process map</span>
         <strong>Build your flow</strong>
         <p>Choose a question or workflow step to edit.</p>
       </div>
@@ -3847,7 +3847,7 @@ function DiagnosticsPanel({
 }) {
   return (
     <aside className="bd__diag">
-      <div className="bd__insightsIntro"><span>BUILDER INSIGHTS</span><strong>Checks &amp; decisions</strong></div>
+      <div className="bd__insightsIntro"><span>Builder insights</span><strong>Checks &amp; decisions</strong></div>
       {/* The tally is the thing a builder is watching, and it changes on every
           keystroke without focus moving — 4.1.3 again. `atomic` so it is read
           as one sentence rather than two numbers. */}

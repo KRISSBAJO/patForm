@@ -171,7 +171,7 @@
 .bd__choiceSearch input::placeholder { color: #839587; }
 .bd__choiceList { max-height: 320px; overflow-y: auto; overscroll-behavior: contain; scrollbar-color: #bdd3c1 transparent; scrollbar-width: thin; }
 .bd__choiceGroup + .bd__choiceGroup { margin-top: 5px; padding-top: 5px; border-top: 1px solid #edf1ed; }
-.bd__choiceGroupName { padding: 7px 9px 4px; color: #67806d; font: 700 10px var(--ui); letter-spacing: .07em; text-transform: uppercase; }
+.bd__choiceGroupName { padding: 7px 9px 4px; color: #67806d; font: 600 10px var(--ui); letter-spacing: 0; text-transform: none; }
 .bd__choiceOption { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; min-height: 34px; padding: 7px 9px; border: 0; border-radius: 6px; background: transparent; color: #1b3024; font: 12px var(--ui); text-align: left; cursor: pointer; }
 .bd__choiceOption:hover, .bd__choiceOption:focus-visible { outline: 0; background: #edf7ef; }
 .bd__choiceOption[aria-pressed='true'] { background: #e8f5eb; color: #135c37; }
@@ -191,7 +191,7 @@
 .bd .sp__tab { min-height: 34px; font-size: 11px; }
 .bd .bd__diag { padding: 12px 10px 14px; }
 .bd__insightsIntro { display: flex; flex-direction: column; gap: 3px; padding: 2px 3px 10px; }
-.bd__insightsIntro span { color: #4b8061; font-size: 9px; font-weight: 800; letter-spacing: .11em; }
+.bd__insightsIntro span { color: #4b8061; font-size: 10px; font-weight: 600; letter-spacing: 0; }
 .bd__insightsIntro strong { color: #163f2a; font-size: 14px; }
 .bd .bd__diagHead { gap: 8px; margin-bottom: 9px; padding: 8px 10px; background: #eaf6ed; font-size: 11px; }
 .bd .bd__diagItem { margin-bottom: 6px; padding: 9px 10px; border-radius: 7px; }
