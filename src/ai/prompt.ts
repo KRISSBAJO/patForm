@@ -9,7 +9,7 @@ import type { Diagnostic } from '../compiler/diagnostics.js';
  * record says exactly which instructions produced it. Eval results are only
  * comparable within a version.
  */
-export const PROMPT_VERSION = 'blueprint-gen@10';
+export const PROMPT_VERSION = 'blueprint-gen@12';
 
 export const SYSTEM_PROMPT = `You design business processes for an operations platform.
 
@@ -69,11 +69,11 @@ Form and data
 - Every required field the RESPONDENT enters must appear in exactly one page section. Hidden and calculated fields are never placed.
 - A value someone fills in later — a triage severity, a reference number, a reviewer's note — is a field with "setBy": "operator" (or "system" for one the runtime writes). Those do not go on a page. Use this instead of leaving a field unplaced.
 - A single_choice, multi_choice, dropdown or matrix field must declare "choices".
-- For a scored quiz, create exactly the requested number of questions and put "correctValue" on EVERY single_choice question. It must equal exactly one choice value. The server keeps the answer key out of the public form, scores after a valid submission, and shows percentage plus correct answers for missed questions. Do not add Score, Percentage, Missed Questions or Answer Review fields: those are produced by the runtime. Submission should move directly to the successful terminal state; do not make a Scoring state that waits for a record edit. Send a results email only if requested.
+- For a scored quiz, exam, test or academic assessment, create exactly the requested number of COMPLETE subject-specific questions and put "correctValue" on EVERY single_choice question. It must equal exactly one choice value. Never use "Question 1" or bare A/B/C/D as the question or choice labels. The server keeps the answer key out of the public form, scores after a valid submission, and shows percentage plus correct answers for missed questions. When the request asks for a brief explanation after an incorrect answer, put "answerExplanation" on each question. When it asks for a letter grade, set experience.quizResult.showLetterGrade to true (A–F by ten-point bands). Do not add hidden correct-answer fields or calculated Score, Percentage, Grade, Missed Questions or Answer Review fields: those are produced by the runtime. Submission should move directly to the successful terminal state; do not make a Scoring state that waits for a record edit. Send a results email only if requested. Make each question factually grounded with one unambiguous answer: do not ask for the name of a historical figure the source does not name or include another true answer as a distractor.
 - A calculated field must have "compute", must not refer to itself, and may only do arithmetic over numeric or repeating-group fields.
 - For a total of personally paid expense rows, use {"op":"sum","over":"expense_items","of":"item_total","where":{"op":"eq","left":{"field":"item_payment_method"},"right":{"literal":"personal_card"}}}. Calculated child fields are evaluated in each row before the total.
 - Comparisons must be type-compatible: gt/gte/lt/lte need a number, currency, rating, date or time. Comparing a choice field against a value that is not one of its options is rejected.
-- Name the fields in data.identity that together identify a duplicate submission (usually an email plus a date or reference).
+- Name the fields in data.identity that together identify a duplicate submission (usually an email plus a date or reference). Exception: if a quiz allows retakes, leave data.identity empty so every attempt becomes a record. Unless the request limits attempts, allow quiz retakes. An email-only identity silently blocks them.
 - File uploads use a field of type "file". The form uploads real PDF, PNG or JPEG bytes (maximum 5 MB per file), checks the malware scan, and stores a protected reference. Do not substitute a text receipt reference for a requested upload.
 - Field "required" is unconditional. For a conditional receipt on each expense row, use a file child field inside a repeating_group with "requiredWhen": {"op":"gte","left":{"field":"amount"},"right":{"literal":25}}. The field key in the condition must name the numeric child in the same row. Add scenarios for both sides of the threshold.
 
@@ -104,6 +104,7 @@ Tests
 - A permission scenario asserts that a role is allowed or refused one of: submit, view, edit, approve, export, operate.
 - "missing_data" means the FORM is incomplete so nothing starts. A valid submission that takes a different legitimate route is a second happy_path, not missing_data.
 - Do not include a rejection scenario unless the workflow has a real rejected outcome. Do not write an expectation that the runtime cannot reach.
+- A duplicate test with two submissions sharing every data.identity value must expect one record. With no identity (such as a retakable quiz), it must expect two. Keep the scenario expectation consistent with the actual duplicate rule.
 
 # How to design well
 
@@ -172,5 +173,5 @@ Errors that must be fixed:
 ${errors.map(render).join('\n')}
 ${warnings.length ? `\nWarnings worth fixing while you are here:\n${warnings.map(render).join('\n')}` : ''}
 
-Return the corrected blueprint as one JSON object. Change what the diagnostics point at and leave the rest of your design alone — do not restructure the process, rename keys that were fine, or drop sections to make errors go away. Removing a required field to satisfy a placement error, or deleting a blocking task instead of waiting for it, is a worse blueprint, not a fixed one.`;
+Return the corrected blueprint as one JSON object. Change what the diagnostics point at and leave the rest of your design alone — do not restructure the process, rename keys that were fine, or drop sections to make errors go away. If assessment questions are placeholders or scoring uses fake fields, replace those with complete real questions, answer keys and explanations; this requires rebuilding the assessment fields. Removing a required field to satisfy a placement error, or deleting a blocking task instead of waiting for it, is a worse blueprint, not a fixed one.`;
 }

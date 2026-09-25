@@ -54,6 +54,8 @@ export const Experience = z
         showStatusLink: z.boolean().default(false),
       })
       .strict(),
+    /** Result display for scored quizzes; the answer key stays server-side. */
+    quizResult: z.object({ showLetterGrade: z.boolean().optional() }).strict().optional(),
     locales: z.array(z.string()).default(['en']),
     /**
      * What the respondent sees at the top.

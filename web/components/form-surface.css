@@ -100,6 +100,7 @@
 .fm__quizReview ul { margin: 0; padding-left: 20px; }
 .fm__quizReview li { padding: 7px 0; }
 .fm__quizReview li span, .fm__quizReview li strong { display: block; }
+.fm__quizReview li p { margin: 5px 0 0; color: var(--ink-soft); line-height: 1.5; }
 
 .fm__tick {
   width: 56px;

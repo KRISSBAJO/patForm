@@ -1132,6 +1132,23 @@ export function validate(bp: Blueprint, requestedDescription?: string): Diagnost
       d.error('TEST006', at, 'A rejection scenario cannot run because this process has no rejected outcome.',
         'Remove this scenario or add a real rejection path only if the process needs one.');
     }
+    if (test.kind === 'duplicate' && test.expect.instanceCount !== undefined) {
+      const submissions = test.steps.filter((step) => step.step === 'submit');
+      if (submissions.length === 2) {
+        const identity = bp.data.identity ?? [];
+        const sameIdentity = identity.length > 0 && identity.every((key) =>
+          submissions.every((step) => step.answers[key] !== undefined) &&
+          JSON.stringify(submissions[0]!.answers[key]) === JSON.stringify(submissions[1]!.answers[key]));
+        const expected = sameIdentity ? 1 : 2;
+        if (test.expect.instanceCount !== expected) {
+          d.error('TEST007', at,
+            `The two submissions produce ${expected} record(s), but the scenario expects ${test.expect.instanceCount}.`,
+            sameIdentity
+              ? 'The identity fields match, so the second submission is deduplicated. If repeat attempts should create new records, clear data.identity; otherwise expect one record.'
+              : 'These submissions have no matching duplicate identity, so each creates a record. Change the expectation or the identity fields.');
+        }
+      }
+    }
     for (const step of test.steps) {
       if (step.step === 'decide') {
         if (!approvalByKey.has(step.approval)) d.error('TEST002', at, `Unknown approval "${step.approval}".`);

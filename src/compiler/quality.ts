@@ -4,9 +4,17 @@ import type { Diagnostic } from '../compiler/diagnostics.js';
 /** Checks promises in the request that the blueprint schema cannot infer. */
 export function qualityDiagnostics(bp: Blueprint, description: string): Diagnostic[] {
   const diagnostics: Diagnostic[] = [];
-  const scoredQuiz = /\b(quiz|exam|test)\b/i.test(description) &&
+  const scoredQuiz = /\b(quiz|exam|test|assessment)s?\b/i.test(description) &&
     /\b(scor\w*|grad\w*|correct answers?|percent\w*)\b/i.test(description);
   if (!scoredQuiz) return diagnostics;
+
+  const permitsRetakes = bp.intent.assumptions?.some(({ statement }) =>
+    /\b(retakes?|repeat attempts?|multiple times|each submission is a separate record)\b/i.test(statement));
+  if (permitsRetakes && bp.data.identity?.length) {
+    diagnostics.push({ code: 'AIQ007', severity: 'error', at: 'data.identity',
+      message: 'The quiz says participants may retake it, but its identity fields discard a repeat submission.',
+      fix: 'Clear data.identity for independent attempts, or explicitly change the quiz policy and duplicate scenario to one attempt per identity.' });
+  }
 
   const questions = bp.data.fields.map((field, index) => ({ field, index })).filter(({ field }) =>
     (field.type === 'single_choice' || field.type === 'dropdown') &&
@@ -20,7 +28,16 @@ export function qualityDiagnostics(bp: Blueprint, description: string): Diagnost
     return diagnostics;
   }
 
-  const requestedCount = description.match(/\b(\d{1,2})\s+(?:multiple[ -]choice\s+)?questions?\b/i);
+  const placeholders = questions.filter(({ field }) =>
+    /^\s*(?:question|item)\s*\d+\s*$/i.test(field.label) ||
+    (field.choices?.length === 4 && field.choices.every((choice) => /^[A-D]$/i.test(choice.label.trim()))));
+  if (placeholders.length) {
+    diagnostics.push({ code: 'AIQ008', severity: 'error', at: `data.fields[${placeholders[0]!.index}]`,
+      message: `${placeholders.length} assessment question(s) still use placeholder wording or A–D instead of real answer choices.`,
+      fix: 'Write the full subject-specific question and four meaningful answer labels for every placeholder. Each must have one correctValue.' });
+  }
+
+  const requestedCount = description.match(/\b(\d{1,2})[ -]+(?:multiple[ -]choice\s+)?questions?\b/i);
   if (requestedCount && questions.length !== Number(requestedCount[1])) {
     diagnostics.push({ code: 'AIQ002', severity: 'error', at: 'data.fields',
       message: `The request asks for ${requestedCount[1]} quiz questions, but the draft has ${questions.length}.`,
@@ -42,14 +59,28 @@ export function qualityDiagnostics(bp: Blueprint, description: string): Diagnost
         message: `Quiz question "${field.label}" has no correct answer.`,
         fix: 'Set correctValue to the value of exactly one choice. Do not guess from a sample submission.' });
     }
+    if (/\b(?:missed|incorrect|wrong)\b.{0,90}\bexplanations?\b|\bexplanations?\b.{0,90}\b(?:missed|incorrect|wrong)\b/i.test(description) &&
+      !field.answerExplanation) {
+      diagnostics.push({ code: 'AIQ009', severity: 'error', at: `data.fields[${index}].answerExplanation`,
+        message: `Quiz question "${field.label}" has no explanation for an incorrect answer.`,
+        fix: 'Set answerExplanation to a brief reason the keyed answer is correct.' });
+    }
+  }
+
+  if (/\b(?:percentage|score)\b.{0,60}\bgrade\b|\bgrade\b.{0,60}\b(?:percentage|score)\b/i.test(description) &&
+    !bp.experience.quizResult?.showLetterGrade) {
+    diagnostics.push({ code: 'AIQ010', severity: 'error', at: 'experience.quizResult',
+      message: 'The request asks for a grade, but the result screen is not set to show one.',
+      fix: 'Set experience.quizResult.showLetterGrade to true. The server calculates A–F from the final percentage.' });
   }
 
   for (const { field, index } of bp.data.fields.map((field, index) => ({ field, index }))) {
-    if (/^(score|percentage|percent|missed_questions|answer_review)$/.test(field.key) &&
-      (field.type === 'calculated' || field.setBy === 'system')) {
+    if ((/^(score|percentage|percent|grade|missed_questions|answer_review)$/.test(field.key) &&
+      (field.type === 'calculated' || field.setBy === 'system')) ||
+      (/^q\d+_correct_answer$/.test(field.key) && field.type === 'hidden')) {
       diagnostics.push({ code: 'AIQ004', severity: 'error', at: `data.fields[${index}]`,
         message: `"${field.label}" is a placeholder for a quiz result the runtime already calculates.`,
-        fix: 'Remove the placeholder field and its references. The answer keys produce the score, percentage and missed-answer review after submission.' });
+        fix: 'Remove this field and its references. Put correctValue and answerExplanation on each real question; the runtime produces the score, percentage, grade and missed-answer review.' });
     }
   }
 

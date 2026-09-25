@@ -4,11 +4,12 @@ export interface QuizResult {
   correct: number;
   total: number;
   percentage: number;
-  missed: { question: string; correctAnswer: string }[];
+  grade?: string;
+  missed: { question: string; correctAnswer: string; explanation?: string }[];
 }
 
 /** Score only declared answer keys, after submission has passed validation. */
-export function scoreQuiz(fields: Field[], answers: Record<string, unknown>): QuizResult | undefined {
+export function scoreQuiz(fields: Field[], answers: Record<string, unknown>, showLetterGrade = false): QuizResult | undefined {
   const questions = fields.filter((field) => field.correctValue !== undefined);
   if (!questions.length) return undefined;
   let correct = 0;
@@ -20,8 +21,11 @@ export function scoreQuiz(fields: Field[], answers: Record<string, unknown>): Qu
       missed.push({
         question: question.label,
         correctAnswer: question.choices?.find((choice) => choice.value === question.correctValue)?.label ?? '',
+        ...(question.answerExplanation ? { explanation: question.answerExplanation } : {}),
       });
     }
   }
-  return { correct, total: questions.length, percentage: Math.round((100 * correct) / questions.length), missed };
+  const percentage = Math.round((100 * correct) / questions.length);
+  const grade = percentage >= 90 ? 'A' : percentage >= 80 ? 'B' : percentage >= 70 ? 'C' : percentage >= 60 ? 'D' : 'F';
+  return { correct, total: questions.length, percentage, ...(showLetterGrade ? { grade } : {}), missed };
 }

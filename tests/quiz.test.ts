@@ -19,3 +19,12 @@ test('forms without answer keys do not get a quiz result', () => {
   const ordinary = { ...question('one', 'a'), correctValue: undefined };
   assert.equal(scoreQuiz([ordinary], { one: 'a' }), undefined);
 });
+
+test('requested letter grade and missed-answer explanation appear only after scoring', () => {
+  const q = { ...question('one', 'a'), answerExplanation: 'The source identifies the first choice.' };
+  assert.deepEqual(scoreQuiz([q], { one: 'b' }, true), {
+    correct: 0, total: 1, percentage: 0, grade: 'F',
+    missed: [{ question: 'one', correctAnswer: 'First', explanation: 'The source identifies the first choice.' }],
+  });
+  assert.equal(scoreQuiz([q], { one: 'a' }, true)?.grade, 'A');
+});

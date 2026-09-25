@@ -52,6 +52,7 @@ export interface BpField {
   constraints?: Record<string, unknown>;
   choices?: { value: string; label: string }[];
   correctValue?: string;
+  answerExplanation?: string;
   setBy?: string;
   collectionReason?: string;
   requiredWhen?: unknown;
@@ -147,6 +148,7 @@ export interface BpExperience {
   showProgress?: boolean;
   saveAndResume?: boolean;
   confirmation?: { message: string; showStatusLink?: boolean };
+  quizResult?: { showLetterGrade?: boolean };
   branding?: BpBranding;
   pages?: { key: string; title: string; description?: string; sections?: BpSection[]; [k: string]: unknown }[];
   [k: string]: unknown;
@@ -184,7 +186,7 @@ export interface Blueprint {
   description?: string;
   intent?: { outcome?: string; respondents?: string; assumptions?: { statement: string; affects: string; confirmed?: boolean }[]; openDecisions?: { question: string; provisionally: string; importance?: string }[]; [k: string]: unknown };
   roles: BpRole[];
-  data: { fields: BpField[]; submitterField?: string; [k: string]: unknown };
+  data: { fields: BpField[]; identity?: string[]; submitterField?: string; [k: string]: unknown };
   workflow: {
     states: BpState[];
     transitions: { key: string; name?: string; from: string; to: string; [k: string]: unknown }[];
@@ -1151,6 +1153,10 @@ export function Builder() {
                     onEditApprovals={() => { setOverview(false); setTab('approvals'); setIndex(0); setSide('checks'); }}
                     onEditRules={() => { const firstSubmission = blueprint.workflow.transitions.findIndex((rule) =>
                       (rule.trigger as { on?: string }).on === 'submission'); setOverview(false); setTab('rules'); setIndex(Math.max(0, firstSubmission)); setSide('checks'); }}
+                    onEditAdvanced={() => { setOverview(false); setTab('json'); setIndex(0); setSide('checks'); }}
+                    onSetLetterGrade={(show) => mutate((bp) => {
+                      if (bp.experience) bp.experience.quizResult = { ...bp.experience.quizResult, showLetterGrade: show };
+                    })}
                     onEditTasks={() => { setOverview(false); setTab('tasks'); setIndex(0); setSide('checks'); }}
                     onPreview={() => setSide('preview')}
                   />
@@ -2121,6 +2127,8 @@ function ProcessOverview({
   onEditFields,
   onEditApprovals,
   onEditRules,
+  onEditAdvanced,
+  onSetLetterGrade,
   onEditTasks,
   onPreview,
 }: {
@@ -2128,6 +2136,8 @@ function ProcessOverview({
   onEditFields: () => void;
   onEditApprovals: () => void;
   onEditRules: () => void;
+  onEditAdvanced: () => void;
+  onSetLetterGrade: (show: boolean) => void;
   onEditTasks: () => void;
   onPreview: () => void;
 }) {
@@ -2136,16 +2146,19 @@ function ProcessOverview({
   const distinctiveQuestions = gradedQuestions.length ? gradedQuestions : questions.filter((field) =>
     !['submitter_name', 'submitter_email', 'decision_note'].includes(field.key),
   );
-  const questionCount = distinctiveQuestions.length || questions.length;
   const approvals = blueprint.workflow.approvals ?? [];
   const tasks = blueprint.workflow.tasks ?? [];
   const finish = blueprint.workflow.states.find((state) => state.outcome === 'success');
-  const quiz = /\b(quiz|exam)\b/i.test(`${blueprint.name} ${blueprint.description ?? ''}`);
+  const quiz = /\b(quiz|exam|test|assessment)s?\b/i.test(`${blueprint.name} ${blueprint.description ?? ''}`);
   const quizQuestions = questions.filter((field) => (field.type === 'single_choice' || field.type === 'dropdown') &&
     (/^\s*\d+[.)\s]/.test(field.label) || /^q\d+(?:_|$)/i.test(field.key) || field.label.includes('?')));
-  const requestedQuestions = blueprint.description?.match(/\b(\d{1,2})\s+(?:multiple[ -]choice\s+)?questions?\b/i)?.[1];
+  const questionCount = quiz && quizQuestions.length ? quizQuestions.length : distinctiveQuestions.length || questions.length;
+  const requestedQuestions = blueprint.description?.match(/\b(\d{1,2})[ -]+(?:multiple[ -]choice\s+)?questions?\b/i)?.[1];
   const fourChoices = quizQuestions.filter((field) => field.choices?.length === 4).length;
   const keyed = quizQuestions.filter((field) => field.correctValue !== undefined).length;
+  const complete = quizQuestions.filter((field) => !/^\s*(?:question|item)\s*\d+\s*$/i.test(field.label) &&
+    !field.choices?.every((choice) => /^[A-D]$/i.test(choice.label.trim()))).length;
+  const explained = quizQuestions.filter((field) => field.answerExplanation).length;
   const initial = blueprint.workflow.states.find((state) => state.type === 'initial');
   const directResult = blueprint.workflow.transitions.some((rule) =>
     rule.from === initial?.key && rule.to === blueprint.intent?.completionState &&
@@ -2176,9 +2189,13 @@ function ProcessOverview({
       {quiz && quizQuestions.length > 0 && <section className="bd__setupMap" aria-label="Quiz setup map">
         <div className="bd__setupMapHead"><div><span>REQUEST MAP</span><h3>Quiz setup</h3></div><p>What the draft contains and where to adjust it.</p></div>
         <div className="bd__setupMapRow"><span>Questions</span><strong>{quizQuestions.length}{requestedQuestions ? ` of ${requestedQuestions} requested` : ' added'}</strong><button type="button" onClick={onEditFields}>View</button></div>
+        <div className="bd__setupMapRow"><span>Complete wording</span><strong>{complete} of {quizQuestions.length}</strong><button type="button" onClick={onEditFields}>View</button></div>
         <div className="bd__setupMapRow"><span>Four options each</span><strong>{fourChoices} of {quizQuestions.length}</strong><button type="button" onClick={onEditFields}>View</button></div>
         <div className="bd__setupMapRow"><span>Correct answers set</span><strong>{keyed} of {quizQuestions.length}</strong><button type="button" onClick={onEditFields}>View</button></div>
+        <div className="bd__setupMapRow"><span>Answer explanations</span><strong>{explained} of {quizQuestions.length}</strong><button type="button" onClick={onEditFields}>View</button></div>
+        <div className="bd__setupMapRow"><span>Letter grade</span><strong>{blueprint.experience?.quizResult?.showLetterGrade ? 'Shown' : 'Off'}</strong><label><input type="checkbox" aria-label="Show a letter grade with quiz results" checked={Boolean(blueprint.experience?.quizResult?.showLetterGrade)} onChange={(event) => onSetLetterGrade(event.target.checked)} /> Show</label></div>
         <div className="bd__setupMapRow"><span>Submission reaches results</span><strong>{directResult ? 'Direct route' : 'Needs review'}</strong><button type="button" onClick={onEditRules}>View</button></div>
+        <div className="bd__setupMapRow"><span>Repeat attempts</span><strong>{blueprint.data.identity?.length ? 'Limited by identity' : 'Allowed'}</strong><button type="button" onClick={onEditAdvanced}>View</button></div>
       </section>}
 
       <ol className="bd__flow">
@@ -2632,6 +2649,11 @@ function FieldEditor({
               <option value="">No answer key</option>
               {(field.choices ?? []).map((choice, i) => <option key={i} value={choice.value}>{choice.label}</option>)}
             </select>
+          </label>}
+          {(field.type === 'single_choice' || field.type === 'dropdown') && <label className="bd__label">Why this answer is correct
+            <textarea className="bd__input" rows={2} value={field.answerExplanation ?? ''}
+              placeholder="Shown after a missed answer when this is a scored quiz"
+              onChange={(e) => onChange((f) => { if (e.target.value) f.answerExplanation = e.target.value; else delete f.answerExplanation; })} />
           </label>}
           <button
             className="bd__btn bd__btn--small"

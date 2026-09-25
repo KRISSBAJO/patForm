@@ -129,6 +129,7 @@ test('a blueprint with errors is never publishable, warnings alone never block',
   // Removing the identity fields should warn without blocking publication.
   const warnOnly = structuredClone(bp);
   delete warnOnly.data.identity;
+  warnOnly.tests.find((item) => item.kind === 'duplicate')!.expect.instanceCount = 2;
   const d1 = validate(warnOnly);
   assert.ok(d1.warnings.some((w) => w.code === 'OPS007'));
   assert.equal(d1.publishable, true);
@@ -416,6 +417,22 @@ test('a task scenario cannot supply answers its actor lacks permission to edit',
   step.answers = { equipment_note: 'Issued' };
   const errors = validate(raw).errors;
   assert.ok(errors.some((item) => item.code === 'TEST004' && item.message.includes('it_operator')));
+});
+
+test('a duplicate scenario must agree with the fields that deduplicate submissions', () => {
+  const bp = structuredClone(load('expense-approval.blueprint.json'));
+  bp.tests = bp.tests.filter((item) => item.kind !== 'duplicate');
+  bp.tests.push({ key: 'repeat', kind: 'duplicate', name: 'Same claim twice',
+    steps: [
+      { step: 'submit', answers: { employee_email: 'a@example.test', expense_date: '2026-09-24', cost_centre: 'X' } },
+      { step: 'submit', answers: { employee_email: 'a@example.test', expense_date: '2026-09-24', cost_centre: 'X' } },
+    ], expect: { instanceCount: 2 } });
+  assert.ok(validate(bp).errors.some((item) => item.code === 'TEST007'));
+  bp.tests.at(-1)!.expect.instanceCount = 1;
+  assert.ok(!validate(bp).errors.some((item) => item.code === 'TEST007'));
+  bp.data.identity = [];
+  bp.tests.at(-1)!.expect.instanceCount = 2;
+  assert.ok(!validate(bp).errors.some((item) => item.code === 'TEST007'));
 });
 
 test('the two processes that asked for a document now ask where it is', () => {

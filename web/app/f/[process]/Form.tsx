@@ -23,7 +23,7 @@ import {
 
 type Answers = Record<string, unknown>;
 type Errors = Record<string, string>;
-type QuizResult = { correct: number; total: number; percentage: number; missed: { question: string; correctAnswer: string }[] };
+type QuizResult = { correct: number; total: number; percentage: number; grade?: string; missed: { question: string; correctAnswer: string; explanation?: string }[] };
 
 interface CheckResult {
   errors: { field: string; message: string }[];
@@ -320,7 +320,8 @@ export function Form({ processKey: fromUrl }: { processKey: string }) {
           {done.quiz && <section className="fm__quizResult" aria-label="Quiz result">
             <strong className="fm__quizScore">{done.quiz.percentage}%</strong>
             <p>{done.quiz.correct} of {done.quiz.total} correct</p>
-            {done.quiz.missed.length > 0 && <div className="fm__quizReview"><h2>Answers to review</h2><ul>{done.quiz.missed.map((item, index) => <li key={index}><span>{item.question}</span><strong>{item.correctAnswer}</strong></li>)}</ul></div>}
+            {done.quiz.grade && <p>Grade: <strong>{done.quiz.grade}</strong></p>}
+            {done.quiz.missed.length > 0 && <div className="fm__quizReview"><h2>Answers to review</h2><ul>{done.quiz.missed.map((item, index) => <li key={index}><span>{item.question}</span><strong>{item.correctAnswer}</strong>{item.explanation && <p>{item.explanation}</p>}</li>)}</ul></div>}
           </section>}
           <p className="fm__ref">
             Your reference is <strong>{done.reference}</strong>

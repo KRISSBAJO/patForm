@@ -54,3 +54,30 @@ test('a missing quiz answer key is sent through the AI repair turn', async () =>
   assert.equal(result.decision, 'publishable', JSON.stringify(result.diagnostics));
   assert.equal(result.blueprint?.data.fields.filter((field) => field.correctValue).length, 10);
 });
+
+test('a quiz that promises retakes cannot use email as its duplicate identity', () => {
+  const bp = quiz();
+  bp.intent.assumptions.push({ statement: 'Participants may retake the quiz multiple times.', affects: 'duplicate handling' });
+  bp.data.identity = ['employee_email'];
+  assert.ok(qualityDiagnostics(bp, request).some((item) => item.code === 'AIQ007'));
+  bp.data.identity = [];
+  assert.ok(!qualityDiagnostics(bp, request).some((item) => item.code === 'AIQ007'));
+});
+
+test('a scored assessment rejects placeholder questions and missing grade explanations', () => {
+  const bp = quiz();
+  const request = 'Create a 10-question academic assessment with four answer choices. After submission display the score, percentage and grade, plus an explanation for each incorrect answer.';
+  bp.name = 'Grade 8 assessment';
+  bp.description = request;
+  for (const [index, field] of bp.data.fields.filter((item) => item.key.startsWith('q')).entries()) {
+    field.label = `Question ${index + 1}`;
+    field.choices = ['A', 'B', 'C', 'D'].map((value) => ({ value: value.toLowerCase(), label: value }));
+    delete field.correctValue;
+  }
+  bp.data.fields.push({ key: 'grade', label: 'Grade', type: 'calculated', classification: 'internal',
+    setBy: 'system', compute: { op: 'add', operands: [{ literal: 0 }, { literal: 0 }] } });
+  const codes = new Set(qualityDiagnostics(bp, request).map((item) => item.code));
+  for (const code of ['AIQ003', 'AIQ004', 'AIQ008', 'AIQ009', 'AIQ010']) {
+    assert.ok(codes.has(code), `${code} should flag the incomplete assessment`);
+  }
+});
