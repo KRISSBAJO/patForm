@@ -486,10 +486,10 @@ export function HealthView({ canAdminister }: { canAdminister: boolean }) {
   return (
     <>
     {health && <SendingHealthPanel health={health} />}
-    <div className="cs__panel">
-      <div className="cs__panelHead">
-        <h2 className="cs__tab">Addresses we have stopped writing to</h2>
-        <span className="cs__sort">{live.length} active</span>
+    <div className="cs__panel ahv__suppression">
+      <div className="ahv__sectionHead">
+        <div><span className="ahv__eyebrow">RECIPIENT SAFETY</span><h2>Suppressed addresses</h2><p>Mail is paused for recipients who bounced or reported spam.</p></div>
+        <span className="ahv__count">{live.length} active</span>
       </div>
 
       {/* The change announced, not just rendered. */}
@@ -500,10 +500,7 @@ export function HealthView({ canAdminister }: { canAdminister: boolean }) {
       )}
 
       {!live.length ? (
-        <div className="cs__empty">
-          {past.length
-            ? 'Nothing is suppressed right now. Hard bounces and spam complaints land here.'
-            : 'Nothing is suppressed. Hard bounces and spam complaints land here, and this workspace has had neither.'}
+        <div className="ahv__empty"><span className="ahv__emptyMark" aria-hidden="true"><Icon name="done" /></span><strong>No addresses blocked</strong><p>{past.length ? 'All previously suppressed addresses have been reinstated.' : 'No hard bounces or spam complaints have paused delivery.'}</p>
         </div>
       ) : (
         <table className="vw__table">
@@ -619,23 +616,18 @@ function SendingHealthPanel({ health }: { health: SendingHealth }) {
     },
   ];
   return (
-    <div className="cs__panel" style={{ marginBottom: 16 }}>
-      <div className="cs__panelHead">
-        <h2 className="cs__tab">Sending health</h2>
+    <div className="cs__panel ahv__sending">
+      <div className="ahv__sectionHead">
+        <div><span className="ahv__eyebrow">LAST {health.windowDays} DAYS</span><h2>Sending health</h2><p>How reliably your messages reach their recipients.</p></div>
         <span className={`sh__level sh__level--${health.level}`}>{HEALTH_WORDS[health.level]}</span>
       </div>
-      <p className="vw__note">
-        {health.sent} {health.sent === 1 ? 'message' : 'messages'} sent in the last {health.windowDays} days.
-        {health.level === 'too_few'
-          ? ' Too few for a rate to mean anything yet.'
-          : ' The email provider reviews an account at the thresholds below, and a paused account stops every message — including password resets.'}
-      </p>
+      <div className="ahv__sent"><strong>{health.sent}</strong><div><b>{health.sent === 1 ? 'message sent' : 'messages sent'}</b><span>{health.level === 'too_few' ? 'More volume is needed before rates are meaningful.' : `Measured across the last ${health.windowDays} days.`}</span></div></div>
       <dl className="sh__rates">
         {rows.map((r) => (
           <div key={r.label} className="sh__rate">
             <dt>{r.label}</dt>
             <dd>
-              <strong>{pct(r.rate, r.digits)}</strong> <span className="sh__count">({r.count})</span>
+              <div className="ahv__rateValue"><strong>{pct(r.rate, r.digits)}</strong> <span className="sh__count">{r.count} {r.count === 1 ? 'event' : 'events'}</span></div>
               <div
                 className="sh__bar"
                 role="img"
@@ -646,9 +638,7 @@ function SendingHealthPanel({ health }: { health: SendingHealth }) {
                   style={{ width: `${Math.min(100, (r.rate / r.act) * 100)}%` }}
                 />
               </div>
-              <span className="sh__threshold">
-                watch at {pct(r.watch, r.digits)} · reviewed at {pct(r.act, r.digits)}
-              </span>
+              <span className="sh__threshold"><span>Watch {pct(r.watch, r.digits)}</span><span>Review {pct(r.act, r.digits)}</span></span>
             </dd>
           </div>
         ))}

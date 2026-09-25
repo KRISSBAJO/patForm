@@ -695,7 +695,7 @@ export function Console() {
           </button>}
         </div>
 
-        <div className={`cs__body ${view === 'security' ? 'cs__body--security' : ''} ${view === 'ask' ? 'cs__body--ask' : ''} ${view === 'record' ? 'cs__body--record' : ''} ${view === 'dashboard' ? 'cs__body--dashboard' : ''} ${view === 'people' ? 'cs__body--people' : ''} ${view === 'records' ? 'cs__body--records' : ''} ${view === 'work' ? 'cs__body--work' : ''} ${view === 'processes' ? 'cs__body--processes' : ''} ${view === 'held' ? 'cs__body--held' : ''} ${view === 'integrations' ? 'cs__body--integrations' : ''} ${view === 'data' ? 'cs__body--data' : ''}`}>
+        <div className={`cs__body ${view === 'security' ? 'cs__body--security' : ''} ${view === 'ask' ? 'cs__body--ask' : ''} ${view === 'record' ? 'cs__body--record' : ''} ${view === 'health' ? 'cs__body--health' : ''} ${view === 'dashboard' ? 'cs__body--dashboard' : ''} ${view === 'people' ? 'cs__body--people' : ''} ${view === 'records' ? 'cs__body--records' : ''} ${view === 'work' ? 'cs__body--work' : ''} ${view === 'processes' ? 'cs__body--processes' : ''} ${view === 'held' ? 'cs__body--held' : ''} ${view === 'integrations' ? 'cs__body--integrations' : ''} ${view === 'data' ? 'cs__body--data' : ''}`}>
           <div className="cs__left">
             {view === 'record' && record ? (
               <RecordPage
@@ -743,9 +743,30 @@ export function Console() {
                 </div>
               </div>
             ) : view === 'health' ? (
-              // `administer` is what the lift endpoint requires, so the button
-              // is only offered to somebody the server will accept it from.
-              <HealthView canAdminister={['owner', 'admin', 'builder'].includes(me.workspace_role)} />
+              <div className="ahv">
+                <div className="ahv__intro">
+                  <div><span className="ahv__eyebrow">DELIVERY &amp; AUTOMATION</span><h2>Keep every action on track.</h2><p>Monitor message delivery, investigate failures, and review addresses that cannot receive mail.</p></div>
+                  <span className={`ahv__status${health?.totals.failing ? ' ahv__status--attention' : ''}`}>{health?.totals.failing ? `${health.totals.failing} ${health.totals.failing === 1 ? 'failure' : 'failures'} to review` : 'No current failures'}</span>
+                </div>
+                <div className="ahv__layout">
+                  <div className="ahv__main"><HealthView canAdminister={['owner', 'admin', 'builder'].includes(me.workspace_role)} /></div>
+                  <aside className="ahv__aside" aria-label="Automation activity">
+                    <section className="ahv__log">
+                      <div className="ahv__logHead"><div><span className="ahv__eyebrow">RECENT ACTIVITY</span><h2>Automation log</h2></div>{health && <span className="ahv__failureCount">{health.totals.failing} failed</span>}</div>
+                      {health ? <>
+                        <dl className="ahv__totals"><div><dt>Actions run</dt><dd>{health.totals.runs}</dd></div><div><dt>Recovered after retry</dt><dd>{health.totals.retried}</dd></div><div><dt>Duplicates prevented</dt><dd>{health.totals.suppressed}</dd></div></dl>
+                        {health.failures.length ? <div className="ahv__failures">{health.failures.map((f) => <article className="ahv__failure" key={f.outboxId}>
+                          <div className="ahv__failureHeading"><span className="ahv__failureDot" aria-hidden="true"/><strong>Delivery failed</strong><span>{f.attempts} {f.attempts === 1 ? 'attempt' : 'attempts'}</span></div>
+                          <div className="ahv__failureMeta"><span>{f.reference}</span><span>{f.transitionKey.replace(/_/g, ' ')}</span></div>
+                          <p>{f.lastError}</p>
+                          <div className="ahv__failureAction">{f.outboxId > 0 ? <button type="button" className="cs__btn" disabled={busy !== null} onClick={() => void replay(f.outboxId)}>Retry action</button> : <span>Check the address and email provider, then send a new test request.</span>}</div>
+                        </article>)}</div> : <div className="ahv__clear"><Icon name="done"/><strong>All actions delivered</strong><span>No failures need attention.</span></div>}
+                      </> : <p className="ahv__restricted">Automation details require reporting access for this process.</p>}
+                    </section>
+                    <p className="ahv__footnote">Hard bounces and spam complaints automatically stop messages to the affected address. Review the suppression list to see who is affected.</p>
+                  </aside>
+                </div>
+              </div>
             ) : view === 'dashboard' ? (
               <DashboardView processKey={processKey} automation={health ? health.totals : null} onOpenAutomation={() => setView('health')} />
             ) : view === 'records' ? (
@@ -809,7 +830,7 @@ export function Console() {
 
           {/* The record page carries its own side column; two of them would
               be a column of cards about a different subject. */}
-          {view !== 'record' && view !== 'security' && view !== 'ask' && view !== 'dashboard' && view !== 'people' && view !== 'records' && view !== 'work' && view !== 'processes' && view !== 'held' && view !== 'integrations' && view !== 'data' && (
+          {view !== 'record' && view !== 'health' && view !== 'security' && view !== 'ask' && view !== 'dashboard' && view !== 'people' && view !== 'records' && view !== 'work' && view !== 'processes' && view !== 'held' && view !== 'integrations' && view !== 'data' && (
           <div className="cs__right">
             {!processKey ? null : health ? (
               <div className="cs__card">
@@ -854,9 +875,7 @@ export function Console() {
             <div className="cs__card cs__card--dark">
               <span className="cs__cardLabel">WHAT THIS SCREEN IS</span>
               <p style={{ marginTop: 10, fontSize: 13.5, lineHeight: 1.5, color: 'var(--on-dark-2)' }}>
-                {view === 'health'
-                  ? 'What the automation did, and who it can no longer reach. A hard bounce or a spam complaint stops this deployment writing to that address — the record will say "skipped" and this is the page that says why.'
-                  : view === 'invite'
+                {view === 'invite'
                     ? 'One person, a pasted list, or a spreadsheet. Every row is checked before anything is sent: typos, duplicates, people already here and roles you cannot give are set aside, and only the rest go. Each invitation works once and expires in seven days.'
                   : 'The actions available here are checked against your role by the runtime.'}
               </p>
