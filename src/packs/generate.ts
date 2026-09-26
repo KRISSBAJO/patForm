@@ -1060,8 +1060,25 @@ function sampleAnswers(fields: PackField[], spec?: PackSpec): Record<string, unk
   return out;
 }
 
+/**
+ * A reference is a reference everywhere.
+ *
+ * Order numbers, case references, asset tags, versions: a question whose key
+ * says it holds one gets a shape check unless its template says otherwise.
+ * Not a format, since every ledger writes them differently, but a shape:
+ * letters, numbers and ordinary punctuation, and not a paragraph, an emoji
+ * or a paste of the wrong field. The check that most often catches a slip is
+ * the one nobody thought to write, so it is written once, here.
+ */
+const REFERENCE_KEY = /(_reference|_number|_code|_tag|_id|_version|_ref|registration|tracking|permit|_float|_asset)$/;
+const REFERENCE = {
+  pattern: '^[A-Za-z0-9][A-Za-z0-9 ./#_:?=&%+-]{0,119}$',
+  message: 'Letters, numbers and ordinary punctuation, up to 120 characters.',
+};
+
 /** One spec field as the blueprint writes it, rows of a list included. */
 function emitField(f: PackField): Record<string, unknown> {
+  const constraints = f.constraints ?? (f.type === 'short_text' && REFERENCE_KEY.test(f.key) ? REFERENCE : undefined);
   return {
     key: f.key,
     type: f.type,
@@ -1071,7 +1088,7 @@ function emitField(f: PackField): Record<string, unknown> {
     ...(f.choices ? { choices: f.choices.map((c) => ({ value: c, label: titleOf(c) })) } : {}),
     ...(f.reason ? { collectionReason: f.reason } : {}),
     ...(f.help ? { help: f.help } : {}),
-    ...(f.constraints ? { constraints: f.constraints } : {}),
+    ...(constraints ? { constraints } : {}),
     ...(f.requiredWhen ? { requiredWhen: f.requiredWhen } : {}),
     ...(f.compute ? { compute: f.compute } : {}),
     ...(f.fields ? { fields: f.fields.map((child) => emitField(child)) } : {}),

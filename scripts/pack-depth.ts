@@ -16,7 +16,7 @@ import { CATALOGUE } from '../src/packs/catalogue.js';
 import { buildBlueprint, type PackSpec } from '../src/packs/generate.js';
 
 interface Shape {
-  data: { fields: { key: string; type: string; requiredWhen?: unknown }[] };
+  data: { fields: { key: string; type: string; requiredWhen?: unknown; constraints?: unknown; setBy?: string }[] };
   experience: { pages: { sections: { visibleWhen?: unknown }[] }[] };
   tests: unknown[];
 }
@@ -27,7 +27,9 @@ function measure(spec: PackSpec) {
   const bp = buildBlueprint(spec) as Shape;
   const asked = spec.fields.filter((f) => f.setBy !== 'operator' && f.type !== 'calculated');
   const help = asked.filter((f) => f.help).length;
-  const constrained = asked.filter((f) => f.constraints).length;
+  // From the built blueprint, not the spec: the generator adds shape checks
+  // to reference fields, and what the form enforces is what counts.
+  const constrained = bp.data.fields.filter((f) => f.setBy !== 'operator' && f.type !== 'calculated' && f.constraints).length;
   const groups = new Set(asked.map((f) => f.group).filter(Boolean)).size;
   const rich = spec.fields.filter((f) => RICH.has(f.type)).length;
   const conditional =

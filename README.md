@@ -107,8 +107,11 @@ assessments, bids, deposit deductions and sales orders itemise their lines
 with the total worked out, and a money threshold reads that total. A spec
 says these with `group`, `groups` (a section's line and its `visibleWhen`),
 `requiredWhen`, `fields` on a `repeating_group`, `compute` on a `calculated`
-field and `moneyField`; `npm run packs:depth` measures every template so a
-thin one is a list entry, not an impression.
+field and `moneyField`. Any question whose key says it holds a reference,
+number, code, tag or version gets a shape check from the generator unless the
+template gives its own, so a paste of the wrong field is caught on every form
+and not only the ones somebody thought about. `npm run packs:depth` measures
+every template so a thin one is a list entry, not an impression.
 
 **A screen-reader session, recorded.** `npm run sr:session -- <form url>
 <nvda log>` drives the public form in Chromium by keyboard while NVDA is
