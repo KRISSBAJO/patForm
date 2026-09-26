@@ -18,11 +18,11 @@
  */
 
 import type { Pool, Client } from './db.js';
-import { emailProviderFromEnv, mailFrom, type DeliveryResult } from './email.js';
+import { emailProviderFromEnv, mailFrom, type Attachment, type DeliveryResult } from './email.js';
 import { logIfEnabled } from './trace.js';
 import { blockedRecipients } from './delivery.js';
 
-export type PlatformMailKind = 'invitation' | 'verify_email' | 'password_reset' | 'delivery_alert' | 'task_assigned' | 'record_shared';
+export type PlatformMailKind = 'invitation' | 'verify_email' | 'password_reset' | 'delivery_alert' | 'task_assigned' | 'record_shared' | 'scheduled_report';
 
 /**
  * Where the links point.
@@ -45,6 +45,8 @@ export interface PlatformMail {
   actorId?: string | null;
   /** Stable per-send, so a provider-side retry is deduplicated like any other. */
   idempotencyKey: string;
+  /** A scheduled report's file. Nothing else here carries one. */
+  attachments?: Attachment[];
 }
 
 /**
@@ -89,6 +91,7 @@ export async function sendPlatformMail(pool: Pool, mail: PlatformMail): Promise<
       to: [mail.to],
       subject: mail.subject,
       text: mail.text,
+      ...(mail.attachments?.length ? { attachments: mail.attachments } : {}),
       idempotencyKey: mail.idempotencyKey,
       tags: { kind: mail.kind },
     });

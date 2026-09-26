@@ -7,6 +7,7 @@ import { changePlatformPerson, grantPlatformOperator, platformAudit, platformInt
 import { Engine } from '../runtime/engine.js';
 import { addRecordNote, recordDocument } from '../runtime/console-queries.js';
 import { shareRecord } from '../runtime/share-record.js';
+import { createView, deleteView, listViews, type Schedule, type ViewParams } from '../runtime/saved-views.js';
 import { isPublicApiPath, publicHandler } from './public-server.js';
 import { aiDraftStatus, applyAiRevision, queueAiDraft, queueAiRevision } from '../runtime/ai-drafts.js';
 import { AuthorizationError, requireWorkspaceCapability, WORKSPACE_GRANTS, type Principal } from '../runtime/policy.js';
@@ -557,6 +558,21 @@ route('GET', /^\/api\/browse\/([a-z0-9_]+)\/export$/, async ({ pool, principal, 
   };
   if (url.searchParams.get('format') === 'xlsx') return { contentType: XLSX_TYPE, ...(await exportProcessXlsx(pool, args)) };
   return { contentType: 'text/csv', ...(await exportProcessCsv(pool, args)) };
+});
+
+// Saved views of the Records page, and the reports scheduled from them.
+route('GET', /^\/api\/views\/([a-z0-9_]+)$/, async ({ pool, principal, url }) =>
+  listViews(pool, principal, url.pathname.split('/')[3]!),
+);
+route('POST', /^\/api\/views\/([a-z0-9_]+)$/, async ({ pool, principal, url }, body) => {
+  const { name, params, schedule, format } = body as { name?: string; params?: ViewParams; schedule?: Schedule | null; format?: 'csv' | 'xlsx' };
+  if (typeof name !== 'string') throw new HttpError(400, 'a name is required');
+  return createView(pool, principal, { processKey: url.pathname.split('/')[3]!, name, params: params ?? {}, schedule: schedule ?? null, format });
+});
+route('POST', /^\/api\/views\/([a-z0-9_]+)\/delete$/, async ({ pool, principal }, body) => {
+  const { id } = body as { id?: string };
+  if (!id || !/^[0-9a-f-]{36}$/.test(id)) throw new HttpError(400, 'which view?');
+  return deleteView(pool, principal, id);
 });
 
 // The whole workspace as one workbook, a sheet per process. Administrators.

@@ -184,4 +184,21 @@ create index if not exists process_export_tenant on process_export (tenant_id, o
 -- A record sent to a colleague is a platform email of its own kind.
 alter table platform_email drop constraint if exists platform_email_kind_check;
 alter table platform_email add constraint platform_email_kind_check
-  check (kind in ('invitation', 'verify_email', 'password_reset', 'delivery_alert', 'task_assigned', 'record_shared'));
+  check (kind in ('invitation', 'verify_email', 'password_reset', 'delivery_alert', 'task_assigned', 'record_shared', 'scheduled_report'));
+
+-- The Records page's filters with a name, shared by the workspace; and, when
+-- scheduled, emailed to whoever scheduled it, rendered under their roles.
+create table if not exists saved_view (
+  id           uuid primary key default gen_random_uuid(),
+  tenant_id    uuid not null,
+  process_key  text not null,
+  name         text not null,
+  params       jsonb not null default '{}'::jsonb,
+  created_by   uuid not null,
+  schedule     text check (schedule in ('daily', 'weekly', 'monthly')),
+  format       text not null default 'xlsx' check (format in ('csv', 'xlsx')),
+  last_sent_at timestamptz,
+  created_at   timestamptz not null default now()
+);
+create index if not exists saved_view_process on saved_view (tenant_id, process_key);
+create index if not exists saved_view_due on saved_view (last_sent_at) where schedule is not null;

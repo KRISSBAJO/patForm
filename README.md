@@ -444,6 +444,15 @@ picks one answer with a fixed set of values, such as a choice or a yes/no,
 and the server matches it only among the fields the caller can see, so
 filtering never reveals a hidden one.
 
+**Saved views and scheduled reports.** The Records page's filters, order,
+search and answer filter can be saved under a name for everyone on the
+process, and chosen again from a list. A saved view can also be emailed to
+whoever saved it every day, week or month, as Excel or CSV. The worker sends
+it on its sweep. The report is rendered under that person's own roles, so it
+holds only what they can see, and if they lose the right to report on the
+process the schedule stops rather than the file going out. Each send is a
+platform email of kind `scheduled_report`, and each is recorded as an export.
+
 **Every record of a process, as one spreadsheet.** The **Download CSV** button
 on a process's Records page gives one row per record and one column per
 answer, with the "still running / finished" filter carried over. It needs the

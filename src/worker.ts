@@ -4,6 +4,7 @@ import { Engine, newWorkerId } from './runtime/engine.js';
 import { sweepExpiredTokens } from './runtime/retention.js';
 import { sweepHeld } from './runtime/held.js';
 import { checkSendingHealth } from './runtime/delivery-health.js';
+import { runDueReports } from './runtime/saved-views.js';
 import { cleanupExpiredReceipts, drainReceiptDeletions } from './runtime/receipt-files.js';
 import { processNextAiDraft } from './runtime/ai-drafts.js';
 
@@ -92,6 +93,10 @@ async function main(): Promise<void> {
       if (fired) console.log(`  ${now.toISOString()}  fired ${fired} timer(s)`);
 
       if (now.getTime() - lastSweep > SWEEP_EVERY_MS) {
+        // Scheduled reports ride the sweep: a file a day, or a week, does not
+        // need a tighter clock than this.
+        const reports = await runDueReports(pool, now);
+        if (reports) console.log(`  ${now.toISOString()}  sent ${reports} scheduled report(s)`);
         const swept = await sweepExpiredTokens(pool);
         const held = await sweepHeld(pool);
         await cleanupExpiredReceipts(pool);

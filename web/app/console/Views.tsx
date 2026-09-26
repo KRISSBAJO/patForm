@@ -26,8 +26,12 @@ import { PasswordInput } from './PasswordInput';
  * see is a silent change in behaviour.
  */
 
-async function call<T>(path: string): Promise<T> {
-  const res = await fetch(path, { credentials: 'same-origin' });
+async function call<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(path, {
+    ...init,
+    credentials: 'same-origin',
+    headers: { 'content-type': 'application/json', ...(init?.headers ?? {}) },
+  });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(body.reason ?? body.error ?? `HTTP ${res.status}`);
   return body as T;
@@ -336,6 +340,17 @@ function cellText(field: BrowseField, value: unknown): string {
   }
 }
 
+interface SavedView {
+  id: string;
+  name: string;
+  params: { completed?: 'all' | 'open' | 'done'; order?: 'newest' | 'oldest' | 'reference'; query?: string; field?: string; value?: string };
+  created_by_name: string | null;
+  schedule: 'daily' | 'weekly' | 'monthly' | null;
+  format: 'csv' | 'xlsx';
+  last_sent_at: string | null;
+  mine: boolean;
+}
+
 interface Page {
   data: PublicRecord[];
   next_cursor: string | null;
@@ -384,6 +399,71 @@ export function RecordsView({
     return () => { live = false; };
   }, [processKey]);
   const previewFields = preview.map((k) => fields.find((f) => f.key === k)).filter((f): f is BrowseField => Boolean(f));
+
+  /*
+   * Saved views: these filters with a name, shared by the workspace, and
+   * optionally emailed to whoever saved them on a schedule. Choosing one
+   * sets every control; saving one reads them.
+   */
+  const [views, setViews] = useState<SavedView[]>([]);
+  const [viewId, setViewId] = useState('');
+  const [saveOpen, setSaveOpen] = useState(false);
+  const [saveName, setSaveName] = useState('');
+  const [saveSchedule, setSaveSchedule] = useState<'' | 'daily' | 'weekly' | 'monthly'>('');
+  const [saveFormat, setSaveFormat] = useState<'xlsx' | 'csv'>('xlsx');
+  const [viewNote, setViewNote] = useState<string | null>(null);
+  const loadViews = useCallback(async () => {
+    try {
+      setViews(await call<SavedView[]>(`/api/views/${processKey}`));
+    } catch {
+      setViews([]);
+    }
+  }, [processKey]);
+  useEffect(() => { setViewId(''); setSaveOpen(false); setViewNote(null); void loadViews(); }, [loadViews]);
+  const applyView = (id: string) => {
+    setViewId(id);
+    const v = views.find((x) => x.id === id);
+    if (!v) return;
+    setFilter(v.params.completed ?? 'all');
+    setOrder(v.params.order ?? 'newest');
+    setTyped(v.params.query ?? '');
+    setAnswerField(v.params.field ?? '');
+    setAnswerValue(v.params.field && v.params.value ? v.params.value : '');
+  };
+  const saveView = async () => {
+    setViewNote(null);
+    try {
+      const v = await call<SavedView>(`/api/views/${processKey}`, {
+        method: 'POST',
+        body: JSON.stringify({
+          name: saveName,
+          params: { completed: filter, order, query, field: answerField || undefined, value: answerValue || undefined },
+          schedule: saveSchedule || null,
+          format: saveFormat,
+        }),
+      });
+      await loadViews();
+      setViewId(v.id);
+      setSaveOpen(false);
+      setSaveName('');
+      setViewNote(v.schedule ? `Saved. "${v.name}" will be emailed to you ${v.schedule}, the first within a few minutes.` : `Saved "${v.name}" for everyone on this process.`);
+    } catch (err) {
+      setViewNote(err instanceof Error ? err.message : String(err));
+    }
+  };
+  const removeView = async () => {
+    const v = views.find((x) => x.id === viewId);
+    if (!v) return;
+    try {
+      await call(`/api/views/${processKey}/delete`, { method: 'POST', body: JSON.stringify({ id: v.id }) });
+      setViewId('');
+      await loadViews();
+      setViewNote(`Removed "${v.name}".`);
+    } catch (err) {
+      setViewNote(err instanceof Error ? err.message : String(err));
+    }
+  };
+  const selectedView = views.find((x) => x.id === viewId) ?? null;
   const filterable = fields.filter((f) => f.type === 'yes_no' || (f.choices && f.choices.length > 0 && f.choices.length <= 40));
   const chosen = filterable.find((f) => f.key === answerField) ?? null;
   const values: [string, string][] = chosen
@@ -572,6 +652,54 @@ export function RecordsView({
         </span>
       </div>
 
+      <div className="rv__views">
+        <label className="wk__pick rv__viewPick">
+          <span className="cs__srOnly">Saved views</span>
+          <Icon name="filter" />
+          <select className="wk__select" value={viewId} onChange={(e) => applyView(e.target.value)}>
+            <option value="">{views.length ? 'Saved views\u2026' : 'No saved views yet'}</option>
+            {views.map((v) => (
+              <option key={v.id} value={v.id}>{v.name}{v.schedule ? ` \u00b7 emailed ${v.schedule}` : ''}</option>
+            ))}
+          </select>
+        </label>
+        <button type="button" className="cs__linkBtn cs__linkBtn--onLight" onClick={() => { setSaveOpen((w) => !w); setViewNote(null); }} aria-expanded={saveOpen} aria-controls="rv-save-view">
+          {saveOpen ? 'Cancel' : 'Save this view'}
+        </button>
+        {selectedView && (
+          <button type="button" className="cs__linkBtn cs__linkBtn--onLight" onClick={() => void removeView()}>Remove {`“${selectedView.name}”`}</button>
+        )}
+        {selectedView?.schedule && <span className="vw__footnote">Emailed {selectedView.schedule} to {selectedView.mine ? 'you' : selectedView.created_by_name ?? 'whoever saved it'}{selectedView.last_sent_at ? `, last ${new Date(selectedView.last_sent_at).toLocaleDateString()}` : ''}.</span>}
+      </div>
+      {saveOpen && (
+        <form id="rv-save-view" className="rv__save" onSubmit={(e) => { e.preventDefault(); void saveView(); }}>
+          <label>
+            <span>Name</span>
+            <input className="cs__input" value={saveName} onChange={(e) => setSaveName(e.target.value)} maxLength={80} placeholder="e.g. Open claims over budget" required />
+          </label>
+          <label>
+            <span>Email it to me</span>
+            <select className="wk__select" value={saveSchedule} onChange={(e) => setSaveSchedule(e.target.value as typeof saveSchedule)}>
+              <option value="">No, just save the filters</option>
+              <option value="daily">Every day</option>
+              <option value="weekly">Every week</option>
+              <option value="monthly">Every month</option>
+            </select>
+          </label>
+          {saveSchedule && (
+            <label>
+              <span>As</span>
+              <select className="wk__select" value={saveFormat} onChange={(e) => setSaveFormat(e.target.value as typeof saveFormat)}>
+                <option value="xlsx">Excel</option>
+                <option value="csv">CSV</option>
+              </select>
+            </label>
+          )}
+          <button type="submit" className="cs__btn cs__btn--primary" disabled={!saveName.trim()}>Save</button>
+          <p className="vw__footnote">Saves the current filters, order, search and answer filter for everyone on this process.{saveSchedule ? ' The report is made under your own roles, so it holds only what you can see.' : ''}</p>
+        </form>
+      )}
+      {viewNote && <p className="vw__footnote rv__note" role="status">{viewNote}</p>}
       {note && <p className="vw__footnote rv__note" role="status">{note}</p>}
 
       {error && (
