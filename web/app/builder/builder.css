@@ -1780,7 +1780,8 @@ a.bd__newBtn {
 }
 
 .pt__table td {
-  padding: 8px 14px;
+  padding: 7px 14px;
+  height: 52px;
   border-bottom: 1px solid var(--card-line, #e4e2dd);
   vertical-align: middle;
   color: var(--ink-soft);
@@ -1837,28 +1838,119 @@ a.bd__newBtn {
   text-decoration: underline;
 }
 
-.pt__status {
-  display: inline-block;
-  padding: 2px 8px;
+/* Status as a mark. The colours are the same three the filter dots use. */
+.pt__mark {
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
   border-radius: 999px;
-  border: 1px solid var(--card-line, #e4e2dd);
-  background: var(--paper-3, #fbfaf7);
-  font-size: 11.5px;
-  font-weight: 600;
-  color: var(--ink-soft);
+  border: 1px solid transparent;
+  vertical-align: middle;
+}
+
+.pt__mark--draft {
+  background: #fdf3df;
+  border-color: #f0dfb4;
+  color: #9a6b0c;
+}
+
+.pt__mark--published {
+  background: var(--green-tint, #eaf4ee);
+  border-color: var(--green-border, #cfe3d6);
+  color: var(--green-deep, #1f5c3a);
+}
+
+.pt__mark--unpublished {
+  background: #f3f2ef;
+  border-color: #e2e0da;
+  color: #8a8781;
+}
+
+.pt__statusCell {
   white-space: nowrap;
 }
 
-.pt__status--draft {
-  background: #fdf6e8;
-  border-color: #ecdcb8;
-  color: #7a5b16;
+.pt__from {
+  margin-left: 8px;
+  font-family: var(--ui);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  vertical-align: middle;
 }
 
-.pt__status--published {
-  background: var(--green-tint, #f4f8f5);
-  border-color: var(--green-border, #d5e5db);
-  color: var(--green-deep);
+.pt__dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+}
+
+.pt__dot--draft { background: #d9a02b; }
+.pt__dot--published { background: var(--green-deep, #1f5c3a); }
+.pt__dot--unpublished { background: #b5b2ab; }
+
+.pt__count {
+  display: inline-block;
+  min-width: 22px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--paper-3, #f3f2ef);
+  font-family: var(--ui);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+  color: var(--ink);
+}
+
+.pt__none {
+  color: #c9c6bf;
+}
+
+.pt__when {
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+/* The row's one action: a round arrow, filled on hover. */
+.pt__act {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  border: 1px solid var(--card-line, #e4e2dd);
+  background: #fff;
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    color 120ms ease,
+    border-color 120ms ease,
+    transform 120ms ease;
+}
+
+.pt__act:hover,
+.pt__act:focus-visible {
+  background: var(--green-deep, #1f5c3a);
+  border-color: var(--green-deep, #1f5c3a);
+  color: #fff;
+  transform: translateX(1px);
+}
+
+.pt__act--draft {
+  border-color: var(--green-border, #cfe3d6);
+  color: var(--green-deep, #1f5c3a);
+}
+
+.pt__act:disabled {
+  opacity: 0.45;
+  cursor: default;
+  transform: none;
+}
+
+.pt__table tbody tr:hover .pt__act:not(:disabled) {
+  border-color: var(--green-deep, #1f5c3a);
 }
 
 .pt__open {

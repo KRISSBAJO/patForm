@@ -56,6 +56,54 @@ export function ago(iso: string | null, now = Date.now()): string {
   return date.toLocaleDateString(undefined, sameYear ? { day: 'numeric', month: 'short' } : { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
+/**
+ * A status as a mark, not a word.
+ *
+ * Three states, three shapes, three colours: a pencil in amber for a draft
+ * in progress, a tick in green for published, a dotted ring in grey for
+ * never published. The word is still there for a screen reader and as the
+ * tooltip, and the filter above the table teaches the colours.
+ */
+export function StatusIcon({ p, size = 26 }: { p: ProcessTableRow; size?: number }) {
+  const kind = statusOf(p);
+  const label = statusLabel(p);
+  const common = { width: size * 0.55, height: size * 0.55, viewBox: '0 0 20 20', fill: 'none', stroke: 'currentColor', strokeWidth: 1.9, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const, 'aria-hidden': true };
+  return (
+    <span className={`pt__mark pt__mark--${kind}`} style={{ width: size, height: size }} title={label}>
+      {kind === 'draft' && (
+        <svg {...common}>
+          <path d="M4 16.2 4.9 12.6 13.4 4.1a1.6 1.6 0 0 1 2.3 0l.2.2a1.6 1.6 0 0 1 0 2.3L7.4 15.1 4 16.2Z" />
+          <path d="m11.6 5.9 2.5 2.5" />
+        </svg>
+      )}
+      {kind === 'published' && (
+        <svg {...common}>
+          <path d="m4.5 10.5 3.6 3.5L15.5 6" />
+        </svg>
+      )}
+      {kind === 'unpublished' && (
+        <svg {...common} strokeDasharray="2.6 2.6">
+          <circle cx="10" cy="10" r="6.5" />
+        </svg>
+      )}
+      <span className="pt__srOnly">{label}</span>
+    </span>
+  );
+}
+
+/** The one thing to do with a row: carry on with its draft, or open it. */
+export function ActionIcon({ p, onClick, disabled }: { p: ProcessTableRow; onClick: () => void; disabled?: boolean }) {
+  const name = p.name ?? p.process_key;
+  const label = p.draft_id ? `Continue the draft of ${name}` : `Open ${name}`;
+  return (
+    <button type="button" className={`pt__act${p.draft_id ? ' pt__act--draft' : ''}`} aria-label={label} title={p.draft_id ? 'Continue draft' : 'Open'} disabled={disabled} onClick={onClick}>
+      <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M4 10h11M11 5.5 15.5 10 11 14.5" />
+      </svg>
+    </button>
+  );
+}
+
 export function ProcessTable({
   processes,
   onOpen,
@@ -163,6 +211,7 @@ export function ProcessTable({
                 aria-pressed={status === key}
                 onClick={() => setStatus(key)}
               >
+                {key !== 'all' && <span className={`pt__dot pt__dot--${key}`} aria-hidden="true" />}
                 {label} <span className="pt__filterCount">{counts[key]}</span>
               </button>
             ))}
@@ -192,17 +241,16 @@ export function ProcessTable({
                       </span>
                     </button>
                   </td>
-                  <td>
-                    <span className={`pt__status pt__status--${statusOf(p)}`}>{statusLabel(p)}</span>
+                  <td className="pt__statusCell">
+                    <StatusIcon p={p} />
+                    {p.version !== null && p.draft_id && <span className="pt__from" title={`Opened from version ${p.version}`}>v{p.version}</span>}
                   </td>
-                  <td className="pt__num">{p.instances || '—'}</td>
-                  <td>
-                    {p.updated_at ? <time dateTime={p.updated_at} title={new Date(p.updated_at).toLocaleString()}>{ago(p.updated_at)}</time> : '—'}
+                  <td className="pt__num">{p.instances ? <span className="pt__count">{p.instances}</span> : <span className="pt__none" aria-label="none">·</span>}</td>
+                  <td className="pt__when">
+                    {p.updated_at ? <time dateTime={p.updated_at} title={new Date(p.updated_at).toLocaleString()}>{ago(p.updated_at)}</time> : <span className="pt__none">·</span>}
                   </td>
                   <td className="pt__open">
-                    <button type="button" className="pt__btn" disabled={busy} onClick={() => onOpen(p)}>
-                      {p.draft_id ? 'Continue' : 'Open'}
-                    </button>
+                    <ActionIcon p={p} disabled={busy} onClick={() => onOpen(p)} />
                   </td>
                 </tr>
               ))}

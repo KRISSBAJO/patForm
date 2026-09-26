@@ -5,7 +5,7 @@ import { RulesEditor } from './Rules';
 import { BootScreen } from '../../components/boot-screen';
 import { useConfirm } from '../../components/confirm-dialog';
 import './builder.css';
-import { ProcessTable, ago } from './ProcessTable';
+import { ProcessTable, StatusIcon, ago } from './ProcessTable';
 import './studio.css';
 import { FormPreview, TestsPanel, Versions, type VersionRow } from './SidePanel';
 import { PageEditor, DocumentEditor, ScenarioEditor, ConditionEditor } from './StudioEditors';
@@ -2037,7 +2037,7 @@ function Welcome({
                         {p.updated_at ? ` · ${ago(p.updated_at)}` : ''}
                       </span>
                     </span>
-                    {p.draft_id && <span className="bd__recentTag">draft</span>}
+                    <StatusIcon p={p} size={24} />
                     <svg
                       width="16"
                       height="16"
