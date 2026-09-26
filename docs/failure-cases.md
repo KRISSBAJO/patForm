@@ -1039,6 +1039,12 @@ Opening a budget transfer that was waiting on the finance reviewer answered "Int
 
 **Generalisable:** a function with an optional second parameter must never be handed to `map` bare. The index arrives silently, in the wrong type, and TypeScript allows it because a number is assignable to nothing the parameter checks at runtime.
 
+### 107. A button that said "“"
+
+Twice in one afternoon a label reached the screen with a backslash in it: a member picker showing `Sam Boateng · sam@example.test`, and a Remove button reading `Remove “Open transfers”`. The escapes were written the way a JavaScript string takes them, but they sat in JSX text, which takes none: between tags, a backslash is a backslash. The same escapes in an attribute or a `{'...'}` expression a few lines up were fine, which is why the eye slid past them.
+
+**Fixed** by writing the characters themselves, or a template literal inside braces. **Generalisable:** in JSX, text between tags is not a string literal. Nothing is interpreted there, and the compiler cannot tell a mistaken escape from a wanted backslash, so the only check is looking at the rendered page, which is the check that found both.
+
 ### 90. Every new column needed a re-seed
 
 `schema.sql` describes a database created from nothing, and there was no other way to change one. Each release that added a table or a column reached a running database only by dropping it and seeding again, which signed every member out and emptied the workspace — in development that was several times a day, and it was part of why somebody could not sign in. A deployed database had no path at all.
