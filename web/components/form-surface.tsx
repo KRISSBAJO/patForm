@@ -625,7 +625,7 @@ function RepeatingGroup({
       ))}
 
       <button type="button" className="fm__btn" onClick={() => onChange([...rows, {}])}>
-        Add {field.label.toLowerCase().replace(/s$/, '')}
+        {rows.length ? 'Add another line' : 'Add a line'}
       </button>
 
       {error && (

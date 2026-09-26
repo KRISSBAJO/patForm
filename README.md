@@ -96,6 +96,19 @@ view:
   server checks.
 - **Header.** Title, subtitle, logo, banner, accent and footer.
 
+**The staples are built to the depth of budget transfer.** Leave, expenses,
+purchases, IT support, system access, equipment, IT incidents, maintenance,
+room bookings, training, complaints, refunds, new starters and accidents each
+ask ten to seventeen questions in named sections, with help on most, validation
+where a wrong answer is likely, and parts that appear only when relevant: the
+sickness questions once sick leave is chosen, the old device once "replacing
+something" is yes, the injury once somebody was hurt. Expense claims are
+itemised line by line with the total worked out, and the Finance threshold
+reads that total. A spec says these with `group`, `groups` (a section's line
+and its `visibleWhen`), `requiredWhen`, `fields` on a `repeating_group`,
+`compute` on a `calculated` field and `moneyField`; `npm run packs:depth`
+measures every template so the thin ones are a list, not an impression.
+
 **A screen-reader session, recorded.** `npm run sr:session -- <form url>
 <nvda log>` drives the public form in Chromium by keyboard while NVDA is
 running and merges NVDA's speech log with the steps into one transcript, so

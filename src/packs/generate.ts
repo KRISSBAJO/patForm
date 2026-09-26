@@ -51,6 +51,12 @@ export interface PackField {
   group?: string;
   /** What the generated tests answer, when the generic sample would fail a constraint. */
   sample?: unknown;
+  /** Required only when this holds: "who is covering" once the leave is a week or more. */
+  requiredWhen?: Expr;
+  /** The questions on one row, for a `repeating_group`. */
+  fields?: PackField[];
+  /** How a `calculated` field is worked out; never on the form, never answered. */
+  compute?: unknown;
 }
 
 export interface PackSpec {
@@ -87,6 +93,17 @@ export interface PackSpec {
   /** Work somebody does after the decision, before it is finished. */
   task?: { key: string; name: string; byRole: string; description?: string; requiredFields?: string[]; dueInHours?: number; expireInHours?: number };
   fields: PackField[];
+  /**
+   * The sections a field's `group` names, when a section needs more than a
+   * title: a line under it, or a condition for showing it at all. A group
+   * with no entry here is a plain titled section.
+   */
+  groups?: Record<string, { description?: string; visibleWhen?: Expr }>;
+  /**
+   * The field a money threshold attaches to, when it is not the first amount
+   * asked for: a calculated total over a list of lines, say.
+   */
+  moneyField?: string;
   /** Optional respondent pages after the shared "About you" page. Each field must appear once. */
   formSteps?: { key: string; title: string; fields: string[] }[];
   /** Days after completion. Null keeps the record forever, and says so. */
@@ -127,6 +144,11 @@ function firstDecider(spec: PackSpec): string {
 
 function respondentFields(spec: PackSpec): PackField[] {
   return spec.fields.filter((f) => f.setBy !== 'operator');
+}
+
+/** Is this field in a section that is only sometimes shown? */
+function conditional(spec: PackSpec, f: PackField): boolean {
+  return Boolean(f.group && spec.groups?.[f.group]?.visibleWhen);
 }
 
 /**
@@ -202,6 +224,7 @@ function standardFields(spec: PackSpec): PackField[] {
  * is not made riskier by being large.
  */
 function moneyField(spec: PackSpec): string | null {
+  if (spec.moneyField) return spec.moneyField;
   return spec.fields.find((f) => f.type === 'currency' && f.required !== false)?.key ?? null;
 }
 
@@ -684,7 +707,7 @@ const SHORT_TYPES = new Set(['date', 'time', 'number', 'currency', 'phone', 'yes
  * groups its questions — then a titled section per group, in the order the
  * groups first appear.
  */
-function sectionsFor(fields: PackField[]) {
+function sectionsFor(fields: PackField[], groups: PackSpec['groups'] = {}) {
   if (!fields.some((f) => f.group)) {
     return [{ key: 'what', fields: fields.map((f) => f.key), ...widths(fields) }];
   }
@@ -692,9 +715,12 @@ function sectionsFor(fields: PackField[]) {
   for (const f of fields) if (!order.includes(f.group ?? '')) order.push(f.group ?? '');
   return order.map((title, i) => {
     const inGroup = fields.filter((f) => (f.group ?? '') === title);
+    const extra = groups[title] ?? {};
     return {
       key: `part_${i + 1}`,
       ...(title ? { title } : {}),
+      ...(extra.description ? { description: extra.description } : {}),
+      ...(extra.visibleWhen ? { visibleWhen: extra.visibleWhen } : {}),
       fields: inGroup.map((f) => f.key),
       ...widths(inGroup),
     };
@@ -837,6 +863,19 @@ function tests(spec: PackSpec, answers: Record<string, unknown>, rules: Category
     ? spec.fields.find((field) => ['receipt_reference', 'invoice_evidence_reference'].includes(field.key))?.key
     : undefined;
 
+  // A total worked out from a list cannot be typed over; the row it sums is
+  // raised instead, which is also what a person would do.
+  const money = moneyField(spec);
+  const moneySpec = spec.fields.find((field) => field.key === money);
+  const withAmount = (amount: number): Record<string, unknown> => {
+    const compute = moneySpec?.compute as { op?: string; over?: string; of?: string } | undefined;
+    if (moneySpec?.type === 'calculated' && compute?.op === 'sum' && compute.over && compute.of) {
+      const rows = Array.isArray(answers[compute.over]) ? (answers[compute.over] as Record<string, unknown>[]) : [{}];
+      return { ...answers, [compute.over]: [{ ...rows[0], [compute.of]: amount }] };
+    }
+    return { ...answers, [money!]: amount };
+  };
+
   return [
     {
       key: 'happy_path',
@@ -887,7 +926,7 @@ function tests(spec: PackSpec, answers: Record<string, unknown>, rules: Category
             kind: 'happy_path',
             name: `Over ${rules.threshold.over} it also needs the ${titleOf(rules.threshold.approval.byRole).toLowerCase()}`,
             steps: [
-              { step: 'submit', answers: { ...answers, [moneyField(spec)!]: rules.threshold.over + 500 } },
+              { step: 'submit', answers: withAmount(rules.threshold.over + 500) },
               ...approveAll.slice(1),
               {
                 step: 'decide',
@@ -958,12 +997,21 @@ function tests(spec: PackSpec, answers: Record<string, unknown>, rules: Category
 }
 
 /** A plausible answer for each field, so the generated tests can run. */
-function sampleAnswers(fields: PackField[]): Record<string, unknown> {
+function sampleAnswers(fields: PackField[], spec?: PackSpec): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const f of fields) {
-    if (f.key === 'decision_note' || f.setBy === 'operator') continue;
+    if (f.key === 'decision_note' || f.setBy === 'operator' || f.type === 'calculated') continue;
     if (f.sample !== undefined) {
       out[f.key] = f.sample;
+      continue;
+    }
+    // A question in a section that is only sometimes shown, or required only
+    // sometimes, is left unanswered unless the spec says what to answer: the
+    // generated tests walk the ordinary path, and an answer to a hidden
+    // question is what the public form's screening holds for review.
+    if (spec && (conditional(spec, f) || f.requiredWhen)) continue;
+    if (f.type === 'repeating_group') {
+      out[f.key] = [sampleAnswers(f.fields ?? [])];
       continue;
     }
     switch (f.type) {
@@ -1012,13 +1060,35 @@ function sampleAnswers(fields: PackField[]): Record<string, unknown> {
   return out;
 }
 
+/** One spec field as the blueprint writes it, rows of a list included. */
+function emitField(f: PackField): Record<string, unknown> {
+  return {
+    key: f.key,
+    type: f.type,
+    label: f.label,
+    ...(f.type === 'calculated' ? {} : { required: f.required ?? false }),
+    classification: f.classification ?? 'internal',
+    ...(f.choices ? { choices: f.choices.map((c) => ({ value: c, label: titleOf(c) })) } : {}),
+    ...(f.reason ? { collectionReason: f.reason } : {}),
+    ...(f.help ? { help: f.help } : {}),
+    ...(f.constraints ? { constraints: f.constraints } : {}),
+    ...(f.requiredWhen ? { requiredWhen: f.requiredWhen } : {}),
+    ...(f.compute ? { compute: f.compute } : {}),
+    ...(f.fields ? { fields: f.fields.map((child) => emitField(child)) } : {}),
+    ...(f.key === 'decision_note' || f.setBy === 'operator' ? { setBy: 'operator' } : {}),
+  };
+}
+
 export function buildBlueprint(spec: PackSpec): unknown {
   const rules = rulesFor(spec.category);
   const fields = standardFields(spec);
-  const placed = fields.filter((f) => f.key !== 'decision_note' && f.setBy !== 'operator');
+  const placed = fields.filter((f) => f.key !== 'decision_note' && f.setBy !== 'operator' && f.type !== 'calculated');
   const contextFields = placed.map((f) => f.key);
-  const answers = sampleAnswers(placed);
+  const answers = sampleAnswers(placed, spec);
   const detailFields = [...respondentFields(spec), ...autoSignature(spec)];
+  if (spec.moneyField && !spec.fields.some((f) => f.key === spec.moneyField)) {
+    throw new Error(`${spec.key}: moneyField "${spec.moneyField}" is not one of its fields`);
+  }
   if (spec.formSteps) {
     const listed = spec.formSteps.flatMap((step) => step.fields);
     const expected = detailFields.map((field) => field.key);
@@ -1031,7 +1101,7 @@ export function buildBlueprint(spec: PackSpec): unknown {
         const onStep = step.fields.map((key) => detailFields.find((field) => field.key === key)!);
         return { key: step.key, title: step.title, sections: [{ key: step.key, fields: step.fields, ...widths(onStep) }] };
       })
-    : [{ key: 'details', title: spec.name, sections: sectionsFor(detailFields) }];
+    : [{ key: 'details', title: spec.name, sections: sectionsFor(detailFields, spec.groups) }];
 
   const ceiling =
     spec.sensitivityCeiling ??
@@ -1106,18 +1176,7 @@ export function buildBlueprint(spec: PackSpec): unknown {
       // which is right here by luck of declaration order and would stop being
       // right the day a pack asked for somebody else's address first.
       submitterField: 'submitter_email',
-      fields: fields.map((f) => ({
-        key: f.key,
-        type: f.type,
-        label: f.label,
-        required: f.required ?? false,
-        classification: f.classification ?? 'internal',
-        ...(f.choices ? { choices: f.choices.map((c) => ({ value: c, label: titleOf(c) })) } : {}),
-        ...(f.reason ? { collectionReason: f.reason } : {}),
-        ...(f.help ? { help: f.help } : {}),
-        ...(f.constraints ? { constraints: f.constraints } : {}),
-        ...(f.key === 'decision_note' || f.setBy === 'operator' ? { setBy: 'operator' } : {}),
-      })),
+      fields: fields.map((f) => emitField(f)),
     },
     experience: {
       showProgress: true,

@@ -30,6 +30,7 @@ import {
   type PublicForm,
 } from '../../components/form-surface';
 import { DEFAULT_PER_STEP, layoutPages, type Layout } from '../../components/form-layout';
+import { holds } from '../../components/conditions';
 import './side.css';
 
 // Structural, not imported: the builder owns the blueprint type, and importing
@@ -47,10 +48,12 @@ interface Shape {
       key: string;
       title: string;
       description?: string;
+      visibleWhen?: unknown;
       sections?: {
         key: string;
         title?: string;
         description?: string;
+        visibleWhen?: unknown;
         fields?: string[];
         widths?: Record<string, string>;
       }[];
@@ -225,6 +228,10 @@ export function FormPreview({
                 {(currentPage.sections ?? []).map((section) => {
                   const fields = (section.fields ?? []).map((k) => byKey.get(k)).filter(Boolean) as PreviewField[];
                   if (!fields.length) return null;
+                  // Shown and hidden as the live form does it, from the answers
+                  // typed here, so a conditional section is seen only once its
+                  // condition holds.
+                  if (section.visibleWhen && !holds(section.visibleWhen, answers)) return null;
                   const Wrapper = section.title ? 'section' : 'div';
                   return (
                     <Wrapper className="fm__section" key={section.key} aria-labelledby={section.title ? `psec-${section.key}` : undefined}>

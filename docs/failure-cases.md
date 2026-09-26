@@ -1007,6 +1007,14 @@ The accessibility notes were honest that nobody had heard the form read aloud. W
 
 The session is a script now (`scripts/screen-reader-session.mjs`), so the next change to the form can be heard as well as seen. Its limit is real: it drives focus, not NVDA's browse mode, and it is one reader on one platform.
 
+### 103. One hundred and twenty-two templates, one shape
+
+Every template compiled, passed its category audit and had a name that fit its category, and almost all of them were the same form: six required questions, one section, no help, no validation, nothing that appeared or disappeared with an answer. Measured rather than felt, 96% had no help text on any question, 99% no validation, 98% no sections of their own, and none had a conditional question. Budget transfer had been rebuilt by hand and was the exception. A catalogue like that teaches a customer that the templates are placeholders, which is the one thing a template must not teach.
+
+The fourteen most reached-for were rebuilt to budget transfer's depth. Doing that took the generator further than the specs could say: sections with a line under them and a condition for showing them, questions required only under a condition, lists of rows with a worked-out total, and a threshold that reads the total rather than a typed amount. The generated tests had to learn the same things: an answer to a question in a hidden section is what the public form's screening holds for review, so the sample answers leave conditional questions alone, and "over the limit" raises a row of the list rather than typing over a total nobody types. All 989 generated scenarios pass across the 122.
+
+`npm run packs:depth` prints the measurement, thinnest first, so the remaining hundred and eight are a ranked list rather than a feeling.
+
 ### 90. Every new column needed a re-seed
 
 `schema.sql` describes a database created from nothing, and there was no other way to change one. Each release that added a table or a column reached a running database only by dropping it and seeding again, which signed every member out and emptied the workspace — in development that was several times a day, and it was part of why somebody could not sign in. A deployed database had no path at all.
