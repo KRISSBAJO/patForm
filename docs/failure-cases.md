@@ -1023,6 +1023,14 @@ The page-by-page check knew which sections were hidden and did not ask for their
 
 Found by the template pass, the moment a template put a required question behind a condition and a generated test filled a hidden yes/no with "yes". One function now decides what is missing, beside the visibility logic it has to respect, and the runner fills in only what the form shows, going round again when an answer reveals more.
 
+### 105. Forty-five templates with nothing to check
+
+The depth measure said 45% of templates had no validation on any question. Most of them ask for dates, names, choices and free text, and the first answer was that there was nothing to constrain. There was: a leave request that ends before it starts, a trip that returns before it leaves, a discounted price above the list price, a start date three years out on a form about next month. None of it was expressible, because a constraint could only look at its own answer, and a date window had to be written by hand in days.
+
+**Fixed** in two passes. The first gave every date a window that fits it, every required free text a minimum, and every name a length, from six shared windows and generator defaults, so the measure went from 45% to none. The second added `notBefore` and `atMost`, one field's answer checked against another's, with the compiler refusing a comparison with a field that does not exist or is not the same kind. Twenty-two templates use them. A comparison against a worked-out total is not allowed: the validator sees what was submitted, and the total is worked out afterwards.
+
+**Generalisable:** "nothing to validate" usually means the vocabulary cannot say what is wrong, not that nothing can be. Look at what a person gets wrong on the paper form before concluding the digital one has nothing to check.
+
 ### 90. Every new column needed a re-seed
 
 `schema.sql` describes a database created from nothing, and there was no other way to change one. Each release that added a table or a column reached a running database only by dropping it and seeding again, which signed every member out and emptied the workspace — in development that was several times a day, and it was part of why somebody could not sign in. A deployed database had no path at all.

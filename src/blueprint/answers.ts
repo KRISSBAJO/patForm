@@ -51,7 +51,19 @@ export function visibleFields(bp: Blueprint, answers: Answers, now = new Date())
 }
 
 /** Validates one field's value. Returns null when it is acceptable. */
-export function checkField(field: Field, value: unknown): string | null {
+/**
+ * What a check may look at besides its own answer.
+ *
+ * `notBefore` and `atMost` compare with another field's answer, so the
+ * validator that has the whole form passes it in. A caller with one value
+ * and no form gets the single-field checks and nothing else.
+ */
+export interface Others {
+  answers: Answers;
+  labelOf: (key: string) => string;
+}
+
+export function checkField(field: Field, value: unknown, others?: Others): string | null {
   if (isBlank(value)) {
     return field.required ? `${field.label} is required.` : null;
   }
@@ -78,6 +90,12 @@ export function checkField(field: Field, value: unknown): string | null {
       if (field.type === 'rating' && c?.scale && (n < 1 || n > c.scale)) {
         return custom ?? `Choose between 1 and ${c.scale}.`;
       }
+      if (c?.atMost && others) {
+        const other = Number(others.answers[c.atMost]);
+        if (Number.isFinite(other) && n > other) {
+          return `${field.label} cannot be more than ${others.labelOf(c.atMost).toLowerCase()}.`;
+        }
+      }
       break;
     }
 
@@ -91,6 +109,12 @@ export function checkField(field: Field, value: unknown): string | null {
       }
       if (c?.maxDaysFromToday !== undefined && days > c.maxDaysFromToday) {
         return custom ?? `${field.label} is too far in the future.`;
+      }
+      if (c?.notBefore && others) {
+        const other = others.answers[c.notBefore];
+        if (typeof other === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(other) && value < other) {
+          return `${field.label} cannot be before ${others.labelOf(c.notBefore).toLowerCase()}.`;
+        }
       }
       break;
     }
@@ -208,6 +232,12 @@ export function validateAnswers(
   const now = opts.now ?? new Date();
   const visible = visibleFields(bp, answers, now);
   const errors: FieldError[] = [];
+  const labels = new Map<string, string>();
+  for (const field of bp.data.fields) {
+    labels.set(field.key, field.label);
+    for (const child of field.fields ?? []) labels.set(child.key, child.label);
+  }
+  const labelOf = (key: string) => labels.get(key) ?? key;
 
   for (const field of bp.data.fields) {
     // Never asked, never entered, or worked out by the runtime.
@@ -217,7 +247,7 @@ export function validateAnswers(
     if (opts.scope && !opts.scope.includes(field.key)) continue;
 
     const required = Boolean(field.required || (field.requiredWhen && evaluate(field.requiredWhen, { answers, now })));
-    const message = checkField({ ...field, required }, answers[field.key]);
+    const message = checkField({ ...field, required }, answers[field.key], { answers, labelOf });
     if (message) errors.push({ field: field.key, message });
 
     // Rows inside a repeating group are checked against the group's own fields.
@@ -227,7 +257,7 @@ export function validateAnswers(
         for (const child of field.fields ?? []) {
           const rowAnswers = { ...answers, ...row };
           const required = Boolean(child.required || (child.requiredWhen && evaluate(child.requiredWhen, { answers: rowAnswers, now })));
-          const childMessage = checkField({ ...child, required }, row?.[child.key]);
+          const childMessage = checkField({ ...child, required }, row?.[child.key], { answers: rowAnswers, labelOf });
           if (childMessage) {
             errors.push({ field: `${field.key}[${index}].${child.key}`, message: childMessage });
           }

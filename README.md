@@ -110,8 +110,14 @@ says these with `group`, `groups` (a section's line and its `visibleWhen`),
 field and `moneyField`. Any question whose key says it holds a reference,
 number, code, tag or version gets a shape check from the generator unless the
 template gives its own, so a paste of the wrong field is caught on every form
-and not only the ones somebody thought about. `npm run packs:depth` measures
-every template so a thin one is a list entry, not an impression.
+and not only the ones somebody thought about. Every date carries a window
+that fits it, so leave starts soon and an incident happened recently, and a
+date that must follow another says so with `notBefore`: leave cannot end
+before it starts, a trip cannot return before it leaves. A discounted price
+says `atMost: 'list_price'`. The compiler refuses a comparison with a field
+that does not exist or is not the same kind (`TYPE009`). `npm run
+packs:depth` measures every template so a thin one is a list entry, not an
+impression.
 
 **A screen-reader session, recorded.** `npm run sr:session -- <form url>
 <nvda log>` drives the public form in Chromium by keyboard while NVDA is

@@ -499,6 +499,30 @@ export function validate(bp: Blueprint, requestedDescription?: string): Diagnost
     );
   }
 
+  // A comparison names another field. It must exist and be comparable: a
+  // date with a date, an amount with an amount. Not a worked-out total: the
+  // validator sees what was submitted, and a total is worked out afterwards.
+  const byKey = new Map(allFields.map(({ field }) => [field.key, field]));
+  for (const { path, field } of allFields) {
+    const at = `data.fields.${path}`;
+    const c = field.constraints;
+    if (c?.notBefore) {
+      const other = byKey.get(c.notBefore);
+      if (field.type !== 'date') d.error('TYPE009', at, `Only a date field can say "notBefore"; "${field.key}" is a ${field.type}.`);
+      else if (!other) d.error('TYPE009', at, `"${field.key}" cannot be before "${c.notBefore}", which does not exist.`);
+      else if (other.type !== 'date') d.error('TYPE009', at, `"${field.key}" cannot be compared with "${c.notBefore}", which is a ${other.type}, not a date.`);
+      else if (other.key === field.key) d.error('TYPE009', at, `"${field.key}" cannot be compared with itself.`);
+    }
+    if (c?.atMost) {
+      const other = byKey.get(c.atMost);
+      const numeric = new Set(['number', 'currency']);
+      if (!numeric.has(field.type)) d.error('TYPE009', at, `Only a number or currency field can say "atMost"; "${field.key}" is a ${field.type}.`);
+      else if (!other) d.error('TYPE009', at, `"${field.key}" cannot exceed "${c.atMost}", which does not exist.`);
+      else if (!numeric.has(other.type)) d.error('TYPE009', at, `"${field.key}" cannot be compared with "${c.atMost}", which is a ${other.type}, not an amount.`);
+      else if (other.key === field.key) d.error('TYPE009', at, `"${field.key}" cannot be compared with itself.`);
+    }
+  }
+
   for (const { path, field } of allFields) {
     if (field.type !== 'file') continue;
     const at = `data.fields.${path}`;

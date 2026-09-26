@@ -87,6 +87,16 @@ export const Constraints = z
     /** date only: bounds expressed relative to submission, in days */
     minDaysFromToday: z.number().int().optional(),
     maxDaysFromToday: z.number().int().optional(),
+    /**
+     * date only: may not be earlier than the named date field's answer.
+     *
+     * The commonest real mistake on a form with two dates is the second
+     * before the first. Equal is allowed: leave can start and end the same
+     * day. The named field must be a date, which the compiler checks.
+     */
+    notBefore: z.string().min(1).optional(),
+    /** number or currency only: may not exceed the named field's answer. */
+    atMost: z.string().min(1).optional(),
   })
   .strict();
 

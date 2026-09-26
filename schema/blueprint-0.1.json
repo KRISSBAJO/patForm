@@ -517,6 +517,14 @@
                       },
                       "maxDaysFromToday": {
                         "type": "integer"
+                      },
+                      "notBefore": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "atMost": {
+                        "type": "string",
+                        "minLength": 1
                       }
                     },
                     "additionalProperties": false

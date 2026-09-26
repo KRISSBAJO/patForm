@@ -93,6 +93,7 @@ Errors block publication (BLD-07). Warnings appear in review and do not block, o
 | `TYPE003` | error | Choice field with no choices; empty repeating group |
 | `TYPE004` | error | Calculation over a non-numeric field, or a calculated field with no `compute` |
 | `TYPE005` | error | A calculated field refers to itself, directly or in a ring |
+| `TYPE009` | error | A `notBefore` or `atMost` comparison names a field that does not exist or is not comparable |
 
 ### Security and privacy — `SEC`
 
