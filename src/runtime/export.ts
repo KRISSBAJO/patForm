@@ -2,7 +2,9 @@ import { createHash } from 'node:crypto';
 import { isSignature, signatureWords } from '../blueprint/signature.js';
 import type { Blueprint } from '../blueprint/index.js';
 import { inTransaction, type Client, type Pool } from './db.js';
-import { redact, require_, type Principal } from './policy.js';
+import { redact, require_, visibleFields, type Principal } from './policy.js';
+import { currentRequestId } from './trace.js';
+import type { Field } from '../blueprint/data.js';
 
 /**
  * Exporting a record and its audit history.
@@ -429,4 +431,191 @@ export function bundleToCsv(bundle: ExportBundle): string {
   row(bundle.retention.days, bundle.retention.dueAt, bundle.retention.action);
 
   return out.join('\n');
+}
+
+// ------------------------------------------------------------ whole process
+
+/**
+ * Every submission of one process, as a spreadsheet: one row per record, one
+ * column per answer.
+ *
+ * The record export above is for a regulator with one case in hand. This is
+ * for the treasurer who wants every expense claim of the quarter in Excel, and
+ * it is the first thing a small organisation asks for once forms are coming
+ * in. It follows the same rules as every other read:
+ *
+ * - **Capability.** `report` rather than `administer`: an analyst or an
+ *   operator may take the sheet, an approver may not.
+ * - **Visibility.** A field this caller's roles may not see is not a column.
+ *   The response names those fields, so the gap is visible rather than a
+ *   quiet omission, and a cell never carries a "[redacted]" that a formula
+ *   would count as data.
+ * - **The blueprint's say.** `outputs.exportFields`, when set, is the column
+ *   list and its order. When it is empty, every answer field is a column.
+ * - **A record of the taking.** Each export is written to `process_export`
+ *   with who, when, how many rows and what was withheld.
+ *
+ * Values are what a spreadsheet wants: labels for choices, ISO dates, plain
+ * numbers, Yes/No, and the rows of a list as JSON. Not the on-screen text,
+ * which puts currency symbols and "12 Mar" in cells that then refuse to sum.
+ */
+export interface ProcessExport {
+  filename: string;
+  body: string;
+  rows: number;
+  withheld: string[];
+  /** True when the sheet stopped at the cap; the newest rows come first. */
+  truncated: boolean;
+}
+
+const BATCH = 2000;
+const CAP = 50_000;
+
+/** One cell for one answer, in the form a spreadsheet handles best. */
+export function exportCell(field: Pick<Field, 'type' | 'choices'>, value: unknown): string | number {
+  if (value === null || value === undefined || value === '') return '';
+  if (isSignature(value)) return signatureWords(value);
+  const label = (v: unknown) => field.choices?.find((c) => c.value === v)?.label ?? String(v);
+  switch (field.type) {
+    case 'single_choice':
+    case 'dropdown':
+      return label(value);
+    case 'multi_choice':
+    case 'matrix':
+      return Array.isArray(value) ? value.map(label).join('; ') : label(value);
+    case 'yes_no':
+    case 'signature_ack':
+      return value === true ? 'Yes' : value === false ? 'No' : String(value);
+    case 'number':
+    case 'currency':
+    case 'calculated':
+    case 'rating':
+      return typeof value === 'number' ? value : Number.isFinite(Number(value)) ? Number(value) : String(value);
+    case 'file':
+      return Array.isArray(value) ? `${value.length} file${value.length === 1 ? '' : 's'}` : '1 file';
+    case 'repeating_group':
+      return Array.isArray(value) ? JSON.stringify(value.map(stripRedacted)) : String(value);
+    default:
+      if (Array.isArray(value)) return value.map(String).join('; ');
+      if (typeof value === 'object') return JSON.stringify(stripRedacted(value as Record<string, unknown>));
+      return String(value);
+  }
+}
+
+function stripRedacted(row: unknown): unknown {
+  if (!row || typeof row !== 'object' || Array.isArray(row)) return row;
+  return Object.fromEntries(Object.entries(row as Record<string, unknown>).filter(([, v]) => v !== '[redacted]'));
+}
+
+function csvCell(value: string | number): string {
+  if (typeof value === 'number') return String(value);
+  // The same formula defence as the record export: a leading =, +, - or @
+  // would otherwise run on whoever opens the file.
+  const safe = /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
+  return `"${safe.replace(/"/g, '""')}"`;
+}
+
+export async function exportProcessCsv(
+  pool: Pool,
+  args: { principal: Principal; processKey: string; completed?: boolean; now?: Date },
+): Promise<ProcessExport> {
+  const now = args.now ?? new Date();
+  if (args.principal.kind !== 'actor') throw new Error('an export is taken by a signed-in member');
+  const tenantId = args.principal.tenantId;
+
+  const result = await inTransaction(pool, async (client) => {
+    const { rows: versions } = await client.query<{ blueprint: Blueprint }>(
+      `select blueprint from process_version
+        where tenant_id = $1 and process_key = $2 order by version desc limit 1`,
+      [tenantId, args.processKey],
+    );
+    if (!versions[0]) throw new Error(`no published process "${args.processKey}"`);
+    const bp = versions[0].blueprint;
+
+    const decision = await require_(
+      client,
+      { principal: args.principal, action: 'report', tenantId, processKey: args.processKey, blueprint: bp },
+      pool,
+    );
+
+    const askedFor = bp.outputs.exportFields.length
+      ? bp.outputs.exportFields
+      : bp.data.fields.filter((f) => f.type !== 'content' && f.type !== 'hidden').map((f) => f.key);
+    const visible = new Set(visibleFields(bp, decision.roles, decision.workspaceRole));
+    const byKey = new Map(bp.data.fields.map((f) => [f.key, f]));
+    const columns = askedFor.map((k) => byKey.get(k)).filter((f): f is Field => Boolean(f) && visible.has(f!.key));
+    const withheld = askedFor.filter((k) => byKey.has(k) && !visible.has(k));
+    const stateName = new Map(bp.workflow.states.map((st) => [st.key, st.name]));
+
+    const lines: string[] = [];
+    const header = ['Reference', 'Stage', 'Outcome', 'Created', 'Completed', ...columns.map((c) => c.label)];
+    lines.push(header.map(csvCell).join(','));
+
+    const where = ['i.tenant_id = $1', 'i.process_key = $2'];
+    if (args.completed !== undefined) where.push(args.completed ? 'i.completed_at is not null' : 'i.completed_at is null');
+
+    let count = 0;
+    let truncated = false;
+    interface Row { id: string; state: string; outcome: string | null; created_at: Date; completed_at: Date | null; data: Record<string, unknown> }
+    let after: { createdAt: Date; id: string } | null = null;
+    for (;;) {
+      const params: unknown[] = [tenantId, args.processKey, BATCH];
+      const page: string = after === null ? '' : `and (i.created_at, i.id) < ($4, $5)`;
+      if (after !== null) params.push(after.createdAt, after.id);
+      const { rows }: { rows: Row[] } = await client.query<Row>(
+        `select i.id, i.state, i.outcome, i.created_at, i.completed_at, i.data
+           from instance i where ${where.join(' and ')} ${page}
+          order by i.created_at desc, i.id desc limit $3`,
+        params,
+      );
+      for (const r of rows) {
+        if (count >= CAP) { truncated = true; break; }
+        const data = redact(bp, decision.roles, r.data, decision.workspaceRole);
+        const cells: (string | number)[] = [
+          reference(r.id),
+          stateName.get(r.state) ?? r.state,
+          r.outcome ?? '',
+          r.created_at.toISOString(),
+          r.completed_at ? r.completed_at.toISOString() : '',
+          ...columns.map((c) => exportCell(c, data[c.key])),
+        ];
+        lines.push(cells.map(csvCell).join(','));
+        count++;
+      }
+      if (truncated || rows.length < BATCH) break;
+      const last: Row = rows[rows.length - 1]!;
+      after = { createdAt: last.created_at, id: last.id };
+    }
+
+    const stamp = now.toISOString().slice(0, 10);
+    const which = args.completed === undefined ? '' : args.completed ? '-finished' : '-open';
+    return {
+      // A byte-order mark, so Excel reads the file as UTF-8 and a name with
+      // an accent survives the trip.
+      body: `\ufeff${lines.join('\r\n')}\r\n`,
+      filename: `${args.processKey}${which}-${stamp}.csv`,
+      rows: count,
+      withheld,
+      truncated,
+    };
+  });
+
+  // Recorded after the read commits and outside it, like the record export:
+  // that a copy was taken is true whether or not anything else succeeds.
+  await pool.query(
+    `insert into process_export (tenant_id, process_key, actor, rows, withheld, filters, request_id, occurred_at)
+     values ($1, $2, $3, $4, $5, $6, $7, $8)`,
+    [
+      tenantId,
+      args.processKey,
+      args.principal.actorId,
+      result.rows,
+      result.withheld,
+      JSON.stringify({ completed: args.completed ?? null }),
+      currentRequestId(),
+      now,
+    ],
+  );
+
+  return result;
 }

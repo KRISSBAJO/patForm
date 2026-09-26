@@ -166,3 +166,17 @@ $$ language plpgsql;
 drop trigger if exists platform_admin_audit_no_change on platform_admin_audit;
 create trigger platform_admin_audit_no_change before update or delete on platform_admin_audit
   for each row execute function platform_admin_audit_is_append_only();
+
+-- Who took a spreadsheet of a whole process, when, and what it left out.
+create table if not exists process_export (
+  id          bigserial primary key,
+  tenant_id   uuid not null,
+  process_key text not null,
+  actor       text,
+  rows        int not null,
+  withheld    text[] not null default '{}',
+  filters     jsonb not null default '{}'::jsonb,
+  request_id  text not null default 'unattributed',
+  occurred_at timestamptz not null default now()
+);
+create index if not exists process_export_tenant on process_export (tenant_id, occurred_at desc);

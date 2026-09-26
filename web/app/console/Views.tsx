@@ -235,6 +235,8 @@ export function RecordsView({
   const [query, setQuery] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [downloading, setDownloading] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
   /*
    * Ticked rows, by id. Kept across "load more" and across a search, because
    * people select from several screens of results before acting — and cleared
@@ -285,6 +287,39 @@ export function RecordsView({
     void load();
   }, [load]);
 
+  /*
+   * The whole process as a spreadsheet, not the page that happens to be
+   * loaded. The current "still running / finished" filter carries over; the
+   * search text does not, because a search is for finding one record and a
+   * download is for having all of them.
+   */
+  const download = async () => {
+    setDownloading(true);
+    setNote(null);
+    try {
+      const params = new URLSearchParams();
+      if (filter === 'open') params.set('completed', 'false');
+      if (filter === 'done') params.set('completed', 'true');
+      const out = await call<{ filename: string; body: string; rows: number; withheld: string[]; truncated: boolean }>(
+        `/api/browse/${processKey}/export${params.size ? `?${params}` : ''}`,
+      );
+      const url = URL.createObjectURL(new Blob([out.body], { type: 'text/csv;charset=utf-8' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = out.filename;
+      a.click();
+      URL.revokeObjectURL(url);
+      const parts = [`Downloaded ${out.rows} record${out.rows === 1 ? '' : 's'} as ${out.filename}.`];
+      if (out.withheld.length) parts.push(`${out.withheld.length} field${out.withheld.length === 1 ? '' : 's'} hidden from your roles left out: ${out.withheld.join(', ')}.`);
+      if (out.truncated) parts.push('Stopped at 50,000 rows; the newest are included.');
+      setNote(parts.join(' '));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   return (
     <div className="rv">
       <header className="rv__intro"><div><span className="db__eyebrow">PROCESS RECORDS</span><h2>Every case, in one place</h2><p>Search the answers you can see, then open a record to review its full history.</p></div><span className="rv__count">{busy ? 'Searching…' : `${rows.length}${hasMore ? '+' : ''} ${rows.length === 1 && !hasMore ? 'record' : 'records'} shown`}</span></header>
@@ -329,7 +364,14 @@ export function RecordsView({
             <option value="reference">By reference</option>
           </select>
         </label>
+
+        <button type="button" className="cs__btn rv__download" onClick={() => void download()} disabled={downloading}>
+          <Icon name="export" />
+          {downloading ? 'Preparing\u2026' : 'Download CSV'}
+        </button>
       </div>
+
+      {note && <p className="vw__footnote rv__note" role="status">{note}</p>}
 
       {error && (
         <div className="cs__empty" role="alert">

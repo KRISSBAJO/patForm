@@ -5171,3 +5171,8 @@ a.cs__navItem {
 .rc__noteLink:hover { text-decoration: underline; }
 @media (max-width: 1120px) { .rc__body { flex-direction: column; } .rc__answers.cs__panel, .rc__side { width: 100%; flex: none; } .rc__side { flex-direction: row; } .rc__sidePanel { flex: 1 1 0; } }
 @media (max-width: 680px) { .rc__side { flex-direction: column; } .rc__answerTable { min-width: 600px; } }
+
+
+/* The Records view's download: at the end of the controls, a button not a link. */
+.rv__download { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; white-space: nowrap; }
+.rv__note { margin: 0 0 10px; }

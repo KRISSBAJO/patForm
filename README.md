@@ -420,6 +420,17 @@ Then `npm run retention` applies the configured action. The order in that
 sentence is the requirement: retention deletes the record and its events, so
 afterwards there is nothing left to export.
 
+**Every record of a process, as one spreadsheet.** The **Download CSV** button
+on a process's Records page gives one row per record and one column per
+answer, with the "still running / finished" filter carried over. It needs the
+`report` capability, so an analyst or an operator may take it and an approver
+may not. Choices export as their labels, numbers as numbers, dates as ISO, and
+the rows of a list as JSON, so the columns sort and sum. A field the caller's
+roles may not see is not a column, and the page says which were left out.
+When the process declares `outputs.exportFields`, that is the column list and
+its order. Each download is recorded in `process_export` with who, when, how
+many rows and what was withheld. The sheet stops at 50,000 rows, newest first.
+
 ## Recovering from a backup
 
 ```bash

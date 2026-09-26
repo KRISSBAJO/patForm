@@ -1247,3 +1247,17 @@ create table mfa_challenge (
   used_at    timestamptz,
   created_at timestamptz not null default now()
 );
+
+-- Who took a spreadsheet of a whole process, when, and what it left out.
+create table if not exists process_export (
+  id          bigserial primary key,
+  tenant_id   uuid not null,
+  process_key text not null,
+  actor       text,
+  rows        int not null,
+  withheld    text[] not null default '{}',
+  filters     jsonb not null default '{}'::jsonb,
+  request_id  text not null default 'unattributed',
+  occurred_at timestamptz not null default now()
+);
+create index if not exists process_export_tenant on process_export (tenant_id, occurred_at desc);

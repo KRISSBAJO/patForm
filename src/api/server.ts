@@ -99,7 +99,7 @@ import { proposeRule } from '../ai/rule.js';
 import { recordUsage } from '../runtime/ai-usage.js';
 import { Blueprint } from '../blueprint/index.js';
 import { QueryPlan, ActionPlan } from '../copilot/plan.js';
-import { bundleToCsv, exportRecord } from '../runtime/export.js';
+import { bundleToCsv, exportProcessCsv, exportRecord } from '../runtime/export.js';
 import {
   claimDraft,
   createDraft,
@@ -528,6 +528,16 @@ route('GET', /^\/api\/dashboard\/([a-z0-9_]+)$/, async ({ pool, principal, url }
     days: Number(url.searchParams.get('days') ?? 30),
   }),
 );
+
+// Every record of a process as one CSV: a row each, a column per answer.
+route('GET', /^\/api\/browse\/([a-z0-9_]+)\/export$/, async ({ pool, principal, url }) => {
+  const out = await exportProcessCsv(pool, {
+    principal,
+    processKey: url.pathname.split('/')[3]!,
+    completed: url.searchParams.has('completed') ? url.searchParams.get('completed') === 'true' : undefined,
+  });
+  return { contentType: 'text/csv', ...out };
+});
 
 route('GET', /^\/api\/browse\/([a-z0-9_]+)$/, async ({ pool, principal, url }) =>
   listRecordsPage(pool, {
