@@ -29,6 +29,7 @@ const RATES: Record<string, Rates> = {
 export class AnthropicProvider implements Provider {
   readonly name = 'anthropic';
   readonly model: string;
+  readonly maxOutputTokens = 64000;
   private readonly client: Anthropic;
   private structuredOutputWorks = true;
   /** Why structured output was abandoned, surfaced once so it is not invisible. */

@@ -5,6 +5,7 @@ import { costOf, extractJson, type GenerationRequest, type Provider, type Provid
 export class DeepSeekProvider implements Provider {
   readonly name = 'deepseek';
   readonly model: string;
+  readonly maxOutputTokens = 32000;
   private readonly client: OpenAI;
   private readonly rates: Rates | undefined;
 

@@ -59,7 +59,7 @@ export interface GenerateOptions {
   /** When given, a clean blueprint also has to pass its own scenarios. */
   pool?: Pool;
   /** Optional durable status callback for a queued draft. */
-  onProgress?: (stage: 'generating' | 'checking') => Promise<void>;
+  onProgress?: (stage: 'generating' | 'checking', note?: string) => Promise<void>;
 }
 
 /**
@@ -120,7 +120,12 @@ export async function generateBlueprint(
   let editable: GenerationOutcome['editable'];
 
   for (let attempt = 1; attempt <= maxRepairs + 1; attempt++) {
-    await options.onProgress?.('generating');
+    await options.onProgress?.(
+      'generating',
+      attempt > 1
+        ? `Attempt ${attempt} of ${maxRepairs + 1}: fixing ${diagnostics.filter((d) => d.severity === 'error').length} thing(s) the checks found`
+        : undefined,
+    );
     const response = await provider.generate({
       description: options.description,
       pack: options.pack,
@@ -137,7 +142,7 @@ export async function generateBlueprint(
     }
 
     // ------------------------------------------------------------ gate one
-    await options.onProgress?.('checking');
+    await options.onProgress?.('checking', 'Compiling the draft and running its scenarios on the engine');
     const candidate = response.parsed ?? tryExtract(response.text);
     const parsed = Blueprint.safeParse(candidate);
 

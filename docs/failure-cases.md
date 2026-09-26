@@ -967,6 +967,14 @@ And two mechanical slips that cost a repair turn each — `"yes"` against a yes/
 
 The Anthropic provider aborted every request at two minutes. A page-long description becomes a 25,000-token blueprint, which takes longer than that to write, so the model that would have produced the best draft of the hardest descriptions timed out on all of them, and the fallback chain moved on. Ten minutes now; the drafting worker's heartbeat already covers long jobs.
 
+### 97. Twenty-four minutes of "AI is drafting"
+
+A 6,600-character description went to three providers in turn. The first returned JSON cut off at its output limit and was reported as "invalid JSON". The second is capped at 16,000 output tokens and cannot hold a blueprint that size at all; it was asked anyway and came back cut off. The third, the strongest and slowest, produced a clean draft of 150 fields and 21 stages after twenty minutes. Throughout, the page showed a static dark box reading "AI is drafting", which after seven minutes reads as a box that has stopped.
+
+**Fixed** in three parts. Each provider declares how much it can write, and one that cannot fit an estimate of the answer — about five output tokens per character of description — is skipped rather than asked and cut off, which takes four minutes off this case. The worker writes what it is doing to the job: which model, which attempt, what it is fixing, and the page shows it. And the status card moves the whole time work is happening — a beacon, a light across the card, rippling bars, a line that changes every few seconds saying what is being designed, and a clock — with everything still for people who have asked for less motion.
+
+**Generalisable:** a wait with no visible change is indistinguishable from a failure, and the longer the wait, the more certain the person becomes. Show the work.
+
 ### 90. Every new column needed a re-seed
 
 `schema.sql` describes a database created from nothing, and there was no other way to change one. Each release that added a table or a column reached a running database only by dropping it and seeding again, which signed every member out and emptied the workspace — in development that was several times a day, and it was part of why somebody could not sign in. A deployed database had no path at all.

@@ -133,3 +133,64 @@
 @media(max-width:800px) { .aiPage__grid { grid-template-columns:minmax(0,1fr); } .aiPage__side { display:block; } .aiPage__aside { display:block; } .aiPage__sideNote { margin-top:16px; } }
 @media(max-width:540px) { .aiPage__top { height:54px; padding:0 14px; } .aiPage__breadcrumb { gap:7px; } .aiPage__breadcrumb a:not(.aiPage__brand),.aiPage__breadcrumb span { display:none; } .aiPage__topActions { gap:7px; } .aiPage__engine { display:none; } .aiPage__back { padding:7px 9px; font-size:11px; } .aiPage__body { padding:16px 12px 48px; } .aiPage__main,.aiPage__side { gap:12px; } .aiPage__card { padding:21px 18px; } .aiPage__cardHead { margin-bottom:19px; } .aiPage__cardHead h2 { font-size:18px; } .aiPage__progress { padding:19px 17px; } .aiPage__step small { font-size:10px; } .aiPage__aside { padding:20px 18px; } .aiPage__sideNote { margin-top:12px; } }
 @media(prefers-reduced-motion:reduce) { .aiPage__activity span,.aiPage__step.isActive > span,.aiPage__progressIcon { animation:none; } }
+
+
+/* ------------------------------------------------ the live status card */
+
+.aiLive { position:relative; overflow:hidden; display:flex; flex-direction:column; gap:8px; margin-top:18px; padding:16px 16px 14px; border:1px solid #1f4a37; border-radius:12px; background:linear-gradient(160deg,#16382a 0%,#0f2d21 100%); color:#fff; box-shadow:0 14px 34px -22px rgba(15,45,33,.9); }
+.aiLive[data-state="working"] { animation:aiLive-breathe 2.6s ease-in-out infinite; }
+.aiLive[data-state="ready"] { background:linear-gradient(160deg,#14663f 0%,#0f4e30 100%); border-color:#2f7d59; }
+.aiLive[data-state="review"] { background:linear-gradient(160deg,#6b4a12 0%,#4f360c 100%); border-color:#8a6420; }
+.aiLive[data-state="failed"] { background:linear-gradient(160deg,#6e2a25 0%,#521d19 100%); border-color:#8f3a33; }
+
+/* A light that crosses the card while it works. */
+.aiLive__sweep { position:absolute; inset:0; pointer-events:none; background:linear-gradient(110deg,transparent 30%,rgba(143,210,169,.22) 50%,transparent 70%); background-size:250% 100%; opacity:0; }
+.aiLive[data-state="working"] .aiLive__sweep { opacity:1; animation:aiLive-sweep 2.4s linear infinite; }
+
+.aiLive__head { position:relative; display:flex; align-items:center; gap:10px; }
+.aiLive__label { flex:1; color:#a4d3b8; font:10px/1.3 monospace; letter-spacing:.12em; text-transform:uppercase; }
+.aiLive__clock { font:600 12px/1 ui-monospace,Consolas,monospace; color:#dff0e6; padding:3px 7px; border-radius:999px; background:rgba(255,255,255,.1); font-variant-numeric:tabular-nums; }
+
+/* The beacon: a solid core and two rings that expand and fade. */
+.aiLive__beacon { position:relative; display:grid; place-items:center; width:22px; height:22px; border-radius:50%; background:#8fd2a9; color:#0f2d21; font-size:13px; font-weight:800; flex:none; }
+.aiLive[data-state="working"] .aiLive__beacon { background:transparent; }
+.aiLive[data-state="working"] .aiLive__beacon i { position:absolute; inset:0; border-radius:50%; }
+.aiLive[data-state="working"] .aiLive__beacon i:nth-child(1) { inset:6px; background:#8fd2a9; box-shadow:0 0 12px #8fd2a9; animation:aiLive-core 1.4s ease-in-out infinite; }
+.aiLive[data-state="working"] .aiLive__beacon i:nth-child(2) { border:2px solid #8fd2a9; animation:aiLive-ring 1.8s ease-out infinite; }
+.aiLive[data-state="working"] .aiLive__beacon i:nth-child(3) { border:2px solid #8fd2a9; animation:aiLive-ring 1.8s ease-out .6s infinite; }
+.aiLive[data-state="ready"] .aiLive__beacon { animation:aiLive-pop .5s cubic-bezier(.2,1.4,.4,1) both; }
+.aiLive[data-state="failed"] .aiLive__beacon { background:#f3b3ad; color:#521d19; }
+.aiLive[data-state="review"] .aiLive__beacon { background:#f4d58a; color:#4f360c; }
+
+.aiLive__title { position:relative; font-size:15px; line-height:1.3; letter-spacing:-.01em; }
+.aiLive__doing { position:relative; margin:0; min-height:18px; color:#d3e8dc; font-size:12.5px; line-height:1.45; animation:aiLive-line .45s ease-out both; }
+.aiLive__doing::after { content:'…'; }
+.aiLive[data-state="ready"] .aiLive__doing::after, .aiLive[data-state="failed"] .aiLive__doing::after, .aiLive[data-state="review"] .aiLive__doing::after { content:''; }
+.aiLive__sr { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; margin:0; }
+
+/* Seven bars rippling, the way a level meter breathes while a signal is live. */
+.aiLive__bars { position:relative; display:flex; align-items:flex-end; gap:4px; height:22px; margin-top:2px; }
+.aiLive__bars i { flex:1; height:30%; border-radius:3px 3px 1px 1px; background:linear-gradient(180deg,#8fd2a9,#3f8f66); animation:aiLive-bar 1.1s ease-in-out infinite; transform-origin:bottom; }
+
+.aiLive__note { position:relative; margin:2px 0 0; color:#a4d3b8; font-size:11px; line-height:1.45; }
+.aiLive__open { position:relative; display:inline-flex; align-items:center; gap:6px; align-self:flex-start; margin-top:4px; padding:7px 12px; border-radius:8px; background:#fff; color:#0f4e30; font-size:12.5px; font-weight:700; text-decoration:none; }
+.aiLive__open:hover { background:#e8f1eb; }
+
+@keyframes aiLive-sweep { from { background-position:150% 0; } to { background-position:-150% 0; } }
+@keyframes aiLive-breathe { 0%,100% { box-shadow:0 14px 34px -22px rgba(15,45,33,.9), 0 0 0 0 rgba(143,210,169,.0); } 50% { box-shadow:0 14px 34px -22px rgba(15,45,33,.9), 0 0 0 6px rgba(143,210,169,.14); } }
+@keyframes aiLive-core { 0%,100% { transform:scale(1); opacity:1; } 50% { transform:scale(.72); opacity:.7; } }
+@keyframes aiLive-ring { 0% { transform:scale(.45); opacity:.9; } 100% { transform:scale(1.35); opacity:0; } }
+@keyframes aiLive-bar { 0%,100% { height:25%; } 50% { height:100%; } }
+@keyframes aiLive-line { from { opacity:0; transform:translateY(5px); } to { opacity:1; transform:none; } }
+@keyframes aiLive-pop { from { transform:scale(.3); } to { transform:scale(1); } }
+
+@media(prefers-reduced-motion:reduce) {
+  .aiLive, .aiLive__sweep, .aiLive__beacon, .aiLive__beacon i, .aiLive__bars i, .aiLive__doing { animation:none !important; }
+  .aiLive__sweep { display:none; }
+  .aiLive[data-state="working"] .aiLive__beacon i:nth-child(1) { inset:5px; }
+  .aiLive[data-state="working"] .aiLive__beacon i:nth-child(2), .aiLive[data-state="working"] .aiLive__beacon i:nth-child(3) { display:none; }
+  .aiLive__bars i { height:55%; }
+  .aiLive__bars i:nth-child(odd) { height:35%; }
+}
+
+.aiLive__attempt { position:relative; margin:0; padding:6px 9px; border-radius:7px; background:rgba(255,255,255,.1); border-left:3px solid #8fd2a9; color:#eaf5ee; font-size:12px; line-height:1.4; }

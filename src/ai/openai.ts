@@ -30,6 +30,7 @@ function ratesFromEnv(): Rates | undefined {
 export class OpenAIProvider implements Provider {
   readonly name = 'openai';
   readonly model: string;
+  readonly maxOutputTokens = 16000;
   private readonly client: OpenAI;
   private readonly rates = ratesFromEnv();
   private schemaFormatWorks = true;

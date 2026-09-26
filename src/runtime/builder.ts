@@ -689,9 +689,11 @@ export interface NewProcess {
   copyFrom?: string;
 }
 
+const PROVIDER_LABEL: Record<ProviderName, string> = { deepseek: 'DeepSeek', openai: 'OpenAI', anthropic: 'Anthropic Claude' };
+
 export async function createDraft(
   pool: Pool,
-  args: { principal: Principal; input: NewProcess; onProgress?: (stage: 'generating' | 'checking' | 'saving') => Promise<void> },
+  args: { principal: Principal; input: NewProcess; onProgress?: (stage: 'generating' | 'checking' | 'saving', note?: string) => Promise<void> },
 ): Promise<DraftDetail & { audit?: GenerationOutcome['audit']; decision?: string; reviewNote?: string }> {
   const { principal, input } = args;
   await requireWorkspaceCapability(pool, principal, 'administer', input.key);
@@ -735,9 +737,28 @@ export async function createDraft(
     let lastProblem = 'The model did not return a valid process.';
     // A successful HTTP response can still contain an unusable blueprint.
     // Try the next configured provider in the requested priority order.
-    for (const name of input.provider ? [input.provider] : available) {
+    /*
+     * About five output tokens per character of description, measured on the
+     * drafts so far. A provider that cannot return that many would be cut off
+     * mid-object and read as no blueprint at all, so it is not asked.
+     */
+    const estimate = Math.ceil(input.description.length * 5);
+    const order = input.provider ? [input.provider] : available;
+    for (const name of order) {
+      const provider = providerFor(name);
+      if (provider.maxOutputTokens && estimate > provider.maxOutputTokens && order.length > 1) {
+        lastProblem = `${PROVIDER_LABEL[name]} cannot write a blueprint this large (about ${estimate.toLocaleString()} tokens; it returns at most ${provider.maxOutputTokens.toLocaleString()})`;
+        console.warn('AI provider skipped:', lastProblem);
+        continue;
+      }
+      await args.onProgress?.(
+        'generating',
+        name === order[0]
+          ? `Drafting with ${PROVIDER_LABEL[name]}`
+          : `Trying ${PROVIDER_LABEL[name]} now${name === 'anthropic' ? ' — the strongest model configured, which takes several minutes for a description this size' : ''}`,
+      );
       try {
-        const proposed = await generateBlueprint(providerFor(name), blueprintSchema(), {
+        const proposed = await generateBlueprint(provider, blueprintSchema(), {
           description: input.description,
           pack: input.pack,
           pool,

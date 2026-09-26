@@ -87,6 +87,8 @@ alter table ai_draft_job add column if not exists source_blueprint jsonb;
 alter table ai_draft_job add column if not exists proposal jsonb;
 alter table ai_draft_job add column if not exists review jsonb;
 alter table ai_draft_job add column if not exists applied_at timestamptz;
+-- What the worker is doing right now, for the page that is waiting.
+alter table ai_draft_job add column if not exists note text;
 create index if not exists ai_draft_job_queue on ai_draft_job (created_at) where status in ('queued', 'running');
 create unique index if not exists ai_draft_job_active_key on ai_draft_job (tenant_id, process_key) where status in ('queued', 'running');
 update process_draft set ai_review_required = true

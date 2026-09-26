@@ -51,6 +51,12 @@ export interface ProviderMeta {
 export interface Provider {
   readonly name: string;
   readonly model: string;
+  /**
+   * The most output tokens one reply can hold. A page-long description
+   * becomes a blueprint of 25,000 tokens or more; a provider that cannot
+   * return that many is skipped for it rather than asked and cut off.
+   */
+  readonly maxOutputTokens?: number;
   generate(request: GenerationRequest): Promise<ProviderResponse>;
 }
 

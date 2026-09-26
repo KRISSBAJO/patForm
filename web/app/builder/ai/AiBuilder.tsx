@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import './ai.css';
 
-type Job = { id: string; status: 'queued' | 'running' | 'ready' | 'failed'; stage: 'waiting' | 'generating' | 'checking' | 'saving'; process_key: string; process_name?: string | null; created_at: string; draft_id?: string | null; error?: string | null };
+type Job = { id: string; status: 'queued' | 'running' | 'ready' | 'failed'; stage: 'waiting' | 'generating' | 'checking' | 'saving'; process_key: string; process_name?: string | null; created_at: string; draft_id?: string | null; error?: string | null; note?: string | null };
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, { credentials: 'include', cache: 'no-store', headers: { 'content-type': 'application/json' }, ...init });
@@ -14,6 +14,85 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
 
 const example = 'A parent requests a place for a student. Collect the student and guardian details, emergency contact and documents. School administration checks the information, requests corrections if needed, then approves or rejects the request and sends the guardian an update.';
 const asKey = (value: string) => value.toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 48);
+
+/** What the AI is doing right now, in words that change as it works. */
+const DOING: Record<string, string[]> = {
+  waiting: ['Waiting for a drafting worker to pick this up'],
+  generating: [
+    'Reading your description',
+    'Naming every field and choosing its type',
+    'Laying the questions out on pages',
+    'Designing the stages and who decides at each',
+    'Wiring approvals, tasks and reminders',
+    'Writing the emails people will receive',
+    'Writing test scenarios to prove it works',
+  ],
+  checking: ['Compiling the blueprint against every rule', 'Running its scenarios on the real engine'],
+  saving: ['Saving your private draft'],
+};
+
+/**
+ * The live status card.
+ *
+ * It was three lines of static text on a dark box, and during a four-minute
+ * draft it looked exactly like a box that had stopped. Now it moves the whole
+ * time work is happening: a pulsing beacon, a light sweeping the card, bars
+ * that ripple, a line saying what the AI is doing that changes every few
+ * seconds, and a clock. The moment it finishes, the beacon becomes a tick.
+ * Everything that moves stops for people who have asked for less motion; the
+ * words and the clock still change, so the card is never mistaken for dead.
+ */
+function LiveStatus({ status, stage, title, detail, elapsed, review, draftId, note }: {
+  status: Job['status'];
+  /** What the worker says it is doing: which model, which attempt. */
+  note: string | null;
+  stage: Job['stage'];
+  title: string;
+  detail: string;
+  elapsed: number;
+  review: boolean;
+  draftId: string | null;
+}) {
+  const working = status === 'queued' || status === 'running';
+  const lines = DOING[status === 'queued' ? 'waiting' : stage] ?? DOING.generating!;
+  const [line, setLine] = useState(0);
+  useEffect(() => {
+    setLine(0);
+    if (!working || lines.length < 2) return;
+    const timer = setInterval(() => setLine((n) => (n + 1) % lines.length), 3800);
+    return () => clearInterval(timer);
+  }, [working, stage, lines.length]);
+  const state = status === 'ready' ? (review ? 'review' : 'ready') : status === 'failed' ? 'failed' : 'working';
+  const clock = `${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, '0')}`;
+
+  return (
+    <div className="aiLive" data-state={state} aria-live="polite">
+      <span className="aiLive__sweep" aria-hidden="true" />
+      <div className="aiLive__head">
+        <span className="aiLive__beacon" aria-hidden="true">
+          {state === 'working' ? <><i /><i /><i /></> : state === 'failed' ? '!' : state === 'review' ? '!' : '✓'}
+        </span>
+        <span className="aiLive__label">{state === 'working' ? 'Live · AI is working' : state === 'ready' ? 'Done' : state === 'review' ? 'Saved, needs review' : 'Stopped'}</span>
+        {working && <span className="aiLive__clock" aria-label={`${clock} elapsed`}>{clock}</span>}
+      </div>
+      <strong className="aiLive__title">{title}</strong>
+      {working ? (
+        <>
+          {note && <p className="aiLive__attempt">{note}</p>}
+          <p className="aiLive__doing" key={line} aria-hidden="true">{lines[line]}</p>
+          <p className="aiLive__sr">{detail}</p>
+          <div className="aiLive__bars" aria-hidden="true">{[0, 1, 2, 3, 4, 5, 6].map((i) => <i key={i} style={{ animationDelay: `${i * 0.12}s` }} />)}</div>
+          <p className="aiLive__note">{elapsed >= 150 ? 'A long description takes a few minutes. You can leave this page; the draft will be waiting.' : 'Usually two to four minutes for a description this size.'}</p>
+        </>
+      ) : (
+        <>
+          <p className="aiLive__doing">{detail}</p>
+          {status === 'ready' && draftId && <a className="aiLive__open" href={`/builder?draft=${draftId}`}>Open the draft →</a>}
+        </>
+      )}
+    </div>
+  );
+}
 
 export function AiBuilder() {
   const [description, setDescription] = useState('');
@@ -109,7 +188,7 @@ export function AiBuilder() {
             <div className="aiPage__progressFoot">{job?.status === 'running' || job?.status === 'queued' ? <span>Working for {Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, '0')}{elapsed >= 90 ? ' · Taking longer than expected' : ''}</span> : job?.status === 'failed' ? <span>No draft was saved</span> : null}{job?.status === 'ready' && job.draft_id && <a href={`/builder?draft=${job.draft_id}`}>Open draft →</a>}{job?.status === 'failed' && <button type="button" onClick={() => { setJobId(null); setJob(null); window.history.replaceState({}, '', '/builder/ai'); }}>Try again</button>}</div>
           </section>}
         </div>
-        <aside className="aiPage__side"><section className="aiPage__aside"><div className="aiPage__asideTop"><span className="aiPage__orb">✳</span><span>IN YOUR DRAFT</span></div><h2>Form and workflow</h2><p>AI creates a private draft from your description.</p><ol><li><strong>Questions</strong><span>Fields and pages for the person submitting.</span></li><li><strong>Decisions and work</strong><span>Approvals, routing and notifications.</span></li><li><strong>Checks before publishing</strong><span>Review issues in the builder.</span></li></ol>{jobId && <div className="aiPage__live"><span>LIVE STATUS</span><strong>{progressTitle}</strong><small>{stageDetail}</small></div>}</section><div className="aiPage__sideNote"><strong>Need custom logic?</strong><span>Open the draft to refine questions, rules and approvals before publishing.</span></div></aside>
+        <aside className="aiPage__side"><section className="aiPage__aside"><div className="aiPage__asideTop"><span className="aiPage__orb">✳</span><span>IN YOUR DRAFT</span></div><h2>Form and workflow</h2><p>AI creates a private draft from your description.</p><ol><li><strong>Questions</strong><span>Fields and pages for the person submitting.</span></li><li><strong>Decisions and work</strong><span>Approvals, routing and notifications.</span></li><li><strong>Checks before publishing</strong><span>Review issues in the builder.</span></li></ol>{jobId && <LiveStatus status={job?.status ?? 'queued'} stage={job?.stage ?? 'waiting'} title={progressTitle} detail={stageDetail} elapsed={elapsed} review={needsReview} draftId={job?.draft_id ?? null} note={job?.note ?? null} />}</section><div className="aiPage__sideNote"><strong>Need custom logic?</strong><span>Open the draft to refine questions, rules and approvals before publishing.</span></div></aside>
       </div>
     </div>
   </main>;
