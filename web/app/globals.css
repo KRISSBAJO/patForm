@@ -2475,17 +2475,17 @@ html {
 
 [data-motion='in'] .queue__row {
   animation: motion-rise 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) both;
-  animation-delay: calc(0.9s + var(--i) * 0.18s);
+  animation-delay: calc(0.45s + var(--i) * 0.14s);
 }
 
 [data-motion='in'] .ask {
   animation: motion-rise 0.5s ease-out both;
-  animation-delay: 1.6s;
+  animation-delay: 1.05s;
 }
 
 [data-motion='in'] .badge--late {
   animation: motion-late 0.7s ease-out both;
-  animation-delay: 1.75s;
+  animation-delay: 1.15s;
 }
 
 @keyframes motion-rise {
@@ -2550,27 +2550,27 @@ html {
 
 [data-motion='in'] .checked__arrow {
   animation: motion-fade 0.4s ease-out both;
-  animation-delay: 0.5s;
+  animation-delay: 0.2s;
 }
 
 [data-motion='in'] .checked__arrow svg {
   animation: motion-drop 0.5s ease-out both;
-  animation-delay: 0.5s;
+  animation-delay: 0.2s;
 }
 
 [data-motion='in'] .checked {
   animation: motion-rise 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) both;
-  animation-delay: 0.9s;
+  animation-delay: 0.3s;
 }
 
 [data-motion='in'] .checked__row {
   animation: motion-fade 0.4s ease-out both;
-  animation-delay: calc(1.3s + var(--i) * 0.6s);
+  animation-delay: calc(0.55s + var(--i) * 0.4s);
 }
 
 [data-motion='in'] .checked__row svg {
   animation: motion-pop 0.45s cubic-bezier(0.2, 0.8, 0.3, 1.3) both;
-  animation-delay: calc(1.35s + var(--i) * 0.6s);
+  animation-delay: calc(0.6s + var(--i) * 0.4s);
 }
 
 [data-motion='in'] .checked__row--warn svg {
@@ -2722,8 +2722,11 @@ html {
 .landingReliability { display:grid; grid-template-columns:1.15fr .85fr; align-items:center; gap:70px; }
 .landingReliability h2 { max-width:610px; margin:0; }
 .landingReliability p { max-width:620px; margin:18px 0 24px; color:var(--ink-soft); font-size:16px; line-height:1.6; }
-.landingReliability__points { display:flex; flex-direction:column; gap:12px; }
-.landingReliability__points span { padding:17px 19px; border:1px solid var(--line); border-radius:10px; background:#fff; color:#24553a; font-weight:600; }
+.landingReliability__points { display:flex; flex-direction:column; border:1px solid var(--line); border-radius:12px; background:var(--line); gap:1px; overflow:hidden; }
+.landingReliability__points article { display:flex; gap:18px; align-items:flex-start; padding:18px 20px; background:#fff; }
+.landingReliability__num { flex-shrink:0; padding-top:4px; font:12px var(--font-mono),monospace; color:#287a53; }
+.landingReliability__points h3 { margin:0; font-size:16.5px; line-height:1.3; color:#1c2723; }
+.landingReliability__points p { margin:6px 0 0; max-width:none; font-size:14px; line-height:1.55; color:var(--muted); }
 .reliabilityPage { background:var(--paper); }
 .reliabilityPage__hero { padding-top:90px; padding-bottom:70px; }
 .reliabilityPage__hero h1 { max-width:880px; margin:17px 0; font-size:clamp(43px,5vw,70px); line-height:1.04; letter-spacing:-.04em; }

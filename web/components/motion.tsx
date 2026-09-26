@@ -18,29 +18,55 @@
 
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 
-const ROOT_MARGIN = '0px 0px -12% 0px';
+const ROOT_MARGIN = '0px';
+/** How long a block may sit on screen unrevealed before it reveals itself. */
+const SAFETY_MS = 2000;
 
 function reducedMotion(): boolean {
   return typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 }
 
-/** Calls `fn` once, the first time `el` is a fifth visible. */
+/** Is any part of `el` within the viewport right now? */
+function onScreen(el: Element): boolean {
+  const r = el.getBoundingClientRect();
+  return r.bottom > 0 && r.top < window.innerHeight && r.right > 0 && r.left < window.innerWidth;
+}
+
+/**
+ * Calls `fn` once, the first time any of `el` is visible.
+ *
+ * The first version waited for a fifth of the block inside a viewport
+ * shrunk by twelve percent, and a reader who scrolled quickly and stopped
+ * with the block half on screen was left looking at an empty panel: the
+ * observer had nothing more to observe. Any pixel counts now, and a timer
+ * backs the observer up, so the content is never hostage to the trigger.
+ */
 function onceInView(el: Element, fn: () => void): () => void {
-  if (!('IntersectionObserver' in window)) {
+  let done = false;
+  const fire = () => {
+    if (done) return;
+    done = true;
     fn();
+  };
+  if (!('IntersectionObserver' in window)) {
+    fire();
     return () => {};
   }
   const io = new IntersectionObserver(
     (entries) => {
       if (entries.some((e) => e.isIntersecting)) {
         io.disconnect();
-        fn();
+        fire();
       }
     },
-    { rootMargin: ROOT_MARGIN, threshold: 0.2 },
+    { rootMargin: ROOT_MARGIN, threshold: 0 },
   );
   io.observe(el);
-  return () => io.disconnect();
+  const safety = window.setInterval(() => {
+    if (done) { window.clearInterval(safety); return; }
+    if (onScreen(el)) { io.disconnect(); window.clearInterval(safety); fire(); }
+  }, SAFETY_MS);
+  return () => { io.disconnect(); window.clearInterval(safety); };
 }
 
 /**
@@ -66,7 +92,9 @@ export function InView({
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    if (reducedMotion()) {
+    // Already on screen when the page arrives: no hiding, the motion plays
+    // from here. Only a block below the fold waits, and not for long.
+    if (reducedMotion() || onScreen(el)) {
       setPhase('in');
       return;
     }

@@ -227,7 +227,11 @@ export default function Home() {
             <span className="eyebrow">03 — Built to hold up</span>
             <span className="rule" aria-hidden="true" />
           </div>
-          <div className="landingReliability"><div><h2>Reliable after launch, too.</h2><p>A process has to survive retries, changing rules, and handoffs. PatForm keeps decisions tied to the version used and records what happened along the way.</p><Link className="btn btn--secondary" href="/reliability">How reliability works <ArrowRight /></Link></div><div className="landingReliability__points"><span>✓ &nbsp; Actions are safe to retry</span><span>✓ &nbsp; Published versions stay traceable</span><span>✓ &nbsp; History remains available to inspect</span></div></div>
+          <div className="landingReliability"><div><h2>Reliable after launch, too.</h2><p>A process has to survive retries, changing rules, and handoffs. PatForm keeps decisions tied to the version used and records what happened along the way.</p><Link className="btn btn--secondary" href="/reliability">How reliability works <ArrowRight /></Link></div><div className="landingReliability__points">
+              <article><span className="landingReliability__num">01</span><div><h3>Actions are safe to retry</h3><p>Every email, document and webhook carries a key tied to the event that caused it. A retry that reaches the provider is deduplicated there, so a dropped connection never sends a letter twice.</p></div></article>
+              <article><span className="landingReliability__num">02</span><div><h3>Published versions stay traceable</h3><p>A record runs on the version it started on. Publishing version 4 changes nothing for the records already on version 3, and each one says which it is.</p></div></article>
+              <article><span className="landingReliability__num">03</span><div><h3>History remains available to inspect</h3><p>Every decision, message and timer is an event with an actor and a time. "Who approved this, and when" is answered by a row, not by memory.</p></div></article>
+            </div></div>
         </section>
 
         {/* ================================================== where AI */}
