@@ -1440,6 +1440,14 @@ export function Builder() {
                           bp.experience = { ...(bp.experience ?? {}), branding: next };
                         })
                       }
+                      onLayout={(next) =>
+                        mutate((bp) => {
+                          const experience = { ...(bp.experience ?? {}) } as Record<string, unknown>;
+                          if (next) experience.layout = next;
+                          else delete experience.layout;
+                          bp.experience = experience as typeof bp.experience;
+                        })
+                      }
                     />
                   )}
                   {side === 'versions' && (
@@ -2402,8 +2410,8 @@ function Outline({
           <span className="bd__outlineNote">form, decisions and work</span>
         </button>
         <button className="bd__outlineItem" onClick={() => { onEditHeader(); setMobileOpen(false); }}>
-          <span className="bd__outlineName">Edit form header</span>
-          <span className="bd__outlineNote">title, logo, banner and color</span>
+          <span className="bd__outlineName">Form settings</span>
+          <span className="bd__outlineNote">look, typeface, steps, header</span>
         </button>
       </section>
       {groups.filter((g) => (query.trim() || (group === 'form' ? ['pages', 'fields'] : group === 'workflow' ? ['states', 'rules', 'approvals', 'tasks'] : ['messages', 'roles', 'documents', 'scenarios']).includes(g.tab)) && (!query.trim() || g.items.some((item) =>

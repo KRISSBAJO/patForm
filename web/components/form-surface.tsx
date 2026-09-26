@@ -56,6 +56,8 @@ export interface Branding {
   accent?: string;
   footer?: string;
   style?: string;
+  font?: string;
+  size?: string;
 }
 
 export const FORM_STYLES = [
@@ -67,6 +69,38 @@ export const FORM_STYLES = [
 ] as const;
 
 export type FormStyle = (typeof FORM_STYLES)[number]['key'];
+
+/** Typefaces that need no download; see form-surface.css for the stacks. */
+export const FORM_FONTS = [
+  { key: 'default', name: 'Patform', says: 'The platform\'s own typeface.' },
+  { key: 'system', name: 'System', says: 'Whatever the device uses for its own screens.' },
+  { key: 'serif', name: 'Serif', says: 'Bookish. Suits formal and legal forms.' },
+  { key: 'grotesque', name: 'Grotesque', says: 'Plain and neutral, Helvetica-like.' },
+  { key: 'friendly', name: 'Friendly', says: 'Rounder letters, a lighter tone.' },
+] as const;
+export type FormFont = (typeof FORM_FONTS)[number]['key'];
+
+/** Text size for the questions and answers; the header and page title keep theirs. */
+export const FORM_SIZES = [
+  { key: 'xsmall', short: 'XS', name: 'Extra small', says: 'Dense. Phones may zoom in on the fields.' },
+  { key: 'small', short: 'S', name: 'Small', says: 'A little more on each screen.' },
+  { key: 'regular', short: 'M', name: 'Regular', says: 'The usual size.' },
+  { key: 'large', short: 'L', name: 'Large', says: 'Easier to read on a phone.' },
+  { key: 'xlarge', short: 'XL', name: 'Extra large', says: 'For tired eyes and kiosks.' },
+] as const;
+export type FormSize = (typeof FORM_SIZES)[number]['key'];
+
+export function formFont(branding?: Branding): FormFont {
+  return (FORM_FONTS.find((f) => f.key === branding?.font)?.key ?? 'default') as FormFont;
+}
+export function formSize(branding?: Branding): FormSize {
+  return (FORM_SIZES.find((s) => s.key === branding?.size)?.key ?? 'regular') as FormSize;
+}
+
+/** The three data attributes the stylesheet keys on, for the `.fm` root. */
+export function surfaceAttributes(branding?: Branding): { 'data-style': FormStyle; 'data-font': FormFont; 'data-size': FormSize } {
+  return { 'data-style': formStyle(branding), 'data-font': formFont(branding), 'data-size': formSize(branding) };
+}
 
 /** The style to render, with anything unknown falling back to the first. */
 export function formStyle(branding?: Branding): FormStyle {
@@ -202,15 +236,24 @@ export function Field({
   const describedBy = [field.help ? `${id}-help` : null, error ? `${id}-error` : null].filter(Boolean).join(' ');
   const c = field.constraints ?? {};
 
+  // A control that is several inputs (a set of choices, a signature, a list of
+  // rows) has no single element a label can point at. Its wrapper becomes a
+  // named group instead, so a screen reader says the question before the
+  // first of its parts, the way a fieldset and legend would.
   const wrap = (control: React.ReactNode, labelFor = true) => (
-    <div className="fm__field" data-invalid={error ? 'true' : undefined}>
+    <div
+      className="fm__field"
+      data-invalid={error ? 'true' : undefined}
+      role={labelFor ? undefined : 'group'}
+      aria-labelledby={labelFor ? undefined : `${id}-label`}
+    >
       {labelFor ? (
         <label className="fm__label" htmlFor={id}>
           {field.label}
           {field.required && <span className="fm__req" aria-hidden="true"> *</span>}
         </label>
       ) : (
-        <span className="fm__label">
+        <span className="fm__label" id={`${id}-label`}>
           {field.label}
           {field.required && <span className="fm__req" aria-hidden="true"> *</span>}
         </span>
@@ -315,7 +358,7 @@ export function Field({
 
     case 'single_choice':
       return wrap(
-        <div className="fm__choices" role="radiogroup" aria-labelledby={id}>
+        <div className="fm__choices" role="radiogroup" aria-labelledby={`${id}-label`} aria-required={field.required || undefined}>
           {field.choices?.map((choice) => (
             <label className="fm__choice" key={choice.value}>
               <input

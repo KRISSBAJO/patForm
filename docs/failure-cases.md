@@ -991,6 +991,16 @@ Every attempt measured tokens and price and the numbers were thrown away, so the
 
 The site admin overview reads it back: per provider, per purpose and per workspace, with DeepSeek's live balance beside it because it is the one provider that tells an API key what is left.
 
+### 100. A review with no address
+
+"Review all answers" on a held submission opened a window over the list. It could not be linked, Back closed the console rather than the window, and a reviewer who wanted a second opinion had to describe the submission instead of sending it. It is a page now, at `/console?held=<id>`, with a way back and the decisions where the reading ends. The console's own Back handling had to learn the difference: it used to treat "no record in the URL" as "go to My work", which would have thrown a reviewer off the held page.
+
+### 101. Settings that hid the thing they were setting
+
+The form's header settings opened as a block above the preview, so choosing a look pushed the form it was styling below the fold, and every choice meant scrolling to see it. Five picture cards for the looks took a third of the panel. The same panel is now a drawer beside the preview: the preview stays where it is and changes as each setting does, the looks are a menu, the text size is a segmented control, and the accent has swatches. Two things were added while the drawer was open: a typeface and a text size, and a way to split the questions into steps of a fixed size or one page without touching the pages the designer drew.
+
+The text size first scaled everything, header included, which is not what anyone changing it means. It now scales the questions, answers, help and buttons, placeholders with them, and leaves the header and the page title alone. An extra-small size puts fields under 16px, which phones zoom in on; the drawer says so beside the choice rather than hiding the option.
+
 ### 90. Every new column needed a re-seed
 
 `schema.sql` describes a database created from nothing, and there was no other way to change one. Each release that added a table or a column reached a running database only by dropping it and seeding again, which signed every member out and emptied the workspace — in development that was several times a day, and it was part of why somebody could not sign in. A deployed database had no path at all.

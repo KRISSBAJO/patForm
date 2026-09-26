@@ -73,13 +73,33 @@ or point `DATABASE_URL` in `.env` at a [Renviq](https://renviq.com) connection
 string and run `npm run spike` against managed Postgres. Nothing in the runtime
 is specific to either.
 
-**Five looks for a form.** `experience.branding.style` picks how a form's
-fields, cards and buttons are drawn: `classic` (outlined), `soft` (filled, no
-hard lines), `minimal` (underlines and small labels), `rounded` (pills) or
-`bold` (thick borders, strong labels). Chosen under "Edit form header" in the
-builder with a live preview; the accent colour, focus rings, touch targets and
-contrast are the same in all five. Templates carry a default by category, so
-Finance forms start bold and community forms start rounded.
+**Form settings, in a drawer beside the preview.** The builder's Preview tab
+has a compact bar (desktop and phone as icons, the full preview, and a "Form
+settings" button) and a drawer that changes the form live while it stays in
+view:
+
+- **Look.** `experience.branding.style`: `classic` (outlined), `soft`
+  (filled, no hard lines), `minimal` (underlines and small labels), `rounded`
+  (pills) or `bold` (thick borders, strong labels). The accent colour, focus
+  rings, touch targets and contrast are the same in all five. Templates carry
+  a default by category.
+- **Typeface.** `branding.font`: the platform's own, the device's system
+  face, a serif, a plain grotesque or a friendlier rounded face. Every stack
+  is installed already, so a form never waits on a font file.
+- **Text size.** `branding.size`, from `xsmall` to `xlarge`. It scales the
+  questions, answers, help, errors and buttons together, placeholders
+  included, and leaves the header and the page title alone.
+- **Steps.** `experience.layout`: the pages as designed, one page, or steps
+  of `perStep` questions. The pages in the blueprint are untouched; the same
+  transform (`src/blueprint/layout.ts`, mirrored in the web app) runs on the
+  server and in the preview, so the step the respondent is on is the step the
+  server checks.
+- **Header.** Title, subtitle, logo, banner, accent and footer.
+
+**Held submissions are reviewed on a page.** "Review all answers" opens the
+submission at `/console?held=<id>`, with a way back and the two decisions at
+the end of the reading, so Back works and the link can be sent to whoever
+should decide.
 
 **Long descriptions are drafted in stages.** Past 2,500 characters, Build
 with AI asks for the form first, then the workflow and messages, then outputs

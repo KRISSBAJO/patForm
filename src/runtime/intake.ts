@@ -3,6 +3,7 @@ import { resolveForm } from './form-links.js';
 import { createHash, randomBytes } from 'node:crypto';
 import type { Blueprint } from '../blueprint/index.js';
 import { validateAnswers, visibleFields, type Answers, type FieldError } from '../blueprint/answers.js';
+import { layoutPages } from '../blueprint/layout.js';
 import { withCalculatedFields } from './expr.js';
 import { inTransaction, type Client, type Pool } from './db.js';
 import { Engine } from './engine.js';
@@ -73,6 +74,8 @@ export interface PublicForm {
    */
   branding?: {
     style?: 'classic' | 'soft' | 'minimal' | 'rounded' | 'bold';
+    font?: 'default' | 'system' | 'serif' | 'grotesque' | 'friendly';
+    size?: 'xsmall' | 'small' | 'regular' | 'large' | 'xlarge';
     title?: string;
     tagline?: string;
     logoUrl?: string;
@@ -145,7 +148,9 @@ export async function publicForm(pool: Pool, ref: string): Promise<PublicForm | 
     saveAndResume: bp.experience.saveAndResume,
     confirmation: bp.experience.confirmation,
     branding: bp.experience.branding,
-    pages: bp.experience.pages.map((page) => ({
+    // Laid out here, so the page the respondent is on and the page the
+    // server checks are the same page.
+    pages: layoutPages(bp.experience.pages, bp.experience.layout).map((page) => ({
       key: page.key,
       title: page.title,
       description: page.description,
@@ -289,7 +294,7 @@ export async function checkAnswers(
     const scope =
       args.pageIndex === undefined
         ? undefined
-        : (bp.experience.pages[args.pageIndex]?.sections.flatMap((s) => s.fields) ?? []);
+        : (layoutPages(bp.experience.pages, bp.experience.layout)[args.pageIndex]?.sections.flatMap((s) => s.fields) ?? []);
 
     const computed = Object.fromEntries(
       bp.data.fields.flatMap((field) => {

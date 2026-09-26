@@ -8,7 +8,23 @@
   min-height: 100vh;
   background: var(--paper);
   padding: 0 0 64px;
+  font-family: var(--fm-font, inherit);
 }
+
+/*
+ * Typeface and size, chosen in the builder's form settings. Every stack here
+ * is installed on the device already, so a form never waits on a font file.
+ * The display font follows the body font unless the platform's own is kept.
+ */
+.fm[data-font="system"] { --fm-font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif; --fm-display: var(--fm-font); }
+.fm[data-font="serif"] { --fm-font: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif; --fm-display: var(--fm-font); }
+.fm[data-font="grotesque"] { --fm-font: "Helvetica Neue", Helvetica, Arial, "Liberation Sans", sans-serif; --fm-display: var(--fm-font); }
+.fm[data-font="friendly"] { --fm-font: "Trebuchet MS", "Segoe UI", Verdana, "Gill Sans", sans-serif; --fm-display: var(--fm-font); }
+.fm[data-size="xsmall"] { --fm-scale: 0.82; }
+.fm[data-size="small"] { --fm-scale: 0.9; }
+.fm[data-size="large"] { --fm-scale: 1.12; }
+.fm[data-size="xlarge"] { --fm-scale: 1.25; }
+.fm[data-font] input, .fm[data-font] select, .fm[data-font] textarea, .fm[data-font] button { font-family: inherit; }
 
 .fm__boot {
   min-height: 100vh;
@@ -16,7 +32,7 @@
   align-items: center;
   justify-content: center;
   color: var(--muted);
-  font-size: 14px;
+  font-size: calc(14px * var(--fm-scale, 1));
 }
 
 .fm__shell {
@@ -35,7 +51,7 @@
 }
 
 .fm__process {
-  font-family: var(--font-display), Georgia, serif;
+  font-family: var(--fm-display, var(--font-display)), Georgia, serif;
   font-size: 18px;
   font-weight: 600;
   letter-spacing: -0.01em;
@@ -71,7 +87,7 @@
   display: block;
   margin-top: 8px;
   font-family: var(--font-mono), monospace;
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--fm-scale, 1));
   letter-spacing: 0.06em;
   color: var(--muted);
 }
@@ -96,7 +112,7 @@
 .fm__quizScore { display: block; color: var(--green); font-size: clamp(38px, 8vw, 58px); line-height: 1; }
 .fm__quizResult p { margin: 8px 0 0; }
 .fm__quizReview { margin-top: 22px; padding-top: 20px; border-top: 1px solid var(--line-soft); text-align: left; }
-.fm__quizReview h2 { margin: 0 0 10px; font-size: 17px; }
+.fm__quizReview h2 { margin: 0 0 10px; font-size: calc(17px * var(--fm-scale, 1)); }
 .fm__quizReview ul { margin: 0; padding-left: 20px; }
 .fm__quizReview li { padding: 7px 0; }
 .fm__quizReview li span, .fm__quizReview li strong { display: block; }
@@ -116,7 +132,7 @@
 
 .fm__title {
   margin: 0;
-  font-family: var(--font-display), Georgia, serif;
+  font-family: var(--fm-display, var(--font-display)), Georgia, serif;
   font-size: 30px;
   font-weight: 600;
   line-height: 1.15;
@@ -132,7 +148,7 @@
 
 .fm__ref {
   margin-top: 18px;
-  font-size: 15px;
+  font-size: calc(15px * var(--fm-scale, 1));
   color: var(--ink-soft);
 }
 
@@ -152,14 +168,14 @@
 
 .fm__sectionTitle {
   margin: 0 0 4px;
-  font-family: var(--font-display), Georgia, serif;
-  font-size: 19px;
+  font-family: var(--fm-display, var(--font-display)), Georgia, serif;
+  font-size: calc(19px * var(--fm-scale, 1));
   font-weight: 600;
 }
 
 .fm__sectionLede {
   margin: 0 0 4px;
-  font-size: 14.5px;
+  font-size: calc(14.5px * var(--fm-scale, 1));
   line-height: 1.55;
   color: var(--muted);
 }
@@ -173,7 +189,7 @@
 .fm__label {
   display: block;
   margin-bottom: 7px;
-  font-size: 15px;
+  font-size: calc(15px * var(--fm-scale, 1));
   font-weight: 500;
   color: var(--ink);
 }
@@ -184,7 +200,7 @@
 
 .fm__help {
   margin: -2px 0 8px;
-  font-size: 13.5px;
+  font-size: calc(13.5px * var(--fm-scale, 1));
   line-height: 1.5;
   color: var(--muted);
 }
@@ -198,7 +214,7 @@
   background: var(--white);
   font-family: inherit;
   /* 16px keeps iOS from zooming the page on focus. */
-  font-size: 16px;
+  font-size: calc(16px * var(--fm-scale, 1));
   color: var(--ink);
   line-height: 1.4;
 }
@@ -233,7 +249,7 @@ textarea.fm__input {
   border-radius: 9px;
   border: 1px solid var(--line);
   background: var(--white);
-  font-size: 15.5px;
+  font-size: calc(15.5px * var(--fm-scale, 1));
   cursor: pointer;
 }
 
@@ -261,7 +277,7 @@ textarea.fm__input {
   border-radius: 9px;
   border: 1px solid var(--line);
   background: var(--paper-3);
-  font-size: 15px;
+  font-size: calc(15px * var(--fm-scale, 1));
   line-height: 1.5;
   cursor: pointer;
 }
@@ -281,13 +297,13 @@ textarea.fm__input {
   border: 1px dashed var(--line-strong);
   background: var(--paper-3);
   font-family: inherit;
-  font-size: 14.5px;
+  font-size: calc(14.5px * var(--fm-scale, 1));
 }
 
 .fm__files {
   margin: 10px 0 0;
   padding-left: 18px;
-  font-size: 14px;
+  font-size: calc(14px * var(--fm-scale, 1));
   color: var(--ink-soft);
 }
 
@@ -298,7 +314,7 @@ textarea.fm__input {
   background: var(--paper-2);
   border: 1px solid var(--line);
   font-family: var(--font-mono), monospace;
-  font-size: 16px;
+  font-size: calc(16px * var(--fm-scale, 1));
 }
 
 .fm__row {
@@ -325,7 +341,7 @@ textarea.fm__input {
   border: 1px solid var(--line-strong);
   background: var(--white);
   color: var(--muted);
-  font-size: 13.5px;
+  font-size: calc(13.5px * var(--fm-scale, 1));
   flex-shrink: 0;
 }
 
@@ -336,7 +352,7 @@ textarea.fm__input {
 
 .fm__error {
   margin: 8px 0 0;
-  font-size: 13.5px;
+  font-size: calc(13.5px * var(--fm-scale, 1));
   line-height: 1.45;
   color: var(--red-text);
 }
@@ -348,7 +364,7 @@ textarea.fm__input {
   background: var(--red-pale);
   border: 1px solid var(--red-border);
   color: var(--red-text);
-  font-size: 14px;
+  font-size: calc(14px * var(--fm-scale, 1));
 }
 
 /* --------------------------------------------------------------- actions */
@@ -373,7 +389,7 @@ textarea.fm__input {
   background: var(--white);
   color: var(--ink);
   font-family: inherit;
-  font-size: 16px;
+  font-size: calc(16px * var(--fm-scale, 1));
   font-weight: 500;
   text-decoration: none;
 }
@@ -413,7 +429,7 @@ textarea.fm__input {
   border-radius: 999px;
   background: var(--green-pale);
   color: var(--green-deep);
-  font-size: 14.5px;
+  font-size: calc(14.5px * var(--fm-scale, 1));
   font-weight: 500;
 }
 
@@ -436,14 +452,14 @@ textarea.fm__input {
 }
 
 .fm__noticeTitle {
-  font-size: 15px;
+  font-size: calc(15px * var(--fm-scale, 1));
   font-weight: 600;
   color: var(--ochre-text);
 }
 
 .fm__noticeBody {
   margin-top: 6px;
-  font-size: 14.5px;
+  font-size: calc(14.5px * var(--fm-scale, 1));
   line-height: 1.55;
   color: var(--ink-soft);
 }
@@ -506,7 +522,7 @@ textarea.fm__input {
 .fm__label {
   margin-bottom: 5px;
   font-family: var(--font-body), system-ui, sans-serif;
-  font-size: 13.5px;
+  font-size: calc(13.5px * var(--fm-scale, 1));
   font-weight: 600;
   letter-spacing: 0.002em;
   color: var(--ink);
@@ -514,7 +530,7 @@ textarea.fm__input {
 
 .fm__help {
   margin: -1px 0 6px;
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--fm-scale, 1));
   line-height: 1.45;
 }
 
@@ -527,7 +543,7 @@ textarea.fm__input {
   padding: 9px 12px;
   border-radius: 7px;
   border: 1px solid var(--line-strong);
-  font-size: 16px;
+  font-size: calc(16px * var(--fm-scale, 1));
   line-height: 1.35;
   transition: border-color 100ms ease, box-shadow 100ms ease;
 }
@@ -555,7 +571,7 @@ textarea.fm__input {
 .fm__section h2,
 .fm__sectionTitle {
   font-family: var(--font-body), system-ui, sans-serif;
-  font-size: 15px;
+  font-size: calc(15px * var(--fm-scale, 1));
   font-weight: 600;
   letter-spacing: -0.006em;
 }
@@ -641,7 +657,7 @@ textarea.fm__input {
   margin: 26px 0 0;
   padding-top: 16px;
   border-top: 1px solid var(--card-line, #e4e2dd);
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--fm-scale, 1));
   line-height: 1.6;
   color: var(--muted);
 }
@@ -702,7 +718,7 @@ textarea.fm__input {
   border: 1px solid #edd9b4;
   background: #fdf8ee;
   border-radius: 6px;
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--fm-scale, 1));
   line-height: 1.5;
   color: #7a5a17;
 }
@@ -750,7 +766,8 @@ textarea.fm__input {
 .fm[data-style="soft"] .fm__choice:has(input:checked) { background: var(--green-tint); border-color: var(--green); }
 .fm[data-style="soft"] .fm__label { font-weight: 500; color: var(--ink-soft); }
 .fm[data-style="soft"] .fm__section { border-top: 0; padding-top: 10px; }
-.fm[data-style="soft"] .fm__sectionTitle { color: var(--green-deep); }
+/* Ink, not the accent: a light accent on the tinted card fails contrast. */
+.fm[data-style="soft"] .fm__sectionTitle { color: var(--ink); }
 .fm[data-style="soft"] .fm__btn { border-radius: 12px; }
 .fm[data-style="soft"] .fm__btn:not(.fm__btn--primary) { border-color: transparent; background: #ebe7de; }
 .fm[data-style="soft"] .fm__btn--primary { box-shadow: 0 10px 22px -14px var(--green); }
@@ -762,7 +779,7 @@ textarea.fm__input {
 .fm[data-style="minimal"] .fm__title { font-weight: 500; }
 .fm[data-style="minimal"] .fm__label {
   margin-bottom: 4px;
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--fm-scale, 1));
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -789,7 +806,7 @@ textarea.fm__input {
 .fm[data-style="minimal"] .fm__choice:focus-within,
 .fm[data-style="minimal"] .fm__ack:focus-within { outline: 2px solid var(--green); outline-offset: 4px; border-radius: 4px; }
 .fm[data-style="minimal"] .fm__section { border-top: 1px solid var(--line); margin-top: 36px; padding-top: 28px; }
-.fm[data-style="minimal"] .fm__sectionTitle { font-size: 13px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted-3); }
+.fm[data-style="minimal"] .fm__sectionTitle { font-size: calc(13px * var(--fm-scale, 1)); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted-3); }
 .fm[data-style="minimal"] .fm__btn { border-radius: 4px; }
 .fm[data-style="minimal"] .fm__btn:not(.fm__btn--primary) { border-color: transparent; background: transparent; text-decoration: underline; text-underline-offset: 4px; }
 .fm[data-style="minimal"] .fm__actions { border-top: 0; }
@@ -807,7 +824,7 @@ textarea.fm__input {
 .fm[data-style="rounded"] .fm__choice { border-radius: 999px; padding-left: 18px; }
 .fm[data-style="rounded"] .fm__ack { border-radius: 20px; }
 .fm[data-style="rounded"] .fm__btn { border-radius: 999px; padding: 0 28px; }
-.fm[data-style="rounded"] .fm__sectionTitle { font-family: var(--font-display), Georgia, serif; font-size: 19px; }
+.fm[data-style="rounded"] .fm__sectionTitle { font-family: var(--fm-display, var(--font-display)), Georgia, serif; font-size: calc(19px * var(--fm-scale, 1)); }
 .fm[data-style="rounded"] .fm__banner { border-radius: 20px; }
 .fm[data-style="rounded"] .fm__progressBar { height: 8px; }
 
@@ -816,7 +833,7 @@ textarea.fm__input {
 .fm[data-style="bold"] { background: #f2f1ed; }
 .fm[data-style="bold"] .fm__card { border: 2px solid var(--ink); border-top-width: 8px; border-top-color: var(--green); border-radius: 6px; box-shadow: none; }
 .fm[data-style="bold"] .fm__label {
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--fm-scale, 1));
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -829,10 +846,18 @@ textarea.fm__input {
 .fm[data-style="bold"] .fm__choice:hover { border-color: var(--ink); background: #fafaf7; }
 .fm[data-style="bold"] .fm__choice:has(input:checked) { border-color: var(--green); background: var(--green-tint); font-weight: 600; }
 .fm[data-style="bold"] .fm__section { border-top: 2px solid var(--ink); }
-.fm[data-style="bold"] .fm__sectionTitle { padding-left: 12px; border-left: 4px solid var(--green); font-size: 16px; font-weight: 700; }
+.fm[data-style="bold"] .fm__sectionTitle { padding-left: 12px; border-left: 4px solid var(--green); font-size: calc(16px * var(--fm-scale, 1)); font-weight: 700; }
 .fm[data-style="bold"] .fm__btn { border: 2px solid var(--ink); border-radius: 4px; font-weight: 700; }
 .fm[data-style="bold"] .fm__btn--primary { border-color: var(--green); }
 .fm[data-style="bold"] .fm__btn--primary:hover { border-color: var(--green-deep); }
 .fm[data-style="bold"] .fm__progressBar { height: 8px; border-radius: 0; border: 2px solid var(--ink); background: var(--white); }
 .fm[data-style="bold"] .fm__progressBar span { border-radius: 0; }
 .fm[data-style="bold"] .fm__req { color: var(--red-text); }
+
+/* The page title takes focus when the page changes, so a screen reader says
+ * where it is. No ring: it is not a control, and the ring on a heading reads
+ * as a fault. */
+.fm__title:focus { outline: none; }
+
+/* Said, not shown: the count of answers needing attention. */
+.fm__srOnly { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }

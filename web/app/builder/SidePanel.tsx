@@ -13,17 +13,23 @@
  * blueprint changes, which is why none of this can drift from it.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import {
   Field,
   FieldCell,
   FormHeader,
   accentStyle,
+  formFont,
+  formSize,
   formStyle,
+  surfaceAttributes,
+  FORM_FONTS,
+  FORM_SIZES,
   FORM_STYLES,
   type PublicField,
   type PublicForm,
 } from '../../components/form-surface';
+import { DEFAULT_PER_STEP, layoutPages, type Layout } from '../../components/form-layout';
 import './side.css';
 
 // Structural, not imported: the builder owns the blueprint type, and importing
@@ -36,6 +42,7 @@ interface Shape {
     saveAndResume?: boolean;
     confirmation?: { message: string; showStatusLink?: boolean };
     branding?: PublicForm['branding'];
+    layout?: Layout;
     pages?: {
       key: string;
       title: string;
@@ -89,6 +96,7 @@ function asPublic(field: PreviewField): PublicField {
 export function FormPreview({
   blueprint,
   onBranding,
+  onLayout,
   previewKey,
   draftId,
   editHeaderRequest,
@@ -97,6 +105,8 @@ export function FormPreview({
   blueprint: Shape;
   /** Absent means read-only; the gallery's detail view passes nothing. */
   onBranding?: (next: NonNullable<PublicForm['branding']>) => void;
+  /** How the pages are split for the respondent; undefined means as designed. */
+  onLayout?: (next: Layout | undefined) => void;
   previewKey?: string;
   draftId?: string;
   editHeaderRequest?: number;
@@ -108,13 +118,32 @@ export function FormPreview({
   const [device, setDevice] = useState<'desktop' | 'phone'>('desktop');
   const [pageIndex, setPageIndex] = useState(0);
   const previewRef = useRef<HTMLDivElement>(null);
+  const settingsButton = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     if (!editHeaderRequest) return;
     setEditing(true);
     previewRef.current?.closest('.sp__scroll')?.scrollTo({ top: 0 });
   }, [editHeaderRequest]);
+  const closeSettings = useCallback(() => {
+    setEditing(false);
+    settingsButton.current?.focus();
+  }, []);
+  // Escape closes the drawer from anywhere on the page; it is not modal, so
+  // the preview stays usable beside it, but it should still leave politely.
+  useEffect(() => {
+    if (!editing) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') closeSettings(); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [editing, closeSettings]);
   const byKey = new Map(blueprint.data.fields.map((f) => [f.key, f]));
-  const pages = blueprint.experience?.pages ?? [];
+  const designed = (blueprint.experience?.pages ?? []).map((p) => ({
+    ...p,
+    sections: (p.sections ?? []).map((sec) => ({ ...sec, fields: sec.fields ?? [] })),
+  }));
+  // The same transform the server applies, so the preview shows the steps the
+  // respondent will get and not the pages the designer drew.
+  const pages = layoutPages(designed, blueprint.experience?.layout);
   const currentIndex = Math.min(pageIndex, Math.max(0, pages.length - 1));
   const currentPage = pages[currentIndex];
   const placed = new Set(pages.flatMap((p) => (p.sections ?? []).flatMap((s) => s.fields ?? [])));
@@ -133,33 +162,51 @@ export function FormPreview({
 
   return (
     <div className="sp__body">
-      <p className="sp__note">
-        The live form, as somebody outside your workspace sees it. Type in it if you like — nothing is saved and
-        nothing is sent.
-      </p>
-
-      {!hideDeviceSwitch && (
-        <div className="sp__deviceSwitch" role="group" aria-label="Preview size">
-          <button type="button" aria-pressed={device === 'desktop'} onClick={() => setDevice('desktop')}>Desktop</button>
-          <button type="button" aria-pressed={device === 'phone'} onClick={() => setDevice('phone')}>Phone</button>
+      <div className="sp__bar">
+        {!hideDeviceSwitch && (
+          <div className="sp__seg" role="group" aria-label="Preview size">
+            <button type="button" aria-pressed={device === 'desktop'} aria-label="Desktop" title="Desktop" onClick={() => setDevice('desktop')}><IconDesktop /></button>
+            <button type="button" aria-pressed={device === 'phone'} aria-label="Phone" title="Phone" onClick={() => setDevice('phone')}><IconPhone /></button>
+          </div>
+        )}
+        <p className="sp__barNote">As a respondent sees it. Nothing typed here is saved or sent.</p>
+        <div className="sp__barRight">
+          {previewKey && (
+            <a className="sp__iconBtn" href={`/builder/preview?process=${encodeURIComponent(previewKey)}&v=draft`} title="Open full preview" aria-label="Open full preview">
+              <IconExternal />
+            </a>
+          )}
+          {onBranding && (
+            <button
+              type="button"
+              ref={settingsButton}
+              className="sp__settingsBtn"
+              aria-expanded={editing}
+              aria-controls="sp-settings"
+              onClick={() => (editing ? closeSettings() : setEditing(true))}
+            >
+              <IconSliders />
+              <span>Form settings</span>
+            </button>
+          )}
         </div>
-      )}
-
-      {previewKey && <a className="sp__fullPreview" href={`/builder/preview?process=${encodeURIComponent(previewKey)}&v=draft`}>Open full preview ↗</a>}
-
-      {onBranding && (
-        <button type="button" className="sp__link" onClick={() => setEditing((was) => !was)} aria-expanded={editing}>
-          {editing ? 'Close form header settings' : 'Edit form header'}
-        </button>
-      )}
+      </div>
 
       {onBranding && editing && (
-        <BrandingEditor branding={blueprint.experience?.branding} onChange={onBranding} draftId={draftId} />
+        <FormSettings
+          branding={blueprint.experience?.branding}
+          layout={blueprint.experience?.layout}
+          designedPages={designed.length}
+          onBranding={onBranding}
+          onLayout={onLayout}
+          draftId={draftId}
+          onClose={closeSettings}
+        />
       )}
 
       {/* The respondent's own controls; only the narrow builder side panel scales them. */}
       <div className={`sp__frame ${device === 'phone' ? 'sp__frame--phone' : ''}`} ref={previewRef}>
-        <div className="fm" data-style={formStyle(blueprint.experience?.branding)} style={accentStyle(blueprint.experience?.branding?.accent)}>
+        <div className="fm" {...surfaceAttributes(blueprint.experience?.branding)} style={accentStyle(blueprint.experience?.branding?.accent)}>
           <div className="fm__shell">
             <FormHeader branding={blueprint.experience?.branding} fallbackName={blueprint.name} />
 
@@ -178,9 +225,10 @@ export function FormPreview({
                 {(currentPage.sections ?? []).map((section) => {
                   const fields = (section.fields ?? []).map((k) => byKey.get(k)).filter(Boolean) as PreviewField[];
                   if (!fields.length) return null;
+                  const Wrapper = section.title ? 'section' : 'div';
                   return (
-                    <section className="fm__section" key={section.key}>
-                      {section.title && <h2 className="fm__sectionTitle">{section.title}</h2>}
+                    <Wrapper className="fm__section" key={section.key} aria-labelledby={section.title ? `psec-${section.key}` : undefined}>
+                      {section.title && <h2 className="fm__sectionTitle" id={`psec-${section.key}`}>{section.title}</h2>}
                       {section.description && <p className="fm__sectionLede">{section.description}</p>}
                       <div className="fm__grid">
                         {fields.map((f) => (
@@ -204,7 +252,7 @@ export function FormPreview({
                           </FieldCell>
                         ))}
                       </div>
-                    </section>
+                    </Wrapper>
                   );
                 })}
               </div>
@@ -257,37 +305,60 @@ export function FormPreview({
 }
 
 /**
- * The header, edited beside the thing it changes.
+ * The form's settings, in a drawer beside the thing they change.
  *
- * It lives here rather than in a tab of its own because every one of these
- * six values is a judgement about how the form looks, and judging it from a
- * list of text boxes is exactly how the form ended up looking like nothing.
+ * A drawer rather than a block above the preview: the old editor pushed the
+ * form it was styling below the fold, so every choice meant scrolling to see
+ * it. This sits to the side, the preview updates live, and it is not modal —
+ * the preview stays usable while it is open. Escape closes it and puts focus
+ * back on the button that opened it.
  *
  * The accent is checked here and again by the schema on save. This copy is
  * for the person typing; the one that matters is the server's, because a
  * colour that is not one would reach the page as a style attribute.
  */
-function BrandingEditor({
+function FormSettings({
   branding,
-  onChange,
+  layout,
+  designedPages,
+  onBranding,
+  onLayout,
   draftId,
+  onClose,
 }: {
   branding?: PublicForm['branding'];
-  onChange: (next: NonNullable<PublicForm['branding']>) => void;
+  layout?: Layout;
+  designedPages: number;
+  onBranding: (next: NonNullable<PublicForm['branding']>) => void;
+  onLayout?: (next: Layout | undefined) => void;
   draftId?: string;
+  onClose: () => void;
 }) {
   const b = branding ?? {};
   const [uploading, setUploading] = useState<'logo' | 'banner' | null>(null);
   const [uploadError, setUploadError] = useState('');
+  const heading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => { heading.current?.focus(); }, []);
+
   const set = (k: keyof NonNullable<PublicForm['branding']>, v: string) => {
     const next = { ...b } as Record<string, string>;
     if (v.trim()) next[k] = v;
     else delete next[k];
-    onChange(next);
+    onBranding(next);
   };
 
   const accentOk = !b.accent || /^#[0-9a-fA-F]{6}$/.test(b.accent);
-  const current = formStyle(b);
+  const style = formStyle(b);
+  const font = formFont(b);
+  const size = formSize(b);
+  const mode = layout?.mode ?? 'pages';
+  const perStep = layout?.perStep ?? DEFAULT_PER_STEP;
+  const setLayout = (nextMode: NonNullable<Layout['mode']>, nextPer?: number) => {
+    if (!onLayout) return;
+    if (nextMode === 'pages') onLayout(undefined);
+    else if (nextMode === 'single') onLayout({ mode: 'single' });
+    else onLayout({ mode: 'steps', perStep: Math.min(20, Math.max(1, Math.round(nextPer ?? perStep))) });
+  };
 
   const upload = async (kind: 'logo' | 'banner', file?: File) => {
     if (!file || !draftId) return;
@@ -318,97 +389,178 @@ function BrandingEditor({
   };
 
   return (
-    <div className="sp__brand">
-      <fieldset className="sp__styles">
-        <legend>How the form looks</legend>
-        {FORM_STYLES.map((style) => (
-          <label key={style.key} className="sp__style" data-style={style.key} data-on={current === style.key ? 'true' : undefined}>
-            <input
-              type="radio"
-              name="form-style"
-              value={style.key}
-              checked={current === style.key}
-              onChange={() => set('style', style.key)}
-            />
-            {/* A thumbnail of the look: one label, one field, one button. */}
-            <span className="sp__styleThumb" aria-hidden="true">
-              <i className="sp__styleLabel" />
-              <i className="sp__styleInput" />
-              <i className="sp__styleBtn" />
-            </span>
-            <span className="sp__styleName">{style.name}</span>
-            <span className="sp__styleSays">{style.says}</span>
-          </label>
-        ))}
-      </fieldset>
-      <div className="sp__brandHeading"><strong>Form appearance</strong><span>Make the form recognizable to your organization.</span></div>
-      <label className="sp__brandRow">
-        <span>Form title</span>
-        <input
-          className="sp__brandInput"
-          value={b.title ?? ''}
-          placeholder="the process name"
-          onChange={(e) => set('title', e.target.value)}
-        />
-      </label>
+    <aside className="sp__drawer" id="sp-settings" role="dialog" aria-labelledby="sp-settings-title">
+      <header className="sp__drawerHead">
+        <div>
+          <span className="sp__drawerKicker">Preview</span>
+          <h2 id="sp-settings-title" ref={heading} tabIndex={-1}>Form settings</h2>
+        </div>
+        <button type="button" className="sp__drawerClose" onClick={onClose} aria-label="Close form settings"><IconClose /></button>
+      </header>
 
-      <label className="sp__brandRow">
-        <span>Subtitle</span>
-        <input
-          className="sp__brandInput"
-          value={b.tagline ?? ''}
-          maxLength={200}
-          onChange={(e) => set('tagline', e.target.value)}
-        />
-      </label>
+      <div className="sp__drawerBody">
+        <section className="sp__group" aria-labelledby="sp-group-look">
+          <h3 id="sp-group-look">Look</h3>
 
-      <div className="sp__assets">
-        {(['logo', 'banner'] as const).map((kind) => {
-          const url = kind === 'logo' ? b.logoUrl : b.bannerUrl;
-          return <div className="sp__asset" key={kind}>
-            <div className="sp__assetTop"><strong>{kind === 'logo' ? 'Logo' : 'Banner'}</strong><small>{kind === 'logo' ? 'Square image recommended' : 'Wide image recommended'}</small></div>
-            {url && <div className={`sp__assetImage sp__assetImage--${kind}`}><img src={url} alt={`${kind} preview`} /></div>}
-            <div className="sp__assetActions"><label className="sp__uploadButton">{uploading === kind ? 'Uploading…' : url ? 'Replace image' : 'Upload image'}<input type="file" accept="image/png,image/jpeg,image/webp" disabled={!!uploading || !draftId} onChange={(event) => { void upload(kind, event.target.files?.[0]); event.target.value = ''; }} /></label>{url && <button type="button" onClick={() => set(kind === 'logo' ? 'logoUrl' : 'bannerUrl', '')}>Remove</button>}</div>
-          </div>;
-        })}
+          <div className="sp__field">
+            <label htmlFor="sp-look">Style</label>
+            <select id="sp-look" className="sp__select" value={style} onChange={(e) => set('style', e.target.value)}>
+              {FORM_STYLES.map((o) => <option key={o.key} value={o.key}>{o.name}</option>)}
+            </select>
+            <small>{FORM_STYLES.find((o) => o.key === style)?.says}</small>
+          </div>
+
+          <div className="sp__field">
+            <label htmlFor="sp-font">Typeface</label>
+            <select id="sp-font" className="sp__select" style={{ fontFamily: FONT_PREVIEW[font] }} value={font} onChange={(e) => set('font', e.target.value === 'default' ? '' : e.target.value)}>
+              {FORM_FONTS.map((o) => <option key={o.key} value={o.key} style={{ fontFamily: FONT_PREVIEW[o.key] }}>{o.name}</option>)}
+            </select>
+            <small>{FORM_FONTS.find((o) => o.key === font)?.says}</small>
+          </div>
+
+          <div className="sp__field" id="sp-size" role="radiogroup" aria-labelledby="sp-size-label">
+            <span id="sp-size-label" className="sp__fieldLabel">Text size</span>
+            <div className="sp__segs">
+              {FORM_SIZES.map((o) => (
+                <label key={o.key} className="sp__segItem" data-size={o.key} data-on={size === o.key ? 'true' : undefined} title={o.name}>
+                  <input type="radio" name="sp-size" value={o.key} checked={size === o.key} onChange={() => set('size', o.key === 'regular' ? '' : o.key)} aria-label={o.name} />
+                  <span aria-hidden="true">{o.short}</span>
+                </label>
+              ))}
+            </div>
+            <small>{FORM_SIZES.find((o) => o.key === size)?.says} Questions, answers and buttons change; the header and page title do not.</small>
+          </div>
+
+          <div className="sp__field">
+            <span id="sp-accent-label" className="sp__fieldLabel">Accent</span>
+            <div className="sp__swatches" role="group" aria-labelledby="sp-accent-label">
+              {ACCENTS.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  className="sp__swatch"
+                  style={{ '--sw': c } as CSSProperties}
+                  aria-label={`Accent ${c}`}
+                  aria-pressed={(b.accent ?? '#14663f').toLowerCase() === c}
+                  onClick={() => set('accent', c === '#14663f' ? '' : c)}
+                />
+              ))}
+              <label className="sp__swatch sp__swatch--custom" title="Custom colour">
+                <input
+                  type="color"
+                  value={accentOk && b.accent ? b.accent : '#14663f'}
+                  onChange={(e) => set('accent', e.target.value)}
+                  aria-label="Custom accent colour"
+                />
+              </label>
+              <input
+                className="sp__hex"
+                value={b.accent ?? ''}
+                placeholder="#14663f"
+                aria-label="Accent colour as hex"
+                aria-invalid={accentOk ? undefined : true}
+                onChange={(e) => set('accent', e.target.value)}
+              />
+            </div>
+            {!accentOk && <small className="sp__bad">Six hex digits after a #, like #14663f.</small>}
+          </div>
+        </section>
+
+        {onLayout && (
+          <section className="sp__group" aria-labelledby="sp-group-steps">
+            <h3 id="sp-group-steps">Steps</h3>
+            <div className="sp__field">
+              <label htmlFor="sp-layout">Split</label>
+              <select id="sp-layout" className="sp__select" value={mode} onChange={(e) => setLayout(e.target.value as NonNullable<Layout['mode']>)}>
+                <option value="pages">As designed · {designedPages} {designedPages === 1 ? 'page' : 'pages'}</option>
+                <option value="single">One page</option>
+                <option value="steps">Steps of a fixed size</option>
+              </select>
+              <small>
+                {mode === 'pages'
+                  ? 'The pages as they are set out in the form editor.'
+                  : mode === 'single'
+                    ? 'Everything at once. Short forms finish faster this way; long ones do not.'
+                    : `About ${perStep} questions a step, with a progress bar. A long section carries on to the next step.`}
+              </small>
+            </div>
+            {mode === 'steps' && (
+              <div className="sp__field">
+                <label htmlFor="sp-per-step">Per step</label>
+                <input
+                  id="sp-per-step"
+                  className="sp__text sp__number"
+                  type="number"
+                  min={1}
+                  max={20}
+                  value={perStep}
+                  onChange={(e) => setLayout('steps', Number(e.target.value))}
+                />
+              </div>
+            )}
+          </section>
+        )}
+
+        <section className="sp__group" aria-labelledby="sp-group-header">
+          <h3 id="sp-group-header">Header</h3>
+          <div className="sp__field">
+            <label htmlFor="sp-title">Title</label>
+            <input id="sp-title" className="sp__text" value={b.title ?? ''} placeholder="The process name" onChange={(e) => set('title', e.target.value)} />
+          </div>
+          <div className="sp__field">
+            <label htmlFor="sp-tagline">Subtitle</label>
+            <input id="sp-tagline" className="sp__text" value={b.tagline ?? ''} maxLength={200} placeholder="One line under the title" onChange={(e) => set('tagline', e.target.value)} />
+          </div>
+          <div className="sp__tiles">
+            {(['logo', 'banner'] as const).map((kind) => {
+              const url = kind === 'logo' ? b.logoUrl : b.bannerUrl;
+              return (
+                <div className="sp__tile" key={kind}>
+                  <div><strong>{kind === 'logo' ? 'Logo' : 'Banner'}</strong><br /><small>{kind === 'logo' ? 'Square image' : 'Wide image'}</small></div>
+                  {url && <div className={`sp__tileImage sp__tileImage--${kind}`}><img src={url} alt={`${kind} preview`} /></div>}
+                  <div className="sp__tileActions">
+                    <label className="sp__upload">
+                      {uploading === kind ? 'Uploading…' : url ? 'Replace' : 'Upload'}
+                      <input type="file" accept="image/png,image/jpeg,image/webp" disabled={!!uploading || !draftId} onChange={(event) => { void upload(kind, event.target.files?.[0]); event.target.value = ''; }} />
+                    </label>
+                    {url && <button type="button" onClick={() => set(kind === 'logo' ? 'logoUrl' : 'bannerUrl', '')}>Remove</button>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {uploadError && <p className="sp__warn" role="alert">{uploadError}</p>}
+          <div className="sp__field">
+            <label htmlFor="sp-footer">Footer</label>
+            <input id="sp-footer" className="sp__text" value={b.footer ?? ''} maxLength={300} placeholder="Small print under the form" onChange={(e) => set('footer', e.target.value)} />
+          </div>
+          <p className="sp__drawerNote">PNG, JPEG or WebP, 3 MB at most. Images are stored with this process.</p>
+        </section>
       </div>
-      {uploadError && <p className="sp__warn" role="alert">{uploadError}</p>}
-
-      <label className="sp__brandRow">
-        <span>Accent color</span>
-        <span className="sp__brandColour">
-          <input
-            type="color"
-            className="sp__brandSwatch"
-            value={accentOk && b.accent ? b.accent : '#14663f'}
-            onChange={(e) => set('accent', e.target.value)}
-            aria-label="Pick the colour"
-          />
-          <input
-            className="sp__brandInput sp__brandHex"
-            value={b.accent ?? ''}
-            placeholder="#14663f"
-            aria-invalid={accentOk ? undefined : true}
-            onChange={(e) => set('accent', e.target.value)}
-          />
-        </span>
-      </label>
-      {!accentOk && <p className="sp__warn">A colour has to be six hex digits after a #, like #14663f.</p>}
-
-      <label className="sp__brandRow">
-        <span>Footer note</span>
-        <input
-          className="sp__brandInput"
-          value={b.footer ?? ''}
-          maxLength={300}
-          onChange={(e) => set('footer', e.target.value)}
-        />
-      </label>
-
-      <p className="sp__brandNote">PNG, JPEG or WebP · 3 MB maximum. Images are stored with this process.</p>
-    </div>
+    </aside>
   );
 }
+
+/** How each typeface shows in its own menu, so the choice can be seen before it is made. */
+const FONT_PREVIEW: Record<string, string> = {
+  default: 'inherit',
+  system: 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
+  serif: '"Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif',
+  grotesque: '"Helvetica Neue", Helvetica, Arial, sans-serif',
+  friendly: '"Trebuchet MS", "Segoe UI", Verdana, sans-serif',
+};
+
+/** Accents that keep white text readable on a button. The first is the platform's own. */
+const ACCENTS = ['#14663f', '#1d4ed8', '#6d28d9', '#b91c1c', '#c2410c', '#0f766e', '#1c2723'];
+
+// Small line icons for the preview bar. Decorative: every control that uses
+// one also has a text name.
+const ICON = { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const, 'aria-hidden': true };
+function IconDesktop() { return <svg {...ICON}><rect x="3" y="4" width="18" height="12" rx="2" /><path d="M8 20h8M12 16v4" /></svg>; }
+function IconPhone() { return <svg {...ICON}><rect x="7" y="2.5" width="10" height="19" rx="2" /><path d="M11 18h2" /></svg>; }
+function IconExternal() { return <svg {...ICON}><path d="M14 4h6v6M20 4l-9 9M19 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5" /></svg>; }
+function IconSliders() { return <svg {...ICON}><path d="M4 7h10M18 7h2M4 17h4M12 17h8" /><circle cx="16" cy="7" r="2" /><circle cx="10" cy="17" r="2" /></svg>; }
+function IconClose() { return <svg {...ICON}><path d="M6 6l12 12M18 6L6 18" /></svg>; }
 
 // --------------------------------------------------------------- versions
 

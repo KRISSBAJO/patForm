@@ -483,24 +483,39 @@ async function main() {
     await backToPreview.click();
     await page.waitForTimeout(900);
   }
-  // The button was renamed and the scan went on passing with the editor never
-  // opened; matched by either wording now, and by role rather than class.
-  const editHeader = page.locator('button', { hasText: /Edit form header|Edit the header/ }).first();
-  if (await editHeader.count()) {
-    await editHeader.click();
-    await page.waitForTimeout(900);
-    all.push(...(await audit(page, 'The form header editor')));
-  }
+  // The settings drawer beside the preview: look, typeface, steps and the
+  // header. Opened by its button, matched by role and name so a renamed
+  // button fails loudly instead of the drawer quietly going unscanned.
+  const settings = page.getByRole('button', { name: /Form settings/ }).first();
+  if (!(await settings.count())) throw new Error('The "Form settings" button was not found, so the drawer cannot be scanned.');
+  await settings.click();
+  await page.waitForTimeout(900);
+  all.push(...(await audit(page, 'The form settings drawer')));
 
-  // Each of the five looks, rendered in the preview beside the editor. A
-  // style is a new set of colours and borders on every control, which is
-  // exactly where contrast and focus visibility go wrong.
+  // Each of the five looks, each typeface and each size, rendered in the
+  // preview beside the drawer. A look is a new set of colours and borders on
+  // every control, which is exactly where contrast and focus visibility go
+  // wrong; a typeface changes every x-height the contrast check measures.
+  const look = page.locator('#sp-look');
   for (const style of ['soft', 'minimal', 'rounded', 'bold', 'classic']) {
-    const pick = page.locator(`.sp__style[data-style="${style}"]`).first();
-    if (!(await pick.count())) continue;
-    await pick.click();
-    await page.waitForTimeout(700);
+    if (!(await look.count())) break;
+    await look.selectOption(style);
+    await page.waitForTimeout(600);
     all.push(...(await audit(page, `Form preview, ${style} look`)));
+  }
+  const font = page.locator('#sp-font');
+  for (const face of ['system', 'serif', 'grotesque', 'friendly', 'default']) {
+    if (!(await font.count())) break;
+    await font.selectOption(face);
+    await page.waitForTimeout(500);
+    all.push(...(await audit(page, `Form preview, ${face} typeface`)));
+  }
+  for (const s of ['xsmall', 'small', 'large', 'xlarge', 'regular']) {
+    const pick = page.locator(`#sp-size [data-size="${s}"]`).first();
+    if (!(await pick.count())) break;
+    await pick.click();
+    await page.waitForTimeout(500);
+    all.push(...(await audit(page, `Form preview, ${s} text`)));
   }
 
   // The message editor: recipients, the field inserter and the preview are

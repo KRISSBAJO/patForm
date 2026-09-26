@@ -94,6 +94,30 @@ export const Experience = z
          * keeps the accent colour, the focus rings and the touch targets.
          */
         style: z.enum(['classic', 'soft', 'minimal', 'rounded', 'bold']).optional(),
+        /**
+         * The typeface. Named stacks that need no download, so a form never
+         * waits on a font file: the platform's own, the device's system
+         * face, a serif, a plain grotesque, or a friendlier rounded face.
+         */
+        font: z.enum(['default', 'system', 'serif', 'grotesque', 'friendly']).optional(),
+        /**
+         * Text size for the questions, answers, help and buttons. The header
+         * and the page title keep their size. `regular` is what every form
+         * had before.
+         */
+        size: z.enum(['xsmall', 'small', 'regular', 'large', 'xlarge']).optional(),
+      })
+      .strict()
+      .optional(),
+    /**
+     * How the pages reach the respondent: as designed, as one long page, or
+     * in steps of `perStep` questions. The pages themselves are untouched;
+     * see blueprint/layout.ts for the transform.
+     */
+    layout: z
+      .object({
+        mode: z.enum(['pages', 'single', 'steps']),
+        perStep: z.number().int().min(1).max(20).optional(),
       })
       .strict()
       .optional(),

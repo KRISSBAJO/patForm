@@ -18,7 +18,7 @@ import {
   FormHeader,
   accentStyle,
   type PublicForm,
-  Field, formStyle } from '../../../components/form-surface';
+  Field, surfaceAttributes } from '../../../components/form-surface';
 
 type Answers = Record<string, unknown>;
 type Errors = Record<string, string>;
@@ -58,9 +58,33 @@ export function Form({ processKey: fromUrl }: { processKey: string }) {
   const [token, setToken] = useState<string | null>(null);
   const [saving, setSaving] = useState<'idle' | 'saving' | 'saved'>('idle');
   const [receiptUploads, setReceiptUploads] = useState<Record<string, string>>({});
+  // Focus follows the reader: to the page title when the page changes, to the
+  // first answer that needs attention when a check fails, to the thank-you
+  // when it is done. Without this a screen reader is left on a button whose
+  // page has changed under it, with nothing said.
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  const [focusTitle, setFocusTitle] = useState(0);
+  const [focusError, setFocusError] = useState(0);
+  useEffect(() => {
+    if (!focusTitle) return;
+    titleRef.current?.focus({ preventScroll: true });
+    window.scrollTo({ top: 0 });
+  }, [focusTitle]);
+  useEffect(() => {
+    if (!focusError) return;
+    const first = document.querySelector<HTMLElement>(
+      '[aria-invalid="true"], [data-invalid="true"] input:not([type="hidden"]), [data-invalid="true"] select, [data-invalid="true"] textarea, [data-invalid="true"] button',
+    );
+    if (!first) return;
+    first.focus({ preventScroll: true });
+    first.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [focusError]);
   const draftCreation = useRef<Promise<string> | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const trapRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (form) document.title = `${form.branding?.title ?? form.processName} · form`;
+  }, [form]);
   const [done, setDone] = useState<{ reference: string; statusUrl: string | null; quiz?: QuizResult; duplicate?: boolean } | null>(null);
 
   const dirty = useRef(false);
@@ -243,16 +267,14 @@ export function Form({ processKey: fromUrl }: { processKey: string }) {
     const map: Errors = {};
     for (const e of result.errors) map[e.field] = e.message;
     setErrors(map);
-    if (result.errors.length) {
-      document.querySelector('[data-invalid="true"]')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }
+    if (result.errors.length) setFocusError((n) => n + 1);
     return result.errors.length === 0;
   };
 
   const next = async () => {
     if (!(await validatePage())) return;
     setPageIndex((i) => Math.min(i + 1, (form?.pages.length ?? 1) - 1));
-    window.scrollTo({ top: 0 });
+    setFocusTitle((n) => n + 1);
   };
 
   const submit = async () => {
@@ -277,8 +299,10 @@ export function Form({ processKey: fromUrl }: { processKey: string }) {
         setErrors(map);
         // An error from a page behind this one would otherwise be invisible.
         setPageIndex(0);
+        setFocusError((n) => n + 1);
         return;
       }
+      setFocusTitle((n) => n + 1);
       setDone({
         reference: result.instanceId!.slice(0, 8).toUpperCase(),
         statusUrl: result.resumeToken ? `/f/status?resume=${encodeURIComponent(result.resumeToken)}` : null,
@@ -308,13 +332,13 @@ export function Form({ processKey: fromUrl }: { processKey: string }) {
   if (done) {
     return (
       <div className="fm">
-        <div className="fm__card fm__card--done">
+        <main className="fm__card fm__card--done">
           <div className="fm__tick" aria-hidden="true">
             <svg width="28" height="28" viewBox="0 0 26 26" fill="none">
               <path d="M5 13.5L10.5 19L21 7" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </div>
-          <h1 className="fm__title">{done.duplicate ? 'Already submitted' : done.quiz ? 'Your quiz result' : 'Thank you'}</h1>
+          <h1 className="fm__title" ref={titleRef} tabIndex={-1}>{done.duplicate ? 'Already submitted' : done.quiz ? 'Your quiz result' : 'Thank you'}</h1>
           <p className="fm__lede">{done.duplicate ? 'A submission with these identifying details already exists. This attempt was not recorded.' : form.confirmation.message}</p>
           {done.quiz && <section className="fm__quizResult" aria-label="Quiz result">
             <strong className="fm__quizScore">{done.quiz.percentage}%</strong>
@@ -330,7 +354,7 @@ export function Form({ processKey: fromUrl }: { processKey: string }) {
               Check its progress
             </a>
           )}
-        </div>
+        </main>
       </div>
     );
   }
@@ -349,8 +373,8 @@ export function Form({ processKey: fromUrl }: { processKey: string }) {
      * branded form is the same form in a different colour, not a second set of
      * styles that can fall out of step with the first.
      */
-    <div className="fm" data-style={formStyle(brand)} data-branded={brand ? 'true' : undefined} style={accentStyle(brand?.accent)}>
-      <div className="fm__shell">
+    <div className="fm" {...surfaceAttributes(brand)} data-branded={brand ? 'true' : undefined} style={accentStyle(brand?.accent)}>
+      <main className="fm__shell">
         <FormHeader
           branding={brand}
           fallbackName={form.processName}
@@ -362,24 +386,32 @@ export function Form({ processKey: fromUrl }: { processKey: string }) {
             <div className="fm__progressBar">
               <span style={{ width: `${((pageIndex + 1) / form.pages.length) * 100}%` }} />
             </div>
-            <span className="fm__progressText">
+            <span className="fm__progressText" aria-live="polite">
               Step {pageIndex + 1} of {form.pages.length}
             </span>
           </div>
         )}
 
         <div className="fm__card">
-          <h1 className="fm__title">{page.title}</h1>
+          <h1 className="fm__title" ref={titleRef} tabIndex={-1}>{page.title}</h1>
           {page.description && <p className="fm__lede">{page.description}</p>}
 
-          {errors._ && <p className="fm__formError">{errors._}</p>}
+          {errors._ && <p className="fm__formError" role="alert">{errors._}</p>}
+          <p className="fm__srOnly" role="status">
+            {Object.keys(errors).filter((k) => k !== '_').length > 0
+              ? `${Object.keys(errors).filter((k) => k !== '_').length} answer(s) need attention.`
+              : ''}
+          </p>
 
           {page.sections.map((section) => {
             const fields = section.fields.filter((f) => shown(f.key));
             if (!fields.length) return null;
+            // A section with a heading is a named region; one without is
+            // just a run of questions, not a landmark with nothing to say.
+            const Wrapper = section.title ? 'section' : 'div';
             return (
-              <section className="fm__section" key={section.key}>
-                {section.title && <h2 className="fm__sectionTitle">{section.title}</h2>}
+              <Wrapper className="fm__section" key={section.key} aria-labelledby={section.title ? `sec-${section.key}` : undefined}>
+                {section.title && <h2 className="fm__sectionTitle" id={`sec-${section.key}`}>{section.title}</h2>}
                 {section.description && <p className="fm__sectionLede">{section.description}</p>}
                 <div className="fm__grid">
                   {fields.map((field) => (
@@ -417,7 +449,7 @@ export function Form({ processKey: fromUrl }: { processKey: string }) {
                     </FieldCell>
                   ))}
                 </div>
-              </section>
+              </Wrapper>
             );
           })}
 
@@ -451,7 +483,7 @@ export function Form({ processKey: fromUrl }: { processKey: string }) {
                 className="fm__btn"
                 onClick={() => {
                   setPageIndex((i) => i - 1);
-                  window.scrollTo({ top: 0 });
+                  setFocusTitle((n) => n + 1);
                 }}
               >
                 Back
@@ -471,7 +503,7 @@ export function Form({ processKey: fromUrl }: { processKey: string }) {
         </div>
 
         {brand?.footer && <p className="fm__foot">{brand.footer}</p>}
-      </div>
+      </main>
     </div>
   );
 }

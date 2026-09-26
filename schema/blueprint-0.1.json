@@ -869,8 +869,50 @@
                     "rounded",
                     "bold"
                   ]
+                },
+                "font": {
+                  "type": "string",
+                  "enum": [
+                    "default",
+                    "system",
+                    "serif",
+                    "grotesque",
+                    "friendly"
+                  ]
+                },
+                "size": {
+                  "type": "string",
+                  "enum": [
+                    "xsmall",
+                    "small",
+                    "regular",
+                    "large",
+                    "xlarge"
+                  ]
                 }
               },
+              "additionalProperties": false
+            },
+            "layout": {
+              "type": "object",
+              "properties": {
+                "mode": {
+                  "type": "string",
+                  "enum": [
+                    "pages",
+                    "single",
+                    "steps"
+                  ]
+                },
+                "perStep": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 20
+                }
+              },
+              "required": [
+                "mode"
+              ],
               "additionalProperties": false
             }
           },

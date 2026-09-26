@@ -90,6 +90,41 @@ The ones added in 2.2, checked specifically:
 | 3.3.7 Redundant Entry | A | Pass. The respondent form autosaves and resumes with its answers, so nothing is asked twice within a session. |
 | 3.3.8 Accessible Authentication (Minimum) | AA | Pass. Email and password, `autocomplete` set on both, paste not blocked, no cognitive function test, no CAPTCHA. |
 
+## A manual pass on the public form, 2026-09-25
+
+Not a screen-reader session, and it should not be read as one. The form was
+driven in a browser by keyboard and by its accessibility tree — the names,
+roles and states a screen reader is given — with focus and live regions
+watched at each step. What such a pass finds is what the markup says; what it
+cannot find is what NVDA, JAWS or VoiceOver make of it, and those still differ
+from the specification and from each other.
+
+Walked: the Northwind budget transfer form, both pages, empty submission,
+a page change, the signature, and the confirmation. Found and fixed:
+
+- **The page changed and nothing was said.** Continue left focus on the
+  same button, now reading "Submit", on a page with a different title. Focus
+  now moves to the page title, and the "Step 2 of 2" text is a polite live
+  region.
+- **Errors were announced but not reached.** Each error is an alert, so a
+  reader heard them, but focus stayed on Continue and the first invalid field
+  was somewhere above. Focus now moves to the first field that needs
+  attention, and a status line says how many do.
+- **Choice questions had no name.** The radiogroup pointed its label at an id
+  no element carried, so a reader heard "radio, 1 of 3" without the question.
+  Signatures, file lists and repeating groups had the same shape: a visible
+  label and no group for it to name. Every such control is a named group now.
+- **No main landmark**, and every section was an unnamed region. The form is
+  a `main`; a section with a heading is named by it, and one without is a
+  plain division rather than a landmark with nothing to say.
+- **The document title was the product's slogan.** It is the form's name.
+- **The confirmation appeared unannounced.** Its heading takes focus.
+
+The same pass confirmed what was already right: the honeypot is hidden from
+assistive technology and out of the tab order; every input is labelled, help
+text is attached with `aria-describedby`, required is set on the control; the
+signature offers a typed alternative to the canvas and names both.
+
 ## Known gaps
 
 **Focus restoration after the builder's Test dialog** returns to the page
@@ -99,10 +134,12 @@ the captured element is gone by the time focus is restored. Focus lands on the
 main landmark rather than the top of the document, so the next Tab is still
 useful. The Publish and New process dialogs restore exactly.
 
-**No screen-reader testing.** Everything above is code inspection plus
-automated checks. NVDA, JAWS and VoiceOver each behave differently from the
-specification and from each other, and a gate claimed without hearing the thing
-read aloud is a claim about markup rather than about use.
+**No screen-reader testing.** Everything above is code inspection, automated
+checks and one keyboard-and-accessibility-tree pass. NVDA, JAWS and VoiceOver
+each behave differently from the specification and from each other, and a gate
+claimed without hearing the thing read aloud is a claim about markup rather
+than about use. A session with a real screen reader, ideally with someone who
+uses one daily, is still owed.
 
 **No zoom or reflow testing** (1.4.10, 400% zoom at 320px), and no testing with
 Windows High Contrast.
