@@ -405,7 +405,7 @@ export async function recordDetail(pool: Pool, principal: Principal, instanceId:
     const pending = approvals.rows.find((a) => a.status === 'pending');
     const openTask = tasks.rows.find((t) => t.status === 'open');
     const nextAction = pending
-      ? `${bp.workflow.approvals.find((a) => a.key === pending.approval_key)?.name ?? pending.approval_key} — with ${pending.approvers.map(named).join(', ')}`
+      ? `${bp.workflow.approvals.find((a) => a.key === pending.approval_key)?.name ?? pending.approval_key} — with ${pending.approvers.map((p: string) => named(p, bp)).join(', ')}`
       : openTask
         ? `${bp.workflow.tasks.find((t) => t.key === openTask.task_key)?.name ?? openTask.task_key} — assigned to ${named(openTask.assignee, bp)}`
         : instance.completed_at

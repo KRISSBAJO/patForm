@@ -5185,3 +5185,26 @@ a.cs__navItem {
 /* The Records view's download: at the end of the controls, a button not a link. */
 .rv__download { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; white-space: nowrap; }
 .rv__note { margin: 0 0 10px; }
+
+/* ==========================================================================
+   Print: the record page is the document
+   ========================================================================== */
+@media print {
+  @page { margin: 16mm; }
+  body { background: #fff !important; color: #000; }
+  .cs__shell { display: block; }
+  .cs__side, .cs__top, .cs__navBackdrop, .rc__bar, .rc__decision, .rc__noteComposer, .rc__toolbar,
+  .rc__copyStatus, .cs__btn, .rc__conceal, .rc__filters, .rc__search { display: none !important; }
+  .cs__main { margin: 0 !important; padding: 0 !important; max-width: none !important; width: auto !important; }
+  .rc { padding: 0; }
+  .rc__head { padding: 0 0 10px; border-bottom: 1px solid #000; }
+  .rc__head::after { content: attr(data-printed); display: block; margin-top: 6px; font-size: 10.5px; color: #444; }
+  .rc__answers, .cs__panel { box-shadow: none !important; border: 0 !important; border-radius: 0 !important; background: #fff !important; }
+  .rc__tableScroll { overflow: visible !important; }
+  .rc__answerTable { width: 100%; font-size: 11.5px; }
+  .rc__answerTable th:last-child, .rc__answerTable td:last-child { display: none; }
+  .rc__answerTable tr { break-inside: avoid; }
+  .rc__answerTable th, .rc__answerTable td { border-bottom: 1px solid #ccc; padding: 6px 4px; color: #000; }
+  a[href]::after { content: none !important; }
+}
+

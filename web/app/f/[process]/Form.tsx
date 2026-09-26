@@ -18,10 +18,48 @@ import {
   FormHeader,
   accentStyle,
   type PublicForm,
+  type PublicField,
   Field, surfaceAttributes } from '../../../components/form-surface';
 
 type Answers = Record<string, unknown>;
 type Errors = Record<string, string>;
+
+/**
+ * An answer as it reads on the confirmation page: the label of a choice, Yes
+ * or No, a date the way the reader writes it, a signature as the fact of one.
+ * Nothing that a person would not recognise as what they typed.
+ */
+function summaryText(field: PublicField, value: unknown): string | null {
+  if (value === null || value === undefined || value === '' || (Array.isArray(value) && value.length === 0)) return null;
+  const label = (v: unknown) => field.choices?.find((c) => c.value === String(v))?.label ?? String(v);
+  switch (field.type) {
+    case 'content':
+    case 'hidden':
+      return null;
+    case 'yes_no':
+    case 'signature_ack':
+      return value === true ? 'Yes' : value === false ? 'No' : String(value);
+    case 'signature':
+      return 'Signed';
+    case 'file':
+      return Array.isArray(value) ? `${value.length} document${value.length === 1 ? '' : 's'} attached` : 'Document attached';
+    case 'repeating_group':
+      return Array.isArray(value) ? `${value.length} ${value.length === 1 ? 'line' : 'lines'}` : null;
+    case 'date':
+      return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
+        ? new Date(`${value}T00:00:00Z`).toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' })
+        : String(value);
+    case 'currency':
+      return typeof value === 'number' ? value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : String(value);
+    case 'number':
+    case 'rating':
+      return typeof value === 'number' ? value.toLocaleString() : String(value);
+    default:
+      if (Array.isArray(value)) return value.map(label).join(', ');
+      if (typeof value === 'object') return null;
+      return label(value);
+  }
+}
 type QuizResult = { correct: number; total: number; percentage: number; grade?: string; missed: { question: string; correctAnswer: string; explanation?: string }[] };
 
 interface CheckResult {
@@ -360,6 +398,41 @@ export function Form({ processKey: fromUrl }: { processKey: string }) {
               Check its progress
             </a>
           )}
+          {/*
+            * A copy of what was sent. The thank-you screen used to show a
+            * reference and nothing else, so the one moment a person could
+            * keep a record of what they said was the moment it vanished.
+            * The answers are listed as they read, and Print gives a paper
+            * or PDF copy through the browser's own dialog.
+            */}
+          {!done.duplicate && (() => {
+            const lines = form.pages
+              .flatMap((pg) => pg.sections)
+              .flatMap((sec) => sec.fields)
+              .filter((f) => !visible || visible.has(f.key))
+              .map((f) => ({ key: f.key, label: f.label, text: summaryText(f, answers[f.key]) }))
+              .filter((l): l is { key: string; label: string; text: string } => l.text !== null);
+            if (!lines.length) return null;
+            return (
+              <section className="fm__summary" aria-labelledby="fm-summary-title">
+                <div className="fm__summaryHead">
+                  <h2 id="fm-summary-title">What you sent</h2>
+                  <button type="button" className="fm__btn fm__noPrint" onClick={() => window.print()}>
+                    Print or save a copy
+                  </button>
+                </div>
+                <dl className="fm__summaryList">
+                  {lines.map((l) => (
+                    <div key={l.key} className="fm__summaryRow">
+                      <dt>{l.label}</dt>
+                      <dd>{l.text}</dd>
+                    </div>
+                  ))}
+                </dl>
+                <p className="fm__summaryFoot">{form.processName} · reference {done.reference} · {new Date().toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' })}</p>
+              </section>
+            );
+          })()}
         </main>
       </div>
     );

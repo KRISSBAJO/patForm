@@ -1031,6 +1031,14 @@ The depth measure said 45% of templates had no validation on any question. Most 
 
 **Generalisable:** "nothing to validate" usually means the vocabulary cannot say what is wrong, not that nothing can be. Look at what a person gets wrong on the paper form before concluding the digital one has nothing to check.
 
+### 106. A record with a pending approval could not be opened
+
+Opening a budget transfer that was waiting on the finance reviewer answered "Internal error" and dropped the console back to My work. The record page names who an approval is waiting on, and did so with `approvers.map(named)`. `map` hands its callback the value, the index and the array; `named` takes a party and a blueprint. So the blueprint argument was the number 0, and looking up a role's name on a number threw. Every record whose approval was assigned to a role, which is most of them, was unopenable, and the message said nothing about why.
+
+**Fixed** by passing the blueprint explicitly. Found while adding a Print button to the same page, not by any test: the scenario runner drives records through the engine and never renders the console's view of one. The console's reads want the same treatment the public form got, a pass that opens each page with real data.
+
+**Generalisable:** a function with an optional second parameter must never be handed to `map` bare. The index arrives silently, in the wrong type, and TypeScript allows it because a number is assignable to nothing the parameter checks at runtime.
+
 ### 90. Every new column needed a re-seed
 
 `schema.sql` describes a database created from nothing, and there was no other way to change one. Each release that added a table or a column reached a running database only by dropping it and seeding again, which signed every member out and emptied the workspace — in development that was several times a day, and it was part of why somebody could not sign in. A deployed database had no path at all.

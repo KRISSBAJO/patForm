@@ -212,11 +212,25 @@ export function RecordPage({
           <Icon name="table" />
           Export CSV
         </button>
+        {/*
+          * Print, or save as PDF from the print dialog. The page itself is
+          * the document: a print stylesheet drops the navigation, the
+          * buttons and the actions column and keeps the answers, so what
+          * comes out is the record as this role may see it, with the date
+          * it was printed.
+          */}
+        <button type="button" className="cs__btn" onClick={() => window.print()}>
+          <svg className="cs__icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M6 7V3.5h8V7M6 15H4.5A1.5 1.5 0 0 1 3 13.5v-4A1.5 1.5 0 0 1 4.5 8h11A1.5 1.5 0 0 1 17 9.5v4a1.5 1.5 0 0 1-1.5 1.5H14" />
+            <path d="M6 12h8v4.5H6z" />
+          </svg>
+          Print
+        </button>
         {record.canAddNote && <button type="button" className="cs__btn" onClick={() => setNoteOpen((open) => !open)} aria-expanded={noteOpen} aria-controls="record-note-form"><Icon name="note" /> Add note</button>}
         {!isFinished && hasRecordActions && <button type="button" className="cs__btn cs__btn--primary" onClick={() => setActions({ kind: '', field: '' })}>Take action</button>}
       </div>
 
-      <header className="rc__head">
+      <header className="rc__head" data-printed={`Printed ${new Date().toLocaleString()} · reference ${record.reference}`}>
         <div>
           <span className="rc__eyebrow">{record.processName.toUpperCase()} · VERSION {record.version}</span>
           <h2 className="rc__state">Submission answers</h2>
