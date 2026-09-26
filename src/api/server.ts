@@ -7,6 +7,7 @@ import { changePlatformPerson, grantPlatformOperator, platformAudit, platformInt
 import { Engine } from '../runtime/engine.js';
 import { addRecordNote, recordDocument } from '../runtime/console-queries.js';
 import { shareRecord } from '../runtime/share-record.js';
+import { isPublicApiPath, publicHandler } from './public-server.js';
 import { aiDraftStatus, applyAiRevision, queueAiDraft, queueAiRevision } from '../runtime/ai-drafts.js';
 import { AuthorizationError, requireWorkspaceCapability, WORKSPACE_GRANTS, type Principal } from '../runtime/policy.js';
 import type { Capability } from '../blueprint/roles.js';
@@ -101,7 +102,7 @@ import { proposeRule } from '../ai/rule.js';
 import { recordUsage } from '../runtime/ai-usage.js';
 import { Blueprint } from '../blueprint/index.js';
 import { QueryPlan, ActionPlan } from '../copilot/plan.js';
-import { bundleToCsv, exportProcessCsv, exportRecord } from '../runtime/export.js';
+import { XLSX_TYPE, bundleToCsv, exportProcessCsv, exportProcessXlsx, exportRecord, exportWorkspace } from '../runtime/export.js';
 import {
   claimDraft,
   createDraft,
@@ -542,13 +543,24 @@ route('GET', /^\/api\/dashboard\/([a-z0-9_]+)$/, async ({ pool, principal, url }
 
 // Every record of a process as one CSV: a row each, a column per answer.
 route('GET', /^\/api\/browse\/([a-z0-9_]+)\/export$/, async ({ pool, principal, url }) => {
-  const out = await exportProcessCsv(pool, {
+  const args = {
     principal,
     processKey: url.pathname.split('/')[3]!,
-    completed: url.searchParams.has('completed') ? url.searchParams.get('completed') === 'true' : undefined,
-  });
-  return { contentType: 'text/csv', ...out };
+    filters: {
+      completed: url.searchParams.has('completed') ? url.searchParams.get('completed') === 'true' : undefined,
+      query: url.searchParams.get('q') ?? undefined,
+      answer:
+        url.searchParams.get('field') && url.searchParams.has('value')
+          ? { field: url.searchParams.get('field')!, value: url.searchParams.get('value')! }
+          : undefined,
+    },
+  };
+  if (url.searchParams.get('format') === 'xlsx') return { contentType: XLSX_TYPE, ...(await exportProcessXlsx(pool, args)) };
+  return { contentType: 'text/csv', ...(await exportProcessCsv(pool, args)) };
 });
+
+// The whole workspace as one workbook, a sheet per process. Administrators.
+route('GET', /^\/api\/export\/workspace$/, async ({ pool, principal }) => ({ contentType: XLSX_TYPE, ...(await exportWorkspace(pool, { principal })) }));
 
 // The columns the Records page may show and the answers it may filter by.
 route('GET', /^\/api\/browse\/([a-z0-9_]+)\/fields$/, async ({ pool, principal, url }) =>
@@ -1321,8 +1333,11 @@ async function main(): Promise<void> {
   // A database made before a schema change gets it here, without a re-seed.
   await applyUpgrades(pool);
   const engine = new Engine(pool);
+  // The public API, on this port too. See public-server.ts.
+  const servePublic = publicHandler(pool, engine);
 
   const server = createServer((req, res) => {
+    if (isPublicApiPath((req.url ?? '/').split('?')[0]!)) return servePublic(req, res);
     /*
      * One trace per request, opened before anything else.
      *

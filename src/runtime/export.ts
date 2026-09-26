@@ -2,7 +2,8 @@ import { createHash } from 'node:crypto';
 import { isSignature, signatureWords } from '../blueprint/signature.js';
 import type { Blueprint } from '../blueprint/index.js';
 import { inTransaction, type Client, type Pool } from './db.js';
-import { redact, require_, visibleFields, type Principal } from './policy.js';
+import { AuthorizationError, redact, require_, requireWorkspaceCapability, visibleFields, type Principal } from './policy.js';
+import { xlsx, type Cell } from './xlsx.js';
 import { currentRequestId } from './trace.js';
 import type { Field } from '../blueprint/data.js';
 
@@ -436,8 +437,9 @@ export function bundleToCsv(bundle: ExportBundle): string {
 // ------------------------------------------------------------ whole process
 
 /**
- * Every submission of one process, as a spreadsheet: one row per record, one
- * column per answer.
+ * Every submission of one process, as a table: one row per record, one
+ * column per answer. Written out as CSV, as an Excel workbook, or with every
+ * process of the workspace as one workbook, a sheet each.
  *
  * The record export above is for a regulator with one case in hand. This is
  * for the treasurer who wants every expense claim of the quarter in Excel, and
@@ -445,13 +447,17 @@ export function bundleToCsv(bundle: ExportBundle): string {
  * in. It follows the same rules as every other read:
  *
  * - **Capability.** `report` rather than `administer`: an analyst or an
- *   operator may take the sheet, an approver may not.
+ *   operator may take the sheet, an approver may not. The whole workspace in
+ *   one file is `administer`.
  * - **Visibility.** A field this caller's roles may not see is not a column.
  *   The response names those fields, so the gap is visible rather than a
  *   quiet omission, and a cell never carries a "[redacted]" that a formula
  *   would count as data.
  * - **The blueprint's say.** `outputs.exportFields`, when set, is the column
  *   list and its order. When it is empty, every answer field is a column.
+ * - **The same filters as the page.** Still running or finished, the search
+ *   text, and one answer, matched among visible fields only, exactly as the
+ *   Records page matches them, so what is downloaded is what was looked at.
  * - **A record of the taking.** Each export is written to `process_export`
  *   with who, when, how many rows and what was withheld.
  *
@@ -459,14 +465,38 @@ export function bundleToCsv(bundle: ExportBundle): string {
  * numbers, Yes/No, and the rows of a list as JSON. Not the on-screen text,
  * which puts currency symbols and "12 Mar" in cells that then refuse to sum.
  */
+export interface ExportFilters {
+  completed?: boolean;
+  /** Free text, matched against the reference and the visible answers. */
+  query?: string;
+  /** One answer that must equal a value. */
+  answer?: { field: string; value: string };
+}
+
+export interface ProcessTable {
+  processKey: string;
+  processName: string;
+  header: string[];
+  rows: Cell[][];
+  count: number;
+  withheld: string[];
+  /** True when the sheet stopped at the cap; the newest rows come first. */
+  truncated: boolean;
+  /** YYYY-MM-DD of the export, for a filename. */
+  stamp: string;
+  /** "-open", "-finished" or "", for a filename. */
+  which: string;
+}
+
 export interface ProcessExport {
   filename: string;
   body: string;
   rows: number;
   withheld: string[];
-  /** True when the sheet stopped at the cap; the newest rows come first. */
   truncated: boolean;
 }
+
+export const XLSX_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
 const BATCH = 2000;
 const CAP = 50_000;
@@ -507,7 +537,8 @@ function stripRedacted(row: unknown): unknown {
   return Object.fromEntries(Object.entries(row as Record<string, unknown>).filter(([, v]) => v !== '[redacted]'));
 }
 
-function csvCell(value: string | number): string {
+function csvCell(value: Cell): string {
+  if (value === null || value === undefined) return '';
   if (typeof value === 'number') return String(value);
   // The same formula defence as the record export: a leading =, +, - or @
   // would otherwise run on whoever opens the file.
@@ -515,13 +546,26 @@ function csvCell(value: string | number): string {
   return `"${safe.replace(/"/g, '""')}"`;
 }
 
-export async function exportProcessCsv(
+/** A table as CSV, with a byte-order mark so Excel reads it as UTF-8. */
+export function tableToCsv(table: Pick<ProcessTable, 'header' | 'rows'>): string {
+  const lines = [table.header.map(csvCell).join(','), ...table.rows.map((r) => r.map(csvCell).join(','))];
+  return `﻿${lines.join('\r\n')}\r\n`;
+}
+
+/** Tables as a workbook, one sheet each, named after the process. */
+export function tablesToXlsx(tables: ProcessTable[]): Buffer {
+  return xlsx(tables.map((t) => ({ name: t.processName, rows: [t.header, ...t.rows] })));
+}
+
+export async function exportProcessTable(
   pool: Pool,
-  args: { principal: Principal; processKey: string; completed?: boolean; now?: Date },
-): Promise<ProcessExport> {
+  args: { principal: Principal; processKey: string; filters?: ExportFilters; now?: Date },
+): Promise<ProcessTable> {
   const now = args.now ?? new Date();
+  const filters = args.filters ?? {};
   if (args.principal.kind !== 'actor') throw new Error('an export is taken by a signed-in member');
   const tenantId = args.principal.tenantId;
+  const actorId = args.principal.actorId;
 
   const result = await inTransaction(pool, async (client) => {
     const { rows: versions } = await client.query<{ blueprint: Blueprint }>(
@@ -541,62 +585,82 @@ export async function exportProcessCsv(
     const askedFor = bp.outputs.exportFields.length
       ? bp.outputs.exportFields
       : bp.data.fields.filter((f) => f.type !== 'content' && f.type !== 'hidden').map((f) => f.key);
-    const visible = new Set(visibleFields(bp, decision.roles, decision.workspaceRole));
+    const visibleKeys = visibleFields(bp, decision.roles, decision.workspaceRole);
+    const visible = new Set(visibleKeys);
     const byKey = new Map(bp.data.fields.map((f) => [f.key, f]));
     const columns = askedFor.map((k) => byKey.get(k)).filter((f): f is Field => Boolean(f) && visible.has(f!.key));
     const withheld = askedFor.filter((k) => byKey.has(k) && !visible.has(k));
     const stateName = new Map(bp.workflow.states.map((st) => [st.key, st.name]));
 
-    const lines: string[] = [];
-    const header = ['Reference', 'Stage', 'Outcome', 'Created', 'Completed', ...columns.map((c) => c.label)];
-    lines.push(header.map(csvCell).join(','));
-
+    // The same filters, built the same way, as the Records page.
+    const params: unknown[] = [tenantId, args.processKey];
     const where = ['i.tenant_id = $1', 'i.process_key = $2'];
-    if (args.completed !== undefined) where.push(args.completed ? 'i.completed_at is not null' : 'i.completed_at is null');
+    const push = (v: unknown): string => {
+      params.push(v);
+      return `$${params.length}`;
+    };
+    if (filters.completed !== undefined) where.push(filters.completed ? 'i.completed_at is not null' : 'i.completed_at is null');
+    if (filters.answer) {
+      if (!visible.has(filters.answer.field)) throw new Error(`"${filters.answer.field}" is not a field you can filter by`);
+      where.push(`i.data ->> ${push(filters.answer.field)} = ${push(filters.answer.value)}`);
+    }
+    const q = filters.query?.trim();
+    if (q) {
+      const safe = q.replace(/[%_!]/g, (m) => `!${m}`);
+      where.push(
+        `(i.id::text ilike ${push(`${safe}%`)} escape '!'
+          or exists (
+            select 1 from jsonb_each_text(i.data) kv
+             where kv.key = any(${push(visibleKeys)}::text[]) and kv.value ilike ${push(`%${safe}%`)} escape '!'))`,
+      );
+    }
 
-    let count = 0;
+    const header = ['Reference', 'Stage', 'Outcome', 'Created', 'Completed', ...columns.map((c) => c.label)];
+    const out: Cell[][] = [];
     let truncated = false;
     interface Row { id: string; state: string; outcome: string | null; created_at: Date; completed_at: Date | null; data: Record<string, unknown> }
     let after: { createdAt: Date; id: string } | null = null;
     for (;;) {
-      const params: unknown[] = [tenantId, args.processKey, BATCH];
-      const page: string = after === null ? '' : `and (i.created_at, i.id) < ($4, $5)`;
-      if (after !== null) params.push(after.createdAt, after.id);
+      const pageParams = [...params];
+      let page = '';
+      if (after !== null) {
+        pageParams.push(after.createdAt, after.id);
+        page = `and (i.created_at, i.id) < ($${pageParams.length - 1}, $${pageParams.length})`;
+      }
+      pageParams.push(BATCH);
       const { rows }: { rows: Row[] } = await client.query<Row>(
         `select i.id, i.state, i.outcome, i.created_at, i.completed_at, i.data
            from instance i where ${where.join(' and ')} ${page}
-          order by i.created_at desc, i.id desc limit $3`,
-        params,
+          order by i.created_at desc, i.id desc limit $${pageParams.length}`,
+        pageParams,
       );
       for (const r of rows) {
-        if (count >= CAP) { truncated = true; break; }
+        if (out.length >= CAP) { truncated = true; break; }
         const data = redact(bp, decision.roles, r.data, decision.workspaceRole);
-        const cells: (string | number)[] = [
+        out.push([
           reference(r.id),
           stateName.get(r.state) ?? r.state,
           r.outcome ?? '',
           r.created_at.toISOString(),
           r.completed_at ? r.completed_at.toISOString() : '',
           ...columns.map((c) => exportCell(c, data[c.key])),
-        ];
-        lines.push(cells.map(csvCell).join(','));
-        count++;
+        ]);
       }
       if (truncated || rows.length < BATCH) break;
       const last: Row = rows[rows.length - 1]!;
       after = { createdAt: last.created_at, id: last.id };
     }
 
-    const stamp = now.toISOString().slice(0, 10);
-    const which = args.completed === undefined ? '' : args.completed ? '-finished' : '-open';
     return {
-      // A byte-order mark, so Excel reads the file as UTF-8 and a name with
-      // an accent survives the trip.
-      body: `\ufeff${lines.join('\r\n')}\r\n`,
-      filename: `${args.processKey}${which}-${stamp}.csv`,
-      rows: count,
+      processKey: args.processKey,
+      processName: bp.name,
+      header,
+      rows: out,
+      count: out.length,
       withheld,
       truncated,
+      stamp: now.toISOString().slice(0, 10),
+      which: filters.completed === undefined ? '' : filters.completed ? '-finished' : '-open',
     };
   });
 
@@ -605,17 +669,81 @@ export async function exportProcessCsv(
   await pool.query(
     `insert into process_export (tenant_id, process_key, actor, rows, withheld, filters, request_id, occurred_at)
      values ($1, $2, $3, $4, $5, $6, $7, $8)`,
-    [
-      tenantId,
-      args.processKey,
-      args.principal.actorId,
-      result.rows,
-      result.withheld,
-      JSON.stringify({ completed: args.completed ?? null }),
-      currentRequestId(),
-      now,
-    ],
+    [tenantId, args.processKey, actorId, result.count, result.withheld, JSON.stringify(filters), currentRequestId(), now],
   );
 
   return result;
+}
+
+export async function exportProcessCsv(
+  pool: Pool,
+  args: { principal: Principal; processKey: string; filters?: ExportFilters; now?: Date },
+): Promise<ProcessExport> {
+  const t = await exportProcessTable(pool, args);
+  return { filename: `${t.processKey}${t.which}-${t.stamp}.csv`, body: tableToCsv(t), rows: t.count, withheld: t.withheld, truncated: t.truncated };
+}
+
+export async function exportProcessXlsx(
+  pool: Pool,
+  args: { principal: Principal; processKey: string; filters?: ExportFilters; now?: Date },
+): Promise<{ filename: string; base64: string; rows: number; withheld: string[]; truncated: boolean }> {
+  const t = await exportProcessTable(pool, args);
+  return {
+    filename: `${t.processKey}${t.which}-${t.stamp}.xlsx`,
+    base64: tablesToXlsx([t]).toString('base64'),
+    rows: t.count,
+    withheld: t.withheld,
+    truncated: t.truncated,
+  };
+}
+
+/**
+ * The whole workspace in one workbook: a sheet per published process, and a
+ * first sheet listing them with their counts. `administer`, because it is
+ * everything. A process this administrator's roles cannot report on is
+ * listed with the reason rather than silently absent.
+ */
+export async function exportWorkspace(
+  pool: Pool,
+  args: { principal: Principal; now?: Date },
+): Promise<{ filename: string; base64: string; processes: { key: string; name: string; rows: number; withheld: string[]; skipped?: string }[] }> {
+  const now = args.now ?? new Date();
+  await requireWorkspaceCapability(pool, args.principal, 'administer', 'workspace-export');
+  if (args.principal.kind !== 'actor') throw new Error('an export is taken by a signed-in member');
+  const { rows: processes } = await pool.query<{ process_key: string; name: string }>(
+    `select distinct on (process_key) process_key, blueprint ->> 'name' as name
+       from process_version where tenant_id = $1 order by process_key, version desc`,
+    [args.principal.tenantId],
+  );
+  const tables: ProcessTable[] = [];
+  const listed: { key: string; name: string; rows: number; withheld: string[]; skipped?: string }[] = [];
+  for (const p of processes) {
+    try {
+      const t = await exportProcessTable(pool, { principal: args.principal, processKey: p.process_key, now });
+      tables.push(t);
+      listed.push({ key: p.process_key, name: p.name, rows: t.count, withheld: t.withheld });
+    } catch (err) {
+      if (err instanceof AuthorizationError) {
+        listed.push({ key: p.process_key, name: p.name, rows: 0, withheld: [], skipped: err.reason });
+        continue;
+      }
+      throw err;
+    }
+  }
+  const index: ProcessTable = {
+    processKey: '_index',
+    processName: 'Processes',
+    header: ['Process', 'Key', 'Records', 'Fields withheld', 'Note'],
+    rows: listed.map((l) => [l.name, l.key, l.rows, l.withheld.join('; '), l.skipped ?? '']),
+    count: listed.length,
+    withheld: [],
+    truncated: false,
+    stamp: now.toISOString().slice(0, 10),
+    which: '',
+  };
+  return {
+    filename: `workspace-${now.toISOString().slice(0, 10)}.xlsx`,
+    base64: tablesToXlsx([index, ...tables]).toString('base64'),
+    processes: listed,
+  };
 }

@@ -63,7 +63,25 @@ export function DataView({ processes }: { processes: Process[] }) {
 
   return <div className="dt__workspace">
     {confirmDialog}
-    <header className="ig__hero"><span className="ig__eyebrow">WORKSPACE DATA</span><h2>Bring data in. Know where it goes.</h2><p>Import records, inspect collected fields and manage retention.</p></header>
+    <header className="ig__hero"><span className="ig__eyebrow">WORKSPACE DATA</span><h2>Bring data in. Know where it goes.</h2><p>Import records, inspect collected fields and manage retention.</p>
+      {/*
+        * Everything, in one workbook: a sheet per published process and an
+        * index sheet with the counts. For the annual archive, the auditor,
+        * or leaving. Administrators only; each sheet is recorded as an export.
+        */}
+      <button type="button" className="cs__btn ig__everything" disabled={busy === 'workspace'} onClick={() => void run('workspace', async () => {
+        const res = await fetch('/api/export/workspace', { credentials: 'same-origin' });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(body.reason ?? body.error ?? `HTTP ${res.status}`);
+        const bytes = Uint8Array.from(atob(body.base64 as string), (c) => c.charCodeAt(0));
+        const url = URL.createObjectURL(new Blob([bytes], { type: body.contentType as string }));
+        const a = document.createElement('a'); a.href = url; a.download = body.filename as string; a.click(); URL.revokeObjectURL(url);
+        const list = body.processes as { name: string; rows: number; skipped?: string }[];
+        const total = list.reduce((n, p) => n + p.rows, 0);
+        const skipped = list.filter((p) => p.skipped);
+        return `Downloaded ${body.filename}: ${list.length} process${list.length === 1 ? '' : 'es'}, ${total} record${total === 1 ? '' : 's'}, a sheet each.${skipped.length ? ` Not included: ${skipped.map((p) => p.name).join(', ')}.` : ''}`;
+      })}>{busy === 'workspace' ? 'Preparing\u2026' : 'Download everything as Excel'}</button>
+    </header>
     <div className="ig__surface">
       <div className="ig__tabs" role="tablist" aria-label="Data tools">{tabs.map((item, index) => <button type="button" key={item.id} id={`dt-tab-${item.id}`} role="tab" aria-selected={tab === item.id} aria-controls={`dt-panel-${item.id}`} tabIndex={tab === item.id ? 0 : -1} className="ig__tab" onClick={() => { setTab(item.id); setNote(null); }} onKeyDown={event => { const next = event.key === 'ArrowRight' ? (index + 1) % tabs.length : event.key === 'ArrowLeft' ? (index - 1 + tabs.length) % tabs.length : event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : -1; if (next < 0) return; event.preventDefault(); const id = tabs[next]!.id; setTab(id); setNote(null); document.getElementById(`dt-tab-${id}`)?.focus(); }}><Icon name={item.icon} />{item.label}</button>)}</div>
       <section id={`dt-panel-${tab}`} role="tabpanel" aria-labelledby={`dt-tab-${tab}`} className="ig__panel">

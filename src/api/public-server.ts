@@ -199,11 +199,16 @@ async function readBody(req: IncomingMessage): Promise<unknown> {
   }
 }
 
-async function main(): Promise<void> {
-  const pool = createPool();
-  const engine = new Engine(pool);
-
-  const server = createServer((req, res) => {
+/**
+ * The handler, separate from the socket.
+ *
+ * On a laptop the public API listens on its own port. On a deployment with
+ * one web service, Render's free tier for one, there is one port, and the
+ * console API answers on it; so the console API hands anything under /v1,
+ * /openapi.json or /oauth/ to this. Same code, same checks, one process.
+ */
+export function publicHandler(pool: Pool, engine: Engine): (req: IncomingMessage, res: ServerResponse) => void {
+  return (req, res) => {
     const requestId = requestIdFrom(req.headers['x-request-id']);
     res.setHeader('x-request-id', requestId);
 
@@ -353,7 +358,18 @@ async function main(): Promise<void> {
         send(res, 500, { error: { type: 'internal_error', message: 'Something went wrong.', request_id: requestId } });
       }
     });
-  });
+  };
+}
+
+/** Paths the public API answers, wherever it is mounted. */
+export function isPublicApiPath(pathname: string): boolean {
+  return pathname === '/v1' || pathname.startsWith('/v1/') || pathname === '/openapi.json' || pathname.startsWith('/oauth/');
+}
+
+async function main(): Promise<void> {
+  const pool = createPool();
+  const engine = new Engine(pool);
+  const server = createServer(publicHandler(pool, engine));
 
   server.listen(PORT, () => {
     console.log(`\n  Patform public API  http://localhost:${PORT}/${API_VERSION}`);
@@ -363,7 +379,9 @@ async function main(): Promise<void> {
   });
 }
 
-main().catch((err) => {
+// Only when run as its own process. Imported by the console API, this file
+// contributes the handler and starts nothing.
+if (process.argv[1] && /public-server\.[cm]?[jt]s$/.test(process.argv[1])) main().catch((err) => {
   console.error(err);
   process.exit(1);
 });

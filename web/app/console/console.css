@@ -4538,6 +4538,7 @@ a.cs__navItem {
 .ig__eyebrow { color: var(--green-deep); font: 700 10px var(--ui); letter-spacing: .15em; }
 .ig__hero h2 { margin: 10px 0 7px; color: var(--ink); font: 600 clamp(27px, 2.7vw, 38px)/1.12 var(--ui); letter-spacing: -.04em; }
 .ig__hero p { margin: 0; color: var(--muted); font: 14px/1.5 var(--ui); }
+.ig__everything { margin-top: 14px; }
 .ig__surface { overflow: hidden; border: 1px solid var(--card-line); border-radius: 14px; background: var(--white); box-shadow: var(--card-shadow); }
 .ig__tabs { display: flex; gap: 4px; padding: 8px 12px 0; border-bottom: 1px solid var(--card-line); overflow-x: auto; scrollbar-width: thin; }
 .ig__tab { display: inline-flex; align-items: center; gap: 9px; flex: 0 0 auto; min-height: 48px; padding: 0 14px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--muted); font: 600 13px var(--ui); cursor: pointer; }
@@ -5194,7 +5195,8 @@ a.cs__navItem {
 
 
 /* The Records view's download: at the end of the controls, a button not a link. */
-.rv__download { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; white-space: nowrap; }
+.rv__downloads { display: inline-flex; gap: 6px; margin-left: auto; }
+.rv__download { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 .rv__note { margin: 0 0 10px; }
 
 /* Documents the process generated for a record, in the side column. */

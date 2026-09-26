@@ -601,11 +601,19 @@ npm run public-api                                   # /v1 on 3320
 npm run keys -- issue "CI" --as <actor-id> --scopes view,edit
 ```
 
-§11.1, versioned under `/v1` in its own process. The console's API is called by
-a page that ships with it and can change with it; this is called by somebody
-else's build, which cannot — so a console route cannot become a public promise
-by being reachable. OpenAPI at `/openapi.json`, served by the API so it cannot
+§11.1, versioned under `/v1`. The console's API is called by a page that
+ships with it and can change with it; this is called by somebody else's
+build, which cannot — so a console route cannot become a public promise by
+being reachable. OpenAPI at `/openapi.json`, served by the API so it cannot
 describe a deployment other than the one answering.
+
+It runs as its own process on a laptop (`npm run public-api`, port 3320) and
+is also mounted inside the console API: anything under `/v1`, `/openapi.json`
+or `/oauth/` on port 3310 is handed to the same handler with the same checks.
+That is how staging serves it, where Render's free tier allows one web
+service and one port, so `https://<staging api host>/v1/records` works with
+a key issued in the staging console. The handler is one function; the socket
+it answers on is the only difference.
 
 | | |
 |---|---|

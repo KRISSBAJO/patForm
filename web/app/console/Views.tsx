@@ -449,23 +449,31 @@ export function RecordsView({
    * search text does not, because a search is for finding one record and a
    * download is for having all of them.
    */
-  const download = async () => {
+  const download = async (format: 'csv' | 'xlsx') => {
     setDownloading(true);
     setNote(null);
     try {
       const params = new URLSearchParams();
       if (filter === 'open') params.set('completed', 'false');
       if (filter === 'done') params.set('completed', 'true');
-      const out = await call<{ filename: string; body: string; rows: number; withheld: string[]; truncated: boolean }>(
-        `/api/browse/${processKey}/export${params.size ? `?${params}` : ''}`,
+      if (query) params.set('q', query);
+      if (answerField && answerValue) {
+        params.set('field', answerField);
+        params.set('value', answerValue);
+      }
+      if (format === 'xlsx') params.set('format', 'xlsx');
+      const out = await call<{ filename: string; body?: string; base64?: string; contentType: string; rows: number; withheld: string[]; truncated: boolean }>(
+        `/api/browse/${processKey}/export?${params}`,
       );
-      const url = URL.createObjectURL(new Blob([out.body], { type: 'text/csv;charset=utf-8' }));
+      const bytes = out.base64 ? Uint8Array.from(atob(out.base64), (c) => c.charCodeAt(0)) : null;
+      const url = URL.createObjectURL(bytes ? new Blob([bytes], { type: out.contentType }) : new Blob([out.body ?? ''], { type: 'text/csv;charset=utf-8' }));
       const a = document.createElement('a');
       a.href = url;
       a.download = out.filename;
       a.click();
       URL.revokeObjectURL(url);
-      const parts = [`Downloaded ${out.rows} record${out.rows === 1 ? '' : 's'} as ${out.filename}.`];
+      const narrowed = query || answerValue || filter !== 'all';
+      const parts = [`Downloaded ${out.rows} record${out.rows === 1 ? '' : 's'}${narrowed ? ' matching your search and filters' : ''} as ${out.filename}.`];
       if (out.withheld.length) parts.push(`${out.withheld.length} field${out.withheld.length === 1 ? '' : 's'} hidden from your roles left out: ${out.withheld.join(', ')}.`);
       if (out.truncated) parts.push('Stopped at 50,000 rows; the newest are included.');
       setNote(parts.join(' '));
@@ -553,10 +561,15 @@ export function RecordsView({
           </label>
         )}
 
-        <button type="button" className="cs__btn rv__download" onClick={() => void download()} disabled={downloading}>
-          <Icon name="export" />
-          {downloading ? 'Preparing\u2026' : 'Download CSV'}
-        </button>
+        <span className="rv__downloads">
+          <button type="button" className="cs__btn rv__download" onClick={() => void download('xlsx')} disabled={downloading}>
+            <Icon name="export" />
+            {downloading ? 'Preparing\u2026' : 'Excel'}
+          </button>
+          <button type="button" className="cs__btn" onClick={() => void download('csv')} disabled={downloading}>
+            CSV
+          </button>
+        </span>
       </div>
 
       {note && <p className="vw__footnote rv__note" role="status">{note}</p>}
