@@ -25,7 +25,7 @@
  */
 
 import type { Blueprint } from '../blueprint/index.js';
-import type { Expr } from '../blueprint/common.js';
+import { evaluate, type Expr } from '../blueprint/common.js';
 import { rulesFor, type CategoryRules } from './rules.js';
 
 export type Sensitivity = 'public' | 'internal' | 'confidential' | 'restricted';
@@ -999,6 +999,7 @@ function tests(spec: PackSpec, answers: Record<string, unknown>, rules: Category
 /** A plausible answer for each field, so the generated tests can run. */
 function sampleAnswers(fields: PackField[], spec?: PackSpec): Record<string, unknown> {
   const out: Record<string, unknown> = {};
+  const deferred: PackField[] = [];
   for (const f of fields) {
     if (f.key === 'decision_note' || f.setBy === 'operator' || f.type === 'calculated') continue;
     if (f.sample !== undefined) {
@@ -1008,12 +1009,32 @@ function sampleAnswers(fields: PackField[], spec?: PackSpec): Record<string, unk
     // A question in a section that is only sometimes shown, or required only
     // sometimes, is left unanswered unless the spec says what to answer: the
     // generated tests walk the ordinary path, and an answer to a hidden
-    // question is what the public form's screening holds for review.
-    if (spec && (conditional(spec, f) || f.requiredWhen)) continue;
-    if (f.type === 'repeating_group') {
-      out[f.key] = [sampleAnswers(f.fields ?? [])];
-      continue;
+    // question is what the public form's screening holds for review. But if
+    // the sample itself makes the section show or the condition hold, the
+    // question is asked, and it is answered below once the rest is known.
+    if (spec && (conditional(spec, f) || f.requiredWhen)) { deferred.push(f); continue; }
+    out[f.key] = sampleFor(f);
+  }
+  if (spec) {
+    for (let round = 0; round < 2; round++) {
+      for (const f of deferred) {
+        if (out[f.key] !== undefined) continue;
+        const shown = !conditional(spec, f) || evaluate(spec.groups![f.group!]!.visibleWhen!, { answers: out, now: new Date() });
+        if (!shown) continue;
+        const required = f.required || (f.requiredWhen && evaluate(f.requiredWhen, { answers: out, now: new Date() }));
+        if (required) out[f.key] = sampleFor(f);
+      }
     }
+  }
+  return out;
+}
+
+/** A plausible answer for one field, inside its own constraints. */
+function sampleFor(f: PackField): unknown {
+  if (f.sample !== undefined) return f.sample;
+  if (f.type === 'repeating_group') return [sampleAnswers(f.fields ?? [])];
+  const out: Record<string, unknown> = {};
+  {
     switch (f.type) {
       case 'email':
         out[f.key] = f.key === 'submitter_email' ? 'sam@example.com' : 'someone@example.com';
@@ -1025,14 +1046,19 @@ function sampleAnswers(fields: PackField[], spec?: PackSpec): Record<string, unk
         out[f.key] = 'A short description of what is needed and why.';
         break;
       case 'number':
-      case 'currency':
-        out[f.key] = 120;
+      case 'currency': {
+        const c = (f.constraints ?? {}) as { min?: number; max?: number };
+        let n = 120;
+        if (c.max !== undefined && n > c.max) n = c.max;
+        if (c.min !== undefined && n < c.min) n = c.min;
+        out[f.key] = n;
         break;
+      }
       case 'rating':
         out[f.key] = 4;
         break;
       case 'date':
-        out[f.key] = '2026-11-02';
+        out[f.key] = sampleDate(f);
         break;
       case 'time':
         out[f.key] = '09:00';
@@ -1057,7 +1083,7 @@ function sampleAnswers(fields: PackField[], spec?: PackSpec): Record<string, unk
         out[f.key] = 'Example';
     }
   }
-  return out;
+  return out[f.key];
 }
 
 /**
@@ -1076,9 +1102,42 @@ const REFERENCE = {
   message: 'Letters, numbers and ordinary punctuation, up to 120 characters.',
 };
 
+/**
+ * The answer that carries the substance is a few sentences, not a word.
+ *
+ * A required long answer — what happened, why it is needed, what is wrong —
+ * asks for twenty characters. "See email" and "n/a" are what the reviewer
+ * gets otherwise, and a reviewer who has to ask is a form that failed.
+ */
+const SUBSTANCE = { minLength: 20, maxLength: 5000, message: 'A few sentences, please: at least 20 characters.' };
+/** A name is two characters or more and not an essay. */
+const NAME_KEY = /_name$/;
+const NAME = { minLength: 2, maxLength: 80, message: 'Between 2 and 80 characters.' };
+
+function defaultConstraints(f: PackField): Record<string, unknown> | undefined {
+  if (f.constraints) return f.constraints;
+  if (f.setBy === 'operator') return undefined;
+  if (f.type === 'short_text' && REFERENCE_KEY.test(f.key)) return REFERENCE;
+  if (f.type === 'short_text' && NAME_KEY.test(f.key)) return NAME;
+  if (f.type === 'long_text' && f.required) return SUBSTANCE;
+  return undefined;
+}
+
+/** A date inside the field's own window, worked out from today so it never goes stale. */
+function sampleDate(f: PackField): string {
+  const c = (f.constraints ?? {}) as { minDaysFromToday?: number; maxDaysFromToday?: number };
+  let offset = 30;
+  if (c.maxDaysFromToday !== undefined && c.maxDaysFromToday < offset) offset = Math.min(c.maxDaysFromToday, -3);
+  if (c.minDaysFromToday !== undefined && c.minDaysFromToday > offset) offset = c.minDaysFromToday + 7;
+  if (c.maxDaysFromToday !== undefined && offset > c.maxDaysFromToday) offset = c.maxDaysFromToday;
+  const d = new Date();
+  d.setUTCDate(d.getUTCDate() + offset);
+  return d.toISOString().slice(0, 10);
+}
+
 /** One spec field as the blueprint writes it, rows of a list included. */
 function emitField(f: PackField): Record<string, unknown> {
-  const constraints = f.constraints ?? (f.type === 'short_text' && REFERENCE_KEY.test(f.key) ? REFERENCE : undefined);
+  const constraints = defaultConstraints(f);
   return {
     key: f.key,
     type: f.type,
