@@ -1,10 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, useRef } from 'react';
 import QRCode from 'qrcode';
 import { useConfirm } from '../../components/confirm-dialog';
 import { SignatureView, type SignatureValue } from '../../components/signature-field';
-import { useDialog } from '../useDialog';
 import { Icon } from './Icon';
 import { Trend, WhereItSits, type Point, type Standing } from './Charts';
 import { postJson } from './stepup';
@@ -1114,6 +1113,32 @@ export function HeldView({ onChanged }: { onChanged: (count: number) => void }) 
   const [note, setNote] = useState<string | null>(null);
   const [reviewing, setReviewing] = useState<Held | null>(null);
 
+  // The review is a page, not a window over the list: it has an address, the
+  // browser's Back returns from it, and a link to it can be shared with the
+  // colleague who should make the call.
+  const heldParam = () => new URLSearchParams(window.location.search).get('held');
+  const openReview = (row: Held) => {
+    setReviewing(row);
+    window.history.pushState({ held: row.id }, '', `?held=${encodeURIComponent(row.id)}`);
+  };
+  const closeReview = () => {
+    setReviewing(null);
+    if (heldParam()) window.history.pushState({}, '', window.location.pathname);
+  };
+  useEffect(() => {
+    if (!rows) return;
+    const id = heldParam();
+    if (id) setReviewing(rows.find((r) => r.id === id) ?? null);
+  }, [rows]);
+  useEffect(() => {
+    const onPop = () => {
+      const id = heldParam();
+      setReviewing(id && rows ? rows.find((r) => r.id === id) ?? null : null);
+    };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, [rows]);
+
   const load = useCallback(async () => {
     setError(null);
     try {
@@ -1189,23 +1214,23 @@ export function HeldView({ onChanged }: { onChanged: (count: number) => void }) 
   return (
     <div className="hd__page">
       {confirmDialog}
-      {reviewing && (
+      {reviewing ? (
         <HeldReview
           row={reviewing}
           busy={busy !== null}
-          onClose={() => setReviewing(null)}
+          onClose={closeReview}
           onRelease={() => {
             const row = reviewing;
-            setReviewing(null);
+            closeReview();
             void release(row);
           }}
           onDiscard={() => {
             const row = reviewing;
-            setReviewing(null);
+            closeReview();
             void discard(row);
           }}
         />
-      )}
+      ) : <>
       <div className="hd__intro">
         <div>
           <span className="hd__eyebrow">PUBLIC FORM SCREENING</span>
@@ -1255,11 +1280,9 @@ export function HeldView({ onChanged }: { onChanged: (count: number) => void }) 
                     </div>
                   ))}
                 </dl>
-                {row.answers.length > answers.length && (
-                  <button type="button" className="hd__more" onClick={() => setReviewing(row)}>
-                    Review all {row.answers.length} answers
-                  </button>
-                )}
+                <button type="button" className="hd__more" onClick={() => openReview(row)}>
+                  Review all {row.answers.length} answers <span aria-hidden="true">→</span>
+                </button>
                 <div className="hd__actions">
                   <button
                     type="button"
@@ -1290,6 +1313,7 @@ export function HeldView({ onChanged }: { onChanged: (count: number) => void }) 
         </ol>
         <p className="hd__guideFoot">While held, no record is created and no receipt or workflow email is sent. Unreviewed submissions are deleted after 30 days.</p>
       </div>
+      </>}
     </div>
   );
 }
@@ -1298,11 +1322,12 @@ export function HeldView({ onChanged }: { onChanged: (count: number) => void }) 
  * Every answer on a held submission, laid out to be read.
  *
  * "Show all answers" used to open the card downwards into a grid of five
- * narrow columns, where a note wrapped to one word a line and a drawn
- * signature was a screen of base64. Deciding whether something is a person or
- * a script needs the answers read properly, so they get a window: a label and
- * an answer per line, long text on its own, the signature as a signature, and
- * the two decisions at the bottom where the reading ends.
+ * narrow columns, then became a window over the list. Neither was a place:
+ * the window had no address, Back closed the console instead of the window,
+ * and it could not be sent to the colleague who should decide. This is a
+ * page. Deciding whether something is a person or a script needs the answers
+ * read properly: a label and an answer per line, long text on its own, the
+ * signature as a signature, and the two decisions where the reading ends.
  */
 function HeldReview({
   row,
@@ -1317,31 +1342,27 @@ function HeldReview({
   onRelease: () => void;
   onDiscard: () => void;
 }) {
-  const box = useDialog(onClose);
+  const heading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    heading.current?.focus();
+    window.scrollTo({ top: 0 });
+  }, [row.id]);
   return (
-    <div
-      className="hr"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="held-review-title"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div className="hr__box" ref={box} tabIndex={-1}>
+    <div className="hr">
+      <button type="button" className="hr__back" onClick={onClose}>
+        <span aria-hidden="true">←</span> Back to held submissions
+      </button>
+      <article className="hr__box" aria-labelledby="held-review-title">
         <header className="hr__head">
           <div>
             <p className="hr__eyebrow">
               {row.processName} · {row.reference}
             </p>
-            <h2 id="held-review-title" className="hr__title">
+            <h2 id="held-review-title" className="hr__title" ref={heading} tabIndex={-1}>
               Review this submission
             </h2>
             <p className="hr__when">Received {new Date(row.receivedAt).toLocaleString()}</p>
           </div>
-          <button type="button" className="hr__close" onClick={onClose} aria-label="Close">
-            ×
-          </button>
         </header>
 
         <div className="hr__why">
@@ -1354,7 +1375,7 @@ function HeldReview({
           </ul>
         </div>
 
-        <dl className="hr__answers" tabIndex={0} aria-label="Every answer on this submission">
+        <dl className="hr__answers" aria-label="Every answer on this submission">
           {row.answers.map((a) => (
             <div key={a.label} className={`hr__answer${a.long || a.signature ? ' hr__answer--wide' : ''}`}>
               <dt>{a.label}</dt>
@@ -1374,7 +1395,7 @@ function HeldReview({
             </button>
           </div>
         </footer>
-      </div>
+      </article>
     </div>
   );
 }

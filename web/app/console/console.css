@@ -4172,31 +4172,41 @@ a.cs__navItem {
 /* ------------------------------------------------ reviewing a held one */
 
 .hr {
-  position: fixed;
-  inset: 0;
-  z-index: 900;
-  display: grid;
-  place-items: center;
-  padding: 16px;
-  background: rgba(19, 26, 23, 0.45);
-  backdrop-filter: blur(2px);
+  max-width: 960px;
 }
+
+.hr__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  margin: 0 0 14px;
+  padding: 0 12px 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--white);
+  color: var(--ink-soft);
+  font: 600 13px var(--font-body), sans-serif;
+  cursor: pointer;
+}
+
+.hr__back:hover { background: var(--paper); }
+.hr__back:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
 
 .hr__box {
   display: flex;
   flex-direction: column;
   width: 100%;
-  max-width: 720px;
-  max-height: calc(100vh - 32px);
+  border: 1px solid var(--line-soft);
   border-radius: 14px;
   background: var(--white);
-  box-shadow: 0 24px 60px -20px rgba(19, 26, 23, 0.45);
+  box-shadow: 0 1px 2px rgba(19, 26, 23, 0.06);
   overflow: hidden;
 }
 
-.hr__box:focus {
-  outline: none;
-}
+.hr__title:focus { outline: none; }
+.hr__title:focus-visible { outline: 2px solid var(--green); outline-offset: 4px; border-radius: 4px; }
+
 
 .hr__head {
   display: flex;

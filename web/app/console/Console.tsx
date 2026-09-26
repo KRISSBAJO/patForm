@@ -218,8 +218,10 @@ export function Console() {
       const id = new URLSearchParams(window.location.search).get('record');
       if (id) void open(id);
       else {
+        // Back from a record returns to work; Back from anything else (a held
+        // submission's review page, say) is that page's own business.
         setRecord(null);
-        setView('work');
+        setView((was) => (was === 'record' ? 'work' : was));
       }
     };
     window.addEventListener('popstate', onPop);
