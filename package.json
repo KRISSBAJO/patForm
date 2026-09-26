@@ -32,6 +32,8 @@
     "erase": "node --env-file=.env node_modules/tsx/dist/cli.mjs src/privacy-cli.ts erase",
     "public-api": "node --env-file=.env node_modules/tsx/dist/cli.mjs src/api/public-server.ts",
     "keys": "node --env-file=.env node_modules/tsx/dist/cli.mjs src/key-cli.ts",
+    "push:keys": "node node_modules/tsx/dist/cli.mjs scripts/push-keys.ts",
+    "icons": "node scripts/make-icons.mjs",
     "redis:up": "docker run -d --name patform-redis -p 16379:6379 redis:7-alpine",
     "redis:down": "docker rm -f patform-redis",
     "packs": "node --env-file=.env node_modules/tsx/dist/cli.mjs src/packs-cli.ts",

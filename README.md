@@ -603,6 +603,38 @@ faithfully, so an erased person is in every backup taken before the request.
 That is a retention schedule, not a delete, and the CLI says so after every run
 rather than leaving somebody to remember.
 
+## The installed console, and notifications
+
+The console and the builder can be installed to a phone's home screen or a
+laptop's dock: a manifest at `/manifest.webmanifest` and a service worker at
+`/sw.js`, registered only on those pages. A respondent filling a form once is
+offered nothing. The worker caches nothing but the offline page, because a
+cached console that says "nothing waiting" when something is would be worse
+than one that says it is offline.
+
+**Notifications for people who decide.** On the account page, "Turn on
+notifications" asks the browser once and hands the server a subscription for
+that device. When a decision or a task is waiting for that person, the worker
+pushes a message: which process, which reference, and a tap opens the
+record. Nothing a form collected is in it. Who is told is resolved the way
+email recipients are, a role through the membership directory, an address
+through the actor table, and each approval or task is announced once. A
+device the push service reports gone is forgotten. On an iPhone, notifications
+work once the console is on the home screen, and the page says so.
+
+The push protocol is written against RFC 8291 and RFC 8292 in
+`src/runtime/web-push.ts`, with a test that plays the browser and decrypts
+what the server encrypted. It needs a key pair in the environment of both the
+API and the worker:
+
+```bash
+npm run push:keys      # prints VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT
+npm run icons          # re-renders the app icons from the brand mark
+```
+
+Without the keys the account page says notifications are not set up, and
+nothing else changes. Changing them later invalidates every subscription.
+
 ## The public API
 
 ```bash

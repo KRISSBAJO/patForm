@@ -5,6 +5,7 @@ import { sweepExpiredTokens } from './runtime/retention.js';
 import { sweepHeld } from './runtime/held.js';
 import { checkSendingHealth } from './runtime/delivery-health.js';
 import { runDueReports } from './runtime/saved-views.js';
+import { notifyWaitingWork } from './runtime/push.js';
 import { cleanupExpiredReceipts, drainReceiptDeletions } from './runtime/receipt-files.js';
 import { processNextAiDraft } from './runtime/ai-drafts.js';
 
@@ -71,6 +72,11 @@ async function main(): Promise<void> {
       const fired = await engine.fireDueTimers(now, BATCH);
       totals.timers += fired;
       did += fired;
+
+      // Tell the phones. Cheap when nothing is new: both queries stop at
+      // rows not yet announced. See runtime/push.ts.
+      const pushed = await notifyWaitingWork(pool, now);
+      if (pushed) console.log(`  ${now.toISOString()}  pushed ${pushed} notification(s)`);
 
       // §11.2's delivery. Same loop as the outbox rather than a second
       // process: a webhook that only leaves when somebody opens a page is the

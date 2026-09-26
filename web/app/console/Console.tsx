@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import './console.css';
 import { Ask } from './Ask';
 import { DashboardView, HealthView, HeldView, RecordsView, SecurityView } from './Views';
+import { NotificationsPanel } from './Notifications';
 import { PeopleView, ProcessesView } from './Manage';
 import { InviteView } from './Invite';
 import { BootScreen } from '../../components/boot-screen';
@@ -737,7 +738,10 @@ export function Console() {
                 }}
               />
             ) : view === 'security' ? (
-              <SecurityView onAccessChange={() => void checkSiteAdmin()} />
+              <>
+                <SecurityView onAccessChange={() => void checkSiteAdmin()} />
+                <NotificationsPanel />
+              </>
             ) : view === 'held' ? (
               <HeldView onChanged={setHeldCount} />
             ) : !processKey && ['work', 'records', 'dashboard', 'ask'].includes(view) ? (

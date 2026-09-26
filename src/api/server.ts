@@ -7,6 +7,7 @@ import { changePlatformPerson, grantPlatformOperator, platformAudit, platformInt
 import { Engine } from '../runtime/engine.js';
 import { addRecordNote, recordDocument } from '../runtime/console-queries.js';
 import { shareRecord } from '../runtime/share-record.js';
+import { pushConfig, removeSubscription, saveSubscription, testPush } from '../runtime/push.js';
 import { createView, deleteView, listViews, type Schedule, type ViewParams } from '../runtime/saved-views.js';
 import { isPublicApiPath, publicHandler } from './public-server.js';
 import { aiDraftStatus, applyAiRevision, queueAiDraft, queueAiRevision } from '../runtime/ai-drafts.js';
@@ -559,6 +560,20 @@ route('GET', /^\/api\/browse\/([a-z0-9_]+)\/export$/, async ({ pool, principal, 
   if (url.searchParams.get('format') === 'xlsx') return { contentType: XLSX_TYPE, ...(await exportProcessXlsx(pool, args)) };
   return { contentType: 'text/csv', ...(await exportProcessCsv(pool, args)) };
 });
+
+// Push notifications for this device. See runtime/push.ts.
+route('GET', /^\/api\/push\/config$/, async () => pushConfig());
+route('POST', /^\/api\/push\/subscribe$/, async ({ pool, principal }, body) => {
+  const { subscription, userAgent } = body as { subscription?: unknown; userAgent?: string };
+  if (!subscription || typeof subscription !== 'object') throw new HttpError(400, 'a subscription is required');
+  return saveSubscription(pool, principal, { subscription: subscription as Record<string, unknown>, userAgent });
+});
+route('POST', /^\/api\/push\/unsubscribe$/, async ({ pool, principal }, body) => {
+  const { endpoint } = body as { endpoint?: string };
+  if (!endpoint) throw new HttpError(400, 'which device?');
+  return removeSubscription(pool, principal, endpoint);
+});
+route('POST', /^\/api\/push\/test$/, async ({ pool, principal }) => testPush(pool, principal));
 
 // Saved views of the Records page, and the reports scheduled from them.
 route('GET', /^\/api\/views\/([a-z0-9_]+)$/, async ({ pool, principal, url }) =>

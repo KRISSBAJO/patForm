@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
+import { Pwa } from '../components/pwa';
 
 export const metadata: Metadata = {
   title: 'Patform — describe the process, launch the whole operation',
@@ -10,6 +11,9 @@ export const metadata: Metadata = {
     description: 'A process platform for operational teams.',
     type: 'website',
   },
+  manifest: '/manifest.webmanifest',
+  icons: { icon: '/icons/icon-192.png', apple: '/icons/apple-touch-icon.png' },
+  appleWebApp: { capable: true, statusBarStyle: 'default', title: 'Patform' },
 };
 
 export const viewport: Viewport = {
@@ -29,7 +33,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           rel="stylesheet"
         />
       </head>
-      <body>{children}</body>
+      <body>
+        {children}
+        <Pwa />
+      </body>
     </html>
   );
 }

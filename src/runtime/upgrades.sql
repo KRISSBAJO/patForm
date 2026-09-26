@@ -202,3 +202,23 @@ create table if not exists saved_view (
 );
 create index if not exists saved_view_process on saved_view (tenant_id, process_key);
 create index if not exists saved_view_due on saved_view (last_sent_at) where schedule is not null;
+
+-- A device that asked to be told when work is waiting for its owner.
+-- The endpoint is the push service's URL for that device; the two keys
+-- encrypt each message for it alone (runtime/web-push.ts).
+create table if not exists push_subscription (
+  id           bigserial primary key,
+  tenant_id    uuid not null,
+  actor_id     uuid not null,
+  endpoint     text not null unique,
+  p256dh       text not null,
+  auth         text not null,
+  user_agent   text,
+  created_at   timestamptz not null default now(),
+  last_used_at timestamptz,
+  failed_at    timestamptz
+);
+create index if not exists push_subscription_actor on push_subscription (actor_id);
+-- When the people waited on were told by push; null until the worker has.
+alter table approval_request add column if not exists notified_at timestamptz;
+alter table task add column if not exists notified_at timestamptz;
