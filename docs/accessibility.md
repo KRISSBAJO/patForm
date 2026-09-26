@@ -16,8 +16,10 @@ Audited 2026-09-21 with axe-core 4.10.2 against `wcag2a, wcag2aa, wcag21a, wcag2
 | Ask (operational query) | 0 violations | pass |
 | Builder | 0 violations | pass |
 | Builder dialogs (test, publish, new process) | 0 violations | one known gap, below |
+| Records: saved-view form, answer filter, a record opened from the list, sending it to a colleague | 0 violations | not yet |
+| Dashboard with the answer summaries; a process card with QR, embed and email; the builder's table of processes | 0 violations | not yet |
 
-Re-run it with `npm run a11y`.
+Sixty-seven screens in all, as of 2026-09-26. Re-run it with `npm run a11y`.
 
 ## What the automated pass found
 
