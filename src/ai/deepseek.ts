@@ -24,6 +24,20 @@ export class DeepSeekProvider implements Provider {
   }
 
   async generate(request: GenerationRequest): Promise<ProviderResponse> {
+    // DeepSeek now and then answers a long request with JSON that does not
+    // parse: a stray character, a reply cut mid-string. Asking once more is
+    // twenty seconds; falling through to the next provider is a different
+    // author for the rest of the draft, and often a smaller model.
+    try {
+      return await this.once(request);
+    } catch (error) {
+      if (!(error instanceof Error) || !/invalid JSON/.test(error.message)) throw error;
+      console.warn('DeepSeek returned invalid JSON; asking once more before falling back');
+      return this.once(request);
+    }
+  }
+
+  private async once(request: GenerationRequest): Promise<ProviderResponse> {
     const started = Date.now();
     const completion = await this.client.chat.completions.create({
       model: this.model,

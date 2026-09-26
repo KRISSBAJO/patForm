@@ -89,6 +89,30 @@ alter table ai_draft_job add column if not exists review jsonb;
 alter table ai_draft_job add column if not exists applied_at timestamptz;
 -- What the worker is doing right now, for the page that is waiting.
 alter table ai_draft_job add column if not exists note text;
+-- What a staged draft has built so far: counts per stage, for the page.
+alter table ai_draft_job add column if not exists progress jsonb;
+
+-- Every model call the platform makes, with what it cost. The pipeline had
+-- measured tokens and price on every attempt and thrown the numbers away.
+create table if not exists ai_usage (
+  id            bigserial primary key,
+  tenant_id     uuid,
+  actor_id      uuid,
+  job_id        uuid,
+  purpose       text not null,
+  provider      text not null,
+  model         text not null,
+  stage         text not null,
+  attempt       int not null,
+  input_tokens  int,
+  output_tokens int,
+  cost_usd      numeric(12, 6),
+  latency_ms    int,
+  outcome       text not null,
+  created_at    timestamptz not null default now()
+);
+create index if not exists ai_usage_recent on ai_usage (created_at desc);
+create index if not exists ai_usage_tenant on ai_usage (tenant_id, created_at desc);
 create index if not exists ai_draft_job_queue on ai_draft_job (created_at) where status in ('queued', 'running');
 create unique index if not exists ai_draft_job_active_key on ai_draft_job (tenant_id, process_key) where status in ('queued', 'running');
 update process_draft set ai_review_required = true

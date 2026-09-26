@@ -13,8 +13,24 @@ export type Decision =
   | 'unparseable' // never produced something shaped like a blueprint
   | 'refused'; // the provider declined to answer
 
+/** One model call, as the usage ledger records it. */
+export interface UsageRecord {
+  provider: string;
+  model: string;
+  /** "whole" for a single-reply draft; the stage name for a staged one. */
+  stage: string;
+  attempt: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  costUsd?: number;
+  latencyMs: number;
+  outcome: 'ok' | 'shape' | 'refused' | 'error';
+}
+
 export interface Attempt {
   attempt: number;
+  /** Which stage of a staged draft produced this; absent for a single reply. */
+  stage?: string;
   meta: ProviderMeta;
   shapeOk: boolean;
   /** Zod issues, when the output was not a blueprint at all. */
@@ -35,6 +51,8 @@ export interface GenerationOutcome {
   attempts: Attempt[];
   diagnostics: Diagnostic[];
   scenarios?: ScenarioResult[];
+  /** True when the draft was built in stages; see staged.ts. */
+  staged?: boolean;
   /** §7.3: model, prompt template version, execution result, and errors. */
   audit: {
     promptVersion: string;
@@ -59,7 +77,9 @@ export interface GenerateOptions {
   /** When given, a clean blueprint also has to pass its own scenarios. */
   pool?: Pool;
   /** Optional durable status callback for a queued draft. */
-  onProgress?: (stage: 'generating' | 'checking', note?: string) => Promise<void>;
+  onProgress?: (stage: 'generating' | 'checking', note?: string, progress?: Record<string, unknown>) => Promise<void>;
+  /** Every model call, for the usage ledger. */
+  onUsage?: (usage: UsageRecord) => Promise<void>;
 }
 
 /**
@@ -135,8 +155,22 @@ export async function generateBlueprint(
       repair: attempt > 1 ? { attempt, diagnostics } : undefined,
     });
 
+    const usage = (outcome: UsageRecord['outcome']) =>
+      options.onUsage?.({
+        provider: provider.name,
+        model: response.meta.model,
+        stage: 'whole',
+        attempt,
+        inputTokens: response.meta.inputTokens,
+        outputTokens: response.meta.outputTokens,
+        costUsd: response.meta.costUsd,
+        latencyMs: response.meta.latencyMs,
+        outcome,
+      });
+
     if (response.meta.refusal) {
       attempts.push({ attempt, meta: response.meta, shapeOk: false, shapeIssues: [response.meta.refusal], errors: [], warnings: [] });
+      await usage('refused');
       decision = 'refused';
       break;
     }
@@ -151,6 +185,7 @@ export async function generateBlueprint(
         .slice(0, 12)
         .map((issue) => `${issue.path.join('.') || '(root)'}: ${issue.message}`);
       attempts.push({ attempt, meta: response.meta, shapeOk: false, shapeIssues, errors: [], warnings: [] });
+      await usage('shape');
       decision = 'unparseable';
 
       // Shape failures are repaired as pseudo-diagnostics so the same repair
@@ -187,6 +222,7 @@ export async function generateBlueprint(
       warnings: compiled.warnings,
       normalized,
     });
+    await usage('ok');
 
     /*
      * A blueprint that declares no assumptions is not finished being

@@ -5,6 +5,7 @@ import type { Diagnostic } from '../compiler/diagnostics.js';
 import { inTransaction, type Pool } from './db.js';
 import { require_, requireWorkspaceCapability, type Principal } from './policy.js';
 import { DraftConflict, InvalidInput, NotFound } from './errors.js';
+import { recordUsage } from './ai-usage.js';
 import { runScenarios, type ScenarioResult } from './scenarios.js';
 import { Engine } from './engine.js';
 import {
@@ -13,8 +14,7 @@ import {
   generateBlueprint,
   providerFor,
   type GenerationOutcome,
-  type ProviderName,
-} from '../ai/index.js';
+  type ProviderName, generateStaged, type UsageRecord } from '../ai/index.js';
 
 /**
  * The builder's server side.
@@ -693,7 +693,13 @@ const PROVIDER_LABEL: Record<ProviderName, string> = { deepseek: 'DeepSeek', ope
 
 export async function createDraft(
   pool: Pool,
-  args: { principal: Principal; input: NewProcess; onProgress?: (stage: 'generating' | 'checking' | 'saving', note?: string) => Promise<void> },
+  args: {
+    principal: Principal;
+    input: NewProcess;
+    onProgress?: (stage: 'generating' | 'checking' | 'saving', note?: string, progress?: Record<string, unknown>) => Promise<void>;
+    /** The queued job this draft belongs to, for the usage ledger. */
+    jobId?: string;
+  },
 ): Promise<DraftDetail & { audit?: GenerationOutcome['audit']; decision?: string; reviewNote?: string }> {
   const { principal, input } = args;
   await requireWorkspaceCapability(pool, principal, 'administer', input.key);
@@ -742,8 +748,18 @@ export async function createDraft(
      * drafts so far. A provider that cannot return that many would be cut off
      * mid-object and read as no blueprint at all, so it is not asked.
      */
-    const estimate = Math.ceil(input.description.length * 5);
+    /*
+     * Long descriptions are drafted in stages (see ai/staged.ts): three
+     * replies of a third the size, so the fast provider can answer them, and
+     * repairs that return only the sections with errors. Each stage is about
+     * two output tokens per character of description; a single reply about
+     * five.
+     */
+    const staged = input.description.length > 2500;
+    const estimate = Math.ceil(input.description.length * (staged ? 2.5 : 5));
     const order = input.provider ? [input.provider] : available;
+    const onUsage = (usage: UsageRecord) =>
+      recordUsage(pool, { tenantId, actorId: principal.actorId, jobId: args.jobId ?? null, purpose: 'draft' }, usage);
     for (const name of order) {
       const provider = providerFor(name);
       if (provider.maxOutputTokens && estimate > provider.maxOutputTokens && order.length > 1) {
@@ -758,15 +774,27 @@ export async function createDraft(
           : `Trying ${PROVIDER_LABEL[name]} now${name === 'anthropic' ? ' — the strongest model configured, which takes several minutes for a description this size' : ''}`,
       );
       try {
-        const proposed = await generateBlueprint(provider, blueprintSchema(), {
-          description: input.description,
-          pack: input.pack,
-          pool,
-          // A page-long description produces a page-long blueprint, and one
-          // repair is rarely enough to settle it. Two is still bounded.
-          maxRepairs: input.description.length > 1500 ? 2 : 1,
-          onProgress: args.onProgress,
-        });
+        const proposed = staged
+          ? await generateStaged(provider, {
+              description: input.description,
+              pack: input.pack,
+              pool,
+              // Each repair asks only for the failing sections, so a round is
+              // short; three rounds settle most long drafts.
+              maxRepairs: 3,
+              onStage: async (p) => args.onProgress?.(p.stage === 'checking' ? 'checking' : 'generating', p.note, p.progress),
+              onUsage,
+            })
+          : await generateBlueprint(provider, blueprintSchema(), {
+              description: input.description,
+              pack: input.pack,
+              pool,
+              // A page-long description produces a page-long blueprint, and one
+              // repair is rarely enough to settle it. Two is still bounded.
+              maxRepairs: input.description.length > 1500 ? 2 : 1,
+              onProgress: args.onProgress,
+              onUsage,
+            });
         if (proposed.blueprint) { outcome = proposed; break; }
         if (proposed.reviewable) {
           const failures = proposed.reviewable.scenarios.filter((item) => !item.passed)

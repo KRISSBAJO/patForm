@@ -24,6 +24,14 @@ export interface GenerationRequest {
   schema: Record<string, unknown>;
   /** Set on a repair attempt so the provider can label the call. */
   repair?: { attempt: number; diagnostics: Diagnostic[] };
+  /**
+   * The Zod shape this reply must take, when it is not a whole blueprint.
+   * Staged drafting asks for one part at a time; a provider that constrains
+   * output by schema uses this instead of the blueprint's.
+   */
+  shape?: unknown;
+  /** Which stage of a staged draft this is, for the audit. */
+  stage?: string;
 }
 
 export interface ProviderResponse {

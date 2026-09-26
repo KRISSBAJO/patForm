@@ -7,6 +7,7 @@ import { DeepSeekProvider } from './deepseek.js';
 export * from './provider.js';
 export * from './pipeline.js';
 export * from './prompt.js';
+export * from './staged.js';
 export { AnthropicProvider } from './anthropic.js';
 export { OpenAIProvider } from './openai.js';
 export { DeepSeekProvider } from './deepseek.js';

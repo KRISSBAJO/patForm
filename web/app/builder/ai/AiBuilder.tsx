@@ -3,7 +3,8 @@
 import { useEffect, useState } from 'react';
 import './ai.css';
 
-type Job = { id: string; status: 'queued' | 'running' | 'ready' | 'failed'; stage: 'waiting' | 'generating' | 'checking' | 'saving'; process_key: string; process_name?: string | null; created_at: string; draft_id?: string | null; error?: string | null; note?: string | null };
+type Job = { id: string; status: 'queued' | 'running' | 'ready' | 'failed'; stage: 'waiting' | 'generating' | 'checking' | 'saving'; process_key: string; process_name?: string | null; created_at: string; draft_id?: string | null; error?: string | null; note?: string | null; progress?: Progress | null };
+type Progress = { form?: { fields: number; pages: number; roles: number }; workflow?: { states: number; transitions: number; approvals: number; tasks: number; emails: number }; finish?: { documents: number; metrics: number; tests: number } };
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, { credentials: 'include', cache: 'no-store', headers: { 'content-type': 'application/json' }, ...init });
@@ -14,6 +15,32 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
 
 const example = 'A parent requests a place for a student. Collect the student and guardian details, emergency contact and documents. School administration checks the information, requests corrections if needed, then approves or rejects the request and sends the guardian an update.';
 const asKey = (value: string) => value.toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 48);
+
+/**
+ * The three things a draft is made of, filling in as each lands.
+ *
+ * A staged draft reports counts after every stage; a single-reply draft
+ * reports them all at once at the end. Either way the list turns from a
+ * promise into a description of what now exists.
+ */
+function StageList({ progress, working, done }: { progress: Progress | null; working: boolean; done: boolean }) {
+  const f = progress?.form;
+  const w = progress?.workflow;
+  const o = progress?.finish;
+  const item = (label: string, promise: string, got: string | null, active: boolean) => (
+    <li data-state={got ? 'done' : active ? 'active' : 'waiting'}>
+      <strong>{label}</strong>
+      <span>{got ?? promise}</span>
+    </li>
+  );
+  return (
+    <ol className="aiPage__stages">
+      {item('Questions', 'Fields and pages for the person submitting.', f ? `${f.fields} fields on ${f.pages} ${f.pages === 1 ? 'page' : 'pages'}, ${f.roles} roles` : null, working && !f)}
+      {item('Decisions and work', 'Approvals, routing and notifications.', w ? `${w.states} stages, ${w.approvals} approvals, ${w.tasks} tasks, ${w.emails} messages` : null, working && !!f && !w)}
+      {item('Checks before publishing', 'Review issues in the builder.', o ? `${o.tests} test scenarios, ${o.documents} documents, ${o.metrics} dashboard measures${done ? ' · checked' : ''}` : null, working && !!w && !o)}
+    </ol>
+  );
+}
 
 /** What the AI is doing right now, in words that change as it works. */
 const DOING: Record<string, string[]> = {
@@ -188,7 +215,7 @@ export function AiBuilder() {
             <div className="aiPage__progressFoot">{job?.status === 'running' || job?.status === 'queued' ? <span>Working for {Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, '0')}{elapsed >= 90 ? ' · Taking longer than expected' : ''}</span> : job?.status === 'failed' ? <span>No draft was saved</span> : null}{job?.status === 'ready' && job.draft_id && <a href={`/builder?draft=${job.draft_id}`}>Open draft →</a>}{job?.status === 'failed' && <button type="button" onClick={() => { setJobId(null); setJob(null); window.history.replaceState({}, '', '/builder/ai'); }}>Try again</button>}</div>
           </section>}
         </div>
-        <aside className="aiPage__side"><section className="aiPage__aside"><div className="aiPage__asideTop"><span className="aiPage__orb">✳</span><span>IN YOUR DRAFT</span></div><h2>Form and workflow</h2><p>AI creates a private draft from your description.</p><ol><li><strong>Questions</strong><span>Fields and pages for the person submitting.</span></li><li><strong>Decisions and work</strong><span>Approvals, routing and notifications.</span></li><li><strong>Checks before publishing</strong><span>Review issues in the builder.</span></li></ol>{jobId && <LiveStatus status={job?.status ?? 'queued'} stage={job?.stage ?? 'waiting'} title={progressTitle} detail={stageDetail} elapsed={elapsed} review={needsReview} draftId={job?.draft_id ?? null} note={job?.note ?? null} />}</section><div className="aiPage__sideNote"><strong>Need custom logic?</strong><span>Open the draft to refine questions, rules and approvals before publishing.</span></div></aside>
+        <aside className="aiPage__side"><section className="aiPage__aside"><div className="aiPage__asideTop"><span className="aiPage__orb">✳</span><span>IN YOUR DRAFT</span></div><h2>Form and workflow</h2><p>AI creates a private draft from your description.</p><StageList progress={job?.progress ?? null} working={job?.status === 'running' || job?.status === 'queued'} done={job?.status === 'ready'} />{jobId && <LiveStatus status={job?.status ?? 'queued'} stage={job?.stage ?? 'waiting'} title={progressTitle} detail={stageDetail} elapsed={elapsed} review={needsReview} draftId={job?.draft_id ?? null} note={job?.note ?? null} />}</section><div className="aiPage__sideNote"><strong>Need custom logic?</strong><span>Open the draft to refine questions, rules and approvals before publishing.</span></div></aside>
       </div>
     </div>
   </main>;

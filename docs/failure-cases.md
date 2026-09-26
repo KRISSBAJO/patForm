@@ -975,6 +975,22 @@ A 6,600-character description went to three providers in turn. The first returne
 
 **Generalisable:** a wait with no visible change is indistinguishable from a failure, and the longer the wait, the more certain the person becomes. Show the work.
 
+### 98. One reply too long for anyone to finish
+
+A page-long description became a blueprint of thirty thousand tokens, asked for in a single reply. Two of the three providers cannot return that many; the third can, slowly. So the largest descriptions always went to the slowest model, and one compiler error meant asking for the whole thirty thousand tokens again.
+
+**Fixed** by drafting in stages once a description passes 2,500 characters: the form first (fields, roles, pages), then the workflow and the messages that refer to it, then outputs and tests. Each reply is a third the size, small enough for the provider that answers in half a minute, and the page fills in as each stage lands — "68 fields on 8 pages" appears before the workflow is written. A repair asks only for the sections the errors point at, with the rest given for reference, so a fix to one transition is a few hundred tokens rather than the whole blueprint. The stages share the system prompt and its rules; each is told what the earlier stages produced and that it may not invent keys.
+
+**Generalisable:** when a task's output outgrows what one reply can hold, the answer is not a bigger model, it is a smaller reply. The seams have to be where the references cross, and every later stage has to be handed what it refers to.
+
+The first real run also showed a repair that could not settle: a required field was on no page, the error pointed at `data`, so the repair asked for the fields and not the pages, and the page it needed never came. Fields and pages are now always repaired together, and a transition naming an unknown template brings the messages in too. The next run showed the same shape twice more: the workflow stage named approvals and tasks it never defined, and the test scenarios were then written against a workflow that could not run; and "the trainer cannot edit that field" was sent back to the workflow three times when the fix was in the role's permissions. The workflow stage is now checked by reference the moment it lands and asked again before anything is built on it, and a permission error brings the roles into the repair.
+
+### 99. The platform did not know what its own AI calls cost
+
+Every attempt measured tokens and price and the numbers were thrown away, so there was no answer to "what did this month's drafts cost" or "which provider do we lean on". Every model call now writes one row to `ai_usage` — provider, model, stage, tokens, cost, latency, outcome — from the drafting pipeline and, through the same hook, anything else that calls a model — rule suggestions and Ask included.
+
+The site admin overview reads it back: per provider, per purpose and per workspace, with DeepSeek's live balance beside it because it is the one provider that tells an API key what is left.
+
 ### 90. Every new column needed a re-seed
 
 `schema.sql` describes a database created from nothing, and there was no other way to change one. Each release that added a table or a column reached a running database only by dropping it and seeding again, which signed every member out and emptied the workspace — in development that was several times a day, and it was part of why somebody could not sign in. A deployed database had no path at all.

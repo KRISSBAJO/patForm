@@ -81,6 +81,24 @@ builder with a live preview; the accent colour, focus rings, touch targets and
 contrast are the same in all five. Templates carry a default by category, so
 Finance forms start bold and community forms start rounded.
 
+**Long descriptions are drafted in stages.** Past 2,500 characters, Build
+with AI asks for the form first, then the workflow and messages, then outputs
+and tests: three replies a third the size of one, so the fast provider can
+answer them, with the page filling in as each stage lands. A repair asks only
+for the sections the compiler complained about. See `src/ai/staged.ts`.
+`STAGED=1` or `STAGED=0` forces the choice in `npm run ai:try`.
+
+**Every model call is recorded** in `ai_usage`: provider, model, stage,
+tokens, cost, latency and outcome. That is what the site administration
+overview reads for spend per provider.
+
+**The site admin overview shows AI spend** (`/platform`): each configured
+provider with its model, calls, failures, tokens and cost over 30 days and
+this month, split by purpose (drafts, rule suggestions, Ask) and by the
+heaviest workspaces. DeepSeek's remaining credit is read live from its
+balance endpoint; OpenAI and Anthropic do not publish a balance to an API
+key, so their figures are what PatForm measured.
+
 **Trying a description through Build with AI.** `npm run ai:try -- <file>`
 runs a description through the same pipeline the builder uses and prints
 every attempt's compiler errors, the scenario results and the token cost,

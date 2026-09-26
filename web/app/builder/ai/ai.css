@@ -194,3 +194,8 @@
 }
 
 .aiLive__attempt { position:relative; margin:0; padding:6px 9px; border-radius:7px; background:rgba(255,255,255,.1); border-left:3px solid #8fd2a9; color:#eaf5ee; font-size:12px; line-height:1.4; }
+
+.aiPage__stages li[data-state="done"] strong::before { content:'✓ '; color:#278253; }
+.aiPage__stages li[data-state="done"] span { color:#1c2723; }
+.aiPage__stages li[data-state="active"] strong::after { content:''; display:inline-block; width:8px; height:8px; margin-left:8px; border-radius:50%; background:#278253; vertical-align:middle; animation:aiLive-core 1.2s ease-in-out infinite; }
+@media(prefers-reduced-motion:reduce) { .aiPage__stages li[data-state="active"] strong::after { animation:none; } }

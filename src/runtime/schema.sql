@@ -150,8 +150,31 @@ create table ai_draft_job (
   heartbeat_at timestamptz,
   completed_at timestamptz,
   -- What the worker is doing right now, for the page that is waiting.
-  note text
+  note text,
+  -- What a staged draft has built so far: counts per stage, for the page.
+  progress jsonb
 );
+
+-- Every model call the platform makes, with what it cost.
+create table ai_usage (
+  id            bigserial primary key,
+  tenant_id     uuid,
+  actor_id      uuid,
+  job_id        uuid,
+  purpose       text not null,
+  provider      text not null,
+  model         text not null,
+  stage         text not null,
+  attempt       int not null,
+  input_tokens  int,
+  output_tokens int,
+  cost_usd      numeric(12, 6),
+  latency_ms    int,
+  outcome       text not null,
+  created_at    timestamptz not null default now()
+);
+create index ai_usage_recent on ai_usage (created_at desc);
+create index ai_usage_tenant on ai_usage (tenant_id, created_at desc);
 create index ai_draft_job_queue on ai_draft_job (created_at) where status in ('queued', 'running');
 create unique index ai_draft_job_active_key on ai_draft_job (tenant_id, process_key) where status in ('queued', 'running');
 

@@ -11,7 +11,7 @@
  */
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename } from 'node:path';
-import { blueprintSchema, generateBlueprint, preferredProvider, type ProviderName } from '../src/ai/index.js';
+import { blueprintSchema, generateBlueprint, generateStaged, preferredProvider, type ProviderName } from '../src/ai/index.js';
 import { createPool } from '../src/runtime/db.js';
 import { suppressDelivery } from '../src/runtime/email.js';
 
@@ -23,19 +23,29 @@ suppressDelivery('a trial sends nothing');
 const provider = preferredProvider(process.env.AI_PROVIDER as ProviderName | undefined);
 const pool = createPool(4, process.env.PROOF_DATABASE_URL || undefined);
 const started = Date.now();
-console.log(`provider ${provider.name} (${provider.model}), repairs allowed: ${process.env.MAX_REPAIRS ?? 1}`);
-
-const outcome = await generateBlueprint(provider, blueprintSchema(), {
-  description,
-  pool,
-  maxRepairs: Number(process.env.MAX_REPAIRS ?? 1),
-  onProgress: async (stage) => console.log(`  ${Math.round((Date.now() - started) / 1000)}s ${stage}`),
-});
+// STAGED=1 forces staged drafting; STAGED=0 forces a single reply; otherwise the builder's rule applies.
+const staged = process.env.STAGED ? process.env.STAGED === '1' : description.length > 2500;
+const maxRepairs = Number(process.env.MAX_REPAIRS ?? (staged ? 3 : 1));
+console.log(`provider ${provider.name} (${provider.model}), repairs allowed: ${maxRepairs}`);
+console.log(staged ? 'staged: three replies, repairs by section' : 'single reply');
+const outcome = staged
+  ? await generateStaged(provider, {
+      description,
+      pool,
+      maxRepairs,
+      onStage: async (p) => console.log(`  ${Math.round((Date.now() - started) / 1000)}s ${p.stage}: ${p.note}  ${JSON.stringify(p.progress)}`),
+    })
+  : await generateBlueprint(provider, blueprintSchema(), {
+      description,
+      pool,
+      maxRepairs,
+      onProgress: async (stage) => console.log(`  ${Math.round((Date.now() - started) / 1000)}s ${stage}`),
+    });
 
 console.log(`\ndecision: ${outcome.decision} after ${outcome.attempts.length} attempt(s), ${Math.round(outcome.audit.durationMs / 1000)}s, ` +
   `${outcome.audit.totalInputTokens} in / ${outcome.audit.totalOutputTokens} out${outcome.audit.totalCostUsd !== undefined ? `, $${outcome.audit.totalCostUsd.toFixed(3)}` : ''}`);
 for (const a of outcome.attempts) {
-  console.log(`\nattempt ${a.attempt}: ${a.meta.model} shape ${a.shapeOk ? 'ok' : 'BAD'}, ${a.errors.length} errors, ${a.warnings.length} warnings`);
+  console.log(`\nattempt ${a.attempt}${a.stage ? ` (${a.stage})` : ''}: ${a.meta.model} shape ${a.shapeOk ? 'ok' : 'BAD'}, ${a.errors.length} errors, ${a.warnings.length} warnings, ${Math.round(a.meta.latencyMs / 1000)}s`);
   for (const s of a.shapeIssues.slice(0, 12)) console.log(`  shape: ${s}`);
   for (const e of a.errors) console.log(`  [${e.code}] ${e.at}: ${e.message}`);
 }

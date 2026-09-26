@@ -1,5 +1,6 @@
 import { zodToJsonSchema } from 'zod-to-json-schema';
 import { extractJson, type Provider } from '../ai/provider.js';
+import type { UsageRecord } from '../ai/pipeline.js';
 import { Proposal } from './plan.js';
 import type { Asker, PlanContext } from '../runtime/copilot.js';
 
@@ -84,7 +85,7 @@ Return one JSON object matching the schema. Nothing else.`;
  * Reuses `src/ai` rather than adding a second provider abstraction: the two
  * jobs differ in the schema they target, not in how a model is called.
  */
-export function askerFor(provider: Provider): Asker {
+export function askerFor(provider: Provider, onUsage?: (usage: UsageRecord) => Promise<void>): Asker {
   return {
     get name() { return provider.name; },
     get model() { return provider.model; },
@@ -101,6 +102,17 @@ export function askerFor(provider: Provider): Asker {
         schema,
       });
 
+      await onUsage?.({
+        provider: provider.name,
+        model: out.meta.model,
+        stage: 'ask',
+        attempt: 1,
+        inputTokens: out.meta.inputTokens,
+        outputTokens: out.meta.outputTokens,
+        costUsd: out.meta.costUsd,
+        latencyMs: out.meta.latencyMs,
+        outcome: out.meta.refusal ? 'refused' : 'ok',
+      });
       if (out.meta.refusal) throw new Error(`the model declined: ${out.meta.refusal}`);
 
       const raw = out.parsed ?? extractJson(out.text);

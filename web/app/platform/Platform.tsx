@@ -55,6 +55,57 @@ function Pill({ children, tone = 'neutral' }: { children: ReactNode; tone?: 'neu
   return <span className={`platform__pill platform__pill--${tone}`}>{children}</span>;
 }
 
+const PROVIDER_NAMES: Record<string, string> = { deepseek: 'DeepSeek', openai: 'OpenAI', anthropic: 'Anthropic' };
+const money = (v: unknown) => (v === null || v === undefined ? '—' : `$${Number(v).toFixed(Number(v) > 0 && Number(v) < 1 ? 3 : 2)}`);
+const tokens = (v: unknown) => { const n = Number(v ?? 0); return n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${Math.round(n / 1000)}k` : String(n); };
+const PURPOSES: Record<string, string> = { draft: 'Drafts', rule: 'Rule suggestions', ask: 'Ask answers' };
+
+/**
+ * What each AI provider is asked and what it costs, from the usage ledger.
+ *
+ * DeepSeek publishes an account balance to its API keys, so that is read
+ * live. OpenAI and Anthropic do not, so their spend is what PatForm measured
+ * on every call at the configured prices.
+ */
+function AiUsage({ ai }: { ai?: Json }) {
+  if (!ai) return null;
+  const configured: Json[] = ai.configured ?? [];
+  const rows: Json[] = ai.providers ?? [];
+  const purposes: Json[] = ai.purposes ?? [];
+  const workspaces: Json[] = ai.workspaces ?? [];
+  const month = rows.reduce((n, r) => n + Number(r.cost_month ?? 0), 0);
+  const calls30 = rows.reduce((n, r) => n + Number(r.calls_30d ?? 0), 0);
+  const balance = ai.deepseek as Json | null;
+  const first = balance && Array.isArray(balance.balances) ? balance.balances[0] : null;
+  return (
+    <Panel className="platform__sectionGap" title="AI providers and spend" aside={<span className="platform__panelAside">{calls30} calls in 30 days · {money(month)} this month</span>}>
+      {configured.length ? <div className="platform__aiProviders">
+        {configured.map((p: Json) => {
+          const row = rows.find((r) => r.provider === p.name);
+          const isDeepseek = p.name === 'deepseek';
+          return <div key={p.name} className="platform__aiProvider">
+            <div className="platform__aiProviderTop">
+              <strong>{PROVIDER_NAMES[p.name] ?? p.name}</strong>
+              {isDeepseek && balance && (first ? <Pill tone={balance.available === false ? 'bad' : Number(first.total) < 5 ? 'warn' : 'good'}>{money(first.total)} {first.currency} left</Pill> : <Pill tone="warn">Balance unavailable</Pill>)}
+              {!isDeepseek && <Pill>{row ? `${money(row.cost_month)} this month` : 'Not used yet'}</Pill>}
+            </div>
+            <span className="platform__mono">{p.model}</span>
+            <small>{isDeepseek ? 'Credit read live from DeepSeek.' : 'Spend measured by PatForm; this provider does not publish a balance to API keys.'}{p.maxOutputTokens ? ` Up to ${tokens(p.maxOutputTokens)} tokens per reply.` : ''}</small>
+          </div>;
+        })}
+      </div> : <Empty title="No AI provider configured">Set DEEPSEEK_API_KEY, OPENAI_API_KEY or ANTHROPIC_API_KEY on the API.</Empty>}
+      {rows.length ? <div className="platform__table"><table><thead><tr><th>Provider</th><th>Model</th><th>Calls</th><th>Failed</th><th>Tokens in / out</th><th>Avg time</th><th>Last 30 days</th><th>This month</th><th>Last used</th></tr></thead><tbody>
+        {rows.map((r: Json) => <tr key={`${r.provider}/${r.model}`}><td>{PROVIDER_NAMES[r.provider] ?? r.provider}</td><td className="platform__mono">{r.model}</td><td>{r.calls_30d}</td><td><Pill tone={Number(r.failures_30d) ? 'warn' : 'neutral'}>{r.failures_30d}</Pill></td><td>{tokens(r.input_tokens_30d)} / {tokens(r.output_tokens_30d)}</td><td>{r.avg_latency_ms ? `${Math.round(Number(r.avg_latency_ms) / 1000)}s` : '—'}</td><td>{money(r.cost_30d)}</td><td>{money(r.cost_month)}</td><td><DateText value={r.last_at}/></td></tr>)}
+      </tbody></table></div> : <p className="platform__hint">No model calls recorded yet. Every draft, rule suggestion and Ask answer is recorded from now on.</p>}
+      {(purposes.length > 0 || workspaces.length > 0) && <div className="platform__aiSplit">
+        {purposes.length > 0 && <div><h3 className="platform__subhead">By purpose, 30 days</h3>{purposes.map((p: Json) => <div className="platform__fact" key={p.purpose}><span>{PURPOSES[p.purpose] ?? p.purpose}</span><strong>{p.calls} calls · {money(p.cost_30d)}</strong></div>)}</div>}
+        {workspaces.length > 0 && <div><h3 className="platform__subhead">Heaviest workspaces, 30 days</h3>{workspaces.map((w: Json) => <div className="platform__fact" key={w.id}><span>{w.name}</span><strong>{w.calls} calls · {money(w.cost_30d)}</strong></div>)}</div>}
+      </div>}
+      <p className="platform__hint">Cost is worked out from each provider's published prices at the time of the call. A dash means no price is configured for that model.</p>
+    </Panel>
+  );
+}
+
 function Empty({ title, children }: { title: string; children?: ReactNode }) {
   return <div className="platform__empty"><span className="platform__emptyIcon"><Icon name="check" size={22}/></span><strong>{title}</strong>{children && <p>{children}</p>}</div>;
 }
@@ -251,6 +302,7 @@ export function Platform() {
               <p className="platform__hint">These are service starts. Deployment status comes from the hosting provider.</p>
             </Panel>
           </div>
+          <AiUsage ai={data.ai}/>
         </>}
 
         {data && section === 'workspaces' && !detail && !detailLoading && <>

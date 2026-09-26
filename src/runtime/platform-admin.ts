@@ -1,4 +1,5 @@
 import { inTransaction, type Pool } from './db.js';
+import { availableProviders, providerFor } from '../ai/index.js';
 import { AuthorizationError } from './policy.js';
 import { isEnabled as mfaEnabled } from './mfa.js';
 
@@ -82,7 +83,92 @@ export async function platformOverview(pool: Pool) {
     deliveryAlert: alerts.rows[0] ?? null, recentWorkspaces: recent.rows, deployments: deployments.rows,
     api: { ok: true, uptimeSeconds: Math.floor(process.uptime()), revision: process.env.RENDER_GIT_COMMIT?.slice(0, 12) ?? null },
     stagingCombinedService: process.env.STAGING_COMBINED_SERVICE === 'true',
+    ai: await platformAiUsage(pool),
   };
+}
+
+/**
+ * What the platform asks of each AI provider, and what it costs.
+ *
+ * Read from the usage ledger, because two of the three providers do not tell
+ * an API key what it has spent. DeepSeek does publish a balance, so that is
+ * shown live where a key is configured. The rest is what Patform itself
+ * measured on every call: tokens, price at the configured rates, failures.
+ */
+export async function platformAiUsage(pool: Pool) {
+  const [providers, purposes, workspaces, days] = await Promise.all([
+    pool.query(`select provider, model,
+        count(*)::int as calls,
+        count(*) filter (where created_at > now() - interval '30 days')::int as calls_30d,
+        coalesce(sum(input_tokens) filter (where created_at > now() - interval '30 days'), 0)::float8 as input_tokens_30d,
+        coalesce(sum(output_tokens) filter (where created_at > now() - interval '30 days'), 0)::float8 as output_tokens_30d,
+        sum(cost_usd) filter (where created_at > now() - interval '30 days')::float8 as cost_30d,
+        sum(cost_usd) filter (where created_at >= date_trunc('month', now()))::float8 as cost_month,
+        count(*) filter (where outcome <> 'ok' and created_at > now() - interval '30 days')::int as failures_30d,
+        avg(latency_ms) filter (where created_at > now() - interval '30 days')::float8 as avg_latency_ms,
+        max(created_at) as last_at
+      from ai_usage group by provider, model
+      order by cost_30d desc nulls last, calls_30d desc`),
+    pool.query(`select purpose, count(*)::int as calls, sum(cost_usd)::float8 as cost_30d,
+        coalesce(sum(output_tokens), 0)::float8 as output_tokens_30d
+      from ai_usage where created_at > now() - interval '30 days' group by purpose order by calls desc`),
+    pool.query(`select t.id, t.name, count(u.id)::int as calls, sum(u.cost_usd)::float8 as cost_30d
+      from ai_usage u join tenant t on t.id = u.tenant_id
+      where u.created_at > now() - interval '30 days' group by t.id, t.name order by cost_30d desc nulls last limit 5`),
+    pool.query(`select date_trunc('day', created_at)::date as day, count(*)::int as calls, sum(cost_usd)::float8 as cost
+      from ai_usage where created_at > now() - interval '14 days' group by 1 order by 1`),
+  ]);
+  const configured = availableProviders().map((name) => {
+    const p = providerFor(name);
+    return { name, model: p.model, maxOutputTokens: p.maxOutputTokens ?? null };
+  });
+  return {
+    configured,
+    providers: providers.rows,
+    purposes: purposes.rows,
+    workspaces: workspaces.rows,
+    days: days.rows,
+    deepseek: await deepseekBalance(),
+  };
+}
+
+let deepseekCache: { at: number; value: DeepseekBalance } | null = null;
+type DeepseekBalance =
+  | { available: boolean; balances: { currency: string; total: number; granted: number; toppedUp: number }[]; checkedAt: string }
+  | { error: string; checkedAt: string }
+  | null;
+
+/** DeepSeek's remaining credit, from its balance endpoint, cached for five minutes. */
+async function deepseekBalance(): Promise<DeepseekBalance> {
+  const key = process.env.DEEPSEEK_API_KEY;
+  if (!key) return null;
+  if (deepseekCache && Date.now() - deepseekCache.at < 5 * 60_000) return deepseekCache.value;
+  let value: DeepseekBalance;
+  try {
+    const res = await fetch('https://api.deepseek.com/user/balance', {
+      headers: { authorization: `Bearer ${key}` },
+      signal: AbortSignal.timeout(6_000),
+    });
+    if (!res.ok) throw new Error(`DeepSeek answered ${res.status}`);
+    const body = (await res.json()) as {
+      is_available?: boolean;
+      balance_infos?: { currency: string; total_balance: string; granted_balance: string; topped_up_balance: string }[];
+    };
+    value = {
+      available: Boolean(body.is_available),
+      balances: (body.balance_infos ?? []).map((b) => ({
+        currency: b.currency,
+        total: Number(b.total_balance),
+        granted: Number(b.granted_balance),
+        toppedUp: Number(b.topped_up_balance),
+      })),
+      checkedAt: new Date().toISOString(),
+    };
+  } catch (err) {
+    value = { error: err instanceof Error ? err.message : String(err), checkedAt: new Date().toISOString() };
+  }
+  deepseekCache = { at: Date.now(), value };
+  return value;
 }
 
 export async function platformWorkspaces(pool: Pool, search: string, page: number, scope: 'customers' | 'tests' | 'all' = 'customers') {

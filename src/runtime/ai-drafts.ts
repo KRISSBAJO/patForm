@@ -51,7 +51,7 @@ export async function aiDraftStatus(pool: Pool, principal: Principal, jobId: str
   if (principal.kind !== 'actor') throw new NotFound('Draft job not found.');
   const result = await pool.query(`select j.id, j.process_key, j.process_name, j.status, j.stage, j.draft_id, j.error,
     j.source_draft_id, j.source_revision, j.source_blueprint, j.proposal, j.review, j.applied_at,
-    j.created_at, j.started_at, j.completed_at, j.note
+    j.created_at, j.started_at, j.completed_at, j.note, j.progress
     from ai_draft_job j where j.id = $1 and j.tenant_id = $2 and j.actor_id = $3`,
   [jobId, principal.tenantId, principal.actorId]);
   if (!result.rows[0]) throw new NotFound('Draft job not found.');
@@ -87,7 +87,7 @@ export function revisionCandidate(result: GenerationOutcome): { blueprint: Bluep
 
 export async function processNextAiDraft(pool: Pool): Promise<boolean> {
   const claimed = await pool.query<{ id: string; tenant_id: string; actor_id: string; process_key: string; process_name: string | null; description: string; source_draft_id: string | null; source_blueprint: unknown }>(
-    `update ai_draft_job j set status = 'running', stage = 'generating', started_at = now(), heartbeat_at = now(), attempts = attempts + 1, error = null, note = null
+    `update ai_draft_job j set status = 'running', stage = 'generating', started_at = now(), heartbeat_at = now(), attempts = attempts + 1, error = null, note = null, progress = null
      where j.id = (select id from ai_draft_job
        where status = 'queued' or (status = 'running' and coalesce(heartbeat_at, started_at) < now() - interval '90 seconds')
        order by created_at for update skip locked limit 1)
@@ -111,7 +111,7 @@ export async function processNextAiDraft(pool: Pool): Promise<boolean> {
         try {
           const result = await generateBlueprint(providerFor(name), blueprintSchema(), {
             description: job.description, sourceBlueprint: source, pool,
-            onProgress: async (stage, note) => { await pool.query('update ai_draft_job set stage = $2, note = coalesce($3, note) where id = $1', [job.id, stage, note ?? null]); },
+            onProgress: async (stage, note, progress) => { await pool.query('update ai_draft_job set stage = $2, note = coalesce($3, note), progress = coalesce($4::jsonb, progress) where id = $1', [job.id, stage, note ?? null, progress ? JSON.stringify(progress) : null]); },
           });
           const option = revisionCandidate(result);
           if (option && (!best || option.score > best.score)) {
@@ -145,8 +145,9 @@ export async function processNextAiDraft(pool: Pool): Promise<boolean> {
       return true;
     }
     const draft = await createDraft(pool, { principal: { kind: 'actor', tenantId: job.tenant_id, actorId: job.actor_id },
+      jobId: job.id,
       input: { key: job.process_key, name: job.process_name ?? undefined, description: job.description },
-      onProgress: async (stage, note) => { await pool.query('update ai_draft_job set stage = $2, note = coalesce($3, note) where id = $1', [job.id, stage, note ?? null]); } });
+      onProgress: async (stage, note, progress) => { await pool.query('update ai_draft_job set stage = $2, note = coalesce($3, note), progress = coalesce($4::jsonb, progress) where id = $1', [job.id, stage, note ?? null, progress ? JSON.stringify(progress) : null]); } });
     await pool.query(`update ai_draft_job set status = 'ready', draft_id = $2, error = $3, completed_at = now(), description = ''
       where id = $1`, [job.id, draft.id, draft.reviewNote ?? null]);
   } catch (error) {

@@ -193,7 +193,14 @@
 .platform__dialog textarea { min-height: 82px; resize: vertical; padding: 9px 12px; border: 1px solid #cbd9cd; border-radius: 7px; color: var(--admin-ink); font: inherit; }
 .platform__dialogActions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 4px; }
 
+.platform__aiProviders { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.platform__aiProvider { display: flex; flex-direction: column; gap: 6px; padding: 14px 16px; border: 1px solid var(--admin-line); border-radius: 10px; background: #fbfdfb; }
+.platform__aiProviderTop { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.platform__aiProviderTop strong { font-size: 14px; }
+.platform__aiProvider small { color: #5a6159; font-size: 11.5px; line-height: 1.45; }
+.platform__aiSplit { display: grid; grid-template-columns: 1fr 1fr; gap: 0 24px; }
 @media (max-width: 1100px) {
+  .platform__aiProviders, .platform__aiSplit { grid-template-columns: 1fr; }
   .platform__metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .platform__minorMetrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .platform__columns { grid-template-columns: 1fr; }

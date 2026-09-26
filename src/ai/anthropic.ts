@@ -83,7 +83,7 @@ export class AnthropicProvider implements Provider {
       thinking: { type: 'adaptive' },
       output_config: {
         effort: 'high',
-        format: zodOutputFormat(Blueprint as never),
+        format: zodOutputFormat((request.shape ?? Blueprint) as never),
       },
     }, { signal });
 

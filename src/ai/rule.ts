@@ -28,6 +28,7 @@ import { Blueprint as BlueprintSchema } from '../blueprint/index.js';
 import { validate } from '../compiler/validate.js';
 import type { Diagnostic } from '../compiler/diagnostics.js';
 import type { Provider } from './provider.js';
+import type { UsageRecord } from './pipeline.js';
 
 export const RULE_PROMPT_VERSION = 'automation-rule@1';
 
@@ -260,6 +261,7 @@ export function readingOf(rule: Record<string, unknown>, bp: Blueprint): string 
 export async function proposeRule(
   provider: Provider,
   args: { sentence: string; blueprint: Blueprint },
+  hooks: { onUsage?: (usage: UsageRecord) => Promise<void> } = {},
 ): Promise<RuleProposal> {
   const startedAt = Date.now();
 
@@ -270,6 +272,17 @@ export async function proposeRule(
     // The blueprint schema would be wrong here: this returns one transition,
     // not a process. Providers that constrain output fall back to text.
     schema: {},
+  });
+  await hooks.onUsage?.({
+    provider: provider.name,
+    model: response.meta.model,
+    stage: 'rule',
+    attempt: 1,
+    inputTokens: response.meta.inputTokens,
+    outputTokens: response.meta.outputTokens,
+    costUsd: response.meta.costUsd,
+    latencyMs: response.meta.latencyMs,
+    outcome: response.meta.refusal ? 'refused' : 'ok',
   });
 
   const meta = {
