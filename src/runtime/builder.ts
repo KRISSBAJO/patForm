@@ -199,9 +199,10 @@ export async function listForBuilder(pool: Pool, principal: Principal) {
     version: number | null;
     draft_id: string | null;
     instances: number;
+    updated_at: string | null;
   }>(
     `with latest as (
-       select distinct on (process_key) process_key, version, blueprint
+       select distinct on (process_key) process_key, version, blueprint, published_at
          from process_version where tenant_id = $1 order by process_key, version desc
      )
      , keys as (
@@ -219,9 +220,13 @@ export async function listForBuilder(pool: Pool, principal: Principal) {
               where d.tenant_id = $1 and d.process_key = k.process_key and d.published_as is null
               order by d.updated_at desc limit 1) as draft_id,
             (select count(*)::int from instance i
-              where i.tenant_id = $1 and i.process_key = k.process_key and i.completed_at is null) as instances
+              where i.tenant_id = $1 and i.process_key = k.process_key and i.completed_at is null) as instances,
+            to_char(greatest(l.published_at,
+                             (select max(d.updated_at) from process_draft d
+                               where d.tenant_id = $1 and d.process_key = k.process_key and d.published_as is null)
+                    ) at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
        from keys k left join latest l on l.process_key = k.process_key
-      order by k.process_key`,
+      order by updated_at desc nulls last, k.process_key`,
     [principal.tenantId],
   );
   return rows;

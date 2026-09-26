@@ -5,6 +5,7 @@ import { RulesEditor } from './Rules';
 import { BootScreen } from '../../components/boot-screen';
 import { useConfirm } from '../../components/confirm-dialog';
 import './builder.css';
+import { ProcessTable, ago } from './ProcessTable';
 import './studio.css';
 import { FormPreview, TestsPanel, Versions, type VersionRow } from './SidePanel';
 import { PageEditor, DocumentEditor, ScenarioEditor, ConditionEditor } from './StudioEditors';
@@ -246,6 +247,8 @@ interface ProcessRow {
   version: number | null;
   draft_id: string | null;
   instances: number;
+  /** When it was last saved or published, so the start screen can show the recent ones. */
+  updated_at: string | null;
 }
 
 interface PublishImpact {
@@ -495,7 +498,13 @@ function partyLabel(p: Party | undefined): string {
 
 // ------------------------------------------------------------------- shell
 
-export function Builder() {
+/**
+ * `view` is the page: the start screen, or the table of every process at
+ * /builder/processes. Both are this component, because both need the rail,
+ * the session check and the open-a-draft plumbing, and a draft opened from
+ * either one becomes the editor in place.
+ */
+export function Builder({ view = 'home' }: { view?: 'home' | 'processes' } = {}) {
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
   const [showProcesses, setShowProcesses] = useState(false);
   const [workspaceQuery, setWorkspaceQuery] = useState('');
@@ -1077,11 +1086,25 @@ export function Builder() {
         )}
 
         {!draft || !blueprint ? (
-          <Welcome
-            onNew={() => setCreating(true)}
-            processes={processes}
-            onOpen={(p) => (p.draft_id ? openById(p.draft_id) : open(p.process_key))}
-          />
+          view === 'processes' ? (
+            <ProcessTable
+              processes={processes}
+              busy={busy !== null}
+              onOpen={(p) => {
+                // The editor is the builder's own address. A reload after
+                // opening a draft from the table should land in the editor,
+                // not back on the table.
+                window.history.replaceState(null, '', '/builder');
+                return p.draft_id ? openById(p.draft_id) : open(p.process_key);
+              }}
+            />
+          ) : (
+            <Welcome
+              onNew={() => setCreating(true)}
+              processes={processes}
+              onOpen={(p) => (p.draft_id ? openById(p.draft_id) : open(p.process_key))}
+            />
+          )
         ) : (
           <>
             <header className="bd__head">
@@ -1939,53 +1962,6 @@ function Welcome({
           </p>
         </header>
 
-        {processes.length > 0 && (
-          <section className="bd__startSection">
-            <h2>Carry on with</h2>
-            {/*
-              * A list, not a gallery. Work you already have is identified by
-              * its name; a picture of a generic process adds nothing and
-              * leaves an empty row whenever somebody has one or two.
-              */}
-            <ul className="bd__recent">
-              {processes.slice(0, 8).map((p) => (
-                <li key={p.process_key}>
-                  <button type="button" className="bd__recentRow" onClick={() => onOpen(p)}>
-                    <span className="bd__recentMark" aria-hidden="true">
-                      {(p.name ?? p.process_key).slice(0, 1).toUpperCase()}
-                    </span>
-                    <span className="bd__recentText">
-                      <span className="bd__recentName">{p.name ?? p.process_key}</span>
-                      <span className="bd__recentMeta">
-                        {p.draft_id
-                          ? 'draft in progress'
-                          : p.version
-                            ? `published v${p.version}`
-                            : 'not published yet'}
-                      </span>
-                    </span>
-                    {p.draft_id && <span className="bd__recentTag">draft</span>}
-                    <svg
-                      width="16"
-                      height="16"
-                      viewBox="0 0 20 20"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth={1.8}
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      aria-hidden="true"
-                      className="bd__recentArrow"
-                    >
-                      <path d="m8 5 5 5-5 5" />
-                    </svg>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
-
         <section className="bd__startSection">
           <h2>Start something new</h2>
           <ul className="bd__startGrid">
@@ -2024,9 +2000,84 @@ function Welcome({
             </li>
           </ul>
         </section>
+
+        {processes.length > 0 && (
+          <section className="bd__startSection">
+            {/*
+              * The four most recent, then a door to the rest. Eight rows of
+              * whatever the database returned first sat above the three ways
+              * to start, so the front door opened onto a list. The list is
+              * now short, ordered by when it was last touched, and a
+              * workspace with four hundred processes gets a table with a
+              * search box rather than four hundred rows.
+              */}
+            <div className="bd__startRow">
+              <h2>Carry on with</h2>
+              {processes.length > RECENT && (
+                <a className="bd__recentAll" href="/builder/processes">
+                  All {processes.length} processes
+                </a>
+              )}
+            </div>
+            <ul className="bd__recent">
+              {recent(processes).map((p) => (
+                <li key={p.process_key}>
+                  <button type="button" className="bd__recentRow" onClick={() => onOpen(p)}>
+                    <span className="bd__recentMark" aria-hidden="true">
+                      {(p.name ?? p.process_key).slice(0, 1).toUpperCase()}
+                    </span>
+                    <span className="bd__recentText">
+                      <span className="bd__recentName">{p.name ?? p.process_key}</span>
+                      <span className="bd__recentMeta">
+                        {p.draft_id
+                          ? 'draft in progress'
+                          : p.version
+                            ? `published v${p.version}`
+                            : 'not published yet'}
+                        {p.updated_at ? ` · ${ago(p.updated_at)}` : ''}
+                      </span>
+                    </span>
+                    {p.draft_id && <span className="bd__recentTag">draft</span>}
+                    <svg
+                      width="16"
+                      height="16"
+                      viewBox="0 0 20 20"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth={1.8}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                      className="bd__recentArrow"
+                    >
+                      <path d="m8 5 5 5-5 5" />
+                    </svg>
+                  </button>
+                </li>
+              ))}
+              {processes.length > RECENT && (
+                <li>
+                  <a className="bd__recentMore" href="/builder/processes">
+                    {processes.length - RECENT} more
+                    <span>search, sort and page through every process</span>
+                  </a>
+                </li>
+              )}
+            </ul>
+          </section>
+        )}
       </div>
     </div>
   );
+}
+
+/** How many to show on the start screen before pointing at the table. */
+const RECENT = 4;
+
+function recent(processes: ProcessRow[]): ProcessRow[] {
+  return [...processes]
+    .sort((a, b) => (b.updated_at ?? '').localeCompare(a.updated_at ?? '') || (a.name ?? '').localeCompare(b.name ?? ''))
+    .slice(0, RECENT);
 }
 
 /**
