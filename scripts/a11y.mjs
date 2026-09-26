@@ -170,6 +170,14 @@ async function main() {
     await openRecord.click();
     await page.waitForTimeout(2000);
     all.push(...(await audit(page, 'Record panel')));
+    // Sending the record to a colleague: a member picker, a note, a Send.
+    const share = page.locator('button', { hasText: /^Send to a colleague/ }).first();
+    if (await share.count()) {
+      await share.click();
+      await page.waitForTimeout(1200);
+      all.push(...(await audit(page, 'Record, sending it to a colleague')));
+      await page.locator('#record-share-form button', { hasText: /^Close$/ }).click();
+    }
   }
 
   const health = page.locator('button', { hasText: /^Automation health/ }).first();
@@ -264,6 +272,50 @@ async function main() {
       }
       await page.locator('.bk__clear').click();
     }
+
+    // Saving these filters as a view, with the schedule controls showing.
+    const saveView = page.locator('button', { hasText: /^Save this view$/ }).first();
+    if (await saveView.count()) {
+      await saveView.click();
+      await page.waitForTimeout(600);
+      await page.selectOption('#rv-save-view select >> nth=0', 'weekly');
+      await page.waitForTimeout(300);
+      all.push(...(await audit(page, 'Records, saving a view to be emailed weekly')));
+      await page.locator('button', { hasText: /^Cancel$/ }).first().click();
+    }
+    // Filtering by one answer: the field picker, then the value picker.
+    const answerPick = page.locator('select', { has: page.locator('option', { hasText: /^Any answer$/ }) }).first();
+    if (await answerPick.count()) {
+      await answerPick.selectOption({ index: 1 });
+      await page.waitForTimeout(800);
+      all.push(...(await audit(page, 'Records, filtered by an answer')));
+      await answerPick.selectOption({ index: 0 });
+    }
+  }
+
+  // A record, opened from the list: the answers, the documents it produced,
+  // Print, and the composer for sending it to a colleague.
+  const firstRow = page.locator('.rv__open').first();
+  if (await firstRow.count()) {
+    await firstRow.click();
+    await page.waitForTimeout(2500);
+    all.push(...(await audit(page, 'A record, opened from the list')));
+    const share = page.locator('button', { hasText: /^Send to a colleague/ }).first();
+    if (await share.count()) {
+      await share.click();
+      await page.waitForTimeout(1200);
+      all.push(...(await audit(page, 'A record, sending it to a colleague')));
+    }
+    const back = page.locator('.rc__back').first();
+    if (await back.count()) { await back.click(); await page.waitForTimeout(1500); }
+  }
+
+  // The dashboard, with what people answered added up beneath the measures.
+  const dashboardNav = page.locator('button', { hasText: /^Dashboard$/ }).first();
+  if (await dashboardNav.count()) {
+    await dashboardNav.click();
+    await page.waitForTimeout(2500);
+    all.push(...(await audit(page, 'Dashboard, with the answers added up')));
   }
 
   // The two views that answer "how do records arrive" and "how do people get
@@ -409,6 +461,27 @@ async function main() {
     await page.keyboard.press('Escape');
   }
 
+  // A process card with every way to share it open: QR code, embed, email.
+  // The page is on the catalogue by now, so back to the console first.
+  await page.goto(`${BASE}/console`, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(2000);
+  const processesNav = page.locator('button', { hasText: /^Processes & forms/ }).first();
+  if (await processesNav.count()) {
+    await processesNav.click();
+    await page.waitForTimeout(1500);
+    const card = page.locator('.mg__directoryItem').first();
+    if (await card.count()) {
+      await card.click();
+      await page.waitForTimeout(1200);
+      const more = page.locator('button', { hasText: /^More ways to share/ }).first();
+      if (await more.count()) {
+        await more.click();
+        await page.waitForTimeout(1500);
+      }
+      all.push(...(await audit(page, 'A process card, with every way to share it')));
+    }
+  }
+
   // ---- builder, and one of its dialogs
   await page.goto(`${BASE}/builder`, { waitUntil: 'networkidle' });
   await page.waitForTimeout(2000);
@@ -418,6 +491,17 @@ async function main() {
     await page.waitForTimeout(3000);
   }
   all.push(...(await audit(page, 'Builder')));
+
+  // Every process as a table: search, filters, sortable columns, marks.
+  await page.goto(`${BASE}/builder/processes`, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(2000);
+  all.push(...(await audit(page, 'Every process, as a table')));
+  await page.goto(`${BASE}/builder`, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(1500);
+  if (await processButton.count()) {
+    await processButton.click();
+    await page.waitForTimeout(2500);
+  }
 
   // The automation editor: the one part of the builder that was JSON-only.
   // Thirteen rules of selects and inputs is where a label goes missing.
