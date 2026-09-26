@@ -5,7 +5,7 @@ import { changePlatformPerson, grantPlatformOperator, platformAudit, platformInt
   renamePlatformWorkspace, retryPlatformJob, revokePlatformApiKey, revokePlatformOperator, revokePlatformSessions,
   setPlatformIntakePaused, setPlatformWebhookActive, platformTrace } from '../runtime/platform-admin.js';
 import { Engine } from '../runtime/engine.js';
-import { addRecordNote } from '../runtime/console-queries.js';
+import { addRecordNote, recordDocument } from '../runtime/console-queries.js';
 import { aiDraftStatus, applyAiRevision, queueAiDraft, queueAiRevision } from '../runtime/ai-drafts.js';
 import { AuthorizationError, requireWorkspaceCapability, WORKSPACE_GRANTS, type Principal } from '../runtime/policy.js';
 import type { Capability } from '../blueprint/roles.js';
@@ -1153,6 +1153,13 @@ route('POST', /^\/api\/records\/([0-9a-f-]{36})\/notes$/, async ({ pool, princip
     throw new HttpError(400, 'Note must contain 1 to 2,000 characters');
   }
   return addRecordNote(pool, principal, id, text);
+});
+
+// A document the process generated for this record, as base64 in JSON: the
+// console turns it into a download. Small, controlled files; see document table.
+route('GET', /^\/api\/records\/([0-9a-f-]{36})\/documents\/([0-9]+)$/, async ({ pool, principal, url }) => {
+  const parts = url.pathname.split('/');
+  return recordDocument(pool, principal, parts[3]!, Number(parts[5]));
 });
 
 route('GET', /^\/api\/records\/([0-9a-f-]{36})\/receipts\/([0-9a-f-]{36})$/, async ({ pool, principal, url }) => {

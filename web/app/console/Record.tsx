@@ -34,6 +34,8 @@ export interface RecordDetail {
   viewerRoles: string[];
   canAddNote?: boolean;
   notes?: { id: number; text: string; actor: string | null; createdAt: string }[];
+  /** Documents the process generated for this record: a letter, a certificate, a receipt. */
+  documents?: { id: number; document_key: string; filename: string; checksum: string; byte_size: number | null; created_at: string }[];
   fields: {
     key: string;
     label: string;
@@ -464,6 +466,55 @@ export function RecordPage({
 
         <div className="rc__side">
           <section className="rc__sidePanel rc__sidePanel--next"><span className="rc__eyebrow">CURRENT OUTCOME</span><h2>What happens next</h2><p>{record.nextAction}</p></section>
+          {record.documents && record.documents.length > 0 && (
+            <section className="rc__sidePanel rc__sidePanel--docs">
+              <span className="rc__eyebrow">DOCUMENTS</span>
+              <h2>Made by this process</h2>
+              <ul className="rc__docs">
+                {record.documents.map((d) => (
+                  <li key={d.id}>
+                    <span className="rc__docIcon" aria-hidden="true">
+                      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M5.5 2.5h6l4 4v11h-10z" />
+                        <path d="M11.5 2.5v4h4M7.5 11h5M7.5 14h5" />
+                      </svg>
+                    </span>
+                    <span className="rc__docText">
+                      <strong>{d.filename}</strong>
+                      <small>
+                        {new Date(d.created_at).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}
+                        {d.byte_size ? ` · ${d.byte_size < 1024 * 1024 ? `${Math.max(1, Math.round(d.byte_size / 1024))} KB` : `${(d.byte_size / 1024 / 1024).toFixed(1)} MB`}` : ''}
+                      </small>
+                    </span>
+                    <button
+                      type="button"
+                      className="cs__btn"
+                      onClick={async () => {
+                        setReceiptError('');
+                        try {
+                          const response = await fetch(`/api/records/${record.instanceId}/documents/${d.id}`, { credentials: 'same-origin' });
+                          const result = await response.json().catch(() => ({}));
+                          if (!response.ok) { setReceiptError(result.error ?? 'The document is unavailable.'); return; }
+                          const bytes = Uint8Array.from(atob(result.base64 as string), (c) => c.charCodeAt(0));
+                          const url = URL.createObjectURL(new Blob([bytes], { type: result.contentType as string }));
+                          const a = document.createElement('a');
+                          a.href = url;
+                          a.download = result.filename as string;
+                          a.click();
+                          URL.revokeObjectURL(url);
+                        } catch {
+                          setReceiptError('The document could not be downloaded.');
+                        }
+                      }}
+                    >
+                      <Icon name="export" />
+                      Download
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
           <section className="rc__sidePanel rc__sidePanel--history"><span className="rc__eyebrow">ACTIVITY</span><h2>Record history</h2>
             {record.canAddNote && <div className="rc__notesSection"><div className="rc__notesHead"><strong>Notes</strong><span>{record.notes?.length ?? 0}</span></div>{record.notes?.length ? <div className="rc__notesList">{record.notes.map((note) => <article key={note.id}><p>{note.text}</p><small>{note.actor ?? 'Workspace member'} · {new Date(note.createdAt).toLocaleString()}</small></article>)}</div> : <p className="rc__notesEmpty">No notes yet.</p>}<button type="button" className="rc__noteLink" onClick={() => { setNoteOpen(true); window.scrollTo({ top: 0, behavior: 'smooth' }); }}><Icon name="note" /> Add note</button></div>}
             <button type="button" className="cs__btn" aria-expanded={showTrail} aria-controls="record-trail" onClick={() => setShowTrail((w) => !w)}>

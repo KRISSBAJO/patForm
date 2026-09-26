@@ -5186,6 +5186,17 @@ a.cs__navItem {
 .rv__download { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; white-space: nowrap; }
 .rv__note { margin: 0 0 10px; }
 
+/* Documents the process generated for a record, in the side column. */
+.rc__docs { margin: 10px 0 0; padding: 0; list-style: none; display: grid; gap: 8px; }
+.rc__docs li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; padding: 9px 10px; border: 1px solid var(--line-soft); border-radius: 9px; background: #fff; }
+.rc__docs li .cs__btn { margin-left: auto; }
+.rc__docIcon { display: grid; place-items: center; flex: none; width: 30px; height: 30px; border-radius: 8px; background: #ebf5ee; color: var(--green-deep); }
+.rc__docIcon svg { width: 16px; height: 16px; }
+.rc__docText { display: grid; gap: 2px; min-width: 0; flex: 1 1 150px; }
+.rc__docText strong { font: 600 12.5px var(--ui); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rc__docText small { color: var(--muted); font-size: 11px; }
+@media print { .rc__sidePanel--docs .cs__btn { display: none; } }
+
 /* ==========================================================================
    Print: the record page is the document
    ========================================================================== */

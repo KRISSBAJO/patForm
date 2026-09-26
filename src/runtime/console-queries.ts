@@ -388,7 +388,7 @@ export async function recordDetail(pool: Pool, principal: Principal, instanceId:
     const approvals = await client.query('select approval_key, approvers, status, decision, decided_by, decided_at, reason, due_at from approval_request where instance_id = $1 order by id', [instanceId]);
     const tasks = await client.query('select task_key, assignee, status, due_at, completed_at, completed_by from task where instance_id = $1 order by id', [instanceId]);
     const emails = await client.query('select template_key, recipients, subject, status, sent_at from email_log where instance_id = $1 order by id', [instanceId]);
-    const documents = await client.query('select document_key, filename, checksum, created_at from document where instance_id = $1 order by id', [instanceId]);
+    const documents = await client.query('select id, document_key, filename, checksum, byte_size, created_at from document where instance_id = $1 order by id', [instanceId]);
     const notes = canAddNote ? await client.query<{ seq: number; text: string; actor_name: string | null; occurred_at: Date }>(
         `select e.seq, e.payload->>'text' as text, a.display_name as actor_name, e.occurred_at
            from event e left join actor a on e.actor = 'actor:' || a.id::text and a.tenant_id = e.tenant_id
@@ -469,6 +469,48 @@ export async function recordDetail(pool: Pool, principal: Principal, instanceId:
       viewerRoles: decision.roles,
     };
   });
+}
+
+/**
+ * A document the process generated for this record, for downloading.
+ *
+ * The bytes have sat in the `document` table since the action that made
+ * them, attached to emails but with no way to get one from the console. The
+ * same check as viewing the record: if you may see the record, you may have
+ * the letter it produced. Taking the copy is written to the record's history,
+ * as an export is.
+ */
+export async function recordDocument(pool: Pool, principal: Principal, instanceId: string, documentId: number) {
+  const out = await inTransaction(pool, async (client) => {
+    const { rows: instances } = await client.query<{ id: string; tenant_id: string; process_key: string; process_version_id: string }>(
+      'select id, tenant_id, process_key, process_version_id from instance where id = $1',
+      [instanceId],
+    );
+    const instance = instances[0];
+    if (!instance) throw new Error('no such record');
+    const { rows: versions } = await client.query<{ blueprint: Blueprint }>('select blueprint from process_version where id = $1', [instance.process_version_id]);
+    await require_(
+      client,
+      { principal, action: 'view', tenantId: instance.tenant_id, processKey: instance.process_key, blueprint: versions[0]!.blueprint, instanceId: instance.id },
+      pool,
+    );
+    const { rows } = await client.query<{ filename: string; content: Buffer | null; checksum: string; document_key: string }>(
+      'select filename, content, checksum, document_key from document where id = $1 and instance_id = $2',
+      [documentId, instanceId],
+    );
+    const doc = rows[0];
+    if (!doc) throw new Error('no such document');
+    if (!doc.content) throw new Error('this document\'s bytes are no longer held');
+    const contentType = /\.pdf$/i.test(doc.filename) ? 'application/pdf' : /\.html?$/i.test(doc.filename) ? 'text/html' : 'application/octet-stream';
+    return { tenantId: instance.tenant_id, documentKey: doc.document_key, filename: doc.filename, contentType, checksum: doc.checksum, base64: doc.content.toString('base64') };
+  });
+  await pool.query(
+    `insert into event (tenant_id, instance_id, seq, type, payload, actor, occurred_at)
+     values ($1, $2, (select coalesce(max(seq), 0) + 1 from event where instance_id = $2), 'document_downloaded', $3, $4, $5)`,
+    [out.tenantId, instanceId, JSON.stringify({ document: out.documentKey, filename: out.filename, checksum: out.checksum }), principal.kind === 'actor' ? `actor:${principal.actorId}` : 'system', new Date()],
+  );
+  const { tenantId: _tenant, ...body } = out;
+  return body;
 }
 
 /** An operator note is append-only record history, including on a finished record. */
