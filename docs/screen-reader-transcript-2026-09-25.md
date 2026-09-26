@@ -1,0 +1,76 @@
+# Screen-reader session: http://localhost:3210/f/x8m9-hm82-inn9
+
+NVDA, 2026-09-26T03:34:30.405Z to 2026-09-26T03:35:58.565Z. Steps in bold; everything else is what NVDA said.
+
+  - 22:34:35.624 Form - Google Chrome for Testing window
+  - 22:34:35.716 Budget transfer · form
+  - 22:34:36.166 Loading… main landmark ransfer
+  - 22:34:36.183 Step 1 of 2
+  - 22:34:36.190 heading level 1 About you
+  - 22:34:36.218 Your name
+  - 22:34:36.246 edit required Your email
+  - 22:34:36.255 edit required We write here when anything changes.
+- **22:34:39.940 Form loaded**
+- **22:34:41.526 Tab**
+  - 22:34:41.775 main landmark
+  - 22:34:41.806 Your name edit required blank
+- **22:34:43.990 Tab**
+  - 22:34:44.152 Your email edit required We write here when anything changes. blank
+- **22:34:46.458 Tab**
+  - 22:34:46.551 Continue button
+- **22:34:48.929 Enter: Continue with nothing filled in**
+  - 22:34:49.225 2 answers need attention. 
+  - 22:34:49.543 Your name edit required invalid entry Your name is required. blank
+  - 22:34:49.725 alert Your name is required.
+  - 22:34:49.868 alert Your email is required.
+  - 22:34:52.543 1 answer needs attention. 
+- **22:34:52.945 Typed "Ada Test"**
+  - 22:34:54.112 Your answers are saved as you go. You can close this and come back. 
+  - 22:34:54.115 Budget transfer · form 
+- **22:34:55.699 Tab**
+  - 22:34:55.937 Your email edit required invalid entry We write here when anything changes. Your email is required. blank
+  - 22:34:59.155 We write here when anything changes.
+- **22:35:00.092 Typed "ada@example.test"**
+- **22:35:03.267 Tab**
+  - 22:35:03.595 Continue button
+- **22:35:06.743 Enter: Continue to the next page**
+- **22:35:11.891 Tab**
+  - 22:35:12.818 clickable Open Next.js Dev Tools menu button collapsed subMenu
+  - 22:35:15.215 Step 2 of 2 
+- **22:35:15.421 ArrowDown: pick the first option of the list**
+  - 22:35:16.163 main landmark Budget transfer heading level 1
+- **22:35:18.859 Tab**
+  - 22:35:18.983 The two budgets region
+  - 22:35:18.991 Your budget is the one combo box Choose… collapsed required You must hold the budget on your side. The other holder is asked to agree next.
+- **22:35:21.245 Tab**
+  - 22:35:21.370 Moving from (budget code) edit required The cost centre or budget code the money leaves. blank
+- **22:35:23.627 Tab**
+  - 22:35:23.727 Moving to (budget code) edit required The cost centre or budget code the money goes to. blank
+- **22:35:25.963 Tab**
+  - 22:35:26.077 The other budget holder's email edit required The person who holds the budget on the other side. They are asked to agree before Finance sees it. blank
+- **22:35:28.255 Tab**
+  - 22:35:28.430 The money region
+  - 22:35:28.468 Amount spin button required editable blank
+- **22:35:30.965 Tab**
+  - 22:35:31.360 Financial year edit required The year whose budget this changes, for example 2026/27. blank
+- **22:35:33.463 Tab**
+  - 22:35:33.544 How long for combo box Choose… collapsed required Permanent also moves the money in next year’s starting budget.
+- **22:35:35.849 Tab**
+  - 22:35:36.070 From date edit The first period the money moves in.
+  - 22:35:36.076 Month From spin button 0 The first period the money moves in.
+- **22:35:38.285 Tab**
+  - 22:35:38.346 Day From spin button 0 The first period the money moves in.
+- **22:35:41.087 ArrowDown: move between the choices**
+  - 22:35:41.105 31
+- **22:35:44.886 Tab**
+  - 22:35:45.076 Year From spin button 0 The first period the money moves in.
+- **22:35:47.262 Tab**
+  - 22:35:47.672 Show date picker From menu button subMenu The first period the money moves in.
+- **22:35:49.612 Tab**
+  - 22:35:49.825 Why, and your agreement region
+  - 22:35:49.884 Why is it moving? edit required multi line What the money will pay for, and why the budget it leaves can spare it. blank
+- **22:35:52.090 Tab**
+  - 22:35:52.303 Sign to agree to this transfer grouping
+  - 22:35:52.308 How to sign grouping
+  - 22:35:52.313 Type it radio button checked 1 of 2
+- **22:35:54.463 Enter: Submit with answers missing**

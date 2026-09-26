@@ -1001,6 +1001,12 @@ The form's header settings opened as a block above the preview, so choosing a lo
 
 The text size first scaled everything, header included, which is not what anyone changing it means. It now scales the questions, answers, help and buttons, placeholders with them, and leaves the header and the page title alone. An extra-small size puts fields under 16px, which phones zoom in on; the drawer says so beside the choice rather than hiding the option.
 
+### 102. What the markup said and what NVDA said
+
+The accessibility notes were honest that nobody had heard the form read aloud. When NVDA did read it, four things the markup pass had passed were wrong in use: the autosave note, a polite live region, was spoken after nearly every keystroke; an untouched list was announced as "invalid entry" because the native `required` attribute makes the browser report an empty control invalid; "answer(s)" was read as "answer s"; and the page title went back to the product's slogan when the resume link arrived, because the framework re-applies its title on navigation. None of these is visible, none is a violation an automated scan reports, and every one is what a listener hears first.
+
+The session is a script now (`scripts/screen-reader-session.mjs`), so the next change to the form can be heard as well as seen. Its limit is real: it drives focus, not NVDA's browse mode, and it is one reader on one platform.
+
 ### 90. Every new column needed a re-seed
 
 `schema.sql` describes a database created from nothing, and there was no other way to change one. Each release that added a table or a column reached a running database only by dropping it and seeding again, which signed every member out and emptied the workspace — in development that was several times a day, and it was part of why somebody could not sign in. A deployed database had no path at all.

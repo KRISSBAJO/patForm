@@ -4,6 +4,13 @@ import { fileURLToPath } from 'node:url';
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  /*
+   * No dev-tools button on the page. In development it sat first in the tab
+   * order, before the main landmark, and a screen reader landed on "Open
+   * Next.js Dev Tools menu button" after every page change. A preview should
+   * read the way the live form does.
+   */
+  devIndicators: false,
   // The repo root has its own lockfile for the compiler and runtime packages,
   // so Next has to be told which one is this app's.
   outputFileTracingRoot: dirname(fileURLToPath(import.meta.url)),

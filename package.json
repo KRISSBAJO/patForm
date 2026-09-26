@@ -27,6 +27,7 @@
     "drill": "node --env-file=.env node_modules/tsx/dist/cli.mjs src/drill.ts",
     "support": "node --env-file=.env node_modules/tsx/dist/cli.mjs src/support-cli.ts",
     "a11y": "node scripts/a11y.mjs",
+    "sr:session": "node scripts/screen-reader-session.mjs",
     "data-map": "node --env-file=.env node_modules/tsx/dist/cli.mjs src/privacy-cli.ts map",
     "erase": "node --env-file=.env node_modules/tsx/dist/cli.mjs src/privacy-cli.ts erase",
     "public-api": "node --env-file=.env node_modules/tsx/dist/cli.mjs src/api/public-server.ts",

@@ -125,6 +125,47 @@ assistive technology and out of the tab order; every input is labelled, help
 text is attached with `aria-describedby`, required is set on the control; the
 signature offers a typed alternative to the canvas and names both.
 
+## A screen-reader session on the public form, 2026-09-25
+
+NVDA 2026.1.1, portable, speech logged; Chromium driven by keyboard through
+Playwright while NVDA read it. `scripts/screen-reader-session.mjs` runs it and
+merges NVDA's speech log with the steps into one transcript; the full record
+is `docs/screen-reader-transcript-2026-09-25.md`. It is a focus-order
+session: what NVDA says as Tab moves through the form, when a check fails,
+when a page changes, and while answers are saved. NVDA's browse-mode reading
+(arrowing through the page) cannot be driven this way, and JAWS and VoiceOver
+were not run.
+
+What it confirmed, in NVDA's words: "Your name edit required blank"; "Your
+email edit required We write here when anything changes. blank" (help text
+attached); on Continue with nothing filled in, "2 answers need attention",
+then focus on "Your name edit required invalid entry Your name is required.",
+then each alert; on the page change, "Step 2 of 2" and "Budget transfer
+heading level 1"; sections as "The two budgets region", "The money region";
+the signature as "Sign to agree to this transfer grouping, How to sign
+grouping, Type it radio button checked 1 of 2".
+
+What it found that the markup pass had not:
+
+- **"Saved" every few seconds.** The autosave note was a live region, so
+  NVDA said "Saving… Saved — you can close this and come back" after nearly
+  every keystroke. It is said once now, in one sentence, and the visible note
+  goes on updating silently.
+- **"invalid entry" on a list nobody had touched.** The native `required`
+  attribute makes Chromium report an empty control as invalid, and NVDA said
+  so on the first Tab into page 2. Required is now `aria-required`: still
+  said as "required", and invalid only when the server has said so.
+- **"answer(s)"** read as "answer s". It is "1 answer needs attention" or
+  "2 answers need attention".
+- **The slogan came back.** The title was set once, and the framework put its
+  own back on the next navigation, so the resume link's arrival renamed the
+  page to the product's slogan. The route's own title is "Form" until the
+  form's name is known, and the name is re-applied on every page.
+- **A dev-only button first in the tab order.** In development, the
+  framework's dev-tools button sat before the main landmark and took the
+  first Tab after a page change. It is turned off, so a preview reads as the
+  live form does.
+
 ## Known gaps
 
 **Focus restoration after the builder's Test dialog** returns to the page
@@ -134,12 +175,11 @@ the captured element is gone by the time focus is restored. Focus lands on the
 main landmark rather than the top of the document, so the next Tab is still
 useful. The Publish and New process dialogs restore exactly.
 
-**No screen-reader testing.** Everything above is code inspection, automated
-checks and one keyboard-and-accessibility-tree pass. NVDA, JAWS and VoiceOver
-each behave differently from the specification and from each other, and a gate
-claimed without hearing the thing read aloud is a claim about markup rather
-than about use. A session with a real screen reader, ideally with someone who
-uses one daily, is still owed.
+**One screen reader, one mode.** NVDA has read the public form in focus
+order, above. NVDA's browse mode, JAWS and VoiceOver have not, and each
+behaves differently from the specification and from each other. A session
+with someone who uses a screen reader daily is still owed; `npm run
+sr:session` gives them, or anyone, a transcript to argue with.
 
 **No zoom or reflow testing** (1.4.10, 400% zoom at 320px), and no testing with
 Windows High Contrast.

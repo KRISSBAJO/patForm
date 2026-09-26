@@ -96,6 +96,13 @@ view:
   server checks.
 - **Header.** Title, subtitle, logo, banner, accent and footer.
 
+**A screen-reader session, recorded.** `npm run sr:session -- <form url>
+<nvda log>` drives the public form in Chromium by keyboard while NVDA is
+running and merges NVDA's speech log with the steps into one transcript, so
+"what does a screen reader say here" has an answer in writing. The one from
+2026-09-25 is in `docs/screen-reader-transcript-2026-09-25.md`; what it found
+is in `docs/accessibility.md`.
+
 **Held submissions are reviewed on a page.** "Review all answers" opens the
 submission at `/console?held=<id>`, with a way back and the two decisions at
 the end of the reading, so Back works and the link can be sent to whoever

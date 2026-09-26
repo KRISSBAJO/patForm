@@ -181,7 +181,7 @@ export function FormHeader({
           {branding?.tagline && <span className="fm__tagline">{branding.tagline}</span>}
         </div>
         {note !== undefined && (
-          <span className="fm__save" aria-live="polite">
+          <span className="fm__save">
             {note}
           </span>
         )}
@@ -276,7 +276,7 @@ export function Field({
     id,
     'aria-describedby': describedBy || undefined,
     'aria-invalid': error ? true : undefined,
-    required: field.required,
+    'aria-required': field.required || undefined,
     className: `fm__input ${error ? 'fm__input--bad' : ''}`,
   };
 

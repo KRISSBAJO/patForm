@@ -57,6 +57,10 @@ export function Form({ processKey: fromUrl }: { processKey: string }) {
   const [pageIndex, setPageIndex] = useState(0);
   const [token, setToken] = useState<string | null>(null);
   const [saving, setSaving] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const [saidSaved, setSaidSaved] = useState(false);
+  useEffect(() => {
+    if (saving === 'saved') setSaidSaved(true);
+  }, [saving]);
   const [receiptUploads, setReceiptUploads] = useState<Record<string, string>>({});
   // Focus follows the reader: to the page title when the page changes, to the
   // first answer that needs attention when a check fails, to the thank-you
@@ -84,7 +88,9 @@ export function Form({ processKey: fromUrl }: { processKey: string }) {
   const trapRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     if (form) document.title = `${form.branding?.title ?? form.processName} · form`;
-  }, [form]);
+    // Re-applied on every page and after the resume link lands in the address
+    // bar: the framework puts its own title back on each navigation.
+  }, [form, token, pageIndex]);
   const [done, setDone] = useState<{ reference: string; statusUrl: string | null; quiz?: QuizResult; duplicate?: boolean } | null>(null);
 
   const dirty = useRef(false);
@@ -398,10 +404,14 @@ export function Form({ processKey: fromUrl }: { processKey: string }) {
 
           {errors._ && <p className="fm__formError" role="alert">{errors._}</p>}
           <p className="fm__srOnly" role="status">
-            {Object.keys(errors).filter((k) => k !== '_').length > 0
-              ? `${Object.keys(errors).filter((k) => k !== '_').length} answer(s) need attention.`
-              : ''}
+            {(() => {
+              const n = Object.keys(errors).filter((k) => k !== '_').length;
+              return n === 0 ? '' : n === 1 ? '1 answer needs attention.' : `${n} answers need attention.`;
+            })()}
           </p>
+          {form.saveAndResume && (
+            <p className="fm__srOnly" role="status">{saidSaved ? 'Your answers are saved as you go. You can close this and come back.' : ''}</p>
+          )}
 
           {page.sections.map((section) => {
             const fields = section.fields.filter((f) => shown(f.key));
