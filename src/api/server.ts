@@ -6,6 +6,7 @@ import { changePlatformPerson, grantPlatformOperator, platformAudit, platformInt
   setPlatformIntakePaused, setPlatformWebhookActive, platformTrace } from '../runtime/platform-admin.js';
 import { Engine } from '../runtime/engine.js';
 import { addRecordNote, recordDocument } from '../runtime/console-queries.js';
+import { shareRecord } from '../runtime/share-record.js';
 import { aiDraftStatus, applyAiRevision, queueAiDraft, queueAiRevision } from '../runtime/ai-drafts.js';
 import { AuthorizationError, requireWorkspaceCapability, WORKSPACE_GRANTS, type Principal } from '../runtime/policy.js';
 import type { Capability } from '../blueprint/roles.js';
@@ -1163,6 +1164,14 @@ route('POST', /^\/api\/records\/([0-9a-f-]{36})\/notes$/, async ({ pool, princip
     throw new HttpError(400, 'Note must contain 1 to 2,000 characters');
   }
   return addRecordNote(pool, principal, id, text);
+});
+
+// Send a record to a colleague: a member of this workspace, chosen not typed,
+// who reads it under their own roles. See runtime/share-record.ts.
+route('POST', /^\/api\/records\/([0-9a-f-]{36})\/share$/, async ({ pool, principal, url }, body) => {
+  const { actorId, note } = body as { actorId?: string; note?: string };
+  if (!actorId || !/^[0-9a-f-]{36}$/.test(actorId)) throw new HttpError(400, 'choose a person to send it to');
+  return shareRecord(pool, { principal, instanceId: url.pathname.split('/')[3]!, recipientActorId: actorId, note });
 });
 
 // A document the process generated for this record, as base64 in JSON: the

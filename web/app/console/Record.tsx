@@ -147,6 +147,50 @@ export function RecordPage({
   const [hasRecordActions, setHasRecordActions] = useState(false);
   const [copyStatus, setCopyStatus] = useState('');
   const [noteOpen, setNoteOpen] = useState(false);
+  /*
+   * Sending the record to a colleague. A person from the workspace is
+   * chosen, never an address typed, and the server renders what they get
+   * under their own roles. See runtime/share-record.ts.
+   */
+  const [shareOpen, setShareOpen] = useState(false);
+  const [members, setMembers] = useState<{ id: string; display_name: string; email: string; active: boolean }[] | null>(null);
+  const [shareTo, setShareTo] = useState('');
+  const [shareNote, setShareNote] = useState('');
+  const [shareBusy, setShareBusy] = useState(false);
+  const [shareStatus, setShareStatus] = useState<{ text: string; ok: boolean } | null>(null);
+  const openShare = async () => {
+    setShareOpen((was) => !was);
+    setNoteOpen(false);
+    if (members === null) {
+      try {
+        const response = await fetch('/api/members', { credentials: 'same-origin' });
+        const result = await response.json().catch(() => []);
+        setMembers(Array.isArray(result) ? result : []);
+      } catch {
+        setMembers([]);
+      }
+    }
+  };
+  const sendShare = async () => {
+    setShareBusy(true);
+    setShareStatus(null);
+    try {
+      const response = await fetch(`/api/records/${record.instanceId}/share`, {
+        method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ actorId: shareTo, note: shareNote.trim() }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.reason ?? result.error ?? 'It could not be sent.');
+      const why = String(result.reason ?? 'the email provider refused it');
+      setShareStatus(result.sent
+        ? { text: `Sent to ${result.to}.`, ok: true }
+        : { text: /^not sent/i.test(why) ? why.charAt(0).toUpperCase() + why.slice(1) : `Not sent to ${result.to}: ${why}`, ok: false });
+      if (result.sent) { setShareNote(''); setShareTo(''); }
+      onActionDone();
+    } catch (error) {
+      setShareStatus({ text: error instanceof Error ? error.message : 'It could not be sent.', ok: false });
+    } finally { setShareBusy(false); }
+  };
   const [noteText, setNoteText] = useState('');
   const [noteBusy, setNoteBusy] = useState(false);
   const [noteError, setNoteError] = useState('');
@@ -222,11 +266,18 @@ export function RecordPage({
           * it was printed.
           */}
         <button type="button" className="cs__btn" onClick={() => window.print()}>
-          <svg className="cs__icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <svg className="cs__icon" width={15} height={15} viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M6 7V3.5h8V7M6 15H4.5A1.5 1.5 0 0 1 3 13.5v-4A1.5 1.5 0 0 1 4.5 8h11A1.5 1.5 0 0 1 17 9.5v4a1.5 1.5 0 0 1-1.5 1.5H14" />
             <path d="M6 12h8v4.5H6z" />
           </svg>
           Print
+        </button>
+        <button type="button" className="cs__btn" onClick={() => void openShare()} aria-expanded={shareOpen} aria-controls="record-share-form">
+          <svg className="cs__icon" width={15} height={15} viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <rect x="2.5" y="4.5" width="15" height="11" rx="1.6" />
+            <path d="m3 5.5 7 5.5 7-5.5" />
+          </svg>
+          Send to a colleague
         </button>
         {record.canAddNote && <button type="button" className="cs__btn" onClick={() => setNoteOpen((open) => !open)} aria-expanded={noteOpen} aria-controls="record-note-form"><Icon name="note" /> Add note</button>}
         {!isFinished && hasRecordActions && <button type="button" className="cs__btn cs__btn--primary" onClick={() => setActions({ kind: '', field: '' })}>Take action</button>}
@@ -249,6 +300,19 @@ export function RecordPage({
         <textarea id="record-note-text" value={noteText} onChange={(event) => setNoteText(event.target.value)} maxLength={2000} rows={3} placeholder="Write a short update or handover note…" />
         {noteError && <p className="fm__error" role="alert">{noteError}</p>}
         <div className="rc__noteComposerActions"><span>{noteText.length} / 2,000</span><button type="button" className="cs__btn" onClick={() => setNoteOpen(false)}>Cancel</button><button type="button" className="cs__btn cs__btn--primary" disabled={!noteText.trim() || noteBusy} onClick={saveNote}>{noteBusy ? 'Saving…' : 'Save note'}</button></div>
+      </section>}
+
+      {shareOpen && <section id="record-share-form" className="rc__noteComposer" aria-label="Send this record to a colleague">
+        <div><h3>Send to a colleague</h3><p>They get an email with a link and the answers their own role may see. Only members of this workspace can be chosen.</p></div>
+        <label className="vw__srOnly" htmlFor="record-share-to">Send to</label>
+        <select id="record-share-to" className="cs__input" value={shareTo} onChange={(event) => setShareTo(event.target.value)}>
+          <option value="">{members === null ? 'Loading people\u2026' : 'Choose a person\u2026'}</option>
+          {(members ?? []).filter((m) => m.active).map((m) => <option key={m.id} value={m.id}>{`${m.display_name} · ${m.email}`}</option>)}
+        </select>
+        <label className="vw__srOnly" htmlFor="record-share-note">A note to go with it</label>
+        <textarea id="record-share-note" value={shareNote} onChange={(event) => setShareNote(event.target.value)} maxLength={2000} rows={2} placeholder="A line about why, if you like" />
+        {shareStatus && <p className={shareStatus.ok ? 'rc__copyStatus' : 'fm__error'} role="status">{shareStatus.text}</p>}
+        <div className="rc__noteComposerActions"><span>{shareNote.length} / 2,000</span><button type="button" className="cs__btn" onClick={() => setShareOpen(false)}>Close</button><button type="button" className="cs__btn cs__btn--primary" disabled={!shareTo || shareBusy} onClick={() => void sendShare()}>{shareBusy ? 'Sending\u2026' : 'Send'}</button></div>
       </section>}
 
       {/*

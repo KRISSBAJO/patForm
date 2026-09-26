@@ -180,3 +180,8 @@ create table if not exists process_export (
   occurred_at timestamptz not null default now()
 );
 create index if not exists process_export_tenant on process_export (tenant_id, occurred_at desc);
+
+-- A record sent to a colleague is a platform email of its own kind.
+alter table platform_email drop constraint if exists platform_email_kind_check;
+alter table platform_email add constraint platform_email_kind_check
+  check (kind in ('invitation', 'verify_email', 'password_reset', 'delivery_alert', 'task_assigned', 'record_shared'));

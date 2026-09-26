@@ -505,6 +505,7 @@ function transitions(spec: PackSpec, rules: CategoryRules) {
       trigger: { on: 'submission' },
       actions: [
         { do: 'send_email', key: 'ack', template: 'acknowledgement' },
+        { do: 'send_email', key: 'tell_staff', template: 'new_request' },
         { do: 'request_approval', key: 'ask_1', approval: first.key },
       ],
     },
@@ -758,6 +759,22 @@ function landing(to: string, spec: PackSpec, tag: string, thresholdApproval?: st
 function emails(spec: PackSpec, rules: CategoryRules) {
   const first = spec.approvals[0]!;
   return [
+    /*
+     * Staff hear at once. The person who decides used to learn of a new
+     * request from the console's work queue or, a day later, from the
+     * reminder. A small organisation does not sit in the console; it reads
+     * its mail. No answers in it: the record is a click away, and a
+     * notification to a third party carries nothing confidential.
+     */
+    {
+      key: 'new_request',
+      name: 'New request for staff',
+      class: 'transactional',
+      to: [first.byField ? { field: first.byField } : { role: first.byRole }],
+      cc: [],
+      subject: `New ${spec.name.toLowerCase()} to look at`,
+      body: `A new ${spec.name.toLowerCase()} has arrived and is waiting for you.\n\nOpen your work queue in the console to see it. You will be reminded if it is still waiting.`,
+    },
     {
       key: 'acknowledgement',
       name: 'Received',

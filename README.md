@@ -420,6 +420,23 @@ Then `npm run retention` applies the configured action. The order in that
 sentence is the requirement: retention deletes the record and its events, so
 afterwards there is nothing left to export.
 
+**Print, and send to a colleague.** The record page has a Print button; a
+print stylesheet drops the navigation and the buttons, so the browser's print
+dialog, or its save-as-PDF, gives the record as this role may see it, dated.
+The respondent's thank-you screen lists what they sent with the same
+button. **Send to a colleague** emails the record to a member of this
+workspace, chosen from a list rather than typed, with a note. The answers in
+the mail are rendered under the *recipient's* roles, so forwarding cannot hand
+somebody a field their own role hides; a recipient who cannot open the record
+is refused and the sender told why. The send is an event on the record. The
+documents a process generates, a letter or a packet, are listed in the
+record's side column with a Download button, and a download is an event too.
+
+**Staff hear at once.** Every generated template now emails the first
+decider when a request arrives, with no answers in it, beside the
+acknowledgement to the submitter and the reminder that follows if nothing
+happens.
+
 **Answers in the list.** The Records page shows three answers beside each
 reference, chosen by the process's `outputs.exportFields` or, failing that,
 a name-like field and the first short answers this role may see. A filter
@@ -604,7 +621,10 @@ describe a deployment other than the one answering.
 ## Dashboards, records and CSV import
 
 **Dashboard** and **Records** in the console; §13.1's nine metrics and a
-cursor-paged browse.
+cursor-paged browse. Under the metrics, the dashboard adds up what people
+answered in the same period: a count per answer for every choice question,
+and the total, average and range of every number, under the same cohort
+rule and the same visibility as everything else on the page.
 
 Everything is computed from the event log at read time. There is no aggregate
 table, which is slower and satisfies §13.2's "derived aggregates can be

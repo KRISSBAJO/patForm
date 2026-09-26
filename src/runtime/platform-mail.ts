@@ -22,7 +22,7 @@ import { emailProviderFromEnv, mailFrom, type DeliveryResult } from './email.js'
 import { logIfEnabled } from './trace.js';
 import { blockedRecipients } from './delivery.js';
 
-export type PlatformMailKind = 'invitation' | 'verify_email' | 'password_reset' | 'delivery_alert' | 'task_assigned';
+export type PlatformMailKind = 'invitation' | 'verify_email' | 'password_reset' | 'delivery_alert' | 'task_assigned' | 'record_shared';
 
 /**
  * Where the links point.
