@@ -23,6 +23,7 @@ import { logIfEnabled, requestIdFrom, withTrace } from '../runtime/trace.js';
 import { callerFor, limitFor, processKeyFrom, takeIntakeToken } from './intake-limits.js';
 import { traceByRequest, traceForInstance } from '../runtime/support.js';
 import { dashboard } from '../runtime/metrics.js';
+import { answerSummary } from '../runtime/summaries.js';
 import {
   acceptInvitation,
   changeRole,
@@ -520,6 +521,15 @@ route('GET', /^\/api\/trace\/([\w.:-]{8,64})$/, async ({ pool, principal, url })
 // The console's own reads. The public, versioned equivalents are in public.ts
 // and mounted under /v1 — kept apart so a console convenience does not become
 // a published contract by accident.
+
+// What people answered, added up: counts per choice, totals and averages.
+route('GET', /^\/api\/dashboard\/([a-z0-9_]+)\/answers$/, async ({ pool, principal, url }) =>
+  answerSummary(pool, {
+    principal,
+    processKey: url.pathname.split('/')[3]!,
+    days: url.searchParams.has('days') ? Number(url.searchParams.get('days')) : undefined,
+  }),
+);
 
 route('GET', /^\/api\/dashboard\/([a-z0-9_]+)$/, async ({ pool, principal, url }) =>
   dashboard(pool, {

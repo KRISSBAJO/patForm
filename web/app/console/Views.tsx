@@ -67,6 +67,27 @@ function formatted(m: Measurement): string {
   return String(m.value);
 }
 
+/** The dashboard's second half: what was in the records, not only how they ran. */
+interface AnswerSummary {
+  from: string;
+  to: string;
+  records: number;
+  minCohort: number;
+  choices: { key: string; label: string; type: string; answered: number; buckets: { value: string; label: string; count: number }[]; more: number }[];
+  numbers: { key: string; label: string; type: string; count: number; sum: number; mean: number; min: number; max: number; currencyCode?: string }[];
+  withheld: string[];
+}
+
+function amount(n: number, currencyCode?: string): string {
+  try {
+    return currencyCode
+      ? new Intl.NumberFormat(undefined, { style: 'currency', currency: currencyCode }).format(n)
+      : new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(n);
+  } catch {
+    return String(n);
+  }
+}
+
 export function DashboardView({
   processKey,
   automation,
@@ -77,6 +98,7 @@ export function DashboardView({
   onOpenAutomation: () => void;
 }) {
   const [data, setData] = useState<DashboardData | null>(null);
+  const [answers, setAnswers] = useState<AnswerSummary | null>(null);
   const [days, setDays] = useState(30);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<string | null>(null);
@@ -85,6 +107,9 @@ export function DashboardView({
     setError(null);
     try {
       setData(await call<DashboardData>(`/api/dashboard/${processKey}?days=${days}`));
+      // The answers are a second read so an older API, or a refusal on this
+      // one, leaves the rest of the dashboard standing.
+      setAnswers(await call<AnswerSummary>(`/api/dashboard/${processKey}/answers?days=${days}`).catch(() => null));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -193,6 +218,70 @@ export function DashboardView({
           </details>
         )}
       </section>
+
+      {answers && (
+        <section className="db__insights db__answers" aria-labelledby="db-answers-title">
+          <div className="db__sectionHead">
+            <div><span className="db__eyebrow">What people answered</span><h3 id="db-answers-title">Answers in this period</h3></div>
+            <span>
+              {answers.records} {answers.records === 1 ? 'record' : 'records'}
+              {answers.withheld.length ? ` · ${answers.withheld.length} ${answers.withheld.length === 1 ? 'field' : 'fields'} hidden from your roles` : ''}
+            </span>
+          </div>
+          {answers.records < answers.minCohort ? (
+            <p className="db__definition">Answer summaries appear once a period has at least {answers.minCohort} records. This one has {answers.records}.</p>
+          ) : answers.numbers.length + answers.choices.length === 0 ? (
+            <p className="db__definition">This form has no choice or number questions to add up.</p>
+          ) : (
+            <>
+              {answers.numbers.length > 0 && (
+                <div className="db__measures">
+                  {answers.numbers.map((n) => (
+                    <div key={n.key} className="db__measure db__measure--static">
+                      <span>{n.label}</span>
+                      <strong>{amount(n.type === 'rating' ? n.mean : n.sum, n.currencyCode)}</strong>
+                      <small>
+                        {n.type === 'rating'
+                          ? `Average of ${n.count} · from ${n.min} to ${n.max}`
+                          : `Total of ${n.count} · average ${amount(n.mean, n.currencyCode)} · from ${amount(n.min, n.currencyCode)} to ${amount(n.max, n.currencyCode)}`}
+                      </small>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {answers.choices.length > 0 && (
+                <div className="db__breakdowns">
+                  {answers.choices.map((c) => {
+                    const top = c.buckets[0]?.count ?? 1;
+                    return (
+                      <div key={c.key} className="db__breakdown">
+                        <h4>{c.label}</h4>
+                        <ol>
+                          {c.buckets.map((b) => (
+                            <li key={b.value}>
+                              <span className="db__barLabel">{b.label}</span>
+                              <span className="db__barCount">{b.count} · {Math.round((b.count / c.answered) * 100)}%</span>
+                              <span className="db__bar" aria-hidden="true"><span style={{ width: `${Math.max(2, Math.round((b.count / top) * 100))}%` }} /></span>
+                            </li>
+                          ))}
+                          {c.more > 0 && (
+                            <li>
+                              <span className="db__barLabel">Other answers</span>
+                              <span className="db__barCount">{c.more}</span>
+                              <span className="db__bar" aria-hidden="true"><span style={{ width: `${Math.max(2, Math.round((c.more / top) * 100))}%` }} /></span>
+                            </li>
+                          )}
+                        </ol>
+                        <small>{c.answered} answered{c.type === 'multi_choice' ? ' · several answers each allowed' : ''}</small>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </>
+          )}
+        </section>
+      )}
 
       <footer className="db__footer">{range} · Process version{data.versions.length > 1 ? 's' : ''} {data.versions.join(', ')} · Metrics {data.metricsVersion}{notComputed.length > 0 && <> · Not yet computed: {notComputed.map((d) => d.name).join(', ')}</>}</footer>
     </div>
