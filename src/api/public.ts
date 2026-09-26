@@ -235,6 +235,8 @@ export async function listRecordsPage(
     completed?: boolean;
     /** Free text, matched against the reference and the answers this caller may see. */
     query?: string;
+    /** One answer that must equal a value: a choice, a yes/no, a short text. */
+    answer?: { field: string; value: string };
     order?: RecordOrder;
     limit: number;
     cursor?: string;
@@ -291,6 +293,17 @@ export async function listRecordsPage(
      * So the visible keys are computed first and the match is restricted to
      * them, in SQL, before any row is returned.
      */
+    // The same rule as the search: only an answer this caller may see can be
+    // filtered by, or "which records have X in the hidden field" would
+    // reveal the hidden field one guess at a time.
+    if (args.answer) {
+      const visible = visibleFields(bp, decision.roles, decision.workspaceRole);
+      if (!visible.includes(args.answer.field)) {
+        throw apiErrors.validation(`"${args.answer.field}" is not a field you can filter by`, { fields: visible });
+      }
+      where.push(`i.data ->> ${push(args.answer.field)} = ${push(args.answer.value)}`);
+    }
+
     const q = args.query?.trim();
     if (q) {
       const visible = visibleFields(bp, decision.roles, decision.workspaceRole);
@@ -357,6 +370,58 @@ export async function listRecordsPage(
       next_cursor: hasMore && last ? encodeCursor({ createdAt: last.created_at.toISOString(), id: last.id }) : null,
       has_more: hasMore,
     };
+  });
+}
+
+/**
+ * What the Records page may show in its columns and filter by, for this
+ * caller: the fields their roles can see, with labels and choices, and which
+ * three to show beside the reference by default. The process may say which
+ * with `outputs.exportFields`; otherwise a name-like field first, then the
+ * first short answers.
+ */
+export interface BrowseFields {
+  fields: { key: string; label: string; type: string; choices?: { value: string; label: string }[] }[];
+  preview: string[];
+}
+
+const PREVIEW_TYPES = new Set(['short_text', 'email', 'phone', 'single_choice', 'dropdown', 'date', 'currency', 'number', 'yes_no']);
+
+export async function browseFields(
+  pool: Pool,
+  args: { principal: Principal; processKey: string },
+): Promise<BrowseFields> {
+  return inTransaction(pool, async (client) => {
+    if (args.principal.kind !== 'actor') throw apiErrors.unauthorized('an API key acts as a member');
+    const tenantId = args.principal.tenantId;
+    const { rows: versions } = await client.query<{ blueprint: Blueprint }>(
+      `select blueprint from process_version
+        where tenant_id = $1 and process_key = $2 order by version desc limit 1`,
+      [tenantId, args.processKey],
+    );
+    if (!versions[0]) throw apiErrors.notFound(`no published process "${args.processKey}"`);
+    const bp = versions[0].blueprint;
+    const decision = await require_(
+      client,
+      { principal: args.principal, action: 'view', tenantId, processKey: args.processKey, blueprint: bp },
+      pool,
+    );
+    const visible = new Set(visibleFields(bp, decision.roles, decision.workspaceRole));
+    const fields = bp.data.fields
+      .filter((f) => visible.has(f.key) && f.type !== 'content' && f.type !== 'hidden' && f.setBy !== 'system')
+      .map((f) => ({
+        key: f.key,
+        label: f.label,
+        type: f.type,
+        ...(f.choices ? { choices: f.choices.map((c) => ({ value: String(c.value), label: c.label })) } : {}),
+      }));
+    const declared = bp.outputs.exportFields.filter((k) => visible.has(k));
+    const simple = fields.filter((f) => PREVIEW_TYPES.has(f.type));
+    const named = simple.find((f) => /name/.test(f.key));
+    const preview = declared.length
+      ? declared.slice(0, 3)
+      : [...new Set([...(named ? [named.key] : []), ...simple.map((f) => f.key)])].slice(0, 3);
+    return { fields, preview };
   });
 }
 

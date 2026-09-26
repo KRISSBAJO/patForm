@@ -4882,7 +4882,7 @@ a.cs__navItem {
 .rv__row[data-selected='true'] { background: #f3faf5; }
 .rv__row:last-child { border-bottom: 0; }
 .rv__row > input { flex: none; }
-.rv__open { display: grid; grid-template-columns: 36px minmax(150px, 1.1fr) minmax(125px, .8fr) minmax(130px, .9fr) 20px; align-items: center; gap: 14px; width: 100%; min-height: 76px; padding: 10px 0; border: 0; background: transparent; color: var(--ink); text-align: left; cursor: pointer; }
+.rv__open { display: grid; grid-template-columns: 36px minmax(140px, 1fr) repeat(var(--rv-n, 0), minmax(96px, .9fr)) minmax(120px, .8fr) minmax(120px, .8fr) 20px; align-items: center; gap: 14px; width: 100%; min-height: 76px; padding: 10px 0; border: 0; background: transparent; color: var(--ink); text-align: left; cursor: pointer; }
 .rv__row:hover { background: #f7fbf8; }
 .rv__recordIcon { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 9px; background: #ebf5ee; color: var(--green-deep); }
 .rv__recordIcon .cs__icon { width: 17px; height: 17px; margin: 0; }
@@ -4891,6 +4891,15 @@ a.cs__navItem {
 .rv__recordMain small, .rv__state small { color: var(--muted); font-size: 11px; }
 .rv__state b { color: var(--ink-soft); font-size: 12px; font-weight: 600; }
 .rv__finished { color: var(--muted); font-size: 11.5px; }
+/* An answer in the row: its label small above it, the value on one line. */
+.rv__cell { display: grid; gap: 3px; min-width: 0; }
+.rv__cell small { color: var(--muted); font-size: 10.5px; letter-spacing: .02em; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rv__cell > span { color: var(--ink-soft); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rv__cols { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 960px) {
+  .rv__cell { display: none; }
+  .rv__open { grid-template-columns: 36px minmax(140px, 1fr) minmax(120px, .8fr) minmax(120px, .8fr) 20px; }
+}
 .rv__arrow { justify-self: end; color: var(--green-deep); font-size: 20px; }
 .rv__empty { padding: 46px 20px; color: var(--muted); font-size: 13px; text-align: center; }
 .rv__panel .vw__more { padding: 15px 20px; border-top: 1px solid var(--line-soft); }

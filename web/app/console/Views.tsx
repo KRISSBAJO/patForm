@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState, useRef } from 'react';
+import { useCallback, useEffect, useState, useRef, type CSSProperties } from 'react';
 import QRCode from 'qrcode';
 import { useConfirm } from '../../components/confirm-dialog';
 import { SignatureView, type SignatureValue } from '../../components/signature-field';
@@ -213,6 +213,40 @@ interface PublicRecord {
   omitted_fields: string[];
 }
 
+/** A field the Records page may show or filter by; see `browseFields` on the server. */
+interface BrowseField {
+  key: string;
+  label: string;
+  type: string;
+  choices?: { value: string; label: string }[];
+}
+
+/**
+ * One answer in a list cell. Short, because a cell is a glance and the record
+ * page is a click away: a choice's label, Yes or No, a date as the reader's
+ * locale writes it, a number with its separators, and anything else as it is.
+ */
+function cellText(field: BrowseField, value: unknown): string {
+  if (value === null || value === undefined || value === '') return '\u2014';
+  const label = (v: unknown) => field.choices?.find((c) => c.value === String(v))?.label ?? String(v);
+  if (Array.isArray(value)) return value.map(label).join(', ') || '\u2014';
+  switch (field.type) {
+    case 'yes_no':
+      return value === true || value === 'true' ? 'Yes' : value === false || value === 'false' ? 'No' : String(value);
+    case 'date':
+      return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
+        ? new Date(`${value}T00:00:00Z`).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })
+        : String(value);
+    case 'number':
+    case 'currency':
+    case 'calculated':
+      return typeof value === 'number' ? value.toLocaleString(undefined, field.type === 'currency' ? { minimumFractionDigits: 2, maximumFractionDigits: 2 } : {}) : String(value);
+    default:
+      if (typeof value === 'object') return '(see record)';
+      return label(value);
+  }
+}
+
 interface Page {
   data: PublicRecord[];
   next_cursor: string | null;
@@ -237,6 +271,35 @@ export function RecordsView({
   const [error, setError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
   const [note, setNote] = useState<string | null>(null);
+  /*
+   * Answer columns and an answer filter.
+   *
+   * The list showed reference, stage and dates, so "which of these is Priya's
+   * claim" meant opening them one by one. The server says which fields this
+   * role may see and which three to show by default; the filter is one
+   * answer at a time, chosen from the fields with a fixed set of values.
+   */
+  const [fields, setFields] = useState<BrowseField[]>([]);
+  const [preview, setPreview] = useState<string[]>([]);
+  const [answerField, setAnswerField] = useState('');
+  const [answerValue, setAnswerValue] = useState('');
+  useEffect(() => {
+    let live = true;
+    setFields([]);
+    setPreview([]);
+    setAnswerField('');
+    setAnswerValue('');
+    void call<{ fields: BrowseField[]; preview: string[] }>(`/api/browse/${processKey}/fields`)
+      .then((f) => { if (live) { setFields(f.fields); setPreview(f.preview); } })
+      .catch(() => { /* the list still works without columns */ });
+    return () => { live = false; };
+  }, [processKey]);
+  const previewFields = preview.map((k) => fields.find((f) => f.key === k)).filter((f): f is BrowseField => Boolean(f));
+  const filterable = fields.filter((f) => f.type === 'yes_no' || (f.choices && f.choices.length > 0 && f.choices.length <= 40));
+  const chosen = filterable.find((f) => f.key === answerField) ?? null;
+  const values: [string, string][] = chosen
+    ? chosen.type === 'yes_no' ? [['true', 'Yes'], ['false', 'No']] : (chosen.choices ?? []).map((c) => [c.value, c.label])
+    : [];
   /*
    * Ticked rows, by id. Kept across "load more" and across a search, because
    * people select from several screens of results before acting — and cleared
@@ -267,6 +330,10 @@ export function RecordsView({
         if (filter === 'open') params.set('completed', 'false');
         if (filter === 'done') params.set('completed', 'true');
         if (query) params.set('q', query);
+        if (answerField && answerValue) {
+          params.set('field', answerField);
+          params.set('value', answerValue);
+        }
         const page = await call<Page>(`/api/browse/${processKey}?${params}`);
         // Appending on "load more", replacing on any change to the query: a
         // cursor is only meaningful against the query that produced it, and
@@ -280,7 +347,7 @@ export function RecordsView({
         setBusy(false);
       }
     },
-    [processKey, filter, order, query],
+    [processKey, filter, order, query, answerField, answerValue],
   );
 
   useEffect(() => {
@@ -365,6 +432,38 @@ export function RecordsView({
           </select>
         </label>
 
+        {filterable.length > 0 && (
+          <label className="wk__pick">
+            <span className="cs__srOnly">Filter by answer</span>
+            <Icon name="filter" />
+            <select
+              className="wk__select"
+              value={answerField}
+              onChange={(e) => {
+                setAnswerField(e.target.value);
+                setAnswerValue('');
+              }}
+            >
+              <option value="">Any answer</option>
+              {filterable.map((f) => (
+                <option key={f.key} value={f.key}>{f.label}</option>
+              ))}
+            </select>
+          </label>
+        )}
+
+        {chosen && (
+          <label className="wk__pick">
+            <span className="cs__srOnly">{chosen.label}</span>
+            <select className="wk__select" value={answerValue} onChange={(e) => setAnswerValue(e.target.value)}>
+              <option value="">Any {chosen.label.toLowerCase()}</option>
+              {values.map(([v, l]) => (
+                <option key={v} value={v}>{l}</option>
+              ))}
+            </select>
+          </label>
+        )}
+
         <button type="button" className="cs__btn rv__download" onClick={() => void download()} disabled={downloading}>
           <Icon name="export" />
           {downloading ? 'Preparing\u2026' : 'Download CSV'}
@@ -392,13 +491,13 @@ export function RecordsView({
         />
       )}
 
-      {rows.length > 0 && <div className="rv__selectAll"><label><input type="checkbox" aria-label="Select every record shown" checked={rows.every((r) => selected.has(r.id))} onChange={(e) => setSelected((prev) => { const next = new Map(prev); for (const r of rows) { if (e.target.checked) next.set(r.id, r.reference); else next.delete(r.id); } return next; })} /> Select all shown</label><span>Reference · current stage · dates</span></div>}
+      {rows.length > 0 && <div className="rv__selectAll"><label><input type="checkbox" aria-label="Select every record shown" checked={rows.every((r) => selected.has(r.id))} onChange={(e) => setSelected((prev) => { const next = new Map(prev); for (const r of rows) { if (e.target.checked) next.set(r.id, r.reference); else next.delete(r.id); } return next; })} /> Select all shown</label><span className="rv__cols" aria-hidden="true">{['Reference', ...previewFields.map((f) => f.label), 'Current stage', 'Dates'].join(' · ')}</span></div>}
       <div className="rv__list" role="list" aria-label="Records">
         {rows.map((r) => <div key={r.id} className="rv__row" role="listitem" data-selected={selected.has(r.id) ? 'true' : undefined}>
           <input type="checkbox" aria-label={`Select ${r.reference}`} checked={selected.has(r.id)} onChange={(e) => setSelected((prev) => { const next = new Map(prev); if (e.target.checked) next.set(r.id, r.reference); else next.delete(r.id); return next; })} />
-          <button type="button" className="rv__open" onClick={() => onOpenRecord(r.id)}><span className="rv__recordIcon" aria-hidden="true"><Icon name="table" /></span><span className="rv__recordMain"><strong>{r.reference}</strong><small>Opened {new Date(r.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</small></span><span className="rv__state"><b>{r.state_name}</b>{r.outcome && <small>{r.outcome}</small>}</span><span className="rv__finished">{r.completed_at ? `Finished ${new Date(r.completed_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}` : 'In progress'}</span><span className="rv__arrow" aria-hidden="true">→</span></button>
+          <button type="button" className="rv__open" style={{ '--rv-n': previewFields.length } as CSSProperties} onClick={() => onOpenRecord(r.id)}><span className="rv__recordIcon" aria-hidden="true"><Icon name="table" /></span><span className="rv__recordMain"><strong>{r.reference}</strong><small>Opened {new Date(r.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</small></span>{previewFields.map((f) => <span key={f.key} className="rv__cell"><small>{f.label}</small><span title={cellText(f, r.data[f.key])}>{cellText(f, r.data[f.key])}</span></span>)}<span className="rv__state"><b>{r.state_name}</b>{r.outcome && <small>{r.outcome}</small>}</span><span className="rv__finished">{r.completed_at ? `Finished ${new Date(r.completed_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}` : 'In progress'}</span><span className="rv__arrow" aria-hidden="true">→</span></button>
         </div>)}
-        {!rows.length && !busy && <div className="rv__empty">{query || filter !== 'all' ? <>No records match your search or filters. <button type="button" className="cs__linkBtn cs__linkBtn--onLight" onClick={() => { setTyped(''); setFilter('all'); }}>Clear the filters</button></> : 'No records yet. They arrive when somebody submits the form.'}</div>}
+        {!rows.length && !busy && <div className="rv__empty">{query || filter !== 'all' || answerValue ? <>No records match your search or filters. <button type="button" className="cs__linkBtn cs__linkBtn--onLight" onClick={() => { setTyped(''); setFilter('all'); setAnswerField(''); setAnswerValue(''); }}>Clear the filters</button></> : 'No records yet. They arrive when somebody submits the form.'}</div>}
       </div>
 
       <div className="vw__more">
@@ -409,7 +508,7 @@ export function RecordsView({
         ) : (
           <span className="vw__footnote">
             {rows.length} record{rows.length === 1 ? '' : 's'}
-            {query || filter !== 'all' ? ' matching' : ''} — that is all of them.
+            {query || filter !== 'all' || answerValue ? ' matching' : ''} — that is all of them.
           </span>
         )}
         {rows[0]?.omitted_fields.length ? (

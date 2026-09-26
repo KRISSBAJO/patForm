@@ -420,6 +420,13 @@ Then `npm run retention` applies the configured action. The order in that
 sentence is the requirement: retention deletes the record and its events, so
 afterwards there is nothing left to export.
 
+**Answers in the list.** The Records page shows three answers beside each
+reference, chosen by the process's `outputs.exportFields` or, failing that,
+a name-like field and the first short answers this role may see. A filter
+picks one answer with a fixed set of values, such as a choice or a yes/no,
+and the server matches it only among the fields the caller can see, so
+filtering never reveals a hidden one.
+
 **Every record of a process, as one spreadsheet.** The **Download CSV** button
 on a process's Records page gives one row per record and one column per
 answer, with the "still running / finished" filter carried over. It needs the

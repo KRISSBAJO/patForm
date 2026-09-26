@@ -81,7 +81,7 @@ import {
 import { applyImport, planImport } from '../runtime/import.js';
 import { dataMap } from '../runtime/privacy.js';
 import { issueApiKey, listApiKeys, revokeApiKey } from './keys.js';
-import { listRecordsPage, type RecordOrder } from './public.js';
+import { browseFields, listRecordsPage, type RecordOrder } from './public.js';
 import {
   checkAnswers,
   loadDraft,
@@ -539,6 +539,11 @@ route('GET', /^\/api\/browse\/([a-z0-9_]+)\/export$/, async ({ pool, principal, 
   return { contentType: 'text/csv', ...out };
 });
 
+// The columns the Records page may show and the answers it may filter by.
+route('GET', /^\/api\/browse\/([a-z0-9_]+)\/fields$/, async ({ pool, principal, url }) =>
+  browseFields(pool, { principal, processKey: url.pathname.split('/')[3]! }),
+);
+
 route('GET', /^\/api\/browse\/([a-z0-9_]+)$/, async ({ pool, principal, url }) =>
   listRecordsPage(pool, {
     principal,
@@ -546,6 +551,10 @@ route('GET', /^\/api\/browse\/([a-z0-9_]+)$/, async ({ pool, principal, url }) =
     state: url.searchParams.get('state') ?? undefined,
     completed: url.searchParams.has('completed') ? url.searchParams.get('completed') === 'true' : undefined,
     query: url.searchParams.get('q') ?? undefined,
+    answer:
+      url.searchParams.get('field') && url.searchParams.has('value')
+        ? { field: url.searchParams.get('field')!, value: url.searchParams.get('value')! }
+        : undefined,
     order: (url.searchParams.get('order') as RecordOrder | null) ?? undefined,
     limit: Number(url.searchParams.get('limit') ?? 25),
     cursor: url.searchParams.get('cursor') ?? undefined,
