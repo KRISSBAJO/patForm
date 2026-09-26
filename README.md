@@ -73,6 +73,14 @@ or point `DATABASE_URL` in `.env` at a [Renviq](https://renviq.com) connection
 string and run `npm run spike` against managed Postgres. Nothing in the runtime
 is specific to either.
 
+**Five looks for a form.** `experience.branding.style` picks how a form's
+fields, cards and buttons are drawn: `classic` (outlined), `soft` (filled, no
+hard lines), `minimal` (underlines and small labels), `rounded` (pills) or
+`bold` (thick borders, strong labels). Chosen under "Edit form header" in the
+builder with a live preview; the accent colour, focus rings, touch targets and
+contrast are the same in all five. Templates carry a default by category, so
+Finance forms start bold and community forms start rounded.
+
 **Trying a description through Build with AI.** `npm run ai:try -- <file>`
 runs a description through the same pipeline the builder uses and prints
 every attempt's compiler errors, the scenario results and the token cost,

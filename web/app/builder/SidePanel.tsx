@@ -19,6 +19,8 @@ import {
   FieldCell,
   FormHeader,
   accentStyle,
+  formStyle,
+  FORM_STYLES,
   type PublicField,
   type PublicForm,
 } from '../../components/form-surface';
@@ -157,7 +159,7 @@ export function FormPreview({
 
       {/* The respondent's own controls; only the narrow builder side panel scales them. */}
       <div className={`sp__frame ${device === 'phone' ? 'sp__frame--phone' : ''}`} ref={previewRef}>
-        <div className="fm" style={accentStyle(blueprint.experience?.branding?.accent)}>
+        <div className="fm" data-style={formStyle(blueprint.experience?.branding)} style={accentStyle(blueprint.experience?.branding?.accent)}>
           <div className="fm__shell">
             <FormHeader branding={blueprint.experience?.branding} fallbackName={blueprint.name} />
 
@@ -285,6 +287,7 @@ function BrandingEditor({
   };
 
   const accentOk = !b.accent || /^#[0-9a-fA-F]{6}$/.test(b.accent);
+  const current = formStyle(b);
 
   const upload = async (kind: 'logo' | 'banner', file?: File) => {
     if (!file || !draftId) return;
@@ -316,6 +319,28 @@ function BrandingEditor({
 
   return (
     <div className="sp__brand">
+      <fieldset className="sp__styles">
+        <legend>How the form looks</legend>
+        {FORM_STYLES.map((style) => (
+          <label key={style.key} className="sp__style" data-style={style.key} data-on={current === style.key ? 'true' : undefined}>
+            <input
+              type="radio"
+              name="form-style"
+              value={style.key}
+              checked={current === style.key}
+              onChange={() => set('style', style.key)}
+            />
+            {/* A thumbnail of the look: one label, one field, one button. */}
+            <span className="sp__styleThumb" aria-hidden="true">
+              <i className="sp__styleLabel" />
+              <i className="sp__styleInput" />
+              <i className="sp__styleBtn" />
+            </span>
+            <span className="sp__styleName">{style.name}</span>
+            <span className="sp__styleSays">{style.says}</span>
+          </label>
+        ))}
+      </fieldset>
       <div className="sp__brandHeading"><strong>Form appearance</strong><span>Make the form recognizable to your organization.</span></div>
       <label className="sp__brandRow">
         <span>Form title</span>

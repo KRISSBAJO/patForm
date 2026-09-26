@@ -95,6 +95,28 @@ export interface PackSpec {
   volume?: { count: number; per: 'day' | 'week' | 'month' | 'quarter' | 'year' };
 }
 
+const CATEGORY_STYLE: Record<string, 'classic' | 'soft' | 'minimal' | 'rounded' | 'bold'> = {
+  Finance: 'bold',
+  Compliance: 'bold',
+  Legal: 'bold',
+  Procurement: 'bold',
+  Safeguarding: 'classic',
+  Healthcare: 'classic',
+  People: 'soft',
+  IT: 'minimal',
+  Projects: 'minimal',
+  Operations: 'classic',
+  Facilities: 'classic',
+  Property: 'soft',
+  Customer: 'rounded',
+  Church: 'rounded',
+  Community: 'rounded',
+  Events: 'rounded',
+  Education: 'soft',
+  Sales: 'soft',
+  Communications: 'minimal',
+};
+
 const OPERATOR_ROLE = 'process_owner';
 
 /** The first decider, as a sentence says it: "the other budget holder", or a role. */
@@ -1101,6 +1123,9 @@ export function buildBlueprint(spec: PackSpec): unknown {
       showProgress: true,
       saveAndResume: true,
       locales: ['en-GB'],
+      // A look that suits the audience, so a workspace's forms differ from
+      // the start: bold for money and compliance, rounded for a congregation.
+      branding: { style: CATEGORY_STYLE[spec.category] ?? 'classic' },
       confirmation: {
         message: spec.confirmationMessage ?? 'Thank you. We have what you sent and will be in touch.',
         showStatusLink: true,

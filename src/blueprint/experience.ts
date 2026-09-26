@@ -88,6 +88,12 @@ export const Experience = z
           .optional(),
         /** Shown in small print under the form. */
         footer: z.string().max(300).optional(),
+        /**
+         * How the form looks: the shape of its fields, cards and buttons.
+         * Five presets, so a workspace's forms do not all look alike. Each
+         * keeps the accent colour, the focus rings and the touch targets.
+         */
+        style: z.enum(['classic', 'soft', 'minimal', 'rounded', 'bold']).optional(),
       })
       .strict()
       .optional(),

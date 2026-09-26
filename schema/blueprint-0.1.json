@@ -859,6 +859,16 @@
                 "footer": {
                   "type": "string",
                   "maxLength": 300
+                },
+                "style": {
+                  "type": "string",
+                  "enum": [
+                    "classic",
+                    "soft",
+                    "minimal",
+                    "rounded",
+                    "bold"
+                  ]
                 }
               },
               "additionalProperties": false

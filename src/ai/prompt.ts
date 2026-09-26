@@ -9,7 +9,7 @@ import type { Diagnostic } from '../compiler/diagnostics.js';
  * record says exactly which instructions produced it. Eval results are only
  * comparable within a version.
  */
-export const PROMPT_VERSION = 'blueprint-gen@13';
+export const PROMPT_VERSION = 'blueprint-gen@14';
 
 export const SYSTEM_PROMPT = `You design business processes for an operations platform.
 
@@ -22,7 +22,7 @@ You never produce code. A blueprint contains no expressions-as-strings, no scrip
 intent          outcome, owner role, respondents, expected volume, sensitivityCeiling, completionState, retentionDays
 roles           who may submit / view / edit / approve / operate / report / administer
 data            the fields collected, each with a type and a data classification
-experience      pages and sections the respondent fills in
+experience      pages and sections the respondent fills in; experience.branding.style picks the look — "classic", "soft", "minimal", "rounded" or "bold" — choose the one that suits the audience (bold for money and compliance, rounded for members of the public, minimal for technical staff)
 workflow        states, transitions, approvals, tasks
 communications  email templates and who receives them
 outputs         documents, dashboard metrics, webhook events, export fields

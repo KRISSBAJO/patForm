@@ -72,6 +72,7 @@ export interface PublicForm {
    * colour, none of which say anything about the process's internals.
    */
   branding?: {
+    style?: 'classic' | 'soft' | 'minimal' | 'rounded' | 'bold';
     title?: string;
     tagline?: string;
     logoUrl?: string;

@@ -483,11 +483,24 @@ async function main() {
     await backToPreview.click();
     await page.waitForTimeout(900);
   }
-  const editHeader = page.locator('.sp__link', { hasText: /Edit the header/ }).first();
+  // The button was renamed and the scan went on passing with the editor never
+  // opened; matched by either wording now, and by role rather than class.
+  const editHeader = page.locator('button', { hasText: /Edit form header|Edit the header/ }).first();
   if (await editHeader.count()) {
     await editHeader.click();
     await page.waitForTimeout(900);
     all.push(...(await audit(page, 'The form header editor')));
+  }
+
+  // Each of the five looks, rendered in the preview beside the editor. A
+  // style is a new set of colours and borders on every control, which is
+  // exactly where contrast and focus visibility go wrong.
+  for (const style of ['soft', 'minimal', 'rounded', 'bold', 'classic']) {
+    const pick = page.locator(`.sp__style[data-style="${style}"]`).first();
+    if (!(await pick.count())) continue;
+    await pick.click();
+    await page.waitForTimeout(700);
+    all.push(...(await audit(page, `Form preview, ${style} look`)));
   }
 
   // The message editor: recipients, the field inserter and the preview are

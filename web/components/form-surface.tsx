@@ -55,6 +55,22 @@ export interface Branding {
   bannerUrl?: string;
   accent?: string;
   footer?: string;
+  style?: string;
+}
+
+export const FORM_STYLES = [
+  { key: 'classic', name: 'Classic', says: 'Outlined fields, labels above. Clear and familiar.' },
+  { key: 'soft', name: 'Soft', says: 'Filled fields on a tinted card, no hard lines.' },
+  { key: 'minimal', name: 'Minimal', says: 'Underlines only, small labels, lots of air.' },
+  { key: 'rounded', name: 'Rounded', says: 'Pill-shaped fields and buttons. Friendly.' },
+  { key: 'bold', name: 'Bold', says: 'Thick borders and strong labels. Built for work.' },
+] as const;
+
+export type FormStyle = (typeof FORM_STYLES)[number]['key'];
+
+/** The style to render, with anything unknown falling back to the first. */
+export function formStyle(branding?: Branding): FormStyle {
+  return (FORM_STYLES.find((s) => s.key === branding?.style)?.key ?? 'classic') as FormStyle;
 }
 
 export interface PublicForm {

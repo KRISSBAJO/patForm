@@ -720,3 +720,119 @@ textarea.fm__input {
   height: 1px;
   overflow: hidden;
 }
+
+
+/* ==========================================================================
+   Five looks for the form
+   ==========================================================================
+
+   `data-style` on the form's root picks one. "classic" is everything above.
+   Each look changes the shape of fields, cards and buttons and nothing else:
+   the accent colour, the 2px focus ring, the 44px touch targets and the
+   contrast that passed the accessibility gate all stay. Anything a style
+   does not mention, it inherits.
+*/
+
+/* ---- soft: filled fields, no hard lines ---------------------------------- */
+
+.fm[data-style="soft"] { background: #f4f2ec; }
+.fm[data-style="soft"] .fm__card { border: 0; border-radius: 18px; box-shadow: 0 1px 2px rgba(19, 26, 23, 0.04), 0 24px 48px -32px rgba(19, 26, 23, 0.22); }
+.fm[data-style="soft"] .fm__input,
+.fm[data-style="soft"] .fm__choice,
+.fm[data-style="soft"] .fm__ack {
+  border-color: transparent;
+  border-radius: 12px;
+  background: #f1eee7;
+}
+.fm[data-style="soft"] .fm__input:hover:not(:focus) { background: #ebe7de; border-color: transparent; }
+.fm[data-style="soft"] .fm__input:focus { background: var(--white); border-color: var(--green); }
+.fm[data-style="soft"] .fm__choice:hover { background: #ebe7de; border-color: transparent; }
+.fm[data-style="soft"] .fm__choice:has(input:checked) { background: var(--green-tint); border-color: var(--green); }
+.fm[data-style="soft"] .fm__label { font-weight: 500; color: var(--ink-soft); }
+.fm[data-style="soft"] .fm__section { border-top: 0; padding-top: 10px; }
+.fm[data-style="soft"] .fm__sectionTitle { color: var(--green-deep); }
+.fm[data-style="soft"] .fm__btn { border-radius: 12px; }
+.fm[data-style="soft"] .fm__btn:not(.fm__btn--primary) { border-color: transparent; background: #ebe7de; }
+.fm[data-style="soft"] .fm__btn--primary { box-shadow: 0 10px 22px -14px var(--green); }
+.fm[data-style="soft"] .fm__progressBar { height: 6px; background: #e6e2d8; }
+
+/* ---- minimal: underlines, small labels, air ------------------------------ */
+
+.fm[data-style="minimal"] .fm__card { border: 0; border-radius: 0; background: transparent; box-shadow: none; padding: 8px 0 24px; }
+.fm[data-style="minimal"] .fm__title { font-weight: 500; }
+.fm[data-style="minimal"] .fm__label {
+  margin-bottom: 4px;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted-3);
+}
+.fm[data-style="minimal"] .fm__input {
+  padding-left: 0;
+  padding-right: 0;
+  border: 0;
+  border-bottom: 2px solid var(--line-strong);
+  border-radius: 0;
+  background: transparent;
+}
+.fm[data-style="minimal"] .fm__input:hover:not(:focus) { border-bottom-color: var(--muted); }
+/* The ring is the underline itself: thicker and in the accent, and the
+   label turns with it, so focus is never carried by colour alone. */
+.fm[data-style="minimal"] .fm__input:focus { outline: none; box-shadow: 0 2px 0 0 var(--green); border-bottom-color: var(--green); background: transparent; }
+.fm[data-style="minimal"] .fm__field:focus-within .fm__label { color: var(--green-deep); }
+.fm[data-style="minimal"] textarea.fm__input { padding: 8px 0; }
+.fm[data-style="minimal"] select.fm__input { padding-left: 0; }
+.fm[data-style="minimal"] .fm__choice,
+.fm[data-style="minimal"] .fm__ack { border: 0; border-radius: 0; background: transparent; padding-left: 0; padding-right: 0; min-height: 36px; }
+.fm[data-style="minimal"] .fm__choice:has(input:checked) { background: transparent; color: var(--green-deep); font-weight: 600; }
+.fm[data-style="minimal"] .fm__choice:focus-within,
+.fm[data-style="minimal"] .fm__ack:focus-within { outline: 2px solid var(--green); outline-offset: 4px; border-radius: 4px; }
+.fm[data-style="minimal"] .fm__section { border-top: 1px solid var(--line); margin-top: 36px; padding-top: 28px; }
+.fm[data-style="minimal"] .fm__sectionTitle { font-size: 13px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted-3); }
+.fm[data-style="minimal"] .fm__btn { border-radius: 4px; }
+.fm[data-style="minimal"] .fm__btn:not(.fm__btn--primary) { border-color: transparent; background: transparent; text-decoration: underline; text-underline-offset: 4px; }
+.fm[data-style="minimal"] .fm__actions { border-top: 0; }
+.fm[data-style="minimal"] .fm__progressBar { height: 2px; border-radius: 0; }
+.fm[data-style="minimal"] .fm__progressBar span { border-radius: 0; }
+
+/* ---- rounded: pills, friendly ------------------------------------------- */
+
+.fm[data-style="rounded"] .fm__card { border-radius: 24px; }
+.fm[data-style="rounded"] .fm__input { border-radius: 999px; padding-left: 18px; padding-right: 18px; }
+.fm[data-style="rounded"] textarea.fm__input { border-radius: 20px; padding-top: 12px; }
+.fm[data-style="rounded"] .fm__input:focus { box-shadow: 0 0 0 4px rgba(20, 102, 63, 0.12); }
+.fm[data-style="rounded"] .fm__label { padding-left: 6px; }
+.fm[data-style="rounded"] .fm__help { padding-left: 6px; }
+.fm[data-style="rounded"] .fm__choice { border-radius: 999px; padding-left: 18px; }
+.fm[data-style="rounded"] .fm__ack { border-radius: 20px; }
+.fm[data-style="rounded"] .fm__btn { border-radius: 999px; padding: 0 28px; }
+.fm[data-style="rounded"] .fm__sectionTitle { font-family: var(--font-display), Georgia, serif; font-size: 19px; }
+.fm[data-style="rounded"] .fm__banner { border-radius: 20px; }
+.fm[data-style="rounded"] .fm__progressBar { height: 8px; }
+
+/* ---- bold: thick borders, strong labels, built for work ------------------ */
+
+.fm[data-style="bold"] { background: #f2f1ed; }
+.fm[data-style="bold"] .fm__card { border: 2px solid var(--ink); border-top-width: 8px; border-top-color: var(--green); border-radius: 6px; box-shadow: none; }
+.fm[data-style="bold"] .fm__label {
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.fm[data-style="bold"] .fm__input { border: 2px solid var(--ink); border-radius: 4px; }
+.fm[data-style="bold"] .fm__input:hover:not(:focus) { border-color: var(--ink); background: #fafaf7; }
+.fm[data-style="bold"] .fm__input:focus { border-color: var(--green); background: var(--green-tint); box-shadow: none; }
+.fm[data-style="bold"] .fm__choice,
+.fm[data-style="bold"] .fm__ack { border: 2px solid var(--ink); border-radius: 4px; }
+.fm[data-style="bold"] .fm__choice:hover { border-color: var(--ink); background: #fafaf7; }
+.fm[data-style="bold"] .fm__choice:has(input:checked) { border-color: var(--green); background: var(--green-tint); font-weight: 600; }
+.fm[data-style="bold"] .fm__section { border-top: 2px solid var(--ink); }
+.fm[data-style="bold"] .fm__sectionTitle { padding-left: 12px; border-left: 4px solid var(--green); font-size: 16px; font-weight: 700; }
+.fm[data-style="bold"] .fm__btn { border: 2px solid var(--ink); border-radius: 4px; font-weight: 700; }
+.fm[data-style="bold"] .fm__btn--primary { border-color: var(--green); }
+.fm[data-style="bold"] .fm__btn--primary:hover { border-color: var(--green-deep); }
+.fm[data-style="bold"] .fm__progressBar { height: 8px; border-radius: 0; border: 2px solid var(--ink); background: var(--white); }
+.fm[data-style="bold"] .fm__progressBar span { border-radius: 0; }
+.fm[data-style="bold"] .fm__req { color: var(--red-text); }

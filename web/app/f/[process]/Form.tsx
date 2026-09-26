@@ -18,8 +18,7 @@ import {
   FormHeader,
   accentStyle,
   type PublicForm,
-  Field,
-} from '../../../components/form-surface';
+  Field, formStyle } from '../../../components/form-surface';
 
 type Answers = Record<string, unknown>;
 type Errors = Record<string, string>;
@@ -350,7 +349,7 @@ export function Form({ processKey: fromUrl }: { processKey: string }) {
      * branded form is the same form in a different colour, not a second set of
      * styles that can fall out of step with the first.
      */
-    <div className="fm" data-branded={brand ? 'true' : undefined} style={accentStyle(brand?.accent)}>
+    <div className="fm" data-style={formStyle(brand)} data-branded={brand ? 'true' : undefined} style={accentStyle(brand?.accent)}>
       <div className="fm__shell">
         <FormHeader
           branding={brand}

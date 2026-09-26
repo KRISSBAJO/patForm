@@ -308,7 +308,7 @@
 
 .sp__brandHeading { display: grid; gap: 3px; grid-column: 1 / -1; padding-bottom: 12px; border-bottom: 1px solid #e2ece4; }
 .sp__brandHeading strong { color: #153e2a; font: 700 15px var(--ui); }
-.sp__brandHeading span { color: #687c6d; font-size: 11.5px; }
+.sp__brandHeading span { color: #5a6159; font-size: 11.5px; }
 
 .sp__brandRow {
   display: block;
@@ -371,7 +371,7 @@
 .sp__asset { overflow: hidden; border: 1px solid #dce9df; border-radius: 10px; background: #f9fcfa; }
 .sp__assetTop { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; padding: 11px 12px 8px; }
 .sp__assetTop strong { color: #163f2a; font: 700 12px var(--ui); }
-.sp__assetTop small { color: #6c7b71; font-size: 10px; text-align: right; }
+.sp__assetTop small { color: #5a6159; font-size: 10px; text-align: right; }
 .sp__assetImage { margin: 0 12px 8px; overflow: hidden; border: 1px solid #dfebe2; border-radius: 7px; background: #edf4ee; }
 .sp__assetImage--logo { display: grid; place-items: center; width: 64px; height: 64px; }
 .sp__assetImage--banner { height: 86px; }
@@ -383,3 +383,78 @@
 .sp__uploadButton:focus-within { outline: 2px solid #248353; outline-offset: 2px; }
 .sp__uploadButton input { position: absolute; width: 1px; height: 1px; opacity: 0; }
 .sp__assetActions button { border-color: transparent; background: transparent; color: #86534c; }
+
+
+/* ---------------------------------------------- the five looks, to pick from */
+
+.sp__styles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+  gap: 8px;
+  grid-column: 1 / -1;
+  margin: 0 0 6px;
+  padding: 0;
+  border: 0;
+}
+
+.sp__styles legend {
+  padding: 0;
+  margin-bottom: 8px;
+  font: 600 12.5px var(--ui);
+  color: #1c2723;
+}
+
+.sp__style {
+  position: relative;
+  display: grid;
+  gap: 4px;
+  padding: 8px 8px 9px;
+  border: 1px solid #dfe6e1;
+  border-radius: 10px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.sp__style input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+}
+
+.sp__style[data-on="true"] { border-color: var(--green); box-shadow: 0 0 0 1px var(--green); }
+.sp__style:focus-within { outline: 2px solid var(--green); outline-offset: 2px; }
+
+.sp__styleThumb {
+  display: grid;
+  gap: 5px;
+  padding: 10px 9px;
+  border-radius: 6px;
+  background: #f7f5f0;
+  border: 1px solid #ebe8e1;
+}
+
+.sp__styleLabel { display: block; width: 45%; height: 5px; border-radius: 3px; background: #9aa69d; }
+.sp__styleInput { display: block; height: 16px; border-radius: 4px; border: 1px solid #b9b3a6; background: #fff; }
+.sp__styleBtn { display: block; width: 46%; height: 12px; margin-top: 1px; border-radius: 4px; background: var(--green, #14663f); }
+
+.sp__style[data-style="soft"] .sp__styleThumb { background: #f4f2ec; border-color: transparent; border-radius: 10px; }
+.sp__style[data-style="soft"] .sp__styleInput { border: 0; background: #e9e5dc; border-radius: 7px; }
+.sp__style[data-style="soft"] .sp__styleBtn { border-radius: 7px; }
+
+.sp__style[data-style="minimal"] .sp__styleThumb { background: #fff; border-color: transparent; }
+.sp__style[data-style="minimal"] .sp__styleLabel { width: 30%; height: 4px; }
+.sp__style[data-style="minimal"] .sp__styleInput { border: 0; border-bottom: 2px solid #b9b3a6; border-radius: 0; height: 12px; }
+.sp__style[data-style="minimal"] .sp__styleBtn { border-radius: 2px; width: 34%; }
+
+.sp__style[data-style="rounded"] .sp__styleThumb { border-radius: 12px; }
+.sp__style[data-style="rounded"] .sp__styleInput { border-radius: 999px; }
+.sp__style[data-style="rounded"] .sp__styleBtn { border-radius: 999px; }
+
+.sp__style[data-style="bold"] .sp__styleThumb { border: 1.5px solid #1c2723; border-top: 4px solid var(--green, #14663f); border-radius: 3px; background: #fff; }
+.sp__style[data-style="bold"] .sp__styleLabel { background: #1c2723; height: 4px; }
+.sp__style[data-style="bold"] .sp__styleInput { border: 1.5px solid #1c2723; border-radius: 2px; }
+.sp__style[data-style="bold"] .sp__styleBtn { border-radius: 2px; }
+
+.sp__styleName { font: 600 12px var(--ui); color: #1c2723; }
+.sp__styleSays { font-size: 10.5px; line-height: 1.35; color: #5c635e; }
