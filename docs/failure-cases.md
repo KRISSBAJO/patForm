@@ -1015,6 +1015,12 @@ The fourteen most reached-for were rebuilt to budget transfer's depth. Doing tha
 
 `npm run packs:depth` prints the measurement, thinnest first, so the remaining hundred and eight are a ranked list rather than a feeling.
 
+### 104. A question nobody was shown blocked the form
+
+The page-by-page check knew which sections were hidden and did not ask for their answers. The engine's final check on submission had its own copy of the rule and did not: a required question inside a section that never appeared counted as missing, and the form was rejected on the last click with the error pointing at a page the person could not see it on. The scenario runner never caught it because it filled every required field on the blueprint, hidden or not, before submitting, which is not what a person does.
+
+Found by the template pass, the moment a template put a required question behind a condition and a generated test filled a hidden yes/no with "yes". One function now decides what is missing, beside the visibility logic it has to respect, and the runner fills in only what the form shows, going round again when an answer reveals more.
+
 ### 90. Every new column needed a re-seed
 
 `schema.sql` describes a database created from nothing, and there was no other way to change one. Each release that added a table or a column reached a running database only by dropping it and seeding again, which signed every member out and emptied the workspace — in development that was several times a day, and it was part of why somebody could not sign in. A deployed database had no path at all.

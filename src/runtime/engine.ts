@@ -13,7 +13,7 @@ import {
   type EmailProvider,
 } from './email.js';
 import { flattenFields, placeholdersIn, type Blueprint, type Action, type Party, type Transition } from '../blueprint/index.js';
-import { checkField } from '../blueprint/answers.js';
+import { checkField, missingRequiredFields } from '../blueprint/answers.js';
 import { evaluate, render, withCalculatedFields, type Answers } from './expr.js';
 import { inTransaction, isUniqueViolation, type Client, type Pool } from './db.js';
 import { InvalidInput } from './errors.js';
@@ -2139,32 +2139,6 @@ function selectSubmissionTransition(bp: Blueprint, answers: Answers, now: Date):
     );
   }
   return candidates[0]!;
-}
-
-function missingRequiredFields(bp: Blueprint, answers: Answers, now: Date): string[] {
-  const missing: string[] = [];
-  const blank = (value: unknown) => value === undefined || value === null || value === '' || (Array.isArray(value) && !value.length);
-  for (const field of bp.data.fields) {
-    if (field.type === 'hidden' || field.type === 'calculated' || field.type === 'content') continue;
-    const value = answers[field.key];
-    if ((field.required || (field.requiredWhen && evaluate(field.requiredWhen, { answers, now }))) && blank(value)) {
-      missing.push(field.key);
-    }
-    if (field.type === 'file' && !blank(value) && checkField(field, value)) missing.push(field.key);
-    if (field.type === 'repeating_group' && Array.isArray(value)) {
-      for (const [index, row] of value.entries()) {
-        if (!row || typeof row !== 'object' || Array.isArray(row)) continue;
-        const item = row as Answers;
-        for (const child of field.fields ?? []) {
-          if ((child.required || (child.requiredWhen && evaluate(child.requiredWhen, { answers: { ...answers, ...item }, now }))) && blank(item[child.key])) {
-            missing.push(`${field.key}[${index}].${child.key}`);
-          }
-          if (child.type === 'file' && !blank(item[child.key]) && checkField(child, item[child.key])) missing.push(`${field.key}[${index}].${child.key}`);
-        }
-      }
-    }
-  }
-  return missing;
 }
 
 /**

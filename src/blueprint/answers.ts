@@ -163,6 +163,43 @@ export function checkField(field: Field, value: unknown): string | null {
  * Validates a whole submission. `scope` limits it to one page, so advancing
  * through a form checks what has been answered rather than what has not.
  */
+/**
+ * What a submission is missing: every required answer, and every answer
+ * required by a condition that holds, among the fields the form is showing.
+ *
+ * The page-by-page check and the final submission used to disagree here:
+ * the page check knew a hidden section's questions were not asked, the
+ * engine's own check did not, so a required question inside a section that
+ * never appeared blocked the whole form. One function now, used by both.
+ */
+export function missingRequiredFields(bp: Blueprint, answers: Answers, now = new Date()): string[] {
+  const visible = visibleFields(bp, answers, now);
+  const missing: string[] = [];
+  const blank = (value: unknown) => value === undefined || value === null || value === '' || (Array.isArray(value) && !value.length);
+  for (const field of bp.data.fields) {
+    if (field.type === 'hidden' || field.type === 'calculated' || field.type === 'content') continue;
+    if (!visible.has(field.key)) continue;
+    const value = answers[field.key];
+    if ((field.required || (field.requiredWhen && evaluate(field.requiredWhen, { answers, now }))) && blank(value)) {
+      missing.push(field.key);
+    }
+    if (field.type === 'file' && !blank(value) && checkField(field, value)) missing.push(field.key);
+    if (field.type === 'repeating_group' && Array.isArray(value)) {
+      for (const [index, row] of value.entries()) {
+        if (!row || typeof row !== 'object' || Array.isArray(row)) continue;
+        const item = row as Answers;
+        for (const child of field.fields ?? []) {
+          if ((child.required || (child.requiredWhen && evaluate(child.requiredWhen, { answers: { ...answers, ...item }, now }))) && blank(item[child.key])) {
+            missing.push(`${field.key}[${index}].${child.key}`);
+          }
+          if (child.type === 'file' && !blank(item[child.key]) && checkField(child, item[child.key])) missing.push(`${field.key}[${index}].${child.key}`);
+        }
+      }
+    }
+  }
+  return missing;
+}
+
 export function validateAnswers(
   bp: Blueprint,
   answers: Answers,

@@ -1,4 +1,5 @@
 import type { Blueprint, ScenarioTest } from '../blueprint/index.js';
+import { visibleFields } from '../blueprint/answers.js';
 import { evaluate } from './expr.js';
 import type { Answers } from './expr.js';
 import { Engine } from './engine.js';
@@ -310,10 +311,24 @@ function initialStateKey(bp: Blueprint): string {
 /** Produces a value that satisfies a field's type, for answers a scenario does not care about. */
 function completeAnswers(bp: Blueprint, given: Answers): Answers {
   const answers: Answers = { ...given };
-  for (const field of bp.data.fields) {
-    if (!field.required) continue;
-    if (field.key in answers && answers[field.key] !== undefined) continue;
-    answers[field.key] = placeholderFor(field);
+  const now = new Date('2026-10-01');
+  // Only what the form shows, the way a respondent would fill it: a required
+  // question in a section that never appears is not asked, and a placeholder
+  // in a hidden question could reveal a section and require more. Filling
+  // can itself reveal a section, so it goes round until nothing changes.
+  for (let round = 0; round < 6; round++) {
+    const visible = visibleFields(bp, answers, now);
+    let changed = false;
+    for (const field of bp.data.fields) {
+      if (!visible.has(field.key)) continue;
+      if (field.setBy === 'operator' || field.setBy === 'system') continue;
+      if (field.key in answers && answers[field.key] !== undefined) continue;
+      const required = field.required || (field.requiredWhen && evaluate(field.requiredWhen, { answers, now }));
+      if (!required) continue;
+      answers[field.key] = placeholderFor(field);
+      changed = true;
+    }
+    if (!changed) break;
   }
   for (const field of bp.data.fields) {
     if (field.type !== 'repeating_group' || !Array.isArray(answers[field.key])) continue;
