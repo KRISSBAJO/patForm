@@ -116,7 +116,13 @@ export function FormPreview({
   const currentIndex = Math.min(pageIndex, Math.max(0, pages.length - 1));
   const currentPage = pages[currentIndex];
   const placed = new Set(pages.flatMap((p) => (p.sections ?? []).flatMap((s) => s.fields ?? [])));
-  const unplaced = blueprint.data.fields.filter((f) => (f.setBy ?? 'respondent') === 'respondent' && !placed.has(f.key));
+  // Worked out by the runtime, never asked: a total of the line items, a
+  // hidden value. They are not on a page by design, so they are not "missing".
+  const AUTOMATIC = new Set(['calculated', 'hidden', 'content']);
+  const computed = blueprint.data.fields.filter((f) => f.type === 'calculated');
+  const unplaced = blueprint.data.fields.filter(
+    (f) => (f.setBy ?? 'respondent') === 'respondent' && !AUTOMATIC.has(f.type) && !placed.has(f.key),
+  );
   const teamFields = blueprint.data.fields.filter((f) => f.setBy === 'operator');
   const showPage = (index: number) => {
     setPageIndex(index);
@@ -228,6 +234,12 @@ export function FormPreview({
           {unplaced.length} {unplaced.length === 1 ? 'question is' : 'questions are'} not on any page:{' '}
           {unplaced.map((f) => f.label).join(', ')}. Nobody filling this in will see{' '}
           {unplaced.length === 1 ? 'it' : 'them'}.
+        </p>
+      )}
+
+      {computed.length > 0 && (
+        <p className="sp__note">
+          Worked out automatically from the answers: {computed.map((f) => f.label).join(', ')}.
         </p>
       )}
 
