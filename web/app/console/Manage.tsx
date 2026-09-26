@@ -15,6 +15,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
+import { ShareForm } from '../../components/share-form';
 import { postJson } from './stepup';
 
 async function get<T>(path: string): Promise<T> {
@@ -638,6 +639,7 @@ export function ProcessesView({
               <p className="mg__hint" role="status">
                 {copied === p.process_key ? 'Anyone with this link can submit. No account needed.' : ' '}
               </p>
+              <ShareForm url={url} name={p.name} collapsed />
 
               {from && (
                 <p className="mg__hint">

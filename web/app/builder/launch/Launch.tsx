@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { ShareForm } from '../../../components/share-form';
 import { FormPreview } from '../SidePanel';
 import './launch.css';
 
@@ -204,6 +205,7 @@ export function Launch() {
             <span className="la__eyebrow">LIVE · VERSION {setup.live?.version}</span><h2 id="la-done-title">Your process is ready</h2>
             <p>Send this form link to someone who needs to make a request. When they submit it, the right people see their work in the console.</p>
             {formUrl && <div className="la__link"><a href={formUrl} target="_blank" rel="noreferrer">{formUrl}</a><button type="button" onClick={() => { void navigator.clipboard.writeText(formUrl).then(() => setNotice('Form link copied.')); }}>Copy link</button></div>}
+            {formUrl && <ShareForm url={formUrl} name={setup.draft.processName} />}
             <div className="la__actions"><a className="la__actionLink" href={formUrl} target="_blank" rel="noreferrer">Try the form →</a><a href={`/console?process=${encodeURIComponent(setup.draft.processKey)}`}>Go to approvals and records</a><button type="button" className="la__secondary" onClick={() => setPhase('people')}>Manage people</button><a href={`/builder?process=${encodeURIComponent(setup.draft.processKey)}`}>Edit in builder</a></div>
           </section>}
         </>}

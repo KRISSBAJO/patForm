@@ -1056,6 +1056,13 @@ of publishing. After publishing, the page shows the actual public form link
 and opens the matching process in the console. The full builder remains
 available for changing the form and rules, with a link back to setup.
 
+The link is not the only way a form travels. The setup page and the console's
+Processes & forms card both offer a QR code with a printable poster, an
+embed snippet for an organisation's own website (public forms may be framed;
+the console and builder may not), and an email with the link already
+written, which opens in the person's own mail program so they choose who
+gets it. All three are made in the browser from the link alone.
+
 Discarding an unpublished installation also removes its pack listing and any
 process role assignments, so a later process using the same key does not
 inherit its people.
