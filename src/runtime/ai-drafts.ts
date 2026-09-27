@@ -8,6 +8,7 @@ import { availableProviders, blueprintSchema, generateBlueprint, providerFor } f
 import type { GenerationOutcome } from '../ai/pipeline.js';
 import { runScenarios, type ScenarioResult } from './scenarios.js';
 import { verifiedRepair } from '../ai/verified-repair.js';
+import { proposeTargetedRevision } from '../ai/targeted-revision.js';
 const REPAIR_REQUEST = '[automatic_verified_repair] Repair mechanical draft errors and retest without changing business decisions.';
 
 /** Queue AI generation outside the short-lived web request. The worker owns the expensive model calls. */
@@ -147,6 +148,14 @@ export async function processNextAiDraft(pool: Pool): Promise<boolean> {
       let error = 'The AI could not return a usable revision.';
       for (const name of availableProviders()) {
         try {
+          if(repairProposal) {
+            await pool.query('update ai_draft_job set stage=$2,note=$3 where id=$1',[job.id,'generating',`Preparing targeted changes with ${name}; existing permissions and documents are protected`]);
+            const proposal=await proposeTargetedRevision(providerFor(name),source,job.description);
+            const diagnostics=validate(proposal);
+            best={blueprint:proposal,score:diagnostics.publishable?1:0};
+            bestProvider=name;
+            break;
+          }
           const result = await generateBlueprint(providerFor(name), blueprintSchema(), {
             description: job.description, sourceBlueprint: source, pool,
             onScenarioProgress:testProgress,

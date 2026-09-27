@@ -134,7 +134,7 @@ export function RecordPage({
       const raw = taskValue(field.key);
       if (raw === '') continue;
       out[field.key] =
-        field.type === 'yes_no' ? raw === 'true' : ['number', 'currency', 'rating'].includes(field.type) ? Number(raw) : raw;
+        ['yes_no', 'signature_ack'].includes(field.type) ? raw === 'true' : ['number', 'currency', 'rating'].includes(field.type) ? Number(raw) : raw;
     }
     return out;
   };
@@ -414,6 +414,8 @@ export function RecordPage({
                   <label htmlFor={id}>{field.label} <span aria-hidden="true">*</span></label>
                   {field.type === 'long_text' ? (
                     <textarea id={id} className="rc__reasonBox" value={value} onChange={(e) => set(e.target.value)} required />
+                  ) : field.type === 'signature_ack' ? (
+                    <label><input id={id} type="checkbox" checked={value === 'true'} onChange={e=>set(e.target.checked ? 'true' : '')} /> I confirm this acknowledgment</label>
                   ) : choice || field.type === 'yes_no' ? (
                     <select id={id} className="rc__reasonBox" value={value} onChange={(e) => set(e.target.value)} required>
                       <option value="">Choose…</option>
@@ -442,7 +444,7 @@ export function RecordPage({
             <button
               type="button"
               className="cs__btn cs__btn--primary"
-              disabled={working || task.requiredFields?.some((field) => !taskValue(field.key).trim())}
+              disabled={working || task.requiredFields?.some((field) => field.type === 'signature_ack' ? taskValue(field.key) !== 'true' : !taskValue(field.key).trim())}
               onClick={() => onCompleteTask(record.instanceId, task.taskKey, taskAnswers())}
             >
               <Icon name="done" />

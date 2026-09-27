@@ -19,6 +19,35 @@ export function repairBlueprint(input: Blueprint, failures: ScenarioResult[] = [
   const bp = normalized.blueprint;
   const changes: Normalization[] = [...normalized.changes];
   const transitions = bp.workflow.transitions;
+  // A completion trigger unambiguously identifies the state in which a task
+  // must exist. Only wire a single ingress; competing routes need a decision.
+  for (const task of bp.workflow.tasks) {
+    const waits = transitions.filter(t=>t.trigger.on==='task_completed' && t.trigger.task===task.key);
+    const created = transitions.some(t=>t.actions.some(a=>a.do==='create_task' && a.task===task.key));
+    if (!created && waits.length===1) {
+      const incoming=transitions.filter(t=>t.to===waits[0]!.from && t.from!==t.to);
+      if(incoming.length===1 && bp.workflow.states.find(s=>s.key===waits[0]!.from)?.type!=='terminal') {
+        const rule=incoming[0]!;
+        let key=`repair_create_${task.key}`;
+        while(transitions.some(t=>t.actions.some(a=>a.key===key))) key+='x';
+        rule.actions.push({do:'create_task',key,task:task.key});
+        changes.push({at:`workflow.transitions.${rule.key}.actions`,change:`Created ${task.name} on the only entry into its completion state. Existing assignee and permissions retained.`});
+      }
+    }
+    for(const key of task.requiredFields ?? []) {
+      const field=bp.data.fields.find(f=>f.key===key);
+      if(field?.type!=='signature_ack' || field.setBy!=='respondent') continue;
+      const authorized=bp.roles.filter(r=>r.capabilities.includes('edit') && r.editableFields?.includes(key) && !r.hiddenFields?.includes(key));
+      const assignee=task.assignee;
+      const assigned='role' in assignee ? authorized.some(r=>r.key===assignee.role) : 'submitter' in assignee && authorized.some(r=>r.kind==='respondent');
+      if(!assigned) continue;
+      field.setBy='operator';
+      for(const test of bp.tests.filter(t=>t.kind==='happy_path' || t.kind==='rejection')) for(const step of test.steps) {
+        if(step.step==='complete_task' && !step.expectDenied && step.task===task.key && step.answers?.[key]==='confirmed') step.answers[key]=true;
+      }
+      changes.push({at:`data.fields.${key}`,change:`Collected ${field.label} when completing its assigned task, using existing editing authority. Acknowledgment must be true.`});
+    }
+  }
   const referenced = new Set(bp.tests.flatMap(test => test.steps.flatMap(step => step.step === 'manual' ? [step.transition] : [])));
   const removed = new Set<string>();
   for (const rule of transitions) {

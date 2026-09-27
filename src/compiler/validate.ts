@@ -49,7 +49,7 @@ function durationsIn(calc: Calc): Extract<Calc, { op: 'duration' }>[] {
 }
 
 /** Field types a task can collect when it is completed. */
-export const TASK_ANSWER_TYPES = new Set(['short_text', 'long_text', 'dropdown', 'single_choice', 'yes_no', 'number', 'currency', 'date', 'time', 'rating']);
+export const TASK_ANSWER_TYPES = new Set(['short_text', 'long_text', 'dropdown', 'single_choice', 'yes_no', 'signature_ack', 'number', 'currency', 'date', 'time', 'rating']);
 
 export function validate(bp: Blueprint, requestedDescription?: string): Diagnostics {
   const d = new Diagnostics();
@@ -1068,7 +1068,7 @@ export function validate(bp: Blueprint, requestedDescription?: string): Diagnost
         d.error(
           'TASK001',
           at,
-          `Task "${task.key}" requires "${key}", which must be a field the completing person fills in: an operator-set text, choice, yes/no, number, date, time or rating.`,
+          `Task "${task.key}" requires "${key}", which must be a field the completing person fills in: an operator-set text, choice, yes/no, acknowledgment, number, date, time or rating.`,
         );
       }
       if ('role' in task.assignee) {
