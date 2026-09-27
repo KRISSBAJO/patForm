@@ -59,7 +59,7 @@ export async function aiDraftStatus(pool: Pool, principal: Principal, jobId: str
   if (principal.kind !== 'actor') throw new NotFound('Draft job not found.');
   const result = await pool.query(`select j.id, j.process_key, j.process_name, j.status, j.stage, j.draft_id, j.error,
     j.source_draft_id, j.source_revision, j.source_blueprint, j.proposal, j.review, j.applied_at,
-    j.created_at, j.started_at, j.completed_at, j.note, j.progress
+    j.created_at, j.started_at, j.completed_at, j.heartbeat_at, j.note, j.progress
     from ai_draft_job j where j.id = $1 and j.tenant_id = $2 and j.actor_id = $3`,
   [jobId, principal.tenantId, principal.actorId]);
   if (!result.rows[0]) throw new NotFound('Draft job not found.');
@@ -112,13 +112,19 @@ export async function processNextAiDraft(pool: Pool): Promise<boolean> {
       .catch((error: unknown) => console.error('AI draft heartbeat failed:', job.id, error));
   }, 20_000);
   try {
+    let lastProgressWrite=0;
+    const testProgress=async(progress:import('./scenarios.js').ScenarioProgress)=>{
+      if(progress.status==='running' && Date.now()-lastProgressWrite<2000) return;
+      lastProgressWrite=Date.now();
+      await pool.query('update ai_draft_job set stage = $2, note = $3, progress = $4 where id = $1',[job.id,'checking',`Testing: ${progress.name}`,JSON.stringify({...progress,updatedAt:new Date().toISOString(),kind:'tests'})]);
+    };
     if (job.source_draft_id) {
       let source = Blueprint.parse(job.source_blueprint);
       let repairProposal=false;
       if (job.description.startsWith(REPAIR_REQUEST)) {
         await pool.query('update ai_draft_job set stage = $2, note = $3 where id = $1', [job.id,'checking','Repairing the draft and running its tests']);
         const staff = JSON.parse(job.description.slice(REPAIR_REQUEST.length).trim() || '{}') as Record<string,string>;
-        const result = await verifiedRepair(source,bp => runScenarios(pool,bp),{staff,reviewWarnings:true});
+        const result = await verifiedRepair(source,bp => runScenarios(pool,bp,testProgress),{staff,reviewWarnings:true});
         if(result.requests.length && !result.decisions.length) {
           if(!availableProviders().length) throw new InvalidInput('AI is not configured for custom changes. Your draft has not changed.');
           source=result.blueprint;
@@ -143,7 +149,8 @@ export async function processNextAiDraft(pool: Pool): Promise<boolean> {
         try {
           const result = await generateBlueprint(providerFor(name), blueprintSchema(), {
             description: job.description, sourceBlueprint: source, pool,
-            onProgress: async (stage, note, progress) => { await pool.query('update ai_draft_job set stage = $2, note = coalesce($3, note), progress = coalesce($4::jsonb, progress) where id = $1', [job.id, stage, note ?? null, progress ? JSON.stringify(progress) : null]); },
+            onScenarioProgress:testProgress,
+            onProgress: async (stage, note, progress) => { await pool.query('update ai_draft_job set stage = $2, note = $3, progress = $4 where id = $1', [job.id, stage, note ?? null, JSON.stringify({...progress,kind:stage==='generating'?'generation':'checks',updatedAt:new Date().toISOString()})]); },
           });
           const option = revisionCandidate(result);
           if (option && (!best || option.score > best.score)) {
@@ -163,7 +170,7 @@ export async function processNextAiDraft(pool: Pool): Promise<boolean> {
       const diagnostics = validate(proposal);
       await pool.query('update ai_draft_job set stage = $2 where id = $1', [job.id, 'checking']);
       const scenarios = diagnostics.publishable
-        ? proposal.key === best.blueprint.key && best.scenarios ? best.scenarios : await runScenarios(pool, proposal)
+        ? proposal.key === best.blueprint.key && best.scenarios ? best.scenarios : await runScenarios(pool, proposal,testProgress)
         : [];
       const review = {
         requiresApproval:repairProposal,

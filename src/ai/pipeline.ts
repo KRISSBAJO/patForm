@@ -80,6 +80,7 @@ export interface GenerateOptions {
   pool?: Pool;
   /** Optional durable status callback for a queued draft. */
   onProgress?: (stage: 'generating' | 'checking', note?: string, progress?: Record<string, unknown>) => Promise<void>;
+  onScenarioProgress?: (progress:import('../runtime/scenarios.js').ScenarioProgress)=>Promise<void>;
   /** Every model call, for the usage ledger. */
   onUsage?: (usage: UsageRecord) => Promise<void>;
 }
@@ -247,7 +248,7 @@ export async function generateBlueprint(
       // after the final model turn, so its diagnostics could never reach the
       // one repair turn promised by the pipeline.
       if (options.pool) {
-        const repaired = await verifiedRepair(candidateBp, bp => runScenarios(options.pool!, bp));
+        const repaired = await verifiedRepair(candidateBp, bp => runScenarios(options.pool!, bp,options.onScenarioProgress));
         Object.assign(candidateBp, repaired.blueprint);
         normalized.push(...repaired.changes);
         scenarios = repaired.scenarios;

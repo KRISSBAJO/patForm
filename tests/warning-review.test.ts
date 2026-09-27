@@ -51,6 +51,7 @@ test('verified repair does not save while warning choices are unanswered, and re
   const run=async(b:Blueprint)=>b.tests.map(t=>({process:b.key,test:t.key,kind:t.kind,passed:true,failures:[]}));
   const pending=await verifiedRepair(bp,run,{reviewWarnings:true});
   assert.equal(pending.ready,false);
+  assert.equal(pending.scenarios.length,0,'unanswered choices do not start a redundant full test run');
   assert.ok(pending.decisions.some(d=>d.key==='review:assumptions'));
   const answers=Object.fromEntries(pending.decisions.map(d=>[d.key,d.roles[0]!.key]));
   const done=await verifiedRepair(bp,run,{reviewWarnings:true,staff:answers});

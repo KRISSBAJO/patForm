@@ -3,11 +3,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import './improve.css';
 import { RepairReview, type ReviewDecision } from './RepairReview';
+import { RepairProgress, type ProgressJob } from './RepairProgress';
 
 type Blueprint = { key: string; name: string; roles?: { key: string; name: string }[]; data?: { fields?: { key: string; label: string }[] }; workflow?: { states?: { key: string; name: string }[]; transitions?: { key: string; name?: string }[]; tasks?: { key: string; name: string }[]; approvals?: { key: string; name: string }[] }; communications?: { email?: { key: string; name: string }[] }; outputs?: { documents?: { key: string; name: string }[] }; tests?: { key: string }[]; experience?: { pages?: { key: string; title: string }[] } };
 type Draft = { id: string; processName: string; blueprint: Blueprint; revision: number };
 type Diagnostic = { code: string; severity: 'error' | 'warning'; message: string };
-type Job = { id: string; status: 'queued' | 'running' | 'ready' | 'failed'; stage: string; error?: string | null; source_revision: number; source_blueprint: Blueprint; proposal?: Blueprint | null; review?: { automaticRepair?: boolean; requiresApproval?: boolean; ready?: boolean; changes?: {at:string;change:string}[]; questions?: string[]; decisions?: ReviewDecision[]; provider?: string; diagnostics: Diagnostic[]; tests: { passed: number; total: number; failures: { name: string; failures: string[] }[] } } | null; applied_at?: string | null };
+type Job = ProgressJob & { id: string; status: 'queued' | 'running' | 'ready' | 'failed'; stage: string; error?: string | null; source_revision: number; source_blueprint: Blueprint; proposal?: Blueprint | null; review?: { automaticRepair?: boolean; requiresApproval?: boolean; ready?: boolean; changes?: {at:string;change:string}[]; questions?: string[]; decisions?: ReviewDecision[]; provider?: string; diagnostics: Diagnostic[]; tests: { passed: number; total: number; failures: { name: string; failures: string[] }[] } } | null; applied_at?: string | null };
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, { credentials: 'same-origin', cache: 'no-store', headers: { 'content-type': 'application/json' }, ...init });
@@ -66,9 +67,12 @@ export function ImproveDraft() {
   useEffect(() => {
     if (!jobId || job?.status === 'ready' || job?.status === 'failed') return;
     let live = true;
+    let polling = false;
     const poll = async () => {
+      if(polling) return; polling=true;
       try { const next = await api<Job>(`/api/builder/ai-jobs/${jobId}`); if (live) { setJob(next); setError(''); } }
       catch (cause) { if (live) setError((cause as Error).message); }
+      finally { polling=false; }
     };
     void poll();
     const timer = window.setInterval(() => void poll(), 3000);
@@ -122,11 +126,11 @@ export function ImproveDraft() {
         <div className="improve__foot"><span>{request.length} / 8,000</span><button disabled={busy || !draft || request.trim().length < 20} onClick={() => void start()}>{busy ? 'Starting…' : 'Create proposal'}</button></div>
       </section>}
       {(automatic || jobId) && !job && !error && <section className="improve__card" role="status">Checking your draft…</section>}
-      {job && job.status !== 'ready' && job.status !== 'failed' && <section className="improve__card" role="status"><div className="improve__spinner"/> <strong>{automatic ? 'Repairing and retesting your draft' : job.stage === 'checking' ? 'Checking the proposed workflow' : 'AI is revising your draft'}</strong><p>You can leave and return using this page link.</p></section>}
+      {job && job.status !== 'ready' && job.status !== 'failed' && <RepairProgress key={job.id} job={job} automatic={automatic} onCheck={async()=>{try{const next=await api<Job>(`/api/builder/ai-jobs/${job.id}`);setJob(next);setError('');}catch(cause){setError((cause as Error).message);}}}/>}
       {job?.status === 'failed' && <section className="improve__card improve__card--warning"><h2>{automatic ? 'Repair could not finish' : 'AI could not make a proposal'}</h2><p>{job.error}</p><button onClick={() => { autoStarted.current = false; setJob(null); setJobId(''); window.history.replaceState({}, '', `/builder/improve?draft=${draftId}${automatic ? '&repair=1' : ''}`); }}>Try again</button></section>}
       {automatic && job?.status === 'ready' && <section className="improve__card" role="status">
         <h2>{job.review?.ready ? 'Checks passed. Saving repairs…' : job.review?.decisions?.length ? 'A few choices to finish your draft' : 'A decision or further repair is needed'}</h2>
-        <p>{job.review?.tests.total ? `${job.review.tests.passed} of ${job.review.tests.total} tests passed.` : 'Tests will run after the blocking checks are resolved.'}</p>
+        <p>{job.review?.tests.total ? `${job.review.tests.passed} of ${job.review.tests.total} tests passed.` : job.review?.decisions?.length ? 'Tests will run after you apply your choices.' : 'Tests will run after the blocking checks are resolved.'}</p>
         {!job.review?.ready && <><p>Your choices will be applied together, then checked and tested again before saving.</p>
           {!!job.review?.decisions?.length && <div className="improve__staff"><RepairReview key={job.id} draftId={draftId} decisions={job.review.decisions} answers={staff} setAnswers={setStaff} busy={busy} apply={()=>void start()}/></div>}
           {job.review?.questions?.map((question,index)=><p key={index}>{question}</p>)}

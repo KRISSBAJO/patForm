@@ -18,6 +18,7 @@ export interface ScenarioResult {
   passed: boolean;
   failures: string[];
 }
+export interface ScenarioProgress { total:number;completed:number;passed:number;name:string;step?:number;stepTotal?:number;status:'starting'|'running'|'completed' }
 
 /**
  * A scenario names a role; the runtime needs a person. Each internal role in
@@ -40,11 +41,13 @@ const ACTION_MAP = {
  * engine that will run the published process, driven by the process's own
  * declared cases, with a clock the scenario controls.
  */
-export async function runScenarios(pool: Pool, bp: Blueprint): Promise<ScenarioResult[]> {
+export async function runScenarios(pool: Pool, bp: Blueprint, onProgress?:(progress:ScenarioProgress)=>Promise<void>): Promise<ScenarioResult[]> {
   const engine = new Engine(pool);
   const results: ScenarioResult[] = [];
 
   for (const test of bp.tests) {
+    const progress=(status:ScenarioProgress['status'],step?:number)=>onProgress?.({total:bp.tests.length,completed:results.length,passed:results.filter(r=>r.passed).length,name:test.name,step,stepTotal:test.steps.length,status})??Promise.resolve();
+    await progress('starting');
     // Each scenario gets its own tenant so that duplicate detection, which is
     // scoped to a tenant, does not make one scenario interfere with the next.
     const tenantId = await engine.createTenant(`scenario:${bp.key}:${test.key}`, { scenario: true });
@@ -99,7 +102,8 @@ export async function runScenarios(pool: Pool, bp: Blueprint): Promise<ScenarioR
       cast.set(role.key, { principal: { kind: 'actor', tenantId, actorId }, email });
     }
 
-    results.push(await runOne(engine, bp, version, test, cast, tenantId));
+    results.push(await runOne(engine, bp, version, test, cast, tenantId,step=>progress('running',step)));
+    await progress('completed');
   }
 
   return results;
@@ -113,6 +117,7 @@ async function runOne(
   cast: Map<string, CastMember>,
   /** The scenario's own tenant. Every drain here runs on an invented clock. */
   tenantId: string,
+  onStep?:(step:number)=>Promise<void>,
 ): Promise<ScenarioResult> {
   const failures: string[] = [];
   let now = new Date('2026-09-21T09:00:00.000Z');
@@ -121,7 +126,8 @@ async function runOne(
   const fail = (message: string) => failures.push(message);
 
   try {
-    for (const step of test.steps) {
+    for (const [stepIndex,step] of test.steps.entries()) {
+      await onStep?.(stepIndex+1);
       switch (step.step) {
         case 'submit': {
           // Scenarios name only the answers that matter to them. Everything

@@ -12,7 +12,9 @@ export async function verifiedRepair(input: Blueprint, run: (bp: Blueprint) => P
   changes.push(...review.changes);
   let scenarios: ScenarioResult[] = [];
   let diagnostics = validate(repair.blueprint);
-  for (let round = 0; round < 3 && diagnostics.publishable; round++) {
+  // Ask first: testing a configuration that still awaits business choices is
+  // expensive, and the choices would require another full run anyway.
+  for (let round = 0; round < 3 && diagnostics.publishable && !repair.decisions.length && !review.decisions.length && !review.requests.length; round++) {
     scenarios = await run(repair.blueprint);
     if (scenarios.every(s => s.passed)) break;
     const next = repairBlueprint(repair.blueprint,scenarios.filter(s => !s.passed),options);
