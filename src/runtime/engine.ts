@@ -13,7 +13,7 @@ import {
   type EmailProvider,
 } from './email.js';
 import { flattenFields, placeholdersIn, type Blueprint, type Action, type Party, type Transition } from '../blueprint/index.js';
-import { checkField, missingRequiredFields } from '../blueprint/answers.js';
+import { checkField, missingRequiredFields, validateAnswers } from '../blueprint/answers.js';
 import { collectTaskAnswers } from './task-answers.js';
 import { generatedReferences } from './references.js';
 import { evaluate, render, withCalculatedFields, type Answers } from './expr.js';
@@ -213,11 +213,13 @@ export class Engine {
     const bp = args.version.blueprint;
     const principal: Principal =
       args.principal ?? { kind: 'respondent', tenantId: args.version.tenant_id, label: args.actor };
+    const protectedFields=bp.data.fields.filter(field=>field.setBy==='operator'||field.setBy==='system').map(field=>field.key).filter(key=>args.answers[key]!==undefined);
+    if(protectedFields.length) return {instanceId:'',duplicate:false,rejected:protectedFields};
     const answers = withCalculatedFields(bp.data.fields, args.answers);
 
     // Requirement 6.3: a submission that does not satisfy the published form
     // never becomes an instance. The form is the gate, not the approver.
-    const missing = missingRequiredFields(bp, answers, args.now);
+    const missing = [...new Set([...missingRequiredFields(bp, answers, args.now),...validateAnswers(bp,answers,{now:args.now}).map(error=>error.field)])];
     if (missing.length) return { instanceId: '', duplicate: false, rejected: missing };
 
     const transition = selectSubmissionTransition(bp, answers, args.now);

@@ -131,7 +131,7 @@ export function repairBlueprint(input: Blueprint, failures: ScenarioResult[] = [
   // A positive scenario may still use the old single-row shorthand for a
   // nested task. Expand it to the actual number of respondent rows, leaving
   // every distinct existing row and each security/negative scenario intact.
-  for(const test of bp.tests.filter(test=>test.kind==='happy_path'||test.kind==='rejection')) {
+  for(const test of bp.tests.filter(test=>['happy_path','rejection','permission'].includes(test.kind))) {
     const submit=test.steps.find(step=>step.step==='submit');
     if(submit?.step!=='submit') continue;
     const completed=completeAnswers(bp,submit.answers);

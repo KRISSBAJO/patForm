@@ -88,6 +88,28 @@ export function reviewWarnings(bp:Blueprint, answers:Record<string,string> = {})
     const warning=warnings.find(w=>w.code==='BLD002'&&w.at===`intent.openDecisions[${index}]`);
     if(warning) handled.add(warning);
     const key=`review:decision:${index}`;
+    const handover=/handover.*documents.*mandatory|mandatory.*handover.*documents/i.test(decision.question)
+      ? bp.data.fields.find(field=>field.type==='repeating_group'&&/handover/i.test(field.key)&&field.fields?.some(child=>child.type==='file')) : undefined;
+    const kind=handover?.fields?.find(field=>['single_choice','dropdown'].includes(field.type)&&/item|document|kind/i.test(field.key));
+    const evidence=handover?.fields?.find(field=>field.type==='file');
+    if(handover&&kind?.choices?.length&&evidence) {
+      choose({key,kind:'roles',allowCustom:true,group:'Required handover documents',prompt:decision.question,
+        detail:'Select every document the client must provide. Each selected kind needs its own row and uploaded evidence before submission; the project manager then verifies every row.',
+        roles:kind.choices.map(choice=>({key:choice.value,name:choice.label}))},value=>{
+        const required=value.split('|');
+        handover.required=true;
+        handover.requiredChoices={field:kind.key,values:required};
+        evidence.requiredWhen={op:'in',left:{field:kind.key},right:required.map(item=>({literal:item}))};
+        const missing=bp.data.fields.find(field=>field.type==='calculated'&&field.compute&&'op' in field.compute&&field.compute.op==='count'&&field.compute.over===handover.key&&/missing|unverified/i.test(field.key));
+        if(missing?.compute&&'op' in missing.compute&&missing.compute.op==='count') missing.compute.where={op:'and',operands:[
+          {op:'in',left:{field:kind.key},right:required.map(item=>({literal:item}))},
+          {op:'ne',left:{field:handover.fields!.find(field=>field.key.includes('verified'))?.key??'handover_verified'},right:{literal:true}},
+        ]};
+        resolved.add(index);
+        changes.push({at:`data.fields.${handover.key}`,change:`Required separate handover rows and uploaded evidence for ${required.map(item=>kind.choices!.find(choice=>choice.value===item)?.label??item).join(', ')}. Verification cannot pass on an empty checklist.`});
+      });
+      continue;
+    }
     if(/\bretain|\bretention/i.test(decision.question)) {
       choose({key,kind:'days',group:'Retention',prompt:decision.question,detail:'Enter how many days completed records and their stored attachments should be kept. The existing retention job will delete them after this period. Your private draft is reviewed and tested before saving.',roles:[]},value=>{
         bp.intent.retentionDays=Number(value);resolved.add(index);

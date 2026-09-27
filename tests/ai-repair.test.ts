@@ -202,6 +202,25 @@ test('repair expands a positive test task answer across mandatory checklist rows
   assert.equal(completion.step,'complete_task');
   assert.deepEqual(completion.answers,{handover_rows:[{verified:true},{verified:true}]});
   assert.deepEqual(bp.tests.find(test=>test.key===happy.key)!.steps.at(-1),{step:'complete_task',task:'issue_equipment',as:'it_operator',answers:{verified:true}});
+  const permission=bp.tests.find(test=>test.kind==='permission')!;
+  permission.steps.push({step:'complete_task',task:'issue_equipment',as:'it_operator',answers:{verified:true}});
+  permission.steps.push({step:'permission',action:'approve',as:'it_operator',expectDenied:true});
+  const checked=repairBlueprint(bp).blueprint.tests.find(test=>test.key===permission.key)!;
+  assert.deepEqual(checked.steps.at(-2),{step:'complete_task',task:'issue_equipment',as:'it_operator',answers:{handover_rows:[{verified:true},{verified:true}]}});
+  assert.deepEqual(checked.steps.at(-1),permission.steps.at(-1));
+});
+test('repair expects only engine-proven outputs from a route named by the test',()=>{
+  const bp=fixture();
+  const happy=bp.tests.find(test=>test.kind==='happy_path')!;
+  const route=bp.workflow.transitions.find(route=>route.trigger.on==='manual')!;
+  route.actions.push({do:'send_email',key:'manual_notice',template:'submission_receipt'});
+  happy.steps.push({step:'manual',as:'it_operator',transition:route.key});
+  happy.expect.emails=['welcome_packet'];
+  const result:ScenarioResult={process:bp.key,test:happy.key,kind:happy.kind,passed:false,failures:[
+    'unexpected email "submission_receipt" was produced','unexpected email "unrelated" was produced',
+  ]};
+  const repaired=repairBlueprint(bp,[result]).blueprint.tests.find(test=>test.key===happy.key)!;
+  assert.deepEqual(repaired.expect.emails,['welcome_packet','submission_receipt']);
 });
 
 test('approval fixture records its declared decision through existing staff edit authority',()=>{

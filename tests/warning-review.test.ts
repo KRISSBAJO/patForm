@@ -69,6 +69,23 @@ test('retention has a bounded days input and actually updates the retention poli
   assert.equal(bp.intent.retentionDays,365);
   assert.equal(bp.intent.openDecisions.length,0);
 });
+test('mandatory handover document picker enforces rows, evidence and verification',()=>{
+  const bp=fixture();
+  bp.data.fields.push({key:'handover_items',label:'Handover requirements',type:'repeating_group',classification:'internal',setBy:'respondent',fields:[
+    {key:'handover_item',label:'Document',type:'single_choice',classification:'internal',setBy:'respondent',choices:[{value:'warranty',label:'Warranty'},{value:'permit',label:'Permit'},{value:'manual',label:'Manual'}]},
+    {key:'handover_evidence',label:'Evidence',type:'file',classification:'internal',setBy:'respondent'},
+    {key:'handover_verified',label:'Verified',type:'yes_no',classification:'internal',setBy:'operator'},
+  ]});
+  bp.data.fields.push({key:'mandatory_handover_missing',label:'Missing handover',type:'calculated',classification:'internal',setBy:'system',compute:{op:'count',over:'handover_items',where:{op:'ne',left:{field:'handover_verified'},right:{literal:true}}}});
+  bp.experience.pages[0]!.sections[0]!.fields.push('handover_items');
+  bp.intent.openDecisions=[{question:'Which exact handover documents are mandatory?',provisionally:'Warranty and permit',importance:'blocking'}];
+  const pending=reviewWarnings(bp).decisions.find(decision=>decision.key==='review:decision:0')!;
+  assert.equal(pending.kind,'roles');
+  reviewWarnings(bp,{'review:decision:0':'warranty|permit'});
+  assert.deepEqual(bp.data.fields.find(field=>field.key==='handover_items')!.requiredChoices?.values,['warranty','permit']);
+  assert.ok(bp.data.fields.find(field=>field.key==='handover_items')!.fields?.find(field=>field.key==='handover_evidence')?.requiredWhen);
+  assert.equal(bp.intent.openDecisions.length,0);
+});
 test('review-order alternatives and custom behavior require a reviewed proposal, not automatic save',async()=>{
   const bp=fixture();bp.intent.openDecisions=[{question:'Should procurement happen before or after finance?',provisionally:'Procurement first',importance:'review'}];
   const pending=reviewWarnings(bp);
