@@ -103,6 +103,17 @@ export function Console() {
   const [session, setSession] = useState<SessionInfo | null>(null);
   const [siteAdmin, setSiteAdmin] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [railExpanded, setRailExpanded] = useState(false);
+  const settingsRef = useRef<HTMLDivElement>(null);
+  const headerRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const close = (event: MouseEvent) => { if (!headerRef.current?.contains(event.target as Node)) { setAccountOpen(false); setProcessPickerOpen(false); } if (!settingsRef.current?.contains(event.target as Node)) setSettingsOpen(false); };
+    const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') { setAccountOpen(false); setProcessPickerOpen(false); setSettingsOpen(false); setMobileNavOpen(false); } };
+    document.addEventListener('mousedown', close); document.addEventListener('keydown', escape);
+    return () => { document.removeEventListener('mousedown', close); document.removeEventListener('keydown', escape); };
+  }, []);
   const [processPickerOpen, setProcessPickerOpen] = useState(false);
   const [processSearch, setProcessSearch] = useState('');
   const [recentProcessKeys, setRecentProcessKeys] = useState<string[]>([]);
@@ -442,7 +453,7 @@ export function Console() {
         * name side by side — the rail was stacking them in a narrow column,
         * which read as two brands rather than one application.
         */}
-      <header className="cs__top">
+      <header className="cs__top" ref={headerRef}>
         <button type="button" className="cs__menuToggle" aria-label="Open menu" aria-expanded={mobileNavOpen} aria-controls="console-navigation" onClick={() => setMobileNavOpen(true)}>
           <span aria-hidden="true">☰</span>
         </button>
@@ -454,131 +465,9 @@ export function Console() {
           Patform
         </span>
         <span className="cs__topDivider" aria-hidden="true" />
-        <span className="cs__topWorkspace">{me.workspace_name}</span>
-      </header>
+        <span className="cs__topWorkspace">{me.workspace_name}</span><span className="cs__topSpacer" />        {session.processes.length > 0 && <div className="cs__headerProcess">
 
-      <ReauthDialog />
-      <div className="cs__shell">
-      {mobileNavOpen && <button type="button" className="cs__navBackdrop" aria-label="Close menu" onClick={() => setMobileNavOpen(false)} />}
-      <aside id="console-navigation" className={`cs__side${mobileNavOpen ? ' cs__side--open' : ''}`} onClick={(event) => {
-        if ((event.target as HTMLElement).closest('button, a')) setMobileNavOpen(false);
-      }}>
-        <div className="cs__mobileNavHead"><strong>Menu</strong><button type="button" aria-label="Close menu" onClick={() => setMobileNavOpen(false)}>×</button></div>
-        <nav className="cs__nav" aria-label="Console">
-          <button
-            type="button"
-            className="cs__navItem"
-            aria-current={view === 'work' ? 'page' : undefined}
-            onClick={() => setView('work')}
-          >
-            <NavIcon name="work" />
-            <span className="cs__navText">My work</span>
-            {counts.needsYou > 0 && <span className="cs__navCount">{counts.needsYou}</span>}
-          </button>
-          <button
-            type="button"
-            className="cs__navItem"
-            aria-current={view === 'ask' ? 'page' : undefined}
-            onClick={() => setView('ask')}
-          >
-            <NavIcon name="ask" />
-            <span className="cs__navText">Ask</span>
-          </button>
-          <button
-            type="button"
-            className="cs__navItem"
-            aria-current={view === 'records' ? 'page' : undefined}
-            onClick={() => setView('records')}
-          >
-            <NavIcon name="records" />
-            <span className="cs__navText">Records</span>
-          </button>
-          <button
-            type="button"
-            className="cs__navItem"
-            aria-current={view === 'dashboard' ? 'page' : undefined}
-            onClick={() => setView('dashboard')}
-          >
-            <NavIcon name="dashboard" />
-            <span className="cs__navText">Dashboard</span>
-          </button>
-          <button
-            type="button"
-            className="cs__navItem"
-            aria-current={view === 'health' ? 'page' : undefined}
-            onClick={() => setView('health')}
-          >
-            <NavIcon name="health" />
-            <span className="cs__navText">Automation health</span>
-            {counts.failed > 0 && <span className="cs__navCount cs__navCount--bad">{counts.failed}</span>}
-          </button>
-          <button
-            type="button"
-            className="cs__navItem"
-            aria-current={view === 'held' ? 'page' : undefined}
-            onClick={() => setView('held')}
-          >
-            <NavIcon name="held" />
-            <span className="cs__navText">Held submissions</span>
-            {heldCount > 0 && (
-              <span className="cs__navCount" aria-label={`${heldCount} waiting`}>
-                {heldCount}
-              </span>
-            )}
-          </button>
-          <button
-            type="button"
-            className="cs__navItem"
-            aria-current={view === 'processes' ? 'page' : undefined}
-            onClick={() => setView('processes')}
-          >
-            <NavIcon name="processes" />
-            <span className="cs__navText">Processes &amp; forms</span>
-          </button>
-          <button
-            type="button"
-            className="cs__navItem"
-            aria-current={view === 'people' || view === 'invite' ? 'page' : undefined}
-            onClick={() => setView('people')}
-          >
-            <NavIcon name="people" />
-            <span className="cs__navText">People</span>
-          </button>
-          {/* The builder is a different application, so a link rather than a
-              view — and it was not linked from here at all, which is how
-              somebody could use this console without ever learning that
-              processes are designed rather than configured. */}
-          <a className="cs__navItem" href="/builder">
-            <NavIcon name="builder" />
-            <span className="cs__navText">Builder</span>
-          </a>
-
-          <span className="cs__sectionLabel" style={{ marginTop: 10 }}>
-            SETTINGS
-          </span>
-          <button
-            type="button"
-            className="cs__navItem"
-            aria-current={view === 'integrations' ? 'page' : undefined}
-            onClick={() => setView('integrations')}
-          >
-            <NavIcon name="integrations" />
-            <span className="cs__navText">Integrations</span>
-          </button>
-          <button
-            type="button"
-            className="cs__navItem"
-            aria-current={view === 'data' ? 'page' : undefined}
-            onClick={() => setView('data')}
-          >
-            <NavIcon name="data" />
-            <span className="cs__navText">Import &amp; data</span>
-          </button>
-        </nav>
-
-        {view !== 'processes' && session.processes.length > 0 && <div className="cs__processList">
-          <div className="cs__processHeading"><span className="cs__sectionLabel">YOUR PROCESSES</span><span>{session.processes.length}</span></div>
-          <button type="button" className="cs__processCurrent" aria-expanded={processPickerOpen} aria-controls="console-process-picker" onClick={(event) => { event.stopPropagation(); setProcessPickerOpen((open) => !open); setProcessSearch(''); }}>
+          <button type="button" className="cs__processCurrent" aria-expanded={processPickerOpen} aria-controls="console-process-picker" onClick={(event) => { event.stopPropagation(); setAccountOpen(false); setProcessPickerOpen((open) => !open); setProcessSearch(''); }}>
             <span><small>Current process</small><strong>{currentProcess?.name ?? 'Choose a process'}</strong></span>
             <span aria-hidden="true">⌄</span>
           </button>
@@ -595,64 +484,37 @@ export function Console() {
             </div>
             {!processSearch && recentProcesses.length === 0 && session.processes.length > 6 && <p className="cs__processHint">Search to find another process.</p>}
             {processSearch && matchingProcesses.length > 6 && <p className="cs__processHint">Showing 6 of {matchingProcesses.length} matches. Keep typing to narrow them.</p>}
-          </div> : recentProcesses.length > 0 && <div className="cs__processRecent" aria-label="Recently used processes">
-            <span className="cs__processRecentLabel">RECENT</span>
-            {recentProcesses.map((process) => <button key={process.process_key} type="button" className="cs__process" onClick={() => switchProcess(process.process_key)}><span className="cs__dot" aria-hidden="true" /><span className="cs__processText">{process.name}</span></button>)}
-          </div>}
-          <button type="button" className="cs__processBrowse" onClick={() => { setProcessPickerOpen(false); setView('processes'); }}>
-            Browse all {session.processes.length} processes →
-          </button>
+<button type="button" className="cs__processBrowse" onClick={() => { setProcessPickerOpen(false); setView('processes'); }}>Browse all {session.processes.length} processes →</button></div> : null}
         </div>}
 
-        <div className="cs__seat">
-          <div className="cs__seatRow">
-            <span className="cs__avatar">
-              {me.display_name
-                .split(' ')
-                .map((p) => p[0])
-                .join('')
-                .slice(0, 2)}
-            </span>
-            <div style={{ minWidth: 0 }}>
-              <div className="cs__seatName">{me.display_name}</div>
-              <div className="cs__seatRole">
-                {session.processes[0]?.roles.join(', ') || 'no process role'} · {me.workspace_role}
-              </div>
-            </div>
-          </div>
-          {/* Beside the seat rather than in the main nav: it is about the
-              person signed in, not about the workspace's work. */}
-          <button
-            type="button"
-            className="cs__seatPicker"
-            aria-current={view === 'security' ? 'page' : undefined}
-            onClick={() => setView('security')}
-          >
-            <Icon name="account" />
-            <span>Your account</span>
-          </button>
-          <button type="button" className="cs__seatPicker" onClick={() => void signOut()}>
-            <Icon name="logout" />
-            <span>Sign out</span>
-          </button>
-          {siteAdmin && <a className="cs__seatPicker" href="/platform">Site administration ↗</a>}
-          {session.devices.length > 1 && (
-            <p className="cs__seatNote">
-              {session.devices.length} active sessions.{' '}
-              <button
-                type="button"
-                className="cs__linkBtn"
-                onClick={() =>
-                  void act('revoke', () => call('/api/session/revoke-all', { method: 'POST' }), 'Signed out everywhere.').then(
-                    () => setSession(null),
-                  )
-                }
-              >
-                Sign out everywhere
-              </button>
-            </p>
-          )}
-        </div>
+<div className="cs__headerAccount">
+<button type="button" className="cs__accountTrigger" aria-label="Your profile and account" aria-expanded={accountOpen} aria-controls="console-account-menu" onClick={() => { setProcessPickerOpen(false); setAccountOpen(!accountOpen); }}><span className="cs__avatar">{me.display_name.split(' ').map(p => p[0]).join('').slice(0,2)}</span><span aria-hidden="true">⌄</span></button>
+{accountOpen && <div id="console-account-menu" className="cs__accountMenu"><div className="cs__accountIdentity"><strong>{me.display_name}</strong><span>{me.email}</span><small>{me.workspace_role}</small></div>
+<button type="button" onClick={() => { setView('security'); setAccountOpen(false); }}><Icon name="account" />Your account & notifications</button>
+{siteAdmin && <a href="/platform"><Icon name="open" />Site administration</a>}
+<button type="button" onClick={() => void signOut()}><Icon name="logout" />Sign out</button>
+{session.devices.length > 1 && <div className="cs__accountSessions"><small>{session.devices.length} active sessions</small><button type="button" onClick={() => void act('revoke', () => call('/api/session/revoke-all', { method: 'POST' }), 'Signed out everywhere.').then(() => setSession(null))}>Sign out everywhere</button></div>}
+</div>}
+</div>
+      </header>
+
+      <ReauthDialog />
+      <div className="cs__shell">
+      {mobileNavOpen && <button type="button" className="cs__navBackdrop" aria-label="Close menu" onClick={() => setMobileNavOpen(false)} />}
+      <aside id="console-navigation" className={`cs__side${railExpanded ? ' cs__side--expanded' : ''}${mobileNavOpen ? ' cs__side--open' : ''}`} onClick={(event) => {
+        if ((event.target as HTMLElement).closest('button, a')) setMobileNavOpen(false);
+      }}>
+        <div className="cs__mobileNavHead"><strong>Menu</strong><button type="button" aria-label="Close menu" onClick={() => setMobileNavOpen(false)}>×</button></div>
+        <nav className="cs__nav" aria-label="Console">
+{([{key:'work',label:'My work',icon:'work'},{key:'ask',label:'Ask',icon:'ask'},{key:'records',label:'Records',icon:'records'},{key:'dashboard',label:'Dashboard',icon:'dashboard'},{key:'processes',label:'Processes',icon:'processes'},{key:'people',label:'People',icon:'people'}] as const).map(item => <button type="button" key={item.key} className="cs__navItem" title={item.label} aria-current={view === item.key || (item.key === 'people' && view === 'invite') ? 'page' : undefined} onClick={() => setView(item.key)}><NavIcon name={item.icon}/><span className="cs__navText">{item.label}</span>{item.key === 'work' && counts.needsYou > 0 && <span className="cs__navCount">{counts.needsYou}</span>}</button>)}
+<a className="cs__navItem" href="/builder" title="Builder"><NavIcon name="builder"/><span className="cs__navText">Builder</span></a>
+</nav>
+<div className="cs__railBottom">
+<div className="cs__railSettings" ref={settingsRef}><button type="button" className="cs__navItem" title="Settings" aria-expanded={settingsOpen} aria-controls="console-settings-menu" aria-current={['health','held','integrations','data'].includes(view) ? 'page' : undefined} onClick={event => { event.stopPropagation(); setSettingsOpen(!settingsOpen); }}><NavIcon name="integrations"/><span className="cs__navText">Settings</span></button>
+{settingsOpen && <nav id="console-settings-menu" className="cs__settingsMenu" aria-label="Workspace settings">{([{key:'health',label:'Automation health',icon:'health'},{key:'held',label:'Held submissions',icon:'held'},{key:'integrations',label:'Integrations',icon:'integrations'},{key:'data',label:'Import & data',icon:'data'}] as const).map(item => <button type="button" key={item.key} aria-current={view === item.key ? 'page' : undefined} onClick={() => { setView(item.key); setSettingsOpen(false); }}><NavIcon name={item.icon}/><span>{item.label}</span>{item.key === 'held' && heldCount > 0 && <span className="cs__navCount">{heldCount}</span>}</button>)}</nav>}
+</div>
+<button type="button" className="cs__navItem cs__railExpand" title={railExpanded ? 'Collapse sidebar' : 'Expand sidebar'} aria-label={railExpanded ? 'Collapse sidebar' : 'Expand sidebar'} aria-expanded={railExpanded} onClick={() => setRailExpanded(!railExpanded)}><span aria-hidden="true">{railExpanded ? '‹' : '›'}</span><span className="cs__navText">{railExpanded ? 'Collapse' : 'Expand'}</span></button>
+</div>
       </aside>
 
       <main className="cs__main" id="console-main" tabIndex={-1}>

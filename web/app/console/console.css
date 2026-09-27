@@ -5249,3 +5249,49 @@ a.cs__navItem {
 .sv__install { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line-soft); }
 .sv__install h4 { margin: 0 0 6px; font: 600 13px var(--ui); color: var(--ink); }
 
+
+/* Compact console workspace navigation. */
+.cs__top { position: sticky; top: 0; z-index: 45; overflow: visible; }
+.cs__topSpacer { flex: 1; }
+.cs .cs__side { width: 76px; padding: 12px 6px; gap: 12px; background: #fff; border-right: 1px solid var(--line); position: sticky; top: 52px; height: calc(100dvh - 52px); box-sizing: border-box; overflow: visible; }
+.cs .cs__side .cs__navItem { position: relative; flex-direction: column; justify-content: center; gap: 5px; min-height: 58px; height: auto; padding: 8px 3px; font-size: 10px; line-height: 1.2; text-align: center; border: 0; color: #587066; border-radius: 8px; }
+.cs .cs__side .cs__navItem:hover { background: #f3f7f4; color: var(--green); }
+.cs .cs__side .cs__navItem[aria-current='page'] { background: #eaf5ee; color: var(--green); box-shadow: inset 2px 0 var(--green); }
+.cs .cs__side .cs__navIcon { width: 20px; height: 20px; flex-shrink: 0; }
+.cs .cs__side .cs__navCount { position: absolute; right: 3px; top: 2px; font-size: 9px; min-width: 15px; padding: 0 3px; height: 15px; }
+.cs__railBottom { margin-top: auto; }
+.cs__railSettings { position: relative; }
+.cs__settingsMenu, .cs__accountMenu { background: #fff; color: var(--ink); border: 1px solid #dbe5df; border-radius: 12px; padding: 6px; box-shadow: 0 14px 42px #102d2326; }
+.cs__settingsMenu { position: absolute; left: calc(100% + 10px); bottom: 0; width: 230px; z-index: 50; }
+.cs__settingsMenu button, .cs__accountMenu button, .cs__accountMenu a { display: flex; gap: 10px; align-items: center; width: 100%; border: 0; background: transparent; color: var(--ink); padding: 11px 12px; text-align: left; border-radius: 7px; font: 13px var(--ui); text-decoration: none; }
+.cs__settingsMenu button:hover, .cs__accountMenu button:hover, .cs__accountMenu a:hover { background: #f0f6f2; }
+.cs__settingsMenu .cs__navIcon { width: 18px; height: 18px; }
+.cs__headerAccount, .cs__headerProcess { position: relative; }
+.cs__accountTrigger { display: flex; align-items: center; gap: 8px; padding: 3px; background: transparent; border: 0; color: #fff; }
+.cs__accountTrigger .cs__avatar { background: #d8eddf; color: #184b31; width: 32px; height: 32px; }
+.cs__accountMenu { position: absolute; right: 0; top: calc(100% + 12px); width: 272px; max-width: calc(100vw - 32px); }
+.cs__accountIdentity { display: flex; flex-direction: column; gap: 4px; padding: 12px; border-bottom: 1px solid #e6ece8; margin-bottom: 5px; }
+.cs__accountIdentity span, .cs__accountIdentity small, .cs__accountSessions small { font-size: 12px; color: #60756a; overflow-wrap: anywhere; }
+.cs__accountSessions { border-top: 1px solid #e6ece8; margin-top: 5px; padding-top: 10px; }
+.cs__accountSessions small { padding: 0 12px; }
+.cs__headerProcess .cs__processCurrent { display: flex; width: 280px; max-width: 35vw; background: #ffffff0d; border: 1px solid #ffffff40; color: #fff; min-height: 38px; padding: 5px 10px; margin: 0; }
+.cs__headerProcess .cs__processCurrent small { display: none; }
+.cs__headerProcess .cs__processCurrent strong { color: #fff; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 500; }
+.cs__headerProcess .cs__processPicker { position: absolute; top: calc(100% + 12px); right: 0; width: 340px; max-width: calc(100vw - 24px); color: var(--ink); padding: 12px; }
+.cs__headerProcess .cs__process { color: var(--ink); height: auto; min-height: 40px; }
+.cs__headerProcess .cs__process:hover { background: #f0f6f2; }
+.cs__headerProcess .cs__processBrowse { width: 100%; margin-top: 8px; border-top: 1px solid #e6ece8; padding-top: 12px; }
+.cs .cs__side--expanded { width: 208px; padding: 12px; }
+.cs .cs__side--expanded .cs__navItem { flex-direction: row; justify-content: flex-start; min-height: 42px; padding: 10px; gap: 12px; font-size: 13px; text-align: left; }
+.cs .cs__side--expanded .cs__navCount { position: static; }
+.cs__railExpand > span:first-child { font-size: 23px; line-height: 18px; }
+@media(max-width:760px) {
+ .cs__topWorkspace, .cs__topDivider { display: none; }
+ .cs__top { gap: 8px; }
+ .cs__headerProcess .cs__processCurrent { width: 160px; max-width: 38vw; }
+ .cs__headerProcess .cs__processPicker { position: fixed; top: 62px; left: 12px; right: 12px; width: auto; }
+ .cs .cs__side { position: fixed; top: 0; height: 100dvh; width: 224px; padding: 16px 12px; z-index: 91; overflow-y: auto; }
+ .cs .cs__side .cs__navItem { flex-direction: row; justify-content: flex-start; min-height: 42px; gap: 12px; font-size: 13px; padding: 10px; }
+ .cs__settingsMenu { position: static; width: auto; box-shadow: none; margin-top: 5px; }
+ .cs__railExpand { display: none !important; }
+}
