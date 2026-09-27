@@ -83,7 +83,7 @@ test('recording assessment scores is not a quiz; asking questions is', () => {
   assert.ok(qualityDiagnostics(bp, quiz).some((d) => d.code === 'AIQ001'));
 });
 
-test('a task may collect a choice, a yes/no or a number from the person completing it', () => {
+test('a task may collect choices, yes/no and uploaded files from the person completing it', () => {
   const bp = onboarding();
   const task = bp.workflow.tasks[0]!;
   bp.data.fields.push(
@@ -97,7 +97,7 @@ test('a task may collect a choice, a yes/no or a number from the person completi
   task.requiredFields = ['outcome_choice', 'competent'];
   assert.ok(!validate(bp).items.some((d) => d.code === 'TASK001'), 'a choice and a yes/no are allowed');
   task.requiredFields = ['evidence'];
-  assert.ok(validate(bp).items.some((d) => d.code === 'TASK001'), 'a file is not');
+  assert.ok(!validate(bp).items.some((d) => d.code === 'TASK001'), 'an operator file upload is allowed');
 });
 
 test('a field the runtime generates a reference into becomes system-set and leaves the form', () => {

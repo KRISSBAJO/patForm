@@ -49,7 +49,7 @@ function durationsIn(calc: Calc): Extract<Calc, { op: 'duration' }>[] {
 }
 
 /** Field types a task can collect when it is completed. */
-export const TASK_ANSWER_TYPES = new Set(['short_text', 'long_text', 'dropdown', 'single_choice', 'yes_no', 'signature_ack', 'number', 'currency', 'date', 'time', 'rating']);
+export const TASK_ANSWER_TYPES = new Set(['short_text', 'long_text', 'dropdown', 'single_choice', 'yes_no', 'signature_ack', 'number', 'currency', 'date', 'time', 'rating', 'file']);
 
 export function validate(bp: Blueprint, requestedDescription?: string): Diagnostics {
   const d = new Diagnostics();
@@ -1070,13 +1070,13 @@ export function validate(bp: Blueprint, requestedDescription?: string): Diagnost
        * A trainer's review records a completion status, a yes/no on
        * competency, a score. Only text was allowed here, so every draft that
        * asked the natural thing was refused. Anything a person can type or
-       * pick on the record panel is allowed; files and lists are not.
+       * pick or upload on the record panel is allowed; whole lists are not.
        */
       if (field.setBy !== 'operator' || !TASK_ANSWER_TYPES.has(field.type)) {
         d.error(
           'TASK001',
           at,
-          `Task "${task.key}" requires "${key}", which must be a field the completing person fills in: an operator-set text, choice, yes/no, acknowledgment, number, date, time or rating.`,
+          `Task "${task.key}" requires "${key}", which must be an operator-set answer or file upload collected by the task.`,
         );
       }
       if ('role' in task.assignee) {

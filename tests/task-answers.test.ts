@@ -11,9 +11,10 @@ const fixture=()=>{
     {key:'title',label:'Title',type:'short_text',setBy:'respondent',classification:'internal'},
     {key:'correction',label:'Correction',type:'long_text',setBy:'operator',classification:'internal'},
     {key:'verified',label:'Verified',type:'yes_no',setBy:'operator',classification:'internal'},
+    {key:'repair_photo',label:'Repair photo',type:'file',setBy:'operator',classification:'internal'},
   ]});
   const role=bp.roles.find(r=>r.key==='it_operator')!;
-  role.editableFields=[...role.editableFields??[],'correction','verified'];
+  role.editableFields=[...role.editableFields??[],'correction','verified','repair_photo'];
   return bp;
 };
 
@@ -34,6 +35,17 @@ test('task collects each row independently and leaves original evidence intact',
 test('task rejects a flat answer when multiple rows need separate work',()=>{
   const bp=fixture();
   assert.throws(()=>collectTaskAnswers(bp,['correction'],{defects:[{title:'First'},{title:'Second'}]},{correction:'one answer'},['it_operator']),/multiple rows/);
+});
+
+test('task keeps separate uploaded evidence on each defect row',()=>{
+  const bp=fixture();
+  const a='receipt-file:00000000-0000-4000-8000-000000000001';
+  const b='receipt-file:00000000-0000-4000-8000-000000000002';
+  const current={defects:[{title:'First'},{title:'Second'}]};
+  const result=collectTaskAnswers(bp,['repair_photo'],current,{defects:[{repair_photo:a},{repair_photo:b}]},['it_operator']);
+  assert.deepEqual(result.merged.defects,[{title:'First',repair_photo:a},{title:'Second',repair_photo:b}]);
+  assert.deepEqual(current.defects,[{title:'First'},{title:'Second'}]);
+  assert.throws(()=>collectTaskAnswers(bp,['repair_photo'],current,{defects:[{repair_photo:'https://example.com/photo.jpg'},{repair_photo:b}]},['it_operator']),/Upload the actual file/);
 });
 
 test('task cannot replace a row, modify unrelated fields or act without editing authority',()=>{

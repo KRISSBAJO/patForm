@@ -15,6 +15,7 @@ import {
 import { flattenFields, placeholdersIn, type Blueprint, type Action, type Party, type Transition } from '../blueprint/index.js';
 import { checkField, missingRequiredFields, validateAnswers } from '../blueprint/answers.js';
 import { collectTaskAnswers } from './task-answers.js';
+import { checkTaskFileReferences } from './receipt-files.js';
 import { generatedReferences } from './references.js';
 import { evaluate, render, withCalculatedFields, type Answers } from './expr.js';
 import { inTransaction, isUniqueViolation, type Client, type Pool } from './db.js';
@@ -487,6 +488,7 @@ export class Engine {
     principal: Principal;
     now: Date;
     answers?: Answers;
+    verifyFiles?: boolean;
   }): Promise<{ applied: boolean }> {
     return inTransaction(this.pool, async (client) => {
       const instance = await loadInstance(client, args.instanceId, { lock: true });
@@ -531,6 +533,7 @@ export class Engine {
         editRoles=edit.roles;
       }
       const {merged,touched,previous}=collectTaskAnswers(bp,declared?.requiredFields??[],instance.data,answers,editRoles);
+      if (args.verifyFiles) await checkTaskFileReferences(client, instance.id, bp, declared?.requiredFields ?? [], merged);
       if (touched.length) {
         const recalculated=withCalculatedFields(bp.data.fields,merged);
         await client.query('update instance set data = $1 where id = $2', [JSON.stringify(recalculated), instance.id]);

@@ -120,6 +120,39 @@ export function RecordPage({
   const [reason, setReason] = useState('');
   const [decisionMode, setDecisionMode] = useState<'rejected' | 'changes_requested' | null>(null);
   const [completionAnswers, setCompletionAnswers] = useState<Record<string, string>>({});
+  const [taskFileStatus, setTaskFileStatus] = useState<Record<string, string>>({});
+  const uploadTaskEvidence = async (inputKey: string, fieldKey: string, file: File) => {
+    setCompletionAnswers(was => ({ ...was, [inputKey]: '' }));
+    setTaskFileStatus(was => ({ ...was, [inputKey]: 'Uploading…' }));
+    try {
+      if (file.size > 5 * 1024 * 1024) throw new Error('Choose a file up to 5 MB.');
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result).split(',')[1] ?? '');
+        reader.onerror = () => reject(new Error('Could not read this file.'));
+        reader.readAsDataURL(file);
+      });
+      const url = `/api/records/${record.instanceId}/tasks/${task!.taskKey}/files`;
+      const response = await fetch(url, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fieldKey, filename: file.name, base64 }) });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.reason ?? result.error ?? 'Upload failed.');
+      setCompletionAnswers(was => ({ ...was, [inputKey]: result.reference }));
+      setTaskFileStatus(was => ({ ...was, [inputKey]: 'Scanning for malware…' }));
+      for (let attempt = 0; attempt < 60; attempt++) {
+        await new Promise(resolve => setTimeout(resolve, 5000));
+        const scan = await fetch(`${url}/${String(result.reference).slice('receipt-file:'.length)}`, { credentials: 'same-origin' });
+        const status = await scan.json().catch(() => ({}));
+        if (!scan.ok) throw new Error(status.reason ?? status.error ?? 'Could not check the upload.');
+        if (status.status === 'clean') { setTaskFileStatus(was => ({ ...was, [inputKey]: `${file.name} · ready` })); return; }
+        if (status.status === 'quarantined') throw new Error('The file did not pass its security scan. Choose another.');
+      }
+      throw new Error('Scanning is taking longer than expected. Choose the file again shortly.');
+    } catch (error) {
+      setCompletionAnswers(was => ({ ...was, [inputKey]: '' }));
+      setTaskFileStatus(was => ({ ...was, [inputKey]: error instanceof Error ? error.message : 'Upload failed.' }));
+    }
+  };
   /** What is typed for a task field, or what the record already holds, as text for the control. */
   const taskValue = (key: string, groupKey?: string, index=0): string => {
     const inputKey=groupKey ? `${groupKey}[${index}].${key}` : key;
@@ -421,7 +454,13 @@ export function RecordPage({
               return (
                 <div key={inputKey} style={{ marginTop: 12 }}>
                   <label htmlFor={id}>{field.groupLabel ? `${field.groupLabel} ${index+1} · ` : ''}{field.label} <span aria-hidden="true">*</span></label>
-                  {field.type === 'long_text' ? (
+                  {field.type === 'file' ? (
+                    <>
+                      <input id={id} type="file" accept="image/png,image/jpeg,application/pdf"
+                        onChange={e => { const file=e.target.files?.[0]; if(file) void uploadTaskEvidence(inputKey,field.key,file); }} />
+                      <p role="status" className="rc__progress">{taskFileStatus[inputKey] ?? (value ? 'Evidence already attached' : 'Upload a photo or PDF, up to 5 MB.')}</p>
+                    </>
+                  ) : field.type === 'long_text' ? (
                     <textarea id={id} className="rc__reasonBox" value={value} onChange={(e) => set(e.target.value)} required />
                   ) : field.type === 'signature_ack' ? (
                     <label><input id={id} type="checkbox" checked={value === 'true'} onChange={e=>set(e.target.checked ? 'true' : '')} /> I confirm this acknowledgment</label>
@@ -453,7 +492,11 @@ export function RecordPage({
             <button
               type="button"
               className="cs__btn cs__btn--primary"
-              disabled={working || task.requiredFields?.some((field) => (field.groupKey && !field.rowCount) || Array.from({length:field.groupKey?field.rowCount??0:1},(_,index)=>field.type==='signature_ack' ? taskValue(field.key,field.groupKey,index)!=='true' : !taskValue(field.key,field.groupKey,index).trim()).some(Boolean))}
+              disabled={working || task.requiredFields?.some((field) => (field.groupKey && !field.rowCount) || Array.from({length:field.groupKey?field.rowCount??0:1},(_,index)=>{
+                const inputKey=field.groupKey?`${field.groupKey}[${index}].${field.key}`:field.key;
+                return field.type==='signature_ack' ? taskValue(field.key,field.groupKey,index)!=='true' :
+                  !taskValue(field.key,field.groupKey,index).trim() || (field.type==='file' && !!taskFileStatus[inputKey] && !taskFileStatus[inputKey].endsWith('· ready'));
+              }).some(Boolean))}
               onClick={() => onCompleteTask(record.instanceId, task.taskKey, taskAnswers())}
             >
               <Icon name="done" />

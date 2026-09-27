@@ -46,7 +46,7 @@ import { requestPasswordReset, resetPassword, sendVerification, verifyEmail } fr
 import { DraftConflict } from '../runtime/errors.js';
 import { assertScreeningConfigured, issueTicket, screen, TRAP_FIELD } from '../runtime/screening.js';
 import { resolveForm } from '../runtime/form-links.js';
-import { receiptDownload, receiptStatus, uploadReceipt } from '../runtime/receipt-files.js';
+import { receiptDownload, receiptStatus, taskFileStatus, uploadReceipt, uploadTaskFile } from '../runtime/receipt-files.js';
 import { brandAssetUrl, uploadBrandAsset } from '../runtime/brand-assets.js';
 import { assertSecretKeyConfigured } from '../runtime/secret-box.js';
 import { isFresh, reauthenticate, stepUpFor } from '../runtime/step-up.js';
@@ -1229,6 +1229,19 @@ route('GET', /^\/api\/records\/([0-9a-f-]{36})\/receipts\/([0-9a-f-]{36})$/, asy
   return receiptDownload(pool, principal, parts[3]!, parts[5]!);
 });
 
+route('POST', /^\/api\/records\/([0-9a-f-]{36})\/tasks\/([a-z0-9_]+)\/files$/, async ({ pool, principal, url }, body) => {
+  const parts = url.pathname.split('/');
+  const { fieldKey, filename, base64 } = body as Record<string, string>;
+  if (![fieldKey, filename, base64].every(value => typeof value === 'string' && value.length))
+    throw new HttpError(400, 'field, filename and file are required');
+  return uploadTaskFile(pool, { principal, instanceId: parts[3]!, taskKey: parts[5]!, fieldKey: fieldKey!, filename: filename!, base64: base64! });
+});
+
+route('GET', /^\/api\/records\/([0-9a-f-]{36})\/tasks\/([a-z0-9_]+)\/files\/([0-9a-f-]{36})$/, async ({ pool, principal, url }) => {
+  const parts = url.pathname.split('/');
+  return taskFileStatus(pool, { principal, instanceId: parts[3]!, taskKey: parts[5]!, reference: `receipt-file:${parts[7]}` });
+});
+
 route('POST', /^\/api\/records\/([0-9a-f-]{36})\/decide$/, async ({ engine, principal, url }, body) => {
   const id = url.pathname.split('/')[3]!;
   const { approvalKey, decision, reason } = body as {
@@ -1248,7 +1261,7 @@ route(
   async ({ engine, principal, url }, body) => {
     const [, , , id, , taskKey] = url.pathname.split('/');
     const answers = (body as { answers?: Answers } | undefined)?.answers;
-    const result = await engine.completeTask({ instanceId: id!, taskKey: taskKey!, principal, answers, now: new Date() });
+    const result = await engine.completeTask({ instanceId: id!, taskKey: taskKey!, principal, answers, verifyFiles: true, now: new Date() });
     await engine.drain(new Date(), 'api');
     return result;
   },
@@ -1675,7 +1688,7 @@ async function main(): Promise<void> {
         const match = routes.find((r) => r.method === req.method && r.pattern.test(url.pathname));
         if (!match) throw new HttpError(404, `no route for ${req.method} ${url.pathname}`);
 
-        const body = req.method === 'POST' ? await readBody(req, url.pathname.endsWith('/brand-assets') ? 4 * 1024 * 1024 + 1024 : Number.MAX_SAFE_INTEGER) : {};
+        const body = req.method === 'POST' ? await readBody(req, url.pathname.endsWith('/brand-assets') ? 4 * 1024 * 1024 + 1024 : url.pathname.endsWith('/files') ? 7 * 1024 * 1024 : Number.MAX_SAFE_INTEGER) : {};
 
         /*
          * Actions that grant access or destroy data ask for a recent sign-in.

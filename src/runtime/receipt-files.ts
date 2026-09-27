@@ -5,7 +5,7 @@ import { inTransaction, type Client, type Pool } from './db.js';
 import { resolveForm } from './form-links.js';
 import { InvalidInput, NotFound } from './errors.js';
 import { flattenFields, type Blueprint, type Field } from '../blueprint/index.js';
-import type { Principal } from './policy.js';
+import { editableFields, require_, type Principal } from './policy.js';
 import { recordDetail } from './console-queries.js';
 
 const PREFIX = 'finance/receipts/';
@@ -104,6 +104,101 @@ export async function receiptStatus(pool: Pool, args: { form: string; token: str
   const status = await scanStatus(rows[0].storage_key);
   if (status !== rows[0].scan_status) await pool.query('update file set scan_status = $2 where id = $1', [id, status === 'scanning' ? 'unscanned' : status]);
   return { status, filename: rows[0].filename };
+}
+
+/** A task upload belongs to one record and one declared answer, never to a reusable public-form token. */
+export async function uploadTaskFile(pool: Pool, args: { principal: Principal; instanceId: string; taskKey: string; fieldKey: string; filename: string; base64: string }) {
+  const { storage: s3, bucket } = config();
+  if (args.principal.kind !== 'actor' || !args.filename || !args.base64 || args.base64.length > Math.ceil(MAX_BYTES * 4 / 3) + 8)
+    throw new InvalidInput('Choose a PDF, PNG or JPEG up to 5 MB.');
+  const bytes = Buffer.from(args.base64, 'base64');
+  const contentType = sniff(bytes);
+  if (!contentType || !bytes.length || bytes.length > MAX_BYTES) throw new InvalidInput('Choose a PDF, PNG or JPEG up to 5 MB.');
+  const client = await pool.connect();
+  let tenantId: string;
+  try {
+    const { rows } = await client.query<{ tenant_id: string; process_key: string; process_version_id: string }>(
+      'select tenant_id, process_key, process_version_id from instance where id = $1', [args.instanceId]);
+    const instance = rows[0];
+    if (!instance) throw new NotFound('No such record.');
+    const version = await client.query<{ blueprint: Blueprint }>('select blueprint from process_version where id = $1', [instance.process_version_id]);
+    const bp = version.rows[0]?.blueprint;
+    if (!bp) throw new NotFound('No such process version.');
+    const task = await client.query<{ assignee: string | null }>(
+      "select assignee from task where instance_id = $1 and task_key = $2 and status = 'open' order by id limit 1", [args.instanceId, args.taskKey]);
+    const declared = bp.workflow.tasks.find(t => t.key === args.taskKey);
+    if (!task.rows[0] || !declared?.requiredFields.includes(args.fieldKey)) throw new InvalidInput('This task does not collect that file.');
+    const operate = await require_(client, { principal: args.principal, action: 'operate', tenantId: instance.tenant_id,
+      processKey: instance.process_key, blueprint: bp, instanceId: args.instanceId,
+      task: { assignee: task.rows[0].assignee, completableBy: declared.completableBy ?? 'assignee' } }, pool);
+    const edit = await require_(client, { principal: args.principal, action: 'edit', tenantId: instance.tenant_id,
+      processKey: instance.process_key, blueprint: bp, instanceId: args.instanceId }, pool);
+    const item = flattenFields(bp.data.fields).find(({ field }) => field.key === args.fieldKey);
+    const groupKey = item?.path.includes('.') ? item.path.split('.')[0] : undefined;
+    if (!item || item.field.type !== 'file' || item.field.setBy === 'system' || !editableFields(bp, edit.roles).has(args.fieldKey) ||
+        !operate.roles.some(roleKey => { const role = bp.roles.find(r => r.key === roleKey);
+          return role && !role.hiddenFields?.includes(args.fieldKey) && (!groupKey || !role.hiddenFields?.includes(groupKey)); }))
+      throw new InvalidInput('You cannot upload this task evidence.');
+    if ((item.field.constraints?.accept?.length && !item.field.constraints.accept.includes(contentType)) ||
+        bytes.length > (item.field.constraints?.maxSizeMb ?? 5) * 1024 * 1024)
+      throw new InvalidInput('This file does not match the field’s allowed type or size.');
+    tenantId = instance.tenant_id;
+  } finally { client.release(); }
+  const id = randomUUID();
+  const key = `${PREFIX}${tenantId}/${id}`;
+  const checksum = createHash('sha256').update(bytes).digest('hex');
+  await s3.send(new PutObjectCommand({ Bucket: bucket, Key: key, Body: bytes, ContentType: contentType, Metadata: { sha256: checksum } }));
+  await pool.query(`insert into file (id, tenant_id, instance_id, field_key, filename, content_type, byte_size, checksum, storage_key)
+    values ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+    [id, tenantId, args.instanceId, args.fieldKey, args.filename.slice(0, 200), contentType, bytes.length, checksum, key]);
+  return { reference: `receipt-file:${id}`, filename: args.filename.slice(0, 200), status: 'scanning' };
+}
+
+export async function taskFileStatus(pool: Pool, args: { principal: Principal; instanceId: string; taskKey: string; reference: string }) {
+  const id = REFERENCE.exec(args.reference)?.[1];
+  if (!id || args.principal.kind !== 'actor') throw new InvalidInput('Invalid file reference.');
+  const { rows } = await pool.query<{ field_key: string; storage_key: string; filename: string }>(
+    'select field_key, storage_key, filename from file where id = $1 and instance_id = $2 and tenant_id = $3',
+    [id, args.instanceId, args.principal.tenantId]);
+  if (!rows[0]) throw new NotFound('No file belongs to this record.');
+  const client = await pool.connect();
+  try {
+    const instance = await client.query<{ process_key: string; process_version_id: string }>(
+      'select process_key, process_version_id from instance where id = $1 and tenant_id = $2', [args.instanceId, args.principal.tenantId]);
+    if (!instance.rows[0]) throw new NotFound('No such record.');
+    const version = await client.query<{ blueprint: Blueprint }>('select blueprint from process_version where id = $1', [instance.rows[0].process_version_id]);
+    const bp = version.rows[0]?.blueprint;
+    const declared = bp?.workflow.tasks.find(t => t.key === args.taskKey);
+    const task = await client.query<{ assignee: string | null }>(
+      "select assignee from task where instance_id = $1 and task_key = $2 and status = 'open' order by id limit 1", [args.instanceId, args.taskKey]);
+    if (!bp || !declared?.requiredFields.includes(rows[0].field_key) || !task.rows[0]) throw new NotFound('No file belongs to this task.');
+    await require_(client, { principal: args.principal, action: 'operate', tenantId: args.principal.tenantId,
+      processKey: instance.rows[0].process_key, blueprint: bp, instanceId: args.instanceId,
+      task: { assignee: task.rows[0].assignee, completableBy: declared.completableBy ?? 'assignee' } }, pool);
+  } finally { client.release(); }
+  const status = await scanStatus(rows[0].storage_key);
+  return { status, filename: rows[0].filename };
+}
+
+/** Called before a task can commit file references, including references hidden in repeating rows. */
+export async function checkTaskFileReferences(client: Client, instanceId: string, bp: Blueprint, requiredFields: string[], answers: Record<string, unknown>) {
+  for (const key of requiredFields) {
+    const item = flattenFields(bp.data.fields).find(({ field }) => field.key === key);
+    if (!item || item.field.type !== 'file') continue;
+    const groupKey = item.path.includes('.') ? item.path.split('.')[0] : undefined;
+    const value = groupKey && Array.isArray(answers[groupKey])
+      ? (answers[groupKey] as Record<string, unknown>[]).map(row => row[key]) : answers[key];
+    for (const ref of Array.isArray(value) ? value : [value]) {
+      const id = typeof ref === 'string' ? REFERENCE.exec(ref)?.[1] : undefined;
+      if (!id) throw new InvalidInput(`Upload ${item.field.label} before completing this task.`);
+      const { rows } = await client.query<{ storage_key: string }>(
+        'select storage_key from file where id = $1 and instance_id = $2 and field_key = $3', [id, instanceId, key]);
+      if (!rows[0]) throw new InvalidInput(`Upload ${item.field.label} to this record.`);
+      const status = await scanStatus(rows[0].storage_key);
+      if (status !== 'clean') throw new InvalidInput(status === 'scanning' ? 'The file is still being scanned. Try again shortly.' : 'The file did not pass its security scan. Upload another.');
+      await client.query("update file set scan_status = 'clean' where id = $1", [id]);
+    }
+  }
 }
 
 /** File answers must be clean objects on this exact draft; legacy reference fields may still hold external IDs. */
