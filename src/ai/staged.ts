@@ -18,7 +18,8 @@ import { runScenarios, type ScenarioResult } from '../runtime/scenarios.js';
 import type { Pool } from '../runtime/db.js';
 import { PROMPT_VERSION, SYSTEM_PROMPT, repairTurn, stageTurn, type StageName } from './prompt.js';
 import { extractJson, type Provider, type ProviderMeta } from './provider.js';
-import { normalizeBlueprint } from './normalize.js';
+import { repairBlueprint } from './repair.js';
+import { verifiedRepair } from './verified-repair.js';
 import type { Attempt, Decision, GenerationOutcome, UsageRecord } from './pipeline.js';
 
 /**
@@ -220,12 +221,13 @@ export async function generateStaged(provider: Provider, options: StagedOptions)
         const issues = whole.error.issues.slice(0, 12).map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`);
         diagnostics = issues.map((m) => ({ code: 'SHAPE', severity: 'error' as const, at: m.split(':')[0]!, message: m }));
       } else {
-        const { blueprint: normalized } = normalizeBlueprint(whole.data);
+        const { blueprint: normalized, changes: initialRepairs } = repairBlueprint(whole.data);
         Object.assign(parts, normalized);
         const compiled = validate(normalized, options.description);
         diagnostics = [...compiled.items];
         const last = attempts[attempts.length - 1];
         if (last) {
+          last.normalized = initialRepairs;
           last.errors = compiled.errors;
           last.warnings = compiled.warnings;
         }
@@ -236,16 +238,20 @@ export async function generateStaged(provider: Provider, options: StagedOptions)
           blueprint = normalized;
           if (options.pool) {
             await tell('checking', 'Running the scenarios on the engine');
-            scenarios = await runScenarios(options.pool, normalized);
+            const repaired = await verifiedRepair(normalized, bp => runScenarios(options.pool!, bp));
+            Object.assign(normalized, repaired.blueprint);
+            Object.assign(parts, normalized);
+            if (last) last.normalized = [...(last.normalized ?? []), ...repaired.changes];
+            scenarios = repaired.scenarios;
             const failed = scenarios.filter((s) => !s.passed);
-            if (failed.length) {
-              diagnostics = failed.map((s): Diagnostic => ({
+            if (!repaired.ready) {
+              diagnostics = [...repaired.diagnostics.filter(d => d.severity === 'error'), ...failed.map((s): Diagnostic => ({
                 code: 'SCENARIO',
                 severity: 'error',
                 at: `tests.${s.test}`,
                 message: `The blueprint's "${s.kind}" scenario failed: ${s.failures.join('; ')}`,
                 fix: 'Fix the workflow, or the scenario if its expectation is wrong.',
-              }));
+              }))];
               if (!reviewable || failed.length < reviewable.scenarios.filter((x) => !x.passed).length) {
                 reviewable = { blueprint: normalized, scenarios };
               }

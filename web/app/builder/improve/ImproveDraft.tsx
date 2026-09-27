@@ -1,12 +1,12 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import './improve.css';
 
 type Blueprint = { key: string; name: string; roles?: { key: string; name: string }[]; data?: { fields?: { key: string; label: string }[] }; workflow?: { states?: { key: string; name: string }[]; transitions?: { key: string; name?: string }[]; tasks?: { key: string; name: string }[]; approvals?: { key: string; name: string }[] }; communications?: { email?: { key: string; name: string }[] }; outputs?: { documents?: { key: string; name: string }[] }; tests?: { key: string }[]; experience?: { pages?: { key: string; title: string }[] } };
 type Draft = { id: string; processName: string; blueprint: Blueprint; revision: number };
 type Diagnostic = { code: string; severity: 'error' | 'warning'; message: string };
-type Job = { id: string; status: 'queued' | 'running' | 'ready' | 'failed'; stage: string; error?: string | null; source_revision: number; source_blueprint: Blueprint; proposal?: Blueprint | null; review?: { provider?: string; diagnostics: Diagnostic[]; tests: { passed: number; total: number; failures: { name: string; failures: string[] }[] } } | null; applied_at?: string | null };
+type Job = { id: string; status: 'queued' | 'running' | 'ready' | 'failed'; stage: string; error?: string | null; source_revision: number; source_blueprint: Blueprint; proposal?: Blueprint | null; review?: { automaticRepair?: boolean; ready?: boolean; changes?: {at:string;change:string}[]; questions?: string[]; provider?: string; diagnostics: Diagnostic[]; tests: { passed: number; total: number; failures: { name: string; failures: string[] }[] } } | null; applied_at?: string | null };
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, { credentials: 'same-origin', cache: 'no-store', headers: { 'content-type': 'application/json' }, ...init });
@@ -39,6 +39,8 @@ function changes(before: Blueprint, after: Blueprint) {
 }
 
 export function ImproveDraft() {
+  const [automatic, setAutomatic] = useState(false);
+  const autoStarted = useRef(false);
   const [draftId, setDraftId] = useState('');
   const [draft, setDraft] = useState<Draft | null>(null);
   const [jobId, setJobId] = useState('');
@@ -50,6 +52,7 @@ export function ImproveDraft() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const id = params.get('draft') ?? '';
+    setAutomatic(params.get('repair') === '1');
     const existingJob = params.get('job') ?? '';
     setDraftId(id);
     setJobId(existingJob);
@@ -69,17 +72,26 @@ export function ImproveDraft() {
     return () => { live = false; window.clearInterval(timer); };
   }, [jobId, job?.status]);
 
+  useEffect(() => {
+    if (automatic && draft && !jobId && !autoStarted.current) { autoStarted.current = true; void start(); }
+  }, [automatic, draft, jobId]);
+  useEffect(() => {
+    if (automatic && job?.status === 'ready' && job.review?.automaticRepair && job.review.ready && job.applied_at) {
+      window.location.href = `/builder?draft=${draftId}&repairJob=${job.id}`;
+    }
+  }, [automatic, job]);
+
   const diff = useMemo(() => job?.proposal && job.source_blueprint ? changes(job.source_blueprint, job.proposal) : [], [job]);
   const errors = job?.review?.diagnostics.filter((item) => item.severity === 'error') ?? [];
   const warnings = job?.review?.diagnostics.filter((item) => item.severity === 'warning') ?? [];
 
   async function start() {
-    if (!draft || request.trim().length < 20) return;
+    if (!draft || (!automatic && request.trim().length < 20)) return;
     setBusy(true); setError('');
     try {
-      const queued = await api<{ jobId: string }>(`/api/builder/drafts/${draft.id}/improve`, { method: 'POST', body: JSON.stringify({ request: request.trim() }) });
+      const queued = await api<{ jobId: string }>(`/api/builder/drafts/${draft.id}/improve`, { method: 'POST', body: JSON.stringify({ request: request.trim(), repair: automatic }) });
       setJobId(queued.jobId);
-      window.history.replaceState({}, '', `/builder/improve?draft=${draft.id}&job=${queued.jobId}`);
+      window.history.replaceState({}, '', `/builder/improve?draft=${draft.id}&job=${queued.jobId}${automatic ? '&repair=1' : ''}`);
     } catch (cause) { setError((cause as Error).message); }
     finally { setBusy(false); }
   }
@@ -93,21 +105,31 @@ export function ImproveDraft() {
     } catch (cause) { setError((cause as Error).message); setBusy(false); }
   }
 
-  return <main className="improve">
-    <header className="improve__top"><a href={`/builder?draft=${draftId}`}>← Back to draft</a><span>PatForm · AI revision</span></header>
+  return <main className={`improve${automatic ? ' improve--repair' : ''}`}>
+    <header className="improve__top"><a href={`/builder?draft=${draftId}`}>← Back to draft</a><span>PatForm · {automatic ? 'Repair draft' : 'AI revision'}</span></header>
     <div className="improve__wrap">
-      <span className="improve__eyebrow">IMPROVE AN EXISTING PROCESS</span>
+      <span className="improve__eyebrow">{automatic ? 'REPAIR AND RETEST' : 'IMPROVE AN EXISTING PROCESS'}</span>
       <h1>{draft?.processName ?? 'Loading draft…'}</h1>
-      <p className="improve__lead">Describe what to change. AI uses this draft as its starting point and proposes a revision for you to review.</p>
+      <p className="improve__lead">{automatic ? 'Repair checks the form and its tests, fixes clear mistakes, then saves the verified result to your private draft.' : 'Describe what to change. AI uses this draft as its starting point and proposes a revision for you to review.'}</p>
       {error && <p className="improve__error" role="alert">{error}</p>}
-      {!jobId && <section className="improve__card"><label htmlFor="improve-request">What should change?</label>
+      {automatic && error && !jobId && draft && <button disabled={busy} onClick={() => void start()}>Try repair again</button>}
+      {!jobId && !automatic && <section className="improve__card"><label htmlFor="improve-request">What should change?</label>
         <textarea id="improve-request" value={request} maxLength={8000} rows={9} onChange={(event) => setRequest(event.target.value)} placeholder="For example: Add a finance review when the total exceeds $2,500. Keep the existing approval steps and questions."/>
         <div className="improve__foot"><span>{request.length} / 8,000</span><button disabled={busy || !draft || request.trim().length < 20} onClick={() => void start()}>{busy ? 'Starting…' : 'Create proposal'}</button></div>
       </section>}
-      {jobId && !job && <section className="improve__card" role="status">Loading your AI revision…</section>}
-      {job && job.status !== 'ready' && job.status !== 'failed' && <section className="improve__card" role="status"><div className="improve__spinner"/> <strong>{job.stage === 'checking' ? 'Checking the proposed workflow' : 'AI is revising your draft'}</strong><p>You can leave and return using this page link.</p></section>}
-      {job?.status === 'failed' && <section className="improve__card improve__card--warning"><h2>AI could not make a proposal</h2><p>{job.error}</p><button onClick={() => { setJob(null); setJobId(''); window.history.replaceState({}, '', `/builder/improve?draft=${draftId}`); }}>Try again</button></section>}
-      {job?.status === 'ready' && job.proposal && <>
+      {(automatic || jobId) && !job && !error && <section className="improve__card" role="status">Checking your draft…</section>}
+      {job && job.status !== 'ready' && job.status !== 'failed' && <section className="improve__card" role="status"><div className="improve__spinner"/> <strong>{automatic ? 'Repairing and retesting your draft' : job.stage === 'checking' ? 'Checking the proposed workflow' : 'AI is revising your draft'}</strong><p>You can leave and return using this page link.</p></section>}
+      {job?.status === 'failed' && <section className="improve__card improve__card--warning"><h2>{automatic ? 'Repair could not finish' : 'AI could not make a proposal'}</h2><p>{job.error}</p><button onClick={() => { autoStarted.current = false; setJob(null); setJobId(''); window.history.replaceState({}, '', `/builder/improve?draft=${draftId}${automatic ? '&repair=1' : ''}`); }}>Try again</button></section>}
+      {automatic && job?.status === 'ready' && <section className="improve__card" role="status">
+        <h2>{job.review?.ready ? 'Checks passed. Saving repairs…' : 'A decision or further repair is needed'}</h2>
+        <p>{job.review?.tests.passed ?? 0} of {job.review?.tests.total ?? 0} tests passed.</p>
+        {!job.review?.ready && <><p>Your draft is unchanged. Repair could not verify these remaining issues.</p>
+          {job.review?.questions?.map((question,index)=><p key={index}>{question}</p>)}
+          {job.review?.tests.failures.map(item=><p key={item.name}>{item.name}: {item.failures.join('; ')}</p>)}
+          <a href={`/builder?draft=${draftId}`}>Return to draft</a></>}
+        <details><summary>Repairs checked</summary>{job.review?.changes?.map((change,index)=><p key={index}>{change.change}</p>)}</details>
+      </section>}
+      {!automatic && job?.status === 'ready' && job.proposal && <>
         <section className="improve__card"><h2>Proposed changes</h2><p>Review what AI added or removed before applying it to your private draft.</p>
           <div className="improve__diff">{diff.map((item) => <div key={item.label}><strong>{item.label}</strong><span>{item.before} → {item.after}</span>{item.added.length > 0 && <small>Added: {item.added.join(', ')}</small>}{item.changed.length > 0 && <small>Changed: {item.changed.join(', ')}</small>}{item.removed.length > 0 && <small className="improve__removed">Removed: {item.removed.join(', ')}</small>}</div>)}</div>
           <details><summary>Review complete proposed blueprint</summary><pre>{JSON.stringify(job.proposal, null, 2)}</pre></details>

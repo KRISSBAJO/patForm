@@ -5,7 +5,9 @@ import { runScenarios, type ScenarioResult } from '../runtime/scenarios.js';
 import type { Pool } from '../runtime/db.js';
 import { PROMPT_VERSION, SYSTEM_PROMPT, repairTurn, userTurn } from './prompt.js';
 import { extractJson, type Provider, type ProviderMeta } from './provider.js';
-import { normalizeBlueprint, type Normalization } from './normalize.js';
+import type { Normalization } from './normalize.js';
+import { repairBlueprint } from './repair.js';
+import { verifiedRepair } from './verified-repair.js';
 
 export type Decision =
   | 'publishable' // compiled clean, and scenarios passed if they were run
@@ -206,7 +208,7 @@ export async function generateBlueprint(
     // ------------------------------------------------------------ gate two
     // Mechanical slips are corrected first, so the repair turn is spent on
     // design mistakes rather than on "yes" where true was meant.
-    const { blueprint: candidateBp, changes: normalized } = normalizeBlueprint(parsed.data);
+    const { blueprint: candidateBp, changes: normalized } = repairBlueprint(parsed.data);
     const compiled = validate(candidateBp, options.description);
     diagnostics = [...compiled.items, ...undeclaredAssumptions(candidateBp)];
     const candidateErrors = diagnostics.filter((item) => item.severity === 'error');
@@ -245,14 +247,17 @@ export async function generateBlueprint(
       // after the final model turn, so its diagnostics could never reach the
       // one repair turn promised by the pipeline.
       if (options.pool) {
-        scenarios = await runScenarios(options.pool, candidateBp);
+        const repaired = await verifiedRepair(candidateBp, bp => runScenarios(options.pool!, bp));
+        Object.assign(candidateBp, repaired.blueprint);
+        normalized.push(...repaired.changes);
+        scenarios = repaired.scenarios;
         const scenarioErrors = scenarios.filter((s) => !s.passed).map((s): Diagnostic => ({
           code: 'SCENARIO', severity: 'error', at: `tests.${s.test}`,
           message: `The blueprint's "${s.kind}" scenario failed: ${s.failures.join('; ')}`,
           fix: 'Fix the workflow, or the scenario if its expectation is wrong.',
         }));
-        diagnostics = [...diagnostics, ...scenarioErrors];
-        if (scenarioErrors.length) {
+        diagnostics = [...diagnostics, ...repaired.diagnostics.filter(d => d.severity === 'error'), ...scenarioErrors];
+        if (!repaired.ready) {
           if (!reviewable || scenarioErrors.length < reviewable.scenarios.filter((item) => !item.passed).length) {
             reviewable = { blueprint: candidateBp, scenarios };
           }

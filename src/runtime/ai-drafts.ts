@@ -1,12 +1,14 @@
 import type { Pool } from './db.js';
 import { createDraft, loadDraft, saveDraft, type NewProcess } from './builder.js';
-import { InvalidInput, NotFound } from './errors.js';
+import { DraftConflict, InvalidInput, NotFound } from './errors.js';
 import { requireWorkspaceCapability, type Principal } from './policy.js';
 import { Blueprint } from '../blueprint/index.js';
 import { validate } from '../compiler/validate.js';
 import { availableProviders, blueprintSchema, generateBlueprint, providerFor } from '../ai/index.js';
 import type { GenerationOutcome } from '../ai/pipeline.js';
 import { runScenarios, type ScenarioResult } from './scenarios.js';
+import { verifiedRepair } from '../ai/verified-repair.js';
+const REPAIR_REQUEST = '[automatic_verified_repair] Repair mechanical draft errors and retest without changing business decisions.';
 
 /** Queue AI generation outside the short-lived web request. The worker owns the expensive model calls. */
 export async function queueAiDraft(pool: Pool, principal: Principal, input: NewProcess) {
@@ -30,14 +32,15 @@ export async function queueAiDraft(pool: Pool, principal: Principal, input: NewP
 }
 
 /** Revise the selected draft without changing it until the owner accepts the proposal. */
-export async function queueAiRevision(pool: Pool, principal: Principal, draftId: string, request: string) {
+export async function queueAiRevision(pool: Pool, principal: Principal, draftId: string, request: string, repair = false) {
   if (principal.kind !== 'actor') throw new InvalidInput('Sign in to revise a process.');
+  if (repair) request = REPAIR_REQUEST;
   if (typeof request !== 'string' || request.trim().length < 20 || request.length > 8000)
     throw new InvalidInput('Describe the changes in 20–8,000 characters.');
   const draft = await loadDraft(pool, principal, draftId);
   const source = Blueprint.safeParse(draft.blueprint);
   if (!source.success) throw new InvalidInput('Fix the draft shape before asking AI to revise it.');
-  if (!availableProviders().length) throw new InvalidInput('No AI provider is configured.');
+  if (!repair && !availableProviders().length) throw new InvalidInput('No AI provider is configured.');
   const queued = await pool.query<{ id: string }>(`insert into ai_draft_job
     (tenant_id, actor_id, process_key, process_name, description, source_draft_id, source_revision, source_blueprint)
     values ($1, $2, $3, $4, $5, $6, $7, $8) on conflict do nothing returning id`,
@@ -64,6 +67,7 @@ export async function applyAiRevision(pool: Pool, principal: Principal, jobId: s
   if (principal.kind !== 'actor') throw new InvalidInput('Sign in to revise a process.');
   const job = await aiDraftStatus(pool, principal, jobId);
   if (!job.source_draft_id || !job.proposal || job.status !== 'ready') throw new InvalidInput('No revision proposal is ready.');
+  if (job.review?.automaticRepair && !job.review.ready) throw new InvalidInput('Repair needs a decision before it can be saved.');
   if (job.applied_at) throw new InvalidInput('This proposal was already applied.');
   const result = await saveDraft(pool, { principal, draftId: job.source_draft_id,
     blueprint: job.proposal, baseRevision: job.source_revision });
@@ -86,12 +90,12 @@ export function revisionCandidate(result: GenerationOutcome): { blueprint: Bluep
 }
 
 export async function processNextAiDraft(pool: Pool): Promise<boolean> {
-  const claimed = await pool.query<{ id: string; tenant_id: string; actor_id: string; process_key: string; process_name: string | null; description: string; source_draft_id: string | null; source_blueprint: unknown }>(
+  const claimed = await pool.query<{ id: string; tenant_id: string; actor_id: string; process_key: string; process_name: string | null; description: string; source_draft_id: string | null; source_revision: number | null; source_blueprint: unknown }>(
     `update ai_draft_job j set status = 'running', stage = 'generating', started_at = now(), heartbeat_at = now(), attempts = attempts + 1, error = null, note = null, progress = null
      where j.id = (select id from ai_draft_job
        where status = 'queued' or (status = 'running' and coalesce(heartbeat_at, started_at) < now() - interval '90 seconds')
        order by created_at for update skip locked limit 1)
-     returning j.id, j.tenant_id, j.actor_id, j.process_key, j.process_name, j.description, j.source_draft_id, j.source_blueprint`,
+     returning j.id, j.tenant_id, j.actor_id, j.process_key, j.process_name, j.description, j.source_draft_id, j.source_revision, j.source_blueprint`,
   );
   const job = claimed.rows[0];
   if (!job) return false;
@@ -104,6 +108,19 @@ export async function processNextAiDraft(pool: Pool): Promise<boolean> {
   try {
     if (job.source_draft_id) {
       const source = Blueprint.parse(job.source_blueprint);
+      if (job.description === REPAIR_REQUEST) {
+        await pool.query('update ai_draft_job set stage = $2, note = $3 where id = $1', [job.id,'checking','Repairing the draft and running its tests']);
+        const result = await verifiedRepair(source,bp => runScenarios(pool,bp));
+        const saved = result.ready ? await saveDraft(pool, { principal: {kind: 'actor',tenantId:job.tenant_id,actorId:job.actor_id},
+          draftId:job.source_draft_id,blueprint:result.blueprint,baseRevision:job.source_revision! }) : null;
+        const review = { automaticRepair:true, ready:result.ready, revision:saved?.revision, results:result.scenarios, changes:result.changes, questions:result.questions,
+          diagnostics:result.diagnostics, tests:{passed:result.scenarios.filter(s=>s.passed).length,total:result.scenarios.length,
+          failures:result.scenarios.filter(s=>!s.passed).map(s=>({name:s.test,failures:s.failures}))}};
+        await pool.query(`update ai_draft_job set status = 'ready', stage = 'saving', proposal = $2, review = $3,
+          draft_id = source_draft_id, applied_at = case when $4 then now() else null end,
+          completed_at = now(), description = '' where id = $1`,[job.id,JSON.stringify(result.blueprint),JSON.stringify(review),!!saved]);
+        return true;
+      }
       let best: ReturnType<typeof revisionCandidate>;
       let bestProvider = '';
       let error = 'The AI could not return a usable revision.';
@@ -151,7 +168,7 @@ export async function processNextAiDraft(pool: Pool): Promise<boolean> {
     await pool.query(`update ai_draft_job set status = 'ready', draft_id = $2, error = $3, completed_at = now(), description = ''
       where id = $1`, [job.id, draft.id, draft.reviewNote ?? null]);
   } catch (error) {
-    const message = error instanceof InvalidInput ? error.message : 'AI generation could not finish. Please try again.';
+    const message = error instanceof InvalidInput || error instanceof DraftConflict ? error.message : job.description === REPAIR_REQUEST ? 'Repair could not finish. Please try again.' : 'AI generation could not finish. Please try again.';
     await pool.query(`update ai_draft_job set status = 'failed', error = $2, completed_at = now(), description = ''
       where id = $1`, [job.id, message.slice(0, 500)]);
     console.error('AI draft job failed:', job.id, error instanceof Error ? error.message : String(error));

@@ -525,6 +525,7 @@ export function Builder({ view = 'home' }: { view?: 'home' | 'processes' } = {})
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const repairReceiptJob = useRef<string | null>(null);
   const [tests, setTests] = useState<{ results: ScenarioResult[]; passed: number; total: number } | null>(null);
   const [impact, setImpact] = useState<PublishImpact | null>(null);
   const [published, setPublished] = useState<number | null>(null);
@@ -591,7 +592,8 @@ export function Builder({ view = 'home' }: { view?: 'home' | 'processes' } = {})
         // Nothing read it, so they landed on the start screen and had to
         // find the draft they had just made.
         const draftId = query.get('draft');
-        if (asked || draftId || newMode) window.history.replaceState(null, '', window.location.pathname);
+        repairReceiptJob.current = query.get('repairJob') ?? repairReceiptJob.current;
+        if ((asked || draftId || newMode) && !query.get('repairJob')) window.history.replaceState(null, '', window.location.pathname);
         if (draftId && /^[0-9a-f-]{36}$/.test(draftId)) {
           adopt(await call<DraftDetail>(`/api/builder/drafts/${draftId}`));
           setOverview(true);
@@ -633,6 +635,21 @@ export function Builder({ view = 'home' }: { view?: 'home' | 'processes' } = {})
     setConflict(null);
     setNotice(null);
   }, []);
+
+  // Restore the verified repair receipt only for the exact revision saved by that job.
+  useEffect(() => {
+    const jobId = repairReceiptJob.current;
+    if (!draft || !jobId) return;
+    let live = true;
+    void call<{source_draft_id?:string;applied_at?:string; review?:{automaticRepair?:boolean;revision?:number;results?:ScenarioResult[]}}>(`/api/builder/ai-jobs/${jobId}`).then(job => {
+      if (live && job.source_draft_id === draft.id && job.applied_at && job.review?.automaticRepair && job.review.revision === draft.revision && job.review.results) {
+        const results = job.review.results;
+        setTests({results,passed:results.filter(r=>r.passed).length,total:results.length});
+        setNotice('Draft repaired and tests passed. Review it before publishing.');
+      }
+    }).catch(() => {});
+    return () => { live = false; };
+  }, [draft?.id, draft?.revision]);
 
   /** Takes the server's current copy without moving the editor off what it was showing. */
   const refresh = useCallback(async (draftId: string) => {
@@ -1131,6 +1148,7 @@ export function Builder({ view = 'home' }: { view?: 'home' | 'processes' } = {})
               </div>
               <label className="bd__headSearch"><span className="sr-only">Find in this process</span><ActionIcon name="search" /><input type="search" placeholder="Find in this process…" value={workspaceQuery} onChange={(e) => setWorkspaceQuery(e.target.value)} /></label>
               <nav className="bd__actions" aria-label="Draft actions">
+                <button type="button" className="bd__btn" disabled={busy !== null || frozen || status === 'saving' || status === 'error'} onClick={() => { window.location.href = `/builder/improve?draft=${draft.id}&repair=1`; }}><ActionIcon name="sparkles" />Repair draft</button>
                 <a className="bd__btn" href={`/builder/improve?draft=${draft.id}`}><ActionIcon name="sparkles" />Improve with AI</a>
                 <a className="bd__btn" href={`/builder/launch?draft=${draft.id}`}><ActionIcon name="share" />Share &amp; access</a>
                 <button className="bd__btn bd__btn--quietDanger" onClick={discard} disabled={busy !== null || frozen}>
