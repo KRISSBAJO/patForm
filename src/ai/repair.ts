@@ -11,8 +11,8 @@ const canonical = (value: unknown): string => {
 };
 
 /** Repairs mechanics and test fixtures. Never changes authorities, outcomes or existing answers. */
-export interface RepairOptions { staff?: Record<string,string> }
-export interface RepairDecision { key:string; prompt:string; roles:{key:string;name:string}[] }
+export interface RepairOptions { staff?: Record<string,string>; reviewWarnings?: boolean }
+export interface RepairDecision { key:string; prompt:string; roles:{key:string;name:string}[]; kind?:'choice'|'roles'; detail?:string; group?:string }
 export function repairBlueprint(input: Blueprint, failures: ScenarioResult[] = [], options: RepairOptions = {}) {
   const normalized = normalizeBlueprint(input);
   const bp = normalized.blueprint;

@@ -303,7 +303,7 @@ route('GET', /^\/api\/builder\/ai-jobs\/[0-9a-f-]{36}$/, async ({ pool, principa
   aiDraftStatus(pool, principal, url.pathname.split('/')[4]!),
 );
 route('POST', /^\/api\/builder\/drafts\/([0-9a-f-]{36})\/improve$/, async ({ pool, principal, url }, body) =>
-  queueAiRevision(pool, principal, url.pathname.split('/')[4]!, (body as { request?: string })?.request ?? '', (body as { repair?: boolean })?.repair === true, (body as {staff?:unknown})?.staff ?? {}),
+  queueAiRevision(pool, principal, url.pathname.split('/')[4]!, (body as { request?: string })?.request ?? '', (body as { repair?: boolean })?.repair === true, (body as {staff?:unknown})?.staff ?? {}, (body as {baseRevision?:unknown})?.baseRevision),
 );
 route('POST', /^\/api\/builder\/ai-jobs\/([0-9a-f-]{36})\/apply$/, async ({ pool, principal, url }) =>
   applyAiRevision(pool, principal, url.pathname.split('/')[4]!),

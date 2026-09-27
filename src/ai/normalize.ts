@@ -107,6 +107,10 @@ export function normalizeBlueprint(input: Blueprint): { blueprint: Blueprint; ch
 
   for (const { path, field } of flattenFields(bp.data.fields)) {
     const at = `data.fields.${path}`;
+    if (field.fields?.length && field.type !== 'repeating_group') {
+      field.type = 'repeating_group';
+      note(at, `${field.key} contains child fields, so it now uses the supported group input instead of a scalar input`, null);
+    }
     fixExpr((field as { requiredWhen?: Expr }).requiredWhen, `${at}.requiredWhen`);
     if (field.type !== 'calculated' || !field.compute) continue;
     const calc = field.compute as Calc;

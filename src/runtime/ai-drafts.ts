@@ -32,15 +32,17 @@ export async function queueAiDraft(pool: Pool, principal: Principal, input: NewP
 }
 
 /** Revise the selected draft without changing it until the owner accepts the proposal. */
-export async function queueAiRevision(pool: Pool, principal: Principal, draftId: string, request: string, repair = false, staff:unknown = {}) {
+export async function queueAiRevision(pool: Pool, principal: Principal, draftId: string, request: string, repair = false, staff:unknown = {}, baseRevision?:unknown) {
   if (principal.kind !== 'actor') throw new InvalidInput('Sign in to revise a process.');
   if (repair) {
-    if (!staff || typeof staff!=='object' || Array.isArray(staff) || Object.keys(staff).length>20 || Object.entries(staff).some(([key,value])=>key.length>256 || typeof value!=='string' || value.length>100)) throw new InvalidInput('Choose staff from the repair options.');
+    if (!staff || typeof staff!=='object' || Array.isArray(staff) || Object.keys(staff).length>200 || Object.entries(staff).some(([key,value])=>key.length>512 || typeof value!=='string' || value.length>4096)) throw new InvalidInput('Choose from the repair options.');
     request = REPAIR_REQUEST + '\n' + JSON.stringify(staff);
   }
   if (typeof request !== 'string' || request.trim().length < 20 || request.length > 8000)
     throw new InvalidInput('Describe the changes in 20–8,000 characters.');
   const draft = await loadDraft(pool, principal, draftId);
+  if (baseRevision !== undefined && (!Number.isInteger(baseRevision) || baseRevision !== draft.revision)) throw new DraftConflict('stale','The draft changed during review. Return to the draft and start Repair again.',{revision:draft.revision});
+  if (repair && Object.keys(staff as object).length && baseRevision === undefined) throw new InvalidInput('Start a new repair review before applying choices.');
   const source = Blueprint.safeParse(draft.blueprint);
   if (!source.success) throw new InvalidInput('Fix the draft shape before asking AI to revise it.');
   if (!repair && !availableProviders().length) throw new InvalidInput('No AI provider is configured.');
@@ -114,11 +116,11 @@ export async function processNextAiDraft(pool: Pool): Promise<boolean> {
       if (job.description.startsWith(REPAIR_REQUEST)) {
         await pool.query('update ai_draft_job set stage = $2, note = $3 where id = $1', [job.id,'checking','Repairing the draft and running its tests']);
         const staff = JSON.parse(job.description.slice(REPAIR_REQUEST.length).trim() || '{}') as Record<string,string>;
-        const result = await verifiedRepair(source,bp => runScenarios(pool,bp),{staff});
+        const result = await verifiedRepair(source,bp => runScenarios(pool,bp),{staff,reviewWarnings:true});
         const saved = result.ready ? await saveDraft(pool, { principal: {kind: 'actor',tenantId:job.tenant_id,actorId:job.actor_id},
           draftId:job.source_draft_id,blueprint:result.blueprint,baseRevision:job.source_revision! }) : null;
         const review = { automaticRepair:true, ready:result.ready, revision:saved?.revision, results:result.scenarios, changes:result.changes, questions:result.questions, decisions:result.decisions,
-          diagnostics:result.diagnostics, tests:{passed:result.scenarios.filter(s=>s.passed).length,total:result.scenarios.length,
+          acceptedWarnings:result.acceptedWarnings, diagnostics:result.diagnostics, tests:{passed:result.scenarios.filter(s=>s.passed).length,total:result.scenarios.length,
           failures:result.scenarios.filter(s=>!s.passed).map(s=>({name:s.test,failures:s.failures}))}};
         await pool.query(`update ai_draft_job set status = 'ready', stage = 'saving', proposal = $2, review = $3,
           draft_id = source_draft_id, applied_at = case when $4 then now() else null end,

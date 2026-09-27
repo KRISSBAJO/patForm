@@ -1,0 +1,15 @@
+'use client';
+import { useState } from 'react';
+export type ReviewDecision={key:string;prompt:string;roles:{key:string;name:string}[];kind?:'choice'|'roles';detail?:string;group?:string};
+export function RepairReview({decisions,answers,setAnswers,busy,apply,draftId}:{decisions:ReviewDecision[];answers:Record<string,string>;setAnswers:(fn:(was:Record<string,string>)=>Record<string,string>)=>void;busy:boolean;apply:()=>void;draftId:string}) {
+  const [step,setStep]=useState(0);
+  const decision=decisions[step];
+  if(!decision) return <div><h3>Review your choices</h3>{decisions.map(d=><div className="improve__choice-summary" key={d.key}><strong>{d.prompt}</strong><p>{d.roles.filter(r=>(answers[d.key]??'').split('|').includes(r.key)).map(r=>r.name).join(', ')}</p>{d.detail&&<details><summary>What this means</summary><p className="improve__context">{d.detail}</p></details>}</div>)}<div className="improve__actions"><button onClick={()=>setStep(0)}>Change choices</button><button disabled={busy||decisions.some(d=>!answers[d.key])} onClick={apply}>{busy?'Applying…':'Apply choices and retest'}</button></div></div>;
+  return <fieldset className="improve__question"><legend>{decision.group??'Choose staff for the test'}</legend><p>Question {step+1} of {decisions.length}</p><h3>{decision.prompt}</h3>{decision.detail&&<p className="improve__context">{decision.detail}</p>}
+    {decision.kind==='roles'?decision.roles.map(role=><label className="improve__option" key={role.key}><input type="checkbox" checked={(answers[decision.key]??'').split('|').includes(role.key)} onChange={event=>setAnswers(was=>{const keys=new Set((was[decision.key]??'').split('|').filter(Boolean));if(event.target.checked)keys.add(role.key);else keys.delete(role.key);return {...was,[decision.key]:[...keys].join('|')};})}/>{role.name}</label>)
+      :decision.kind==='choice'?decision.roles.map(role=><label className="improve__option" key={role.key}><input type="radio" name={decision.key} checked={answers[decision.key]===role.key} onChange={()=>setAnswers(was=>({...was,[decision.key]:role.key}))}/>{role.name}</label>)
+      :<label>Staff role<select value={answers[decision.key]??''} onChange={event=>setAnswers(was=>({...was,[decision.key]:event.target.value}))}><option value="">Choose staff role…</option>{decision.roles.map(role=><option key={role.key} value={role.key}>{role.name}</option>)}</select><small>Only roles with existing editing permission are listed.</small></label>}
+    <div className="improve__actions">{step>0&&<button onClick={()=>setStep(step-1)}>Back</button>}<button disabled={!answers[decision.key]} onClick={()=>setStep(step+1)}>Continue</button></div>
+    {decision.kind==='choice'&&decision.roles.length===1&&<p><a href={`/builder/improve?draft=${draftId}&request=${encodeURIComponent(`Change this behavior: ${decision.prompt}\n\nWhat I want instead: `)}`}>Choose different behavior</a><small style={{display:'block'}}>Describe your choice in the app. You will review the proposed change before saving.</small></p>}
+  </fieldset>;
+}

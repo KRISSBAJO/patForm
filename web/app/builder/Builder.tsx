@@ -536,6 +536,7 @@ export function Builder({ view = 'home' }: { view?: 'home' | 'processes' } = {})
   const [lock, setLock] = useState<DraftLock | null>(null);
   const [conflict, setConflict] = useState<ConflictInfo | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [repairSummary,setRepairSummary]=useState<{changes:{change:string}[];acceptedWarnings:{message:string}[]}|null>(null);
   const [ask, confirmDialog] = useConfirm();
 
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -642,11 +643,12 @@ export function Builder({ view = 'home' }: { view?: 'home' | 'processes' } = {})
     const jobId = repairReceiptJob.current;
     if (!draft || !jobId) return;
     let live = true;
-    void call<{source_draft_id?:string;applied_at?:string; review?:{automaticRepair?:boolean;revision?:number;results?:ScenarioResult[]}}>(`/api/builder/ai-jobs/${jobId}`).then(job => {
+    void call<{source_draft_id?:string;applied_at?:string; review?:{automaticRepair?:boolean;revision?:number;results?:ScenarioResult[];changes?:{change:string}[];acceptedWarnings?:{message:string}[]}}>(`/api/builder/ai-jobs/${jobId}`).then(job => {
       if (live && job.source_draft_id === draft.id && job.applied_at && job.review?.automaticRepair && job.review.revision === draft.revision && job.review.results) {
         const results = job.review.results;
         setTests({results,passed:results.filter(r=>r.passed).length,total:results.length});
-        setNotice('Draft repaired and tests passed. Review it before publishing.');
+        setRepairSummary({changes:job.review.changes??[],acceptedWarnings:job.review.acceptedWarnings??[]});
+        setNotice(job.review.acceptedWarnings?.length ? `Tests passed. ${job.review.acceptedWarnings.length} recommendations were explicitly accepted or deferred and remain visible.` : 'Draft repaired and tests passed. Review it before publishing.');
       }
     }).catch(() => {});
     return () => { live = false; };
@@ -1048,6 +1050,7 @@ export function Builder({ view = 'home' }: { view?: 'home' | 'processes' } = {})
             <button onClick={() => setNotice(null)}>dismiss</button>
           </div>
         )}
+        {notice && repairSummary && <details style={{padding:'12px 24px',background:'#f4faf6'}}><summary>What Repair changed</summary>{repairSummary.changes.map((item,index)=><p key={index}>{item.change}</p>)}{repairSummary.acceptedWarnings.length>0&&<><strong>Accepted or deferred recommendations</strong>{repairSummary.acceptedWarnings.map((item,index)=><p key={index}>{item.message}</p>)}</>}</details>}
         {draft && (conflict || heldElsewhere) && (
           <LockBanner
             conflict={conflict}
