@@ -328,7 +328,7 @@ function initialStateKey(bp: Blueprint): string {
 }
 
 /** Produces a value that satisfies a field's type, for answers a scenario does not care about. */
-function completeAnswers(bp: Blueprint, given: Answers): Answers {
+export function completeAnswers(bp: Blueprint, given: Answers): Answers {
   const answers: Answers = { ...given };
   const now = new Date('2026-10-01');
   // Only what the form shows, the way a respondent would fill it: a required

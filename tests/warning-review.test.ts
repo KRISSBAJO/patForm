@@ -58,3 +58,51 @@ test('verified repair does not save while warning choices are unanswered, and re
   assert.equal(done.blueprint.intent.assumptions[0]!.confirmed,true);
   assert.equal(bp.intent.assumptions[0]!.confirmed,undefined);
 });
+test('retention has a bounded days input and actually updates the retention policy',()=>{
+  const bp=fixture();bp.intent.openDecisions=[{question:'How long should completed requests be retained?',provisionally:'No retention set',importance:'review'}];
+  assert.equal(reviewWarnings(bp).decisions.find(d=>d.key==='review:decision:0')!.kind,'days');
+  const invalid=reviewWarnings(bp,{'review:decision:0':'-1'});
+  assert.ok(invalid.decisions.some(d=>d.key==='review:decision:0'));
+  assert.notEqual(bp.intent.retentionDays,-1);
+  reviewWarnings(bp,{'review:decision:0':'365'});
+  assert.equal(bp.intent.retentionDays,365);
+  assert.equal(bp.intent.openDecisions.length,0);
+});
+test('review-order alternatives and custom behavior require a reviewed proposal, not automatic save',async()=>{
+  const bp=fixture();bp.intent.openDecisions=[{question:'Should procurement happen before or after finance?',provisionally:'Procurement first',importance:'review'}];
+  const pending=reviewWarnings(bp);
+  const decision=pending.decisions.find(d=>d.key==='review:decision:0')!;
+  assert.ok(decision.roles.some(r=>r.name==='Finance before Procurement'));
+  const requested=reviewWarnings(bp,{'review:decision:0':decision.roles.find(r=>r.name==='Finance before Procurement')!.key});
+  assert.match(requested.requests[0]!,/finance review is before procurement/);
+  const result=await verifiedRepair(bp,async b=>b.tests.map(t=>({process:b.key,test:t.key,kind:t.kind,passed:true,failures:[]})),{reviewWarnings:true,staff:{'review:decision:0':'custom:Use two parallel specialist reviews instead.'}});
+  assert.equal(result.ready,false);
+  assert.equal(result.requests.length,1);
+});
+test('duplicate fixtures fill omitted required identity values without weakening assertions',()=>{
+  const bp=fixture();bp.data.fields.push({key:'start_date',label:'Start date',type:'date',classification:'internal',required:true});
+  bp.experience.pages[0]!.sections[0]!.fields.push('start_date');
+  bp.data.identity=['start_date'];
+  const duplicate=bp.tests.find(t=>t.kind==='duplicate')!;
+  duplicate.steps.filter(s=>s.step==='submit').forEach(s=>delete s.answers.start_date);
+  duplicate.expect.instanceCount=1;
+  const fixed=repairBlueprint(bp).blueprint;
+  const samples=fixed.tests.find(t=>t.key===duplicate.key)!.steps.filter(s=>s.step==='submit');
+  assert.equal(samples[0]!.answers.start_date,'2026-10-01');
+  assert.equal(samples[1]!.answers.start_date,'2026-10-01');
+  assert.equal(fixed.tests.find(t=>t.key===duplicate.key)!.expect.instanceCount,1);
+  assert.deepEqual(fixed.data.identity,['start_date']);
+});
+test('approver review lists only existing approval roles and updates routing without grants',()=>{
+  const bp=fixture();const approval=bp.workflow.approvals[0]!;
+  bp.intent.openDecisions=[{question:`Who should be the approver for ${approval.name}?`,provisionally:'Current role',importance:'review'}];
+  const before=JSON.stringify(bp.roles);
+  const question=reviewWarnings(bp).decisions.find(d=>d.key==='review:decision:0')!;
+  assert.ok(question.roles.length>0);
+  assert.ok(question.roles.every(r=>bp.roles.find(role=>role.key===r.key)!.capabilities.includes('approve')));
+  const choice=question.roles[0]!.key;
+  reviewWarnings(bp,{'review:decision:0':choice});
+  assert.deepEqual(approval.approvers,[{role:choice}]);
+  assert.equal(JSON.stringify(bp.roles),before);
+  assert.equal(bp.intent.openDecisions.length,0);
+});

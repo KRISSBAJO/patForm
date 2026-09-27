@@ -7,7 +7,7 @@ import { RepairReview, type ReviewDecision } from './RepairReview';
 type Blueprint = { key: string; name: string; roles?: { key: string; name: string }[]; data?: { fields?: { key: string; label: string }[] }; workflow?: { states?: { key: string; name: string }[]; transitions?: { key: string; name?: string }[]; tasks?: { key: string; name: string }[]; approvals?: { key: string; name: string }[] }; communications?: { email?: { key: string; name: string }[] }; outputs?: { documents?: { key: string; name: string }[] }; tests?: { key: string }[]; experience?: { pages?: { key: string; title: string }[] } };
 type Draft = { id: string; processName: string; blueprint: Blueprint; revision: number };
 type Diagnostic = { code: string; severity: 'error' | 'warning'; message: string };
-type Job = { id: string; status: 'queued' | 'running' | 'ready' | 'failed'; stage: string; error?: string | null; source_revision: number; source_blueprint: Blueprint; proposal?: Blueprint | null; review?: { automaticRepair?: boolean; ready?: boolean; changes?: {at:string;change:string}[]; questions?: string[]; decisions?: ReviewDecision[]; provider?: string; diagnostics: Diagnostic[]; tests: { passed: number; total: number; failures: { name: string; failures: string[] }[] } } | null; applied_at?: string | null };
+type Job = { id: string; status: 'queued' | 'running' | 'ready' | 'failed'; stage: string; error?: string | null; source_revision: number; source_blueprint: Blueprint; proposal?: Blueprint | null; review?: { automaticRepair?: boolean; requiresApproval?: boolean; ready?: boolean; changes?: {at:string;change:string}[]; questions?: string[]; decisions?: ReviewDecision[]; provider?: string; diagnostics: Diagnostic[]; tests: { passed: number; total: number; failures: { name: string; failures: string[] }[] } } | null; applied_at?: string | null };
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, { credentials: 'same-origin', cache: 'no-store', headers: { 'content-type': 'application/json' }, ...init });
@@ -79,6 +79,7 @@ export function ImproveDraft() {
     if (automatic && draft && !jobId && !autoStarted.current) { autoStarted.current = true; void start(); }
   }, [automatic, draft, jobId]);
   useEffect(() => {
+    if (automatic && job?.status === 'ready' && job.review?.requiresApproval) { setAutomatic(false); return; }
     if (automatic && job?.status === 'ready' && job.review?.automaticRepair && job.review.ready && job.applied_at) {
       window.location.href = `/builder?draft=${draftId}&repairJob=${job.id}`;
     }
@@ -125,7 +126,7 @@ export function ImproveDraft() {
       {job?.status === 'failed' && <section className="improve__card improve__card--warning"><h2>{automatic ? 'Repair could not finish' : 'AI could not make a proposal'}</h2><p>{job.error}</p><button onClick={() => { autoStarted.current = false; setJob(null); setJobId(''); window.history.replaceState({}, '', `/builder/improve?draft=${draftId}${automatic ? '&repair=1' : ''}`); }}>Try again</button></section>}
       {automatic && job?.status === 'ready' && <section className="improve__card" role="status">
         <h2>{job.review?.ready ? 'Checks passed. Saving repairs…' : job.review?.decisions?.length ? 'A few choices to finish your draft' : 'A decision or further repair is needed'}</h2>
-        <p>{job.review?.tests.passed ?? 0} of {job.review?.tests.total ?? 0} tests passed.</p>
+        <p>{job.review?.tests.total ? `${job.review.tests.passed} of ${job.review.tests.total} tests passed.` : 'Tests will run after the blocking checks are resolved.'}</p>
         {!job.review?.ready && <><p>Your choices will be applied together, then checked and tested again before saving.</p>
           {!!job.review?.decisions?.length && <div className="improve__staff"><RepairReview key={job.id} draftId={draftId} decisions={job.review.decisions} answers={staff} setAnswers={setStaff} busy={busy} apply={()=>void start()}/></div>}
           {job.review?.questions?.map((question,index)=><p key={index}>{question}</p>)}
@@ -143,7 +144,7 @@ export function ImproveDraft() {
           {errors.map((item, index) => <p className="improve__issue improve__issue--error" key={`e${index}`}><strong>{item.code}</strong> {item.message}</p>)}
           {job.review?.tests.failures.map((item) => <p className="improve__issue improve__issue--error" key={item.name}><strong>{item.name}</strong> {item.failures.join('; ')}</p>)}
           {warnings.length > 0 && <details><summary>Read {warnings.length} warnings</summary>{warnings.map((item, index) => <p className="improve__issue" key={`w${index}`}><strong>{item.code}</strong> {item.message}</p>)}</details>}
-          <div className="improve__foot"><span>{job.applied_at ? 'Applied to your private draft' : 'The live process has not changed.'}</span><div className="improve__actions"><a href={`/builder/improve?draft=${draftId}`}>Create another proposal</a><button disabled={busy || !!job.applied_at} onClick={() => void apply()}>{busy ? 'Applying…' : errors.length || job.review?.tests.failures.length ? 'Apply to draft for fixes' : 'Apply to private draft'}</button></div></div>
+          <div className="improve__foot"><span>{job.applied_at ? 'Applied to your private draft' : 'The live process has not changed.'}</span><div className="improve__actions"><a href={`/builder/improve?draft=${draftId}`}>Create another proposal</a><button disabled={busy || !!job.applied_at || !!job.review?.requiresApproval && (errors.length>0 || !!job.review.tests.failures.length || !job.review.tests.total)} onClick={() => void apply()}>{busy ? 'Applying…' : errors.length || job.review?.tests.failures.length ? 'Apply to draft for fixes' : 'Apply to private draft'}</button></div></div>
         </section>
       </>}
     </div>

@@ -8,7 +8,7 @@ import { reviewWarnings } from './warning-review.js';
 export async function verifiedRepair(input: Blueprint, run: (bp: Blueprint) => Promise<ScenarioResult[]>, options:RepairOptions = {}) {
   let repair = repairBlueprint(input,[],options);
   const changes = [...repair.changes];
-  const review = options.reviewWarnings ? reviewWarnings(repair.blueprint,options.staff) : {decisions:[],changes:[],accepted:[]};
+  const review = options.reviewWarnings ? reviewWarnings(repair.blueprint,options.staff) : {decisions:[],changes:[],accepted:[],requests:[]};
   changes.push(...review.changes);
   let scenarios: ScenarioResult[] = [];
   let diagnostics = validate(repair.blueprint);
@@ -27,6 +27,6 @@ export async function verifiedRepair(input: Blueprint, run: (bp: Blueprint) => P
     : d.code === 'FLOW011' ? 'Which submission route should be used? The routes differ, so Repair cannot choose for you.'
     : d.message);
   return {blueprint:repair.blueprint,changes,diagnostics:diagnostics.items,scenarios,
-    ready:!repair.decisions.length && !review.decisions.length && diagnostics.publishable && repair.blueprint.tests.length > 0 && scenarios.length === repair.blueprint.tests.length && scenarios.every(s=>s.passed),
-    acceptedWarnings:review.accepted, decisions:[...repair.decisions,...review.decisions], questions:[...new Set(questions)]};
+    ready:!review.requests.length && !repair.decisions.length && !review.decisions.length && diagnostics.publishable && repair.blueprint.tests.length > 0 && scenarios.length === repair.blueprint.tests.length && scenarios.every(s=>s.passed),
+    requests:review.requests, acceptedWarnings:review.accepted, decisions:[...repair.decisions,...review.decisions], questions:[...new Set(questions)]};
 }

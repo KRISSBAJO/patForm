@@ -3,6 +3,7 @@ import { fieldsInExpr } from '../blueprint/common.js';
 import { evaluate } from '../runtime/expr.js';
 import { normalizeBlueprint, type Normalization } from './normalize.js';
 import type { ScenarioResult } from '../runtime/scenarios.js';
+import { completeAnswers } from '../runtime/scenarios.js';
 
 const canonical = (value: unknown): string => {
   if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
@@ -12,7 +13,7 @@ const canonical = (value: unknown): string => {
 
 /** Repairs mechanics and test fixtures. Never changes authorities, outcomes or existing answers. */
 export interface RepairOptions { staff?: Record<string,string>; reviewWarnings?: boolean }
-export interface RepairDecision { key:string; prompt:string; roles:{key:string;name:string}[]; kind?:'choice'|'roles'; detail?:string; group?:string }
+export interface RepairDecision { key:string; prompt:string; roles:{key:string;name:string}[]; kind?:'choice'|'roles'|'days'; detail?:string; group?:string; allowCustom?:boolean }
 export function repairBlueprint(input: Blueprint, failures: ScenarioResult[] = [], options: RepairOptions = {}) {
   const normalized = normalizeBlueprint(input);
   const bp = normalized.blueprint;
@@ -31,6 +32,25 @@ export function repairBlueprint(input: Blueprint, failures: ScenarioResult[] = [
     changes.push({at:`workflow.transitions.${rule.key}`,change:`Removed duplicate route ${rule.key}; ${equivalent.key} retains its behavior and actions.`});
   }
   bp.workflow.transitions = transitions.filter(rule => !removed.has(rule.key));
+
+  for (const test of bp.tests.filter(t=>t.kind==='duplicate' && t.expect.instanceCount===1)) {
+    const submits=test.steps.filter(step=>step.step==='submit');
+    if(submits.length!==2 || !bp.data.identity?.length) continue;
+    const completed=completeAnswers(bp,submits[0]!.answers);
+    // A duplicate fixture must repeat the declared identity. Preserve the policy,
+    // first submission, and every assertion rather than weakening the expectation.
+    for(const key of bp.data.identity) {
+      const first=submits[0]!.answers[key]??completed[key];
+      if(first===undefined || first==='' || first===null) continue;
+      if(submits[0]!.answers[key]===undefined) {
+        submits[0]!.answers[key]=structuredClone(first);
+        changes.push({at:`tests.${test.key}.answers.${key}`,change:`Added the scenario runner's sample ${key} to the duplicate fixture's first submission.`});
+      }
+      if(canonical(submits[1]!.answers[key])===canonical(first)) continue;
+      submits[1]!.answers[key]=structuredClone(first);
+      changes.push({at:`tests.${test.key}.answers.${key}`,change:`Repeated ${key} in the duplicate test so it tests the existing duplicate policy. Expected record count remains one.`});
+    }
+  }
 
   const initial = bp.workflow.states.find(state => state.type === 'initial')?.key;
   for (const test of bp.tests) {

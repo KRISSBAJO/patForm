@@ -73,6 +73,7 @@ export async function applyAiRevision(pool: Pool, principal: Principal, jobId: s
   const job = await aiDraftStatus(pool, principal, jobId);
   if (!job.source_draft_id || !job.proposal || job.status !== 'ready') throw new InvalidInput('No revision proposal is ready.');
   if (job.review?.automaticRepair && !job.review.ready) throw new InvalidInput('Repair needs a decision before it can be saved.');
+  if (job.review?.requiresApproval && (job.review.tests?.failures?.length || job.review.diagnostics?.some((d:{severity:string})=>d.severity==='error') || !job.review.tests?.total)) throw new InvalidInput('This repair proposal must pass its checks and tests before saving.');
   if (job.applied_at) throw new InvalidInput('This proposal was already applied.');
   const result = await saveDraft(pool, { principal, draftId: job.source_draft_id,
     blueprint: job.proposal, baseRevision: job.source_revision });
@@ -112,11 +113,18 @@ export async function processNextAiDraft(pool: Pool): Promise<boolean> {
   }, 20_000);
   try {
     if (job.source_draft_id) {
-      const source = Blueprint.parse(job.source_blueprint);
+      let source = Blueprint.parse(job.source_blueprint);
+      let repairProposal=false;
       if (job.description.startsWith(REPAIR_REQUEST)) {
         await pool.query('update ai_draft_job set stage = $2, note = $3 where id = $1', [job.id,'checking','Repairing the draft and running its tests']);
         const staff = JSON.parse(job.description.slice(REPAIR_REQUEST.length).trim() || '{}') as Record<string,string>;
         const result = await verifiedRepair(source,bp => runScenarios(pool,bp),{staff,reviewWarnings:true});
+        if(result.requests.length && !result.decisions.length) {
+          if(!availableProviders().length) throw new InvalidInput('AI is not configured for custom changes. Your draft has not changed.');
+          source=result.blueprint;
+          job.description=`Apply only these explicit choices to the provided draft. Resolve their open decisions by implementing the chosen behavior, not by hiding warnings. Preserve unrelated data, permissions, approvals, and outcomes. Update scenario inputs and paths to test the selected behavior; preserve security and duplicate assertions.\n\n${result.requests.join('\n\n')}`;
+          repairProposal=true;
+        } else {
         const saved = result.ready ? await saveDraft(pool, { principal: {kind: 'actor',tenantId:job.tenant_id,actorId:job.actor_id},
           draftId:job.source_draft_id,blueprint:result.blueprint,baseRevision:job.source_revision! }) : null;
         const review = { automaticRepair:true, ready:result.ready, revision:saved?.revision, results:result.scenarios, changes:result.changes, questions:result.questions, decisions:result.decisions,
@@ -126,6 +134,7 @@ export async function processNextAiDraft(pool: Pool): Promise<boolean> {
           draft_id = source_draft_id, applied_at = case when $4 then now() else null end,
           completed_at = now(), description = '' where id = $1`,[job.id,JSON.stringify(result.blueprint),JSON.stringify(review),!!saved]);
         return true;
+        }
       }
       let best: ReturnType<typeof revisionCandidate>;
       let bestProvider = '';
@@ -157,6 +166,7 @@ export async function processNextAiDraft(pool: Pool): Promise<boolean> {
         ? proposal.key === best.blueprint.key && best.scenarios ? best.scenarios : await runScenarios(pool, proposal)
         : [];
       const review = {
+        requiresApproval:repairProposal,
         provider: bestProvider,
         diagnostics: diagnostics.items,
         tests: { passed: scenarios.filter((item) => item.passed).length, total: scenarios.length,

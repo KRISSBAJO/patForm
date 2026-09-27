@@ -10,13 +10,19 @@ export function reviewWarnings(bp:Blueprint, answers:Record<string,string> = {})
   const decisions:RepairDecision[] = [];
   const changes:Normalization[] = [];
   const accepted:Diagnostic[] = [];
+  const requests:string[]=[];
   const internal = bp.roles.filter(r=>r.kind==='internal').sort((a,b)=>a.name.localeCompare(b.name));
   const warnings = validate(bp).warnings;
   const handled = new Set<Diagnostic>();
   const choose = (decision:RepairDecision, apply:(value:string)=>void) => {
     const value = answers[decision.key];
+    if(decision.allowCustom && value?.startsWith('custom:') && value.slice(7).trim().length>=10 && value.length<=2000) {
+      requests.push(`${decision.prompt}\nRequested behavior: ${value.slice(7).trim()}`);
+      return;
+    }
     const allowed = decision.kind==='roles'
       ? !!value && value.split('|').every(key=>decision.roles.some(r=>r.key===key)) && new Set(value.split('|')).size===value.split('|').length
+      : decision.kind==='days' ? !!value && /^\d+$/.test(value) && Number(value)>=1 && Number(value)<=36500
       : decision.roles.some(r=>r.key===value);
     if (allowed) apply(value!); else decisions.push(decision);
   };
@@ -72,22 +78,44 @@ export function reviewWarnings(bp:Blueprint, answers:Record<string,string> = {})
   const assumptions=warnings.filter(w=>w.code==='BLD001');
   if(assumptions.length) {
     assumptions.forEach(w=>handled.add(w));
-    choose({key:'review:assumptions',kind:'choice',group:'Confirm the proposed behavior',prompt:'Does this behavior match your pilot?',detail:bp.intent.assumptions.filter(a=>!a.confirmed).map(a=>a.statement).join('\n\n'),roles:[{key:'confirm',name:'Yes, use this behavior'}]},()=>{
+    choose({key:'review:assumptions',kind:'choice',allowCustom:true,group:'Confirm the proposed behavior',prompt:'Does this behavior match your pilot?',detail:bp.intent.assumptions.filter(a=>!a.confirmed).map(a=>a.statement).join('\n\n'),roles:[{key:'confirm',name:'Yes, use this behavior'}]},()=>{
       bp.intent.assumptions.forEach(a=>a.confirmed=true);
       changes.push({at:'intent.assumptions',change:'Editor confirmed the listed assumptions. No workflow behavior was changed.'});
     });
   }
+  const resolved=new Set<number>();
   for(const [index,decision] of bp.intent.openDecisions.entries()) {
     const warning=warnings.find(w=>w.code==='BLD002'&&w.at===`intent.openDecisions[${index}]`);
     if(warning) handled.add(warning);
-    choose({key:`review:decision:${index}`,kind:'choice',group:'Your business decisions',prompt:decision.question,detail:`AI proposal: ${decision.provisionally}. This decision needs a workflow change to implement a different behavior. You can defer it for this pilot; the warning remains visible.`,roles:[{key:'defer',name:'Keep the draft as it is; defer this decision'}]},()=>{
+    const key=`review:decision:${index}`;
+    if(/\bretain|\bretention/i.test(decision.question)) {
+      choose({key,kind:'days',group:'Retention',prompt:decision.question,detail:'Enter how many days completed records and their stored attachments should be kept. The existing retention job will delete them after this period. Your private draft is reviewed and tested before saving.',roles:[]},value=>{
+        bp.intent.retentionDays=Number(value);resolved.add(index);
+        changes.push({at:'intent.retentionDays',change:`Set retention to ${value} days after completion.`});
+      });continue;
+    }
+    const approval=bp.workflow.approvals.find(a=>decision.question.toLowerCase().includes(a.name.toLowerCase()) || /executive.*approver/i.test(decision.question)&&/executive/i.test(a.name));
+    if(approval&& /who|which.*approver/i.test(decision.question)) {
+      const eligible=internal.filter(r=>r.capabilities.includes('approve'));
+      choose({key,kind:'choice',allowCustom:true,group:'Choose the approver',prompt:decision.question,detail:`Select an existing authorized role for ${approval.name}. This changes its routing, without granting new permissions. Assign the named person to that role in People.`,roles:eligible.map(r=>({key:r.key,name:r.name}))},value=>{
+        const previous=approval.approvers.flatMap(p=>'role' in p?[p.role]:[]);
+        approval.approvers=[{role:value}];resolved.add(index);
+        for(const test of bp.tests.filter(t=>t.kind!=='permission')) for(const step of test.steps) {
+          if(step.step==='decide' && step.approval===approval.key && previous.includes(step.as)) step.as=value;
+        }
+        changes.push({at:`workflow.approvals.${approval.key}`,change:`${approval.name} now routes to ${eligible.find(r=>r.key===value)!.name}.`});
+      });continue;
+    }
+    const customOptions=/procurement/i.test(decision.question)&&/finance/i.test(decision.question)&&/before.*after|after.*before/i.test(decision.question) ? [{key:`custom:${decision.question} Set the review order so procurement review is before finance review whenever both are required. Preserve other conditional reviews and adjust tests to exercise this order.`,name:'Procurement before Finance'},{key:`custom:${decision.question} Set the review order so finance review is before procurement review whenever both are required. Preserve other conditional reviews and adjust tests to exercise this order.`,name:'Finance before Procurement'}] : [];
+    choose({key,kind:'choice',allowCustom:true,group:'Your business decisions',prompt:decision.question,detail:`AI proposal: ${decision.provisionally}. Choosing a different behavior generates a proposal for review; it is not saved automatically.`,roles:[...customOptions,{key:'defer',name:'Decide later (leave this warning visible)'}]},()=>{
       if(warning) accepted.push(warning);
       changes.push({at:`intent.openDecisions[${index}]`,change:`Editor deferred: ${decision.question}. The draft behavior is unchanged and the warning remains.`});
     });
   }
+  bp.intent.openDecisions=bp.intent.openDecisions.filter((_,index)=>!resolved.has(index));
   // Unsupported warnings remain visible. An explicit acknowledgement is not a fix.
   for(const warning of warnings.filter(w=>!handled.has(w))) {
-    choose({key:`review:warning:${warning.code}:${warning.at}`,kind:'choice',group:'Review remaining recommendations',prompt:warning.message,detail:warning.fix??'This recommendation cannot be repaired safely without changing your process.',roles:[{key:'accept',name:'Keep this setting; I accept the recommendation'}]},()=>accepted.push(warning));
+    choose({key:`review:warning:${warning.code}:${warning.at}`,kind:'choice',allowCustom:true,group:'Review remaining recommendations',prompt:warning.message,detail:warning.fix??'Describe the behavior you want; Repair will generate a proposal for review.',roles:[{key:'accept',name:'Keep this setting; I accept the recommendation'}]},()=>accepted.push(warning));
   }
-  return {decisions,changes,accepted};
+  return {decisions,changes,accepted,requests};
 }
