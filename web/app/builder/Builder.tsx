@@ -1152,6 +1152,7 @@ export function Builder({ view = 'home' }: { view?: 'home' | 'processes' } = {})
               </div>
               <label className="bd__headSearch"><span className="sr-only">Find in this process</span><ActionIcon name="search" /><input type="search" placeholder="Find in this process…" value={workspaceQuery} onChange={(e) => setWorkspaceQuery(e.target.value)} /></label>
               <nav className="bd__actions" aria-label="Draft actions">
+                <button type="button" className="bd__btn" onClick={() => { setSide('preview'); setHeaderEditRequest((request) => request + 1); }}>Customize form</button>
                 <button type="button" className="bd__btn" disabled={busy !== null || frozen || status === 'saving' || status === 'error'} onClick={() => { window.location.href = `/builder/improve?draft=${draft.id}&repair=1`; }}><ActionIcon name="sparkles" />Repair draft</button>
                 <a className="bd__btn" href={`/builder/improve?draft=${draft.id}`}><ActionIcon name="sparkles" />Improve with AI</a>
                 <a className="bd__btn" href={`/builder/launch?draft=${draft.id}`}><ActionIcon name="share" />Share &amp; access</a>
@@ -2480,8 +2481,8 @@ function Outline({
           <span className="bd__outlineNote">form, decisions and work</span>
         </button>
         <button className="bd__outlineItem" onClick={() => { onEditHeader(); setMobileOpen(false); }}>
-          <span className="bd__outlineName">Form settings</span>
-          <span className="bd__outlineNote">look, typeface, steps, header</span>
+          <span className="bd__outlineName">Customize form</span>
+          <span className="bd__outlineNote">logo, banner, colours, typography</span>
         </button>
       </section>
       {groups.filter((g) => (query.trim() || (group === 'form' ? ['pages', 'fields'] : group === 'workflow' ? ['states', 'rules', 'approvals', 'tasks'] : ['messages', 'roles', 'documents', 'scenarios']).includes(g.tab)) && (!query.trim() || g.items.some((item) =>

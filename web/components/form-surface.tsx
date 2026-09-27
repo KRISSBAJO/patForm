@@ -167,6 +167,8 @@ export function FormHeader({
   organizationName?: string;
   note?: string;
 }) {
+  const identity = organizationName || branding?.title || fallbackName;
+  const initials = identity.trim().split(/\s+/).filter(Boolean).slice(0, 2).map(word => Array.from(word)[0]).join('').toUpperCase();
   return (
     <header className="fm__head" data-banner={branding?.bannerUrl ? 'true' : undefined}>
       {branding?.bannerUrl && (
@@ -179,6 +181,7 @@ export function FormHeader({
       <div className="fm__brand">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         {branding?.logoUrl && <img className="fm__logo" src={branding.logoUrl} alt="" />}
+        {!branding?.logoUrl && <span className="fm__identityMark" aria-hidden="true">{initials}</span>}
         <div className="fm__brandText">
           {organizationName && <span className="fm__organization">{organizationName}</span>}
           <span className="fm__process">{branding?.title ?? fallbackName}</span>

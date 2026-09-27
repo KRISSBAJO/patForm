@@ -150,6 +150,42 @@
   overflow-wrap: anywhere;
 }
 
+/* A recognizable issuer header, even before a company supplies artwork. */
+.fm__head:not([data-banner='true']) {
+  display: block;
+  margin: 24px 0 20px;
+  padding: 22px 24px;
+  background: var(--white);
+  border: 1px solid var(--line-soft);
+  border-top: 3px solid var(--green);
+  border-radius: 16px;
+  box-shadow: 0 6px 24px -18px rgba(19,26,23,.2);
+}
+.fm__head .fm__brand { width: 100%; }
+.fm__identityMark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 52px;
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  background: var(--green);
+  color: white;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -.03em;
+}
+.fm__head .fm__process { overflow-wrap: anywhere; line-height: 1.4; }
+.fm__head .fm__organization { margin: 0 0 4px; }
+.fm__head .fm__save:empty { display: none; }
+@media (max-width:560px) {
+  .fm__head:not([data-banner='true']) { margin-top: 16px; padding: 18px 16px; }
+  .fm__head .fm__brand { flex-wrap: wrap; }
+  .fm__head .fm__brandText { flex: 1; }
+  .fm__head .fm__save { flex-basis: 100%; text-align: left; margin: 0; }
+}
+
 .fm__lede {
   margin-top: 12px;
   font-size: 16px;
