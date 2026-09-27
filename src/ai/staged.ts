@@ -23,19 +23,17 @@ import { verifiedRepair } from './verified-repair.js';
 import type { Attempt, Decision, GenerationOutcome, UsageRecord } from './pipeline.js';
 
 /**
- * A blueprint in three replies instead of one.
+ * A blueprint generated one section at a time.
  *
  * A page-long description becomes a blueprint of thirty thousand tokens. Asked
  * for in one reply, that is more than the fast providers can return, so the
  * request fell through to the slowest one and took twenty minutes; and one
  * compiler error meant asking for the whole thing again.
  *
- * Staged, the same blueprint is three replies of a third the size — the form,
- * then the workflow and messages that refer to it, then outputs and tests —
- * each small enough for the provider that answers in half a minute. The
- * page shows each stage as it lands. And a repair asks only for the sections
- * the errors are in, with the rest given for reference, so a fix to one
- * transition is a reply of a few hundred tokens rather than thirty thousand.
+ * The three visible phases contain seven separate section requests. Completed
+ * sections are retained during provider fallback, and each repair requests one
+ * failing section at a time. Large field or workflow sections can still take
+ * several minutes; this reduces response size without claiming a fixed duration.
  */
 
 const FormStage = z
@@ -50,9 +48,6 @@ const FormStage = z
     experience: Experience,
   })
   .strict();
-
-const WorkflowStage = z.object({ workflow: Workflow, communications: Communications }).strict();
-const FinishStage = z.object({ outputs: Outputs, tests: z.array(ScenarioTest).default([]) }).strict();
 
 /** Each top-level section by itself, for a repair that returns only what changed. */
 const SECTION: Record<string, z.ZodTypeAny> = {
@@ -82,6 +77,9 @@ export interface StagedOptions {
   maxRepairs?: number;
   onStage?: (progress: StageProgress) => Promise<void>;
   onUsage?: (usage: UsageRecord) => Promise<void>;
+  /** Validated sections retained across provider fallback within this job. */
+  initialParts?: Record<string, unknown>;
+  onCheckpoint?: (parts: Record<string, unknown>) => Promise<void>;
 }
 
 class StageFailed extends Error {
@@ -119,7 +117,7 @@ export async function generateStaged(provider: Provider, options: StagedOptions)
   const startedAt = new Date();
   const maxRepairs = options.maxRepairs ?? 2;
   const attempts: Attempt[] = [];
-  const parts: Record<string, unknown> = {};
+  const parts: Record<string, unknown> = structuredClone(options.initialParts ?? {});
   let counter = 0;
 
   /** One reply from the model, checked against the shape this stage asked for. */
@@ -175,6 +173,15 @@ export async function generateStaged(provider: Provider, options: StagedOptions)
 
   const tell = async (stage: StageProgress['stage'], note: string) =>
     options.onStage?.({ stage, note, progress: summarize(parts as Partial<Blueprint>) });
+  const section = async (group: StageName, key: string, shape: z.ZodTypeAny, prompt?: string) => {
+    if (!prompt && shape.safeParse(parts[key]).success) return;
+    await tell(group, `Generating ${key}; completed sections are retained`);
+    const base=prompt ?? stageTurn(group, options.description, options.pack, parts);
+    const result=await call(`${group}:${key}`,z.object({[key]:shape}).strict(),
+      `${base}\n\nThis request is ONLY for the top-level section "${key}". Return exactly {"${key}": ...}, no other top-level sections. Preserve all keys in the completed sections below; do not recreate them.\nCompleted sections: ${JSON.stringify(parts)}`);
+    Object.assign(parts,result);
+    await options.onCheckpoint?.(structuredClone(parts));
+  };
 
   let decision: Decision = 'unparseable';
   let blueprint: Blueprint | undefined;
@@ -187,11 +194,19 @@ export async function generateStaged(provider: Provider, options: StagedOptions)
   try {
     // ---- 1. the form
     await tell('form', 'Stage 1 of 3: the questions, pages and roles');
-    Object.assign(parts, await call('form', FormStage, stageTurn('form', options.description, options.pack, parts)));
+    const identityShape=FormStage.omit({data:true,experience:true});
+    if(!identityShape.safeParse(Object.fromEntries(Object.keys(identityShape.shape).map(k=>[k,parts[k]]))).success) {
+      Object.assign(parts,await call('form:identity',identityShape,
+        `${stageTurn('form',options.description,options.pack,parts)}\n\nReturn only schemaVersion, key, name, description, intent and roles. Fields and page layout will be requested separately.`));
+      await options.onCheckpoint?.(structuredClone(parts));
+    }
+    await section('form','data',DataSchema);
+    await section('form','experience',Experience);
     await tell('workflow', 'Stage 2 of 3: the stages, decisions, work and messages');
 
     // ---- 2. the workflow and the messages it sends
-    Object.assign(parts, await call('workflow', WorkflowStage, stageTurn('workflow', options.description, options.pack, parts)));
+    await section('workflow','workflow',Workflow);
+    await section('workflow','communications',Communications);
 
     // A model often hands back transitions that request approvals, create
     // tasks and send templates it never defined. Caught here, before the test
@@ -200,16 +215,15 @@ export async function generateStaged(provider: Provider, options: StagedOptions)
     const missing = missingDefinitions(parts);
     if (missing.length) {
       await tell('workflow', `Stage 2 of 3: defining ${missing.length} thing(s) the workflow named but left out`);
-      Object.assign(parts, await call(
-        'workflow',
-        WorkflowStage,
-        `${stageTurn('workflow', options.description, options.pack, parts)}\n\nYour previous reply named things it did not define:\n${missing.map((m) => `- ${m}`).join('\n')}\n\nReturn workflow and communications again, complete, with every approval, task and email template defined in the same reply.`,
-      ));
+      const prompt=`${stageTurn('workflow',options.description,options.pack,parts)}\nMissing definitions: ${missing.join('; ')}. Define every referenced approval, task and message.`;
+      await section('workflow','workflow',Workflow,prompt);
+      await section('workflow','communications',Communications,prompt);
     }
     await tell('finish', 'Stage 3 of 3: documents, dashboard and test scenarios');
 
     // ---- 3. outputs and tests
-    Object.assign(parts, await call('finish', FinishStage, stageTurn('finish', options.description, options.pack, parts)));
+    await section('finish','outputs',Outputs);
+    await section('finish','tests',z.array(ScenarioTest));
     await tell('checking', 'Compiling the assembled draft');
 
     // ---- assemble, then repair by section
@@ -274,17 +288,19 @@ export async function generateStaged(provider: Provider, options: StagedOptions)
       const sections = sectionsFor(diagnostics);
       repairs++;
       await tell('repair', `Repair ${round + 1} of ${maxRepairs}: ${diagnostics.filter((d) => d.severity === 'error').length} thing(s) in ${sections.join(', ')}`);
-      const shape = z.object(Object.fromEntries(sections.map((s) => [s, SECTION[s]!]))).strict();
-      const fixed = await call(
-        `repair:${sections.join('+')}`,
-        shape,
-        `${stageTurn('repair', options.description, options.pack, parts, sections)}\n\n${repairTurn(diagnostics)}`,
-      );
-      Object.assign(parts, fixed);
+      for (const key of sections) {
+        const fixed=await call(`repair:${key}`,z.object({[key]:SECTION[key]!}).strict(),
+          `${stageTurn('repair',options.description,options.pack,parts,[key])}\n\n${repairTurn(diagnostics)}\nReturn only the "${key}" section. Other sections are retained.`);
+        Object.assign(parts,fixed);
+        await options.onCheckpoint?.(structuredClone(parts));
+      }
     }
   } catch (err) {
-    if (!(err instanceof StageFailed)) throw err;
-    decision = err.issues[0] === err.meta.refusal ? 'refused' : 'unparseable';
+    // A late model/network/billing error must not discard an already assembled
+    // private candidate. Publishing remains blocked by compiler/test gates.
+    if (!(err instanceof StageFailed) && !editable && !reviewable) throw err;
+    if(err instanceof StageFailed) decision = err.issues[0] === err.meta.refusal ? 'refused' : 'unparseable';
+    else decision='blocked';
   }
 
   const totals = attempts.reduce(

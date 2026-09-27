@@ -9,13 +9,13 @@ export class DeepSeekProvider implements Provider {
   private readonly client: OpenAI;
   private readonly rates: Rates | undefined;
 
-  constructor(opts: { model?: string; apiKey?: string } = {}) {
+  constructor(opts: { model?: string; apiKey?: string; client?: Pick<OpenAI, 'chat'> } = {}) {
     const apiKey = opts.apiKey ?? process.env.DEEPSEEK_API_KEY;
     if (!apiKey) throw new Error('DEEPSEEK_API_KEY is not configured');
     // A complete process can include pages, workflow actions and six executable
     // scenarios. Give the configured primary provider room to finish that JSON
     // before falling back to a second provider and repeating the entire build.
-    this.client = new OpenAI({ apiKey, baseURL: 'https://api.deepseek.com', timeout: 240_000, maxRetries: 0 });
+    this.client = (opts.client ?? new OpenAI({ apiKey, baseURL: 'https://api.deepseek.com', timeout: 240_000, maxRetries: 0 })) as OpenAI;
     this.model = opts.model ?? process.env.DEEPSEEK_MODEL ?? 'deepseek-flash';
     const raw = process.env.DEEPSEEK_RATES;
     const [input, output] = raw?.split(':').map(Number) ?? [];
@@ -32,8 +32,8 @@ export class DeepSeekProvider implements Provider {
       return await this.once(request);
     } catch (error) {
       if (!(error instanceof Error) || !/invalid JSON/.test(error.message)) throw error;
-      console.warn('DeepSeek returned invalid JSON; asking once more before falling back');
-      return this.once(request);
+      console.warn(`DeepSeek ${request.stage ?? 'blueprint'} retry: ${error.message}`);
+      return this.once({...request,user:`${request.user}\n\nThe previous response could not be parsed: ${error.message}. Return only this stage's complete JSON object. Correct escaping, commas and closing brackets. Do not add prose or repeat other sections.`});
     }
   }
 
@@ -58,7 +58,9 @@ export class DeepSeekProvider implements Provider {
     if (!content.trim()) throw new Error('DeepSeek returned no JSON content');
     let parsed: unknown;
     try { parsed = extractJson(content); }
-    catch { throw new Error('DeepSeek returned invalid JSON'); }
+    catch (error) {
+      throw new Error(`DeepSeek returned invalid JSON in ${request.stage ?? 'blueprint'} (${content.length} characters; finish=${choice?.finish_reason ?? 'unknown'}): ${error instanceof Error ? error.message : 'JSON syntax error'}`);
+    }
     const inputTokens = completion.usage?.prompt_tokens;
     const outputTokens = completion.usage?.completion_tokens;
     return {

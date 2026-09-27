@@ -30,15 +30,19 @@ function scripted(bp: Blueprint, tamper: (stage: string, part: Record<string, un
         const wanted = stage.slice('repair:'.length).split('+');
         const whole = { ...slices.form, ...slices.workflow, ...slices.finish } as Record<string, unknown>;
         part = Object.fromEntries(wanted.map((k) => [k, whole[k]]));
+      } else if(stage==='form:identity') {
+        part=Object.fromEntries(Object.entries(slices.form!).filter(([k])=>!['data','experience'].includes(k)));
       } else {
-        part = tamper(stage, slices[stage]!);
+        const [group,key]=stage.split(':');
+        const whole=tamper(group!,structuredClone(slices[group!]!));
+        part={[key!]:whole[key!]};
       }
       return { text: JSON.stringify(part), parsed: part, meta: { provider: 'scripted', model: 'scripted-1', mode: 'structured', latencyMs: 1, inputTokens: 10, outputTokens: 20 } };
     },
   };
 }
 
-test('three stages assemble into the same blueprint, and it compiles', async () => {
+test('smaller sections assemble into the same blueprint, and it compiles', async () => {
   const bp = onboarding();
   const provider = scripted(bp);
   const stages: string[] = [];
@@ -49,13 +53,13 @@ test('three stages assemble into the same blueprint, and it compiles', async () 
     onUsage: async (u) => { usage.push(`${u.stage}:${u.outcome}`); },
   });
   assert.equal(out.decision, 'publishable');
-  assert.deepEqual(provider.calls, ['form', 'workflow', 'finish']);
+  assert.deepEqual(provider.calls, ['form:identity','form:data','form:experience','workflow:workflow','workflow:communications','finish:outputs','finish:tests']);
   assert.deepEqual(out.blueprint?.workflow.states.map((s) => s.key), bp.workflow.states.map((s) => s.key));
   assert.equal(out.blueprint?.data.fields.length, bp.data.fields.length);
   assert.ok(out.staged);
-  assert.deepEqual(stages, ['form', 'workflow', 'finish', 'checking']);
-  assert.deepEqual(usage, ['form:ok', 'workflow:ok', 'finish:ok']);
-  assert.equal(out.audit.totalOutputTokens, 60);
+  assert.ok(stages.includes('checking'));
+  assert.equal(usage.length,7);
+  assert.equal(out.audit.totalOutputTokens, 140);
 });
 
 test('a compile error is repaired by asking for the failing sections only', async () => {
@@ -70,9 +74,9 @@ test('a compile error is repaired by asking for the failing sections only', asyn
   const notes: string[] = [];
   const out = await generateStaged(provider, { description: 'x'.repeat(3000), maxRepairs: 1, onStage: async (p) => { notes.push(p.note); } });
   assert.equal(out.decision, 'publishable');
-  assert.ok(provider.calls[3]?.startsWith('repair:'), provider.calls.join(','));
-  assert.ok(provider.calls[3]!.includes('workflow'));
-  assert.ok(!provider.calls[3]!.includes('data'), 'the form was fine and is not asked for again');
+  assert.ok(provider.calls[7]?.startsWith('repair:'), provider.calls.join(','));
+  assert.ok(provider.calls.includes('repair:workflow'));
+  assert.ok(!provider.calls.includes('repair:data'), 'the form was fine and is not asked for again');
   assert.equal(out.audit.repairs, 1);
   assert.ok(notes.some((n) => /^Repair 1 of 1/.test(n)));
 });
@@ -91,7 +95,8 @@ test('a workflow that names approvals it never defined is asked for again before
   const notes: string[] = [];
   const out = await generateStaged(provider, { description: 'x'.repeat(3000), onStage: async (p) => { notes.push(p.note); } });
   assert.equal(out.decision, 'publishable');
-  assert.deepEqual(provider.calls, ['form', 'workflow', 'workflow', 'finish']);
+  assert.equal(provider.calls.filter(s=>s==='workflow:workflow').length,2);
+  assert.ok(provider.calls.includes('finish:tests'));
   assert.ok(notes.some((n) => /left out/.test(n)), notes.join(' | '));
   assert.equal(out.audit.repairs, 0, 'no repair round was needed');
 });
@@ -112,8 +117,8 @@ test('a stage that will not take shape is retried once, then given up', async ()
   const provider = scripted(bp, (stage, part) => (stage === 'finish' ? { nonsense: true } : part));
   const out = await generateStaged(provider, { description: 'x'.repeat(3000) });
   assert.equal(out.decision, 'unparseable');
-  assert.deepEqual(provider.calls, ['form', 'workflow', 'finish', 'finish']);
-  assert.equal(out.attempts.filter((a) => a.stage === 'finish' && !a.shapeOk).length, 2);
+  assert.deepEqual(provider.calls.slice(-2), ['finish:outputs', 'finish:outputs']);
+  assert.equal(out.attempts.filter((a) => a.stage === 'finish:outputs' && !a.shapeOk).length, 2);
 });
 
 test('sections for a repair follow where the errors point', () => {
@@ -136,4 +141,37 @@ test('the summary counts nested fields once each', () => {
   assert.equal(s.form.pages, bp.experience.pages.length);
   assert.equal(s.workflow.states, bp.workflow.states.length);
   assert.equal(s.finish.tests, bp.tests.length);
+});
+test('provider fallback resumes validated sections without recreating the form',async()=>{
+  const bp=onboarding(); const first=scripted(bp);
+  const generate=first.generate.bind(first);
+  first.generate=async request=>{
+    if(request.stage==='workflow:workflow') throw new Error('provider unavailable');
+    return generate(request);
+  };
+  let checkpoint:Record<string,unknown>={};
+  await assert.rejects(()=>generateStaged(first,{description:'x'.repeat(3000),onCheckpoint:async parts=>{checkpoint=parts;}}));
+  assert.ok(checkpoint.data); assert.ok(checkpoint.experience);
+  const second=scripted(bp);
+  const out=await generateStaged(second,{description:'x'.repeat(3000),initialParts:checkpoint});
+  assert.equal(out.decision,'publishable');
+  assert.deepEqual(second.calls,['workflow:workflow','workflow:communications','finish:outputs','finish:tests']);
+});
+test('failed repair request retains assembled private candidate and validation errors',async()=>{
+  const bp=onboarding(); const provider=scripted(bp, (stage,part)=>{
+    if(stage!=='workflow') return part;
+    const workflow=structuredClone(part.workflow) as Blueprint['workflow'];
+    workflow.transitions[0]!.to='nowhere';
+    return {...part,workflow};
+  });
+  const generate=provider.generate.bind(provider);
+  provider.generate=async request=>{
+    if(request.stage?.startsWith('repair:')) throw new Error('credit balance exhausted');
+    return generate(request);
+  };
+  const out=await generateStaged(provider,{description:'x'.repeat(3000)});
+  assert.equal(out.decision,'blocked');
+  assert.ok(out.editable?.errors.length);
+  assert.equal(out.editable?.blueprint.data.fields.length,bp.data.fields.length);
+  assert.equal(out.blueprint,undefined);
 });

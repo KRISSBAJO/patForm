@@ -763,6 +763,7 @@ export async function createDraft(
     const staged = input.description.length > 2500;
     const estimate = Math.ceil(input.description.length * (staged ? 2.5 : 5));
     const order = input.provider ? [input.provider] : available;
+    let completedSections: Record<string, unknown> = {};
     const onUsage = (usage: UsageRecord) =>
       recordUsage(pool, { tenantId, actorId: principal.actorId, jobId: args.jobId ?? null, purpose: 'draft' }, usage);
     for (const name of order) {
@@ -787,6 +788,8 @@ export async function createDraft(
               // Each repair asks only for the failing sections, so a round is
               // short; three rounds settle most long drafts.
               maxRepairs: 3,
+              initialParts: completedSections,
+              onCheckpoint: async parts => { completedSections = parts; },
               onStage: async (p) => args.onProgress?.(p.stage === 'checking' ? 'checking' : 'generating', p.note, p.progress),
               onUsage,
             })
@@ -825,7 +828,13 @@ export async function createDraft(
         console.warn('AI proposal did not pass:', name, proposed.decision,
           errors.slice(0, 12).map((item) => `${item.code}:${item.at}`).join(','));
       } catch (error) {
-        lastProblem = `${name} could not complete generation`;
+        const message=error instanceof Error ? error.message : '';
+        const detail = name==='deepseek' && message.startsWith('DeepSeek returned invalid JSON') ? message
+          : /credit balance|insufficient.*credit/i.test(message) ? 'API credit balance is too low'
+          : /timed out|timeout/i.test(message) ? 'the provider request timed out'
+          : /output limit/i.test(message) ? 'the generated section exceeded the output limit'
+          : undefined;
+        lastProblem = `${name} could not complete generation${detail ? `: ${detail}` : ''}`;
         console.warn(lastProblem, error instanceof Error ? error.message : String(error));
       }
     }

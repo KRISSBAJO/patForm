@@ -97,18 +97,24 @@ export function extractJson(text: string): unknown {
 
   try {
     return JSON.parse(candidate);
-  } catch {
+  } catch (original) {
     // Fall back to the outermost balanced braces, which handles a model that
     // wrote a sentence before or after the object.
     const start = candidate.indexOf('{');
     const end = candidate.lastIndexOf('}');
+    let failure = original;
     if (start >= 0 && end > start) {
       try {
         return JSON.parse(candidate.slice(start, end + 1));
-      } catch {
-        /* fall through */
+      } catch (error) {
+        failure = error;
       }
     }
-    throw new Error('model output did not contain parseable JSON');
+    // SyntaxError messages may include customer text. Keep only the location
+    // and failure category, never an excerpt of a generated answer.
+    const message = failure instanceof Error ? failure.message : '';
+    const location = message.match(/position \d+(?: \(line \d+ column \d+\))?/)?.[0];
+    const reason = /unterminated/i.test(message) ? 'unterminated string' : /unexpected end/i.test(message) ? 'incomplete object' : 'JSON syntax error';
+    throw new Error(`model output did not contain parseable JSON: ${reason}${location ? ` at ${location}` : ''}`);
   }
 }
