@@ -46,6 +46,8 @@ test('task keeps separate uploaded evidence on each defect row',()=>{
   assert.deepEqual(result.merged.defects,[{title:'First',repair_photo:a},{title:'Second',repair_photo:b}]);
   assert.deepEqual(current.defects,[{title:'First'},{title:'Second'}]);
   assert.throws(()=>collectTaskAnswers(bp,['repair_photo'],current,{defects:[{repair_photo:'https://example.com/photo.jpg'},{repair_photo:b}]},['it_operator']),/Upload the actual file/);
+  const multiple=collectTaskAnswers(bp,['repair_photo'],current,{defects:[{repair_photo:[a,b]},{repair_photo:[b]}]},['it_operator']);
+  assert.deepEqual((multiple.merged.defects as Record<string,unknown>[])[0]?.repair_photo,[a,b]);
 });
 
 test('task cannot replace a row, modify unrelated fields or act without editing authority',()=>{

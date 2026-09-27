@@ -232,7 +232,7 @@ export async function myWork(
         requiredFields: (declared?.requiredFields ?? []).map((key) => {
           const group=bp.data.fields.find(f=>f.type==='repeating_group' && f.fields?.some(child=>child.key===key));
           const field=group?.fields?.find(child=>child.key===key) ?? bp.data.fields.find(f=>f.key===key);
-          return { key, label: field?.label ?? key, type: field?.type ?? 'short_text', choices: field?.choices,
+            return { key, label: field?.label ?? key, type: field?.type ?? 'short_text', choices: field?.choices, maxFiles: field?.constraints?.maxFiles,
             ...(group?{groupKey:group.key,groupLabel:group.label,rowCount:Array.isArray(row.data[group.key])?(row.data[group.key] as unknown[]).length:0}:{}) };
         }),
         assignee: row.assignee,

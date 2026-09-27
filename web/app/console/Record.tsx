@@ -63,7 +63,7 @@ export interface PendingTask {
   taskKey: string;
   taskName: string;
   description?: string;
-  requiredFields?: { key: string; label: string; type: string; choices?: { value: string; label: string }[]; groupKey?: string; groupLabel?: string; rowCount?: number }[];
+  requiredFields?: { key: string; label: string; type: string; choices?: { value: string; label: string }[]; maxFiles?: number; groupKey?: string; groupLabel?: string; rowCount?: number }[];
   assignee: string | null;
   late: boolean;
   summary: string;
@@ -121,35 +121,43 @@ export function RecordPage({
   const [decisionMode, setDecisionMode] = useState<'rejected' | 'changes_requested' | null>(null);
   const [completionAnswers, setCompletionAnswers] = useState<Record<string, string>>({});
   const [taskFileStatus, setTaskFileStatus] = useState<Record<string, string>>({});
-  const uploadTaskEvidence = async (inputKey: string, fieldKey: string, file: File) => {
-    setCompletionAnswers(was => ({ ...was, [inputKey]: '' }));
-    setTaskFileStatus(was => ({ ...was, [inputKey]: 'Uploading…' }));
+  const [taskFiles, setTaskFiles] = useState<Record<string, string[]>>({});
+  const uploadTaskEvidence = async (inputKey: string, fieldKey: string, files: File[], maxFiles = 1) => {
+    setTaskFiles(was => ({ ...was, [inputKey]: [] }));
+    setTaskFileStatus(was => ({ ...was, [inputKey]: `Uploading ${files.length} file${files.length === 1 ? '' : 's'}…` }));
     try {
-      if (file.size > 5 * 1024 * 1024) throw new Error('Choose a file up to 5 MB.');
-      const base64 = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result).split(',')[1] ?? '');
-        reader.onerror = () => reject(new Error('Could not read this file.'));
-        reader.readAsDataURL(file);
-      });
+      if (!files.length || files.length > maxFiles) throw new Error(`Choose up to ${maxFiles} file${maxFiles === 1 ? '' : 's'}.`);
       const url = `/api/records/${record.instanceId}/tasks/${task!.taskKey}/files`;
-      const response = await fetch(url, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fieldKey, filename: file.name, base64 }) });
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(result.reason ?? result.error ?? 'Upload failed.');
-      setCompletionAnswers(was => ({ ...was, [inputKey]: result.reference }));
+      const references = await Promise.all(files.map(async file => {
+        if (file.size > 5 * 1024 * 1024) throw new Error('Choose files up to 5 MB each.');
+        const base64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result).split(',')[1] ?? '');
+          reader.onerror = () => reject(new Error('Could not read this file.'));
+          reader.readAsDataURL(file);
+        });
+        const response = await fetch(url, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ fieldKey, filename: file.name, base64 }) });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(result.reason ?? result.error ?? 'Upload failed.');
+        return String(result.reference);
+      }));
       setTaskFileStatus(was => ({ ...was, [inputKey]: 'Scanning for malware…' }));
-      for (let attempt = 0; attempt < 60; attempt++) {
-        await new Promise(resolve => setTimeout(resolve, 5000));
-        const scan = await fetch(`${url}/${String(result.reference).slice('receipt-file:'.length)}`, { credentials: 'same-origin' });
-        const status = await scan.json().catch(() => ({}));
-        if (!scan.ok) throw new Error(status.reason ?? status.error ?? 'Could not check the upload.');
-        if (status.status === 'clean') { setTaskFileStatus(was => ({ ...was, [inputKey]: `${file.name} · ready` })); return; }
-        if (status.status === 'quarantined') throw new Error('The file did not pass its security scan. Choose another.');
-      }
-      throw new Error('Scanning is taking longer than expected. Choose the file again shortly.');
+      await Promise.all(references.map(async reference => {
+        for (let attempt = 0; attempt < 60; attempt++) {
+          await new Promise(resolve => setTimeout(resolve, 5000));
+          const scan = await fetch(`${url}/${reference.slice('receipt-file:'.length)}`, { credentials: 'same-origin' });
+          const status = await scan.json().catch(() => ({}));
+          if (!scan.ok) throw new Error(status.reason ?? status.error ?? 'Could not check the upload.');
+          if (status.status === 'clean') return;
+          if (status.status === 'quarantined') throw new Error('A file did not pass its security scan. Choose another.');
+        }
+        throw new Error('Scanning is taking longer than expected. Choose the files again shortly.');
+      }));
+      setTaskFiles(was => ({ ...was, [inputKey]: references }));
+      setTaskFileStatus(was => ({ ...was, [inputKey]: `${files.length} file${files.length === 1 ? '' : 's'} · ready` }));
     } catch (error) {
-      setCompletionAnswers(was => ({ ...was, [inputKey]: '' }));
+      setTaskFiles(was => ({ ...was, [inputKey]: [] }));
       setTaskFileStatus(was => ({ ...was, [inputKey]: error instanceof Error ? error.message : 'Upload failed.' }));
     }
   };
@@ -162,6 +170,13 @@ export function RecordPage({
     if (recorded === null || recorded === undefined || recorded === '[redacted]') return '';
     return typeof recorded === 'object' ? '' : String(recorded);
   };
+  const taskFileRefs = (key: string, groupKey?: string, index=0): string[] => {
+    const inputKey=groupKey ? `${groupKey}[${index}].${key}` : key;
+    if (taskFiles[inputKey] !== undefined) return taskFiles[inputKey]!;
+    const groupValue=groupKey ? record.fields.find(f=>f.key===groupKey)?.value : undefined;
+    const recorded=groupKey && Array.isArray(groupValue) ? (groupValue[index] as Record<string,unknown>|undefined)?.[key] : record.fields.find(f=>f.key===key)?.value;
+    return (Array.isArray(recorded) ? recorded : [recorded]).filter((ref):ref is string => typeof ref === 'string' && /^receipt-file:[0-9a-f-]{36}$/.test(ref));
+  };
   /** The answers as the field types want them: a yes/no is a boolean, a number is a number. */
   const taskAnswers = (): Record<string, unknown> => {
     const out: Record<string, unknown> = {};
@@ -169,8 +184,9 @@ export function RecordPage({
       const count=field.groupKey ? field.rowCount??0 : 1;
       for(let index=0;index<count;index++) {
         const raw=taskValue(field.key,field.groupKey,index);
-        if(raw==='') continue;
-        const value=['yes_no','signature_ack'].includes(field.type) ? raw==='true' : ['number','currency','rating'].includes(field.type) ? Number(raw) : raw;
+        const files=field.type==='file' ? taskFileRefs(field.key,field.groupKey,index) : [];
+        if(raw==='' && !files.length) continue;
+        const value=field.type==='file' ? files : ['yes_no','signature_ack'].includes(field.type) ? raw==='true' : ['number','currency','rating'].includes(field.type) ? Number(raw) : raw;
         if(field.groupKey) {
           const rows=(out[field.groupKey] ??=Array.from({length:count},()=>({}))) as Record<string,unknown>[];
           rows[index]![field.key]=value;
@@ -456,9 +472,9 @@ export function RecordPage({
                   <label htmlFor={id}>{field.groupLabel ? `${field.groupLabel} ${index+1} · ` : ''}{field.label} <span aria-hidden="true">*</span></label>
                   {field.type === 'file' ? (
                     <>
-                      <input id={id} type="file" accept="image/png,image/jpeg,application/pdf"
-                        onChange={e => { const file=e.target.files?.[0]; if(file) void uploadTaskEvidence(inputKey,field.key,file); }} />
-                      <p role="status" className="rc__progress">{taskFileStatus[inputKey] ?? (value ? 'Evidence already attached' : 'Upload a photo or PDF, up to 5 MB.')}</p>
+                      <input id={id} type="file" accept="image/png,image/jpeg,application/pdf" multiple={(field.maxFiles ?? 1) > 1}
+                        onChange={e => { const files=Array.from(e.target.files ?? []); if(files.length) void uploadTaskEvidence(inputKey,field.key,files,field.maxFiles ?? 1); }} />
+                      <p role="status" className="rc__progress">{taskFileStatus[inputKey] ?? (taskFileRefs(field.key,field.groupKey,index).length ? 'Evidence already attached' : `Upload ${field.maxFiles && field.maxFiles > 1 ? `up to ${field.maxFiles} photos or PDFs` : 'a photo or PDF'}, up to 5 MB each.`)}</p>
                     </>
                   ) : field.type === 'long_text' ? (
                     <textarea id={id} className="rc__reasonBox" value={value} onChange={(e) => set(e.target.value)} required />
@@ -495,7 +511,7 @@ export function RecordPage({
               disabled={working || task.requiredFields?.some((field) => (field.groupKey && !field.rowCount) || Array.from({length:field.groupKey?field.rowCount??0:1},(_,index)=>{
                 const inputKey=field.groupKey?`${field.groupKey}[${index}].${field.key}`:field.key;
                 return field.type==='signature_ack' ? taskValue(field.key,field.groupKey,index)!=='true' :
-                  !taskValue(field.key,field.groupKey,index).trim() || (field.type==='file' && !!taskFileStatus[inputKey] && !taskFileStatus[inputKey].endsWith('· ready'));
+                  (field.type==='file' ? !taskFileRefs(field.key,field.groupKey,index).length || (!!taskFileStatus[inputKey] && !taskFileStatus[inputKey].endsWith('· ready')) : !taskValue(field.key,field.groupKey,index).trim());
               }).some(Boolean))}
               onClick={() => onCompleteTask(record.instanceId, task.taskKey, taskAnswers())}
             >

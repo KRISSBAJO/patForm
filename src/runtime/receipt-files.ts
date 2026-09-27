@@ -187,7 +187,7 @@ export async function checkTaskFileReferences(client: Client, instanceId: string
     if (!item || item.field.type !== 'file') continue;
     const groupKey = item.path.includes('.') ? item.path.split('.')[0] : undefined;
     const value = groupKey && Array.isArray(answers[groupKey])
-      ? (answers[groupKey] as Record<string, unknown>[]).map(row => row[key]) : answers[key];
+      ? (answers[groupKey] as Record<string, unknown>[]).flatMap(row => Array.isArray(row[key]) ? row[key] as unknown[] : [row[key]]) : answers[key];
     for (const ref of Array.isArray(value) ? value : [value]) {
       const id = typeof ref === 'string' ? REFERENCE.exec(ref)?.[1] : undefined;
       if (!id) throw new InvalidInput(`Upload ${item.field.label} before completing this task.`);
