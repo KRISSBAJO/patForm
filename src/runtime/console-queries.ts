@@ -179,6 +179,7 @@ export async function myWork(
       approvalKey: row.approval_key,
       approvalName: bp.workflow.approvals.find((a) => a.key === row.approval_key)?.name ?? row.approval_key,
       allowRequestChanges: bp.workflow.approvals.find((a) => a.key === row.approval_key)?.allowRequestChanges ?? false,
+      signatureRequired: bp.workflow.approvals.find((a) => a.key === row.approval_key)?.signatureRequired ?? false,
       state: row.state,
       stateName: stateName(row.state),
       waitingHours: Math.round((now - row.created_at.getTime()) / 3_600_000),
@@ -387,7 +388,7 @@ export async function recordDetail(pool: Pool, principal: Principal, instanceId:
     })).allowed;
 
     const events = await client.query('select seq, type, payload, actor, occurred_at from event where instance_id = $1 order by seq desc', [instanceId]);
-    const approvals = await client.query('select approval_key, approvers, status, decision, decided_by, decided_at, reason, due_at from approval_request where instance_id = $1 order by id', [instanceId]);
+    const approvals = await client.query('select approval_key, approvers, status, decision, decided_by, decided_at, reason, signature_name, due_at from approval_request where instance_id = $1 order by id', [instanceId]);
     const tasks = await client.query('select task_key, assignee, status, due_at, completed_at, completed_by from task where instance_id = $1 order by id', [instanceId]);
     const emails = await client.query('select template_key, recipients, subject, status, sent_at from email_log where instance_id = $1 order by id', [instanceId]);
     const documents = await client.query('select id, document_key, filename, checksum, byte_size, created_at from document where instance_id = $1 order by id', [instanceId]);

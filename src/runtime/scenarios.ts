@@ -168,6 +168,8 @@ async function runOne(
               decision: step.decision,
               principal,
               reason: step.reason,
+              signatureName: step.signatureName,
+              signatureConfirmed: step.signatureConfirmed,
               now,
             });
             // A counted vote may leave a sequential/quorum/majority request open.

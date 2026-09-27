@@ -306,6 +306,8 @@ export class Engine {
     decision: 'approved' | 'rejected' | 'changes_requested';
     principal: Principal;
     reason?: string;
+    signatureName?: string;
+    signatureConfirmed?: boolean;
     now: Date;
   }): Promise<{ applied: boolean; progress?: { have: number; need: number; against?: number; of?: number } }> {
     return inTransaction(this.pool, async (client) => {
@@ -384,6 +386,10 @@ export class Engine {
       if (declared?.reasonRequired && args.decision !== 'approved' && !args.reason?.trim()) {
         throw new InvalidInput('give a reason when rejecting or requesting changes');
       }
+      const signatureName = args.signatureName?.trim();
+      if (declared?.signatureRequired && (args.principal.kind !== 'actor' || !signatureName || signatureName.length < 2 || signatureName.length > 120 || /[\x00-\x1f]/.test(signatureName) || args.signatureConfirmed !== true)) {
+        throw new InvalidInput('type your full name and confirm your electronic signature');
+      }
 
       const actor = describePrincipal(args.principal);
       // One person, one decision. "Any two directors" is not one director twice.
@@ -403,9 +409,9 @@ export class Engine {
         throw new AuthorizationError('approve', 'you have already decided this one — it needs somebody else');
       }
       await client.query(
-        `insert into approval_vote (request_id, tenant_id, actor, decision, reason, decided_at)
-         values ($1, $2, $3, $4, $5, $6)`,
-        [request.id, instance.tenant_id, actor, args.decision, args.reason ?? null, args.now],
+        `insert into approval_vote (request_id, tenant_id, actor, decision, reason, signature_name, decided_at)
+         values ($1, $2, $3, $4, $5, $6, $7)`,
+        [request.id, instance.tenant_id, actor, args.decision, args.reason ?? null, declared?.signatureRequired ? signatureName : null, args.now],
       );
 
       const have = approvedSoFar + (args.decision === 'approved' ? 1 : 0);
@@ -447,9 +453,9 @@ export class Engine {
 
       const { rowCount } = await client.query(
         `update approval_request
-            set status = 'decided', decision = $1, decided_by = $2, decided_at = $3, reason = $4
-          where id = $5 and status = 'pending'`,
-        [args.decision, actor, args.now, args.reason ?? null, request.id],
+            set status = 'decided', decision = $1, decided_by = $2, decided_at = $3, reason = $4, signature_name = $5
+          where id = $6 and status = 'pending'`,
+        [args.decision, actor, args.now, args.reason ?? null, declared?.signatureRequired ? signatureName : null, request.id],
       );
       if (!rowCount) return { applied: false };
 

@@ -23,6 +23,7 @@ export interface WorkApproval {
   reference: string;
   approvalKey: string;
   approvalName: string;
+  signatureRequired?: boolean;
   stateName: string;
   waitingHours: number;
   late: boolean;
@@ -231,8 +232,9 @@ export function WorkList({
                 <div className="cs__rowActions">
                   <button type="button" className="cs__act" onClick={() => onOpen(row.item.instanceId)}>
                     <Icon name="open" />
-                    Open
+                    {row.item.signatureRequired ? 'Review and sign' : 'Open'}
                   </button>
+                  {!row.item.signatureRequired && <>
                   <button
                     type="button"
                     className="cs__act"
@@ -251,6 +253,7 @@ export function WorkList({
                     <Icon name="approve" />
                     Approve
                   </button>
+                  </>}
                 </div>
               </div>
             ) : (

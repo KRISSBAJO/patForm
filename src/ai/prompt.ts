@@ -94,6 +94,7 @@ Tasks and approvals
 - A role completing a task with answers needs the "edit" capability and every answered field in "editableFields", even when the task is assigned through an email field.
 - A transition for an approved task must explicitly require the task's decision field to equal "approved". Reject and return transitions must have their own conditions, so they never overlap approval routing.
 - If the process has approvals, some role must have the "approve" capability.
+- If an approval is an electronic sign-off, set signatureRequired to true on that approval. The authenticated approver must type their full name and confirm the signature; the server stores it with actor, decision and time. In positive decide test steps for such approvals, include signatureName and signatureConfirmed: true. A named signature field shown only on the public form does not replace the approver's sign-off.
 - Address messages to a role, an email field, or the submitter. Only use { "assignee": "current" } if some transition runs an "assign" action first.
 
 Permissions and data protection

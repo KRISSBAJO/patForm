@@ -31,6 +31,7 @@ export interface RecordDetail {
   nextAction: string;
   stateType?: string;
   completedAt?: string | null;
+  approvals?: { approval_key: string; status: string; decision: string | null; signature_name: string | null; decided_by: string | null; decided_at: string | null; reason: string | null }[];
   viewerRoles: string[];
   canAddNote?: boolean;
   notes?: { id: number; text: string; actor: string | null; createdAt: string }[];
@@ -52,6 +53,7 @@ export interface PendingApproval {
   approvalKey: string;
   approvalName: string;
   allowRequestChanges?: boolean;
+  signatureRequired?: boolean;
   waitingHours: number;
   late: boolean;
   summary: string;
@@ -111,14 +113,16 @@ export function RecordPage({
   busy: string | null;
   onBack: () => void;
   backLabel: string;
-  onDecide: (instanceId: string, approvalKey: string, decision: 'approved' | 'rejected' | 'changes_requested', reason: string) => void;
+  onDecide: (instanceId: string, approvalKey: string, decision: 'approved' | 'rejected' | 'changes_requested', reason: string, signatureName?: string, signatureConfirmed?: boolean) => void;
   onCompleteTask: (instanceId: string, taskKey: string, answers: Record<string, unknown>) => void;
   onExport: (instanceId: string, reference: string, format: 'json' | 'csv') => void;
   onActionDone: () => void;
 }) {
   const [showTrail, setShowTrail] = useState(false);
   const [reason, setReason] = useState('');
-  const [decisionMode, setDecisionMode] = useState<'rejected' | 'changes_requested' | null>(null);
+  const [signatureName, setSignatureName] = useState('');
+  const [signatureConfirmed, setSignatureConfirmed] = useState(false);
+  const [decisionMode, setDecisionMode] = useState<'approved' | 'rejected' | 'changes_requested' | null>(null);
   const [completionAnswers, setCompletionAnswers] = useState<Record<string, string>>({});
   const [taskFileStatus, setTaskFileStatus] = useState<Record<string, string>>({});
   const [taskFiles, setTaskFiles] = useState<Record<string, string[]>>({});
@@ -351,6 +355,14 @@ export function RecordPage({
         <span className="rc__statePill"><span aria-hidden="true" />{record.stateName}</span>
       </header>
 
+      {record.approvals?.filter(item => item.signature_name).map(item => (
+        <section className="rc__noteComposer" key={`${item.approval_key}:${item.decided_at}`} aria-label="Electronic sign-off">
+          <div><h3>Electronic sign-off</h3><p>{item.approval_key.replace(/_/g, ' ')} · {item.decision?.replace(/_/g, ' ')} · {item.decided_at ? new Date(item.decided_at).toLocaleString() : ''}</p></div>
+          <p><strong>{item.signature_name}</strong> signed while authenticated as {who(item.decided_by)}.</p>
+          {item.reason && <p>{item.reason}</p>}
+        </section>
+      ))}
+
       {noteOpen && record.canAddNote && <section id="record-note-form" className="rc__noteComposer" aria-label="Add a note to this record">
         <div><h3>Add a record note</h3><p>Notes are saved with the record and visible to people who can operate this process.</p></div>
         <label className="vw__srOnly" htmlFor="record-note-text">Record note</label>
@@ -402,28 +414,30 @@ export function RecordPage({
 
           {decisionMode ? (
             <div className="rc__reason">
-              <label className="rc__reasonLabel" htmlFor="reject-reason">
-                {decisionMode === 'changes_requested' ? 'What must be corrected? The applicant may be told.' : voting ? 'Why are you voting against?' : 'Why are you rejecting this? The applicant may be told.'}
-              </label>
-              <textarea
-                id="reject-reason"
-                className="rc__reasonBox"
-                rows={3}
-                value={reason}
-                onChange={(e) => setReason(e.target.value)}
-              />
+              {decisionMode !== 'approved' && <>
+                <label className="rc__reasonLabel" htmlFor="reject-reason">
+                  {decisionMode === 'changes_requested' ? 'What must be corrected? The applicant may be told.' : voting ? 'Why are you voting against?' : 'Why are you rejecting this? The applicant may be told.'}
+                </label>
+                <textarea id="reject-reason" className="rc__reasonBox" rows={3} value={reason} onChange={(e) => setReason(e.target.value)} />
+              </>}
+              {approval.signatureRequired && <div className="rc__signature">
+                <label className="rc__reasonLabel" htmlFor="approval-signature-name">Type your full name to sign this decision</label>
+                <input id="approval-signature-name" className="rc__reasonBox" autoComplete="name" maxLength={120}
+                  value={signatureName} onChange={e => setSignatureName(e.target.value)} />
+                <label><input type="checkbox" checked={signatureConfirmed} onChange={e => setSignatureConfirmed(e.target.checked)} /> I confirm this is my electronic signature. My account, decision, and time will be recorded.</label>
+              </div>}
               <div className="rc__reasonActions">
                   <button type="button" className="cs__btn" onClick={() => setDecisionMode(null)}>
                   Cancel
                 </button>
                 <button
                   type="button"
-                  className="cs__btn cs__btn--danger"
-                  disabled={working || !reason.trim()}
-                  onClick={() => onDecide(record.instanceId, approval.approvalKey, decisionMode, reason.trim())}
+                  className={`cs__btn ${decisionMode === 'approved' ? 'cs__btn--primary' : 'cs__btn--danger'}`}
+                  disabled={working || (decisionMode !== 'approved' && !reason.trim()) || (approval.signatureRequired && (signatureName.trim().length < 2 || !signatureConfirmed))}
+                  onClick={() => onDecide(record.instanceId, approval.approvalKey, decisionMode, decisionMode === 'approved' ? 'Approved in the console' : reason.trim(), signatureName.trim(), signatureConfirmed)}
                 >
-                  <Icon name="reject" />
-                  {decisionMode === 'changes_requested' ? 'Send back for changes' : voting ? 'Vote against' : 'Confirm rejection'}
+                  <Icon name={decisionMode === 'approved' ? 'approve' : 'reject'} />
+                  {decisionMode === 'approved' ? 'Sign and approve' : decisionMode === 'changes_requested' ? 'Sign and send back' : approval.signatureRequired ? 'Sign and reject' : voting ? 'Vote against' : 'Confirm rejection'}
                 </button>
               </div>
             </div>
@@ -442,7 +456,7 @@ export function RecordPage({
                 type="button"
                 className="cs__btn cs__btn--primary"
                 disabled={working}
-                onClick={() => onDecide(record.instanceId, approval.approvalKey, 'approved', 'Approved in the console')}
+                onClick={() => approval.signatureRequired ? setDecisionMode('approved') : onDecide(record.instanceId, approval.approvalKey, 'approved', 'Approved in the console')}
               >
                 <Icon name="approve" />
                 {voting ? 'Vote for' : 'Approve'}

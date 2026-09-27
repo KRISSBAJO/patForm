@@ -37,3 +37,26 @@ test('scenario runner accepts counted sequential votes but still rejects a repea
     assert.ok(denied[0]!.failures.some(f=>f.includes('refused the decision')));
   } finally {await pool.end();}
 });
+
+test('a signed approval needs an authenticated typed name and explicit confirmation', {skip: !localDatabase}, async()=>{
+  const bp=Blueprint.parse(JSON.parse(readFileSync('processes/employee-onboarding.blueprint.json','utf8')));
+  const approval=bp.workflow.approvals.find(a=>a.key==='manager_approval')!;
+  approval.signatureRequired=true;
+  for(const scenario of bp.tests) for(const step of scenario.steps) if(step.step==='decide'&&step.approval===approval.key){
+    step.signatureName='Pilot Manager';
+    step.signatureConfirmed=true;
+  }
+  const pool=createPool();
+  try {
+    const signed=await runScenarios(pool,bp);
+    assert.ok(signed.every(result=>result.passed),JSON.stringify(signed));
+    const unsigned=structuredClone(bp);
+    const happy=unsigned.tests.find(item=>item.kind==='happy_path')!;
+    unsigned.tests=[happy];
+    const decision=happy.steps.find(step=>step.step==='decide'&&step.approval===approval.key)!;
+    if(decision.step==='decide')decision.signatureConfirmed=false;
+    const refused=await runScenarios(pool,unsigned);
+    assert.equal(refused[0]?.passed,false);
+    assert.ok(refused[0]?.failures.some(failure=>failure.includes('electronic signature')));
+  } finally {await pool.end();}
+});

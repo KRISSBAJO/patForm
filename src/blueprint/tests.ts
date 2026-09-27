@@ -26,6 +26,8 @@ export const Step = z.discriminatedUnion('step', [
       as: Key,
       decision: z.enum(['approved', 'rejected', 'changes_requested']),
       reason: z.string().optional(),
+      signatureName: z.string().optional(),
+      signatureConfirmed: z.boolean().optional(),
     })
     .strict(),
   z.object({

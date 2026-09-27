@@ -1244,13 +1244,15 @@ route('GET', /^\/api\/records\/([0-9a-f-]{36})\/tasks\/([a-z0-9_]+)\/files\/([0-
 
 route('POST', /^\/api\/records\/([0-9a-f-]{36})\/decide$/, async ({ engine, principal, url }, body) => {
   const id = url.pathname.split('/')[3]!;
-  const { approvalKey, decision, reason } = body as {
+  const { approvalKey, decision, reason, signatureName, signatureConfirmed } = body as {
     approvalKey: string;
     decision: 'approved' | 'rejected' | 'changes_requested';
     reason?: string;
+    signatureName?: string;
+    signatureConfirmed?: boolean;
   };
   if (!approvalKey || !decision) throw new HttpError(400, 'approvalKey and decision are required');
-  const result = await engine.decide({ instanceId: id, approvalKey, decision, principal, reason, now: new Date() });
+  const result = await engine.decide({ instanceId: id, approvalKey, decision, principal, reason, signatureName, signatureConfirmed, now: new Date() });
   await engine.drain(new Date(), 'api');
   return result;
 });

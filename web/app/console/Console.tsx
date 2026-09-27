@@ -312,13 +312,15 @@ export function Console() {
     approvalKey: string,
     decision: 'approved' | 'rejected' | 'changes_requested',
     reason = 'Decided in the console',
+    signatureName?: string,
+    signatureConfirmed?: boolean,
   ) =>
     act(
       `${instanceId}:${approvalKey}`,
       () =>
         call(`/api/records/${instanceId}/decide`, {
           method: 'POST',
-          body: JSON.stringify({ approvalKey, decision, reason }),
+          body: JSON.stringify({ approvalKey, decision, reason, signatureName, signatureConfirmed }),
         }),
       (result) => {
         /*
@@ -574,7 +576,7 @@ export function Console() {
                 busy={busy}
                 onBack={closeRecord}
                 backLabel={recordOrigin.current === 'records' ? 'Back to records' : recordOrigin.current === 'ask' ? 'Back to Ask' : recordOrigin.current === 'processes' ? 'Back to processes' : 'Back to My work'}
-                onDecide={(id, key, decision, reason) => void decide(id, key, decision, reason)}
+                onDecide={(id, key, decision, reason, signatureName, signatureConfirmed) => void decide(id, key, decision, reason, signatureName, signatureConfirmed)}
                 onCompleteTask={(id, key, answers) => void completeTask(id, key, answers)}
                 onExport={(id, ref, format) => void exportRecord(id, ref, format)}
                 onActionDone={() => { void (async () => { try { setRecord(await call<RecordDetail>(`/api/records/${record.instanceId}`)); await load(); } catch (err) { setToast({ message: err instanceof Error ? err.message : String(err), refused: true }); } })(); }}

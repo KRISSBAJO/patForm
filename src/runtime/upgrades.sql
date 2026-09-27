@@ -222,3 +222,5 @@ create index if not exists push_subscription_actor on push_subscription (actor_i
 -- When the people waited on were told by push; null until the worker has.
 alter table approval_request add column if not exists notified_at timestamptz;
 alter table task add column if not exists notified_at timestamptz;
+alter table approval_request add column if not exists signature_name text;
+alter table approval_vote add column if not exists signature_name text;

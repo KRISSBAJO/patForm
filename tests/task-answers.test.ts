@@ -4,6 +4,8 @@ import {readFileSync} from 'node:fs';
 import {Blueprint} from '../src/blueprint/index.js';
 import {collectTaskAnswers} from '../src/runtime/task-answers.js';
 import {withCalculatedFields} from '../src/runtime/expr.js';
+import {checkTaskFileReferences} from '../src/runtime/receipt-files.js';
+import type {Client} from '../src/runtime/db.js';
 
 const fixture=()=>{
   const bp=Blueprint.parse(JSON.parse(readFileSync('processes/employee-onboarding.blueprint.json','utf8')));
@@ -48,6 +50,16 @@ test('task keeps separate uploaded evidence on each defect row',()=>{
   assert.throws(()=>collectTaskAnswers(bp,['repair_photo'],current,{defects:[{repair_photo:'https://example.com/photo.jpg'},{repair_photo:b}]},['it_operator']),/Upload the actual file/);
   const multiple=collectTaskAnswers(bp,['repair_photo'],current,{defects:[{repair_photo:[a,b]},{repair_photo:[b]}]},['it_operator']);
   assert.deepEqual((multiple.merged.defects as Record<string,unknown>[])[0]?.repair_photo,[a,b]);
+});
+
+test('task cannot complete using a photo that does not belong to this record and field',async()=>{
+  const bp=fixture();
+  const ref='receipt-file:00000000-0000-4000-8000-000000000001';
+  const instance='00000000-0000-4000-8000-000000000002';
+  const checked:unknown[][]=[];
+  const client={query:async (_sql:string,args:unknown[])=>{checked.push(args);return {rows:[]};}} as unknown as Client;
+  await assert.rejects(checkTaskFileReferences(client,instance,bp,['repair_photo'],{defects:[{repair_photo:[ref]}]}),/to this record/);
+  assert.deepEqual(checked,[[ref.slice('receipt-file:'.length),instance,'repair_photo']]);
 });
 
 test('task cannot replace a row, modify unrelated fields or act without editing authority',()=>{

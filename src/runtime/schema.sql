@@ -659,6 +659,7 @@ create table approval_request (
   decided_by    text,
   decided_at    timestamptz,
   reason        text,
+  signature_name text,
   created_at    timestamptz not null,
   due_at        timestamptz,
   -- For a quorum, how many different people must approve; for a majority
@@ -686,6 +687,7 @@ create table approval_vote (
   actor       text not null,
   decision    text not null check (decision in ('approved', 'rejected', 'changes_requested')),
   reason      text,
+  signature_name text,
   decided_at  timestamptz not null,
   unique (request_id, actor)
 );

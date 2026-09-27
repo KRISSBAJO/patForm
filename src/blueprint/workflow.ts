@@ -61,6 +61,8 @@ export const Approval = z
     /** Section 6.5: approve, reject, request changes. */
     allowRequestChanges: z.boolean().default(true),
     reasonRequired: z.boolean().default(false),
+    /** Require an authenticated approver to type their name and affirm the decision as an electronic signature. */
+    signatureRequired: z.boolean().default(false),
     /**
      * Separation of duties: the person who submitted the record may not decide
      * this approval, however they are addressed.
