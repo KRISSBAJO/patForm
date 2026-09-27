@@ -27,6 +27,23 @@ test('targeted repair preserves security and output assertions',()=>{
   assert.ok(outputIndex>=0);
   assert.throws(()=>applyTargetedRevision(bp,{changes:[{path:`/tests/${outputIndex}/expect`,value:{...bp.tests[outputIndex]!.expect,documents:[],emails:[]}}]}));
 });
+test('targeted repair may strengthen a respondent checklist with declared mandatory choices',()=>{
+  const bp=fixture();
+  bp.data.fields.push({key:'handover',label:'Handover',type:'repeating_group',classification:'internal',setBy:'respondent',fields:[
+    {key:'kind',label:'Document kind',type:'single_choice',classification:'internal',setBy:'respondent',choices:[{value:'warranty',label:'Warranty'},{value:'permit',label:'Permit'}]},
+    {key:'evidence',label:'Evidence',type:'file',classification:'internal',setBy:'respondent'},
+  ]});
+  bp.experience.pages[0]!.sections[0]!.fields.push('handover');
+  const index=bp.data.fields.length-1;
+  const next=applyTargetedRevision(bp,{changes:[
+    {path:`/data/fields/${index}/required`,value:true},
+    {path:`/data/fields/${index}/requiredChoices`,value:{field:'kind',values:['warranty','permit']}},
+    {path:`/data/fields/${index}/fields/1/requiredWhen`,value:{op:'eq',left:{field:'kind'},right:{literal:'permit'}}},
+  ]});
+  assert.deepEqual(next.data.fields[index]!.requiredChoices!.values,['warranty','permit']);
+  assert.ok(next.data.fields[index]!.fields![1]!.requiredWhen);
+  assert.throws(()=>applyTargetedRevision(next,{changes:[{path:`/data/fields/${index}/requiredChoices`,value:{field:'kind',values:['warranty']}}]}));
+});
 test('provider repair requests a bounded patch instead of another blueprint',async()=>{
   const bp=fixture();
   const next=await proposeTargetedRevision({name:'fake',model:'test',maxOutputTokens:1000,generate:async request=>{

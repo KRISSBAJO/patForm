@@ -28,6 +28,7 @@ export interface PublicField {
   choices?: { value: string; label: string }[];
   constraints?: Record<string, unknown>;
   fields?: PublicField[];
+  requiredChoices?: { field: string; values: string[] };
   default?: unknown;
 }
 
@@ -604,6 +605,7 @@ function RepeatingGroup({
         {field.required && <span className="fm__req" aria-hidden="true"> *</span>}
       </span>
       {field.help && <p className="fm__help">{field.help}</p>}
+      {field.requiredChoices && <p className="fm__help">Required: {field.requiredChoices.values.map(value=>field.fields?.find(child=>child.key===field.requiredChoices?.field)?.choices?.find(choice=>choice.value===value)?.label??value.replace(/_/g,' ')).join(', ')}.</p>}
 
       {rows.map((row, index) => (
         <div className="fm__row" key={index}>

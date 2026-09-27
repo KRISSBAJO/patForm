@@ -209,16 +209,24 @@ export function missingRequiredFields(bp: Blueprint, answers: Answers, now = new
     }
     if (field.type === 'file' && !blank(value) && checkField(field, value)) missing.push(field.key);
     if (field.type === 'repeating_group' && Array.isArray(value)) {
+      if(field.requiredChoices) for(const choice of field.requiredChoices.values) {
+        if(!value.some(row=>row && typeof row==='object' && !Array.isArray(row) && row[field.requiredChoices!.field]===choice))
+          missing.push(`${field.key}.${choice}`);
+      }
       for (const [index, row] of value.entries()) {
         if (!row || typeof row !== 'object' || Array.isArray(row)) continue;
         const item = row as Answers;
         for (const child of field.fields ?? []) {
+          if(child.setBy==='operator'||child.setBy==='system') continue;
           if ((child.required || (child.requiredWhen && evaluate(child.requiredWhen, { answers: { ...answers, ...item }, now }))) && blank(item[child.key])) {
             missing.push(`${field.key}[${index}].${child.key}`);
           }
           if (child.type === 'file' && !blank(item[child.key]) && checkField(child, item[child.key])) missing.push(`${field.key}[${index}].${child.key}`);
         }
       }
+    }
+    if (field.type === 'repeating_group' && field.requiredChoices && !Array.isArray(value)) {
+      for (const choice of field.requiredChoices.values) missing.push(`${field.key}.${choice}`);
     }
   }
   return missing;
@@ -251,10 +259,18 @@ export function validateAnswers(
     if (message) errors.push({ field: field.key, message });
 
     // Rows inside a repeating group are checked against the group's own fields.
-    if (field.type === 'repeating_group' && Array.isArray(answers[field.key])) {
-      const rows = answers[field.key] as Record<string, unknown>[];
+    if (field.type === 'repeating_group' && (Array.isArray(answers[field.key]) || field.requiredChoices)) {
+      const rows = Array.isArray(answers[field.key]) ? answers[field.key] as Record<string, unknown>[] : [];
+      if(field.requiredChoices) for(const choice of field.requiredChoices.values) {
+        if(!rows.some(row=>row?.[field.requiredChoices!.field]===choice))
+          errors.push({field:field.key,message:`Add a ${choice.replace(/_/g,' ')} row to ${field.label}.`});
+      }
       for (const [index, row] of rows.entries()) {
         for (const child of field.fields ?? []) {
+          if(child.setBy==='operator'||child.setBy==='system') {
+            if(row?.[child.key]!==undefined) errors.push({field:`${field.key}[${index}].${child.key}`,message:`${child.label} is filled after submission by authorized staff.`});
+            continue;
+          }
           const rowAnswers = { ...answers, ...row };
           const required = Boolean(child.required || (child.requiredWhen && evaluate(child.requiredWhen, { answers: rowAnswers, now })));
           const childMessage = checkField({ ...child, required }, row?.[child.key], { answers: rowAnswers, labelOf });

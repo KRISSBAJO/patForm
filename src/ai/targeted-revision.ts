@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { zodToJsonSchema } from 'zod-to-json-schema';
 import { Blueprint } from '../blueprint/index.js';
 import { extractJson, type Provider } from './provider.js';
+import { validate } from '../compiler/validate.js';
 
 const Patch = z.object({ changes:z.array(z.object({path:z.string(),value:z.unknown()}).strict()).min(1).max(30) }).strict();
 
@@ -14,8 +15,31 @@ export function applyTargetedRevision(source:Blueprint, input:unknown):Blueprint
     if(parts.some(p=>['__proto__','prototype','constructor'].includes(p))) throw new Error('Unsafe repair path');
     const allowed=/^\/intent\/(openDecisions|assumptions|retentionDays)$/.test(patch.path)
       || /^\/workflow\/transitions\/\d+\/(when|to)$/.test(patch.path)
-      || /^\/tests\/\d+\/(steps|expect)$/.test(patch.path);
+      || /^\/tests\/\d+\/(steps|expect)$/.test(patch.path)
+      || /^\/data\/fields\/\d+\/(required|requiredChoices)$/.test(patch.path)
+      || /^\/data\/fields\/\d+\/fields\/\d+\/requiredWhen$/.test(patch.path);
     if(!allowed) throw new Error(`Repair cannot change ${patch.path}. Use the explicit editor for access, documents or other structural changes.`);
+    if(parts[0]==='data') {
+      const index=Number(parts[2]);
+      const original=source.data.fields[index];
+      if(!original || original.type!=='repeating_group' || original.setBy==='operator'||original.setBy==='system')
+        throw new Error('Repair can only strengthen a respondent checklist');
+      if(parts[3]==='required') {
+        if(patch.value!==true) throw new Error('Repair cannot make a required checklist optional');
+      } else if(parts[3]==='requiredChoices') {
+        const choice=original.fields?.find(field=>field.key===(patch.value as {field?:unknown})?.field);
+        const values=(patch.value as {values?:unknown})?.values;
+        if(!choice || !['single_choice','dropdown'].includes(choice.type) || !Array.isArray(values) || !values.length ||
+          !values.every(value=>typeof value==='string' && choice.choices?.some(option=>option.value===value)) ||
+          original.requiredChoices?.field && original.requiredChoices.field!==choice.key ||
+          original.requiredChoices?.values.some(value=>!values.includes(value)))
+          throw new Error('Repair can only add declared mandatory checklist choices');
+      } else {
+        const child=original.fields?.[Number(parts[4])];
+        if(!child || child.type!=='file' || child.setBy==='operator'||child.setBy==='system' || child.requiredWhen || child.required)
+          throw new Error('Repair can only require previously optional respondent evidence');
+      }
+    }
     let parent:Record<string,unknown>=next as unknown as Record<string,unknown>;
     for(const part of parts.slice(0,-1)) {
       if(!Object.hasOwn(parent,part) || !parent[part] || typeof parent[part]!=='object') throw new Error('Repair path does not exist');
@@ -24,6 +48,7 @@ export function applyTargetedRevision(source:Blueprint, input:unknown):Blueprint
     parent[parts.at(-1)!]=structuredClone(patch.value);
   }
   const parsed=Blueprint.parse(next);
+  if(validate(parsed).errors.length) throw new Error('Repair produced invalid blueprint checks');
   for(const test of source.tests) {
     const updated=parsed.tests.find(t=>t.key===test.key)!;
     if(test.kind==='permission' && JSON.stringify(updated)!==JSON.stringify(test)) throw new Error('Repair cannot weaken permission tests');
@@ -39,11 +64,11 @@ export function applyTargetedRevision(source:Blueprint, input:unknown):Blueprint
 }
 
 export async function proposeTargetedRevision(provider:Provider, source:Blueprint, description:string):Promise<Blueprint> {
-  const system='Return a small set of replacements, not a blueprint. Every change has EXACTLY two keys: path and value. Example: {"changes":[{"path":"/intent/retentionDays","value":365}]}. Do not put expect, operation, reason or other keys on a change. Implement only the explicit business choices. Allowed paths: /intent/openDecisions, /intent/assumptions, /intent/retentionDays, /workflow/transitions/INDEX/when or /to, /tests/INDEX/steps or /expect. Replace the entire allowed leaf; nested paths such as /intent/openDecisions/0/provisionally are forbidden. Preserve approval requirements, security tests, duplicate policy and expected outputs. Never modify roles, documents, fields, email recipients or task authorities. Never change permission or duplicate test scenarios. Scenario steps use the source format: manual steps have step="manual", transition=<existing transition key>, as=<role>; permission steps have step="permission", action=submit|view|edit|approve|export|operate, NOT a transition key. Leave a decision unresolved if these paths cannot implement it.';
+  const system='Return a small set of replacements, not a blueprint. Every change has EXACTLY two keys: path and value. Example: {"changes":[{"path":"/intent/retentionDays","value":365}]}. Implement only explicit business choices. Allowed paths: /intent/openDecisions, /intent/assumptions, /intent/retentionDays, /workflow/transitions/INDEX/when or /to, /tests/INDEX/steps or /expect. For mandatory handover checklist items only, /data/fields/INDEX/required may be set true, /data/fields/INDEX/requiredChoices may add declared choice values, and /data/fields/INDEX/fields/INDEX/requiredWhen may require respondent file evidence based on a row answer. Replace the entire allowed leaf. Preserve approval requirements, security tests, duplicate policy and expected outputs. Never modify roles, documents, email recipients or task authorities. Never change permission or duplicate test scenarios. Manual test steps use step="manual", transition=<existing key>, as=<role>. Leave a decision unresolved if these paths cannot implement it.';
   let feedback='';
   for(let attempt=0;attempt<2;attempt++) {
     const response=await provider.generate({description,stage:'targeted-repair',shape:Patch,system,
-      user:JSON.stringify({request:description,source})+feedback,schema:zodToJsonSchema(Patch) as Record<string,unknown>});
+      user:JSON.stringify({request:description,source:repairSourceView(source)})+feedback,schema:zodToJsonSchema(Patch) as Record<string,unknown>});
     if(response.meta.refusal) throw new Error(response.meta.refusal);
     try { return applyTargetedRevision(source,response.parsed??extractJson(response.text)); }
     catch(error) {
@@ -54,4 +79,18 @@ export async function proposeTargetedRevision(provider:Provider, source:Blueprin
     }
   }
   throw new Error('Targeted repair could not produce a valid patch');
+}
+
+/** Only the indexed leaves and the context needed to choose safe patches. */
+function repairSourceView(source:Blueprint) {
+  return {
+    key:source.key,name:source.name,intent:source.intent,
+    fields:source.data.fields.map((field,index)=>({index,key:field.key,type:field.type,setBy:field.setBy,required:field.required,
+      requiredChoices:field.requiredChoices,children:field.fields?.map((child,index)=>({index,key:child.key,type:child.type,setBy:child.setBy,
+        required:child.required,requiredWhen:child.requiredWhen,choices:child.choices})),choices:field.choices})),
+    transitions:source.workflow.transitions.map((route,index)=>({index,key:route.key,from:route.from,to:route.to,trigger:route.trigger,when:route.when,actions:route.actions})),
+    tasks:source.workflow.tasks.map(task=>({key:task.key,requiredFields:task.requiredFields,assignee:task.assignee})),
+    roles:source.roles.map(role=>({key:role.key,capabilities:role.capabilities,editableFields:role.editableFields})),
+    tests:source.tests.map((scenario,index)=>({index,key:scenario.key,kind:scenario.kind,steps:scenario.steps,expect:scenario.expect})),
+  };
 }

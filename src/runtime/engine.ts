@@ -14,6 +14,8 @@ import {
 } from './email.js';
 import { flattenFields, placeholdersIn, type Blueprint, type Action, type Party, type Transition } from '../blueprint/index.js';
 import { checkField, missingRequiredFields } from '../blueprint/answers.js';
+import { collectTaskAnswers } from './task-answers.js';
+import { generatedReferences } from './references.js';
 import { evaluate, render, withCalculatedFields, type Answers } from './expr.js';
 import { inTransaction, isUniqueViolation, type Client, type Pool } from './db.js';
 import { InvalidInput } from './errors.js';
@@ -514,10 +516,7 @@ export class Engine {
       if (typeof answers !== 'object' || answers === null || Array.isArray(answers)) {
         throw new InvalidInput('task answers must be an object');
       }
-      const requiredFields = declared?.requiredFields ?? [];
-      const extra = Object.keys(answers).filter((key) => !requiredFields.includes(key));
-      if (extra.length) throw new InvalidInput(`this task does not collect ${extra.join(', ')}`);
-
+      let editRoles: string[] = [];
       if (Object.keys(answers).length) {
         const edit = await require_(client, {
           principal: args.principal,
@@ -527,26 +526,17 @@ export class Engine {
           blueprint: bp,
           instanceId: instance.id,
         }, this.pool);
-        const refused = rejectUneditable(bp, edit.roles, answers);
-        if (refused.length) throw new InvalidInput(`you cannot edit ${refused.join(', ')}`);
+        editRoles=edit.roles;
       }
-
-      const merged = { ...instance.data, ...answers };
-      for (const key of requiredFields) {
-        const field = bp.data.fields.find((f) => f.key === key);
-        if (!field) throw new InvalidInput(`task requirement ${key} is not a field`);
-        const problem = checkField({ ...field, required: true }, merged[key]);
-        if (problem) throw new InvalidInput(problem);
-      }
-      if (Object.keys(answers).length) {
-        const previous = Object.fromEntries(Object.keys(answers).map((key) => [key, instance.data[key] ?? null]));
+      const {merged,touched,previous}=collectTaskAnswers(bp,declared?.requiredFields??[],instance.data,answers,editRoles);
+      if (touched.length) {
         await client.query('update instance set data = $1 where id = $2', [JSON.stringify(merged), instance.id]);
         instance.data = merged;
         await appendEvent(client, {
           tenantId: instance.tenant_id,
           instanceId: instance.id,
           type: 'record_updated',
-          payload: { fields: Object.keys(answers), previous, task: args.taskKey },
+          payload: { fields: touched, previous, task: args.taskKey },
           actor: describePrincipal(args.principal),
           now: args.now,
         });
@@ -1538,12 +1528,12 @@ async function performEffect(
 
   switch (action.do) {
     case 'set_reference': {
-      const reference = `${action.prefix}${instance.id.toUpperCase()}`;
-      const data = { ...instance.data, [action.field]: reference };
+      const {data,references}=generatedReferences(bp,instance.data,action.field,action.prefix,instance.id);
+      if(!references.length) return;
       await client.query('update instance set data = $1 where id = $2', [JSON.stringify(data), instance.id]);
       instance.data = data;
       await appendEvent(client, { tenantId: instance.tenant_id, instanceId: instance.id,
-        type: 'reference_generated', payload: { field: action.field, reference }, actor: 'system', now });
+        type: 'reference_generated', payload: { field: action.field, reference: references[0], references }, actor: 'system', now });
       return;
     }
     case 'send_email': {

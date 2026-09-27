@@ -63,7 +63,7 @@ export interface PendingTask {
   taskKey: string;
   taskName: string;
   description?: string;
-  requiredFields?: { key: string; label: string; type: string; choices?: { value: string; label: string }[] }[];
+  requiredFields?: { key: string; label: string; type: string; choices?: { value: string; label: string }[]; groupKey?: string; groupLabel?: string; rowCount?: number }[];
   assignee: string | null;
   late: boolean;
   summary: string;
@@ -121,9 +121,11 @@ export function RecordPage({
   const [decisionMode, setDecisionMode] = useState<'rejected' | 'changes_requested' | null>(null);
   const [completionAnswers, setCompletionAnswers] = useState<Record<string, string>>({});
   /** What is typed for a task field, or what the record already holds, as text for the control. */
-  const taskValue = (key: string): string => {
-    if (completionAnswers[key] !== undefined) return completionAnswers[key]!;
-    const recorded = record.fields.find((f) => f.key === key)?.value;
+  const taskValue = (key: string, groupKey?: string, index=0): string => {
+    const inputKey=groupKey ? `${groupKey}[${index}].${key}` : key;
+    if (completionAnswers[inputKey] !== undefined) return completionAnswers[inputKey]!;
+    const groupValue=groupKey ? record.fields.find(f=>f.key===groupKey)?.value : undefined;
+    const recorded=groupKey && Array.isArray(groupValue) ? (groupValue[index] as Record<string,unknown>|undefined)?.[key] : record.fields.find((f) => f.key === key)?.value;
     if (recorded === null || recorded === undefined || recorded === '[redacted]') return '';
     return typeof recorded === 'object' ? '' : String(recorded);
   };
@@ -131,10 +133,16 @@ export function RecordPage({
   const taskAnswers = (): Record<string, unknown> => {
     const out: Record<string, unknown> = {};
     for (const field of task?.requiredFields ?? []) {
-      const raw = taskValue(field.key);
-      if (raw === '') continue;
-      out[field.key] =
-        ['yes_no', 'signature_ack'].includes(field.type) ? raw === 'true' : ['number', 'currency', 'rating'].includes(field.type) ? Number(raw) : raw;
+      const count=field.groupKey ? field.rowCount??0 : 1;
+      for(let index=0;index<count;index++) {
+        const raw=taskValue(field.key,field.groupKey,index);
+        if(raw==='') continue;
+        const value=['yes_no','signature_ack'].includes(field.type) ? raw==='true' : ['number','currency','rating'].includes(field.type) ? Number(raw) : raw;
+        if(field.groupKey) {
+          const rows=(out[field.groupKey] ??=Array.from({length:count},()=>({}))) as Record<string,unknown>[];
+          rows[index]![field.key]=value;
+        } else out[field.key]=value;
+      }
     }
     return out;
   };
@@ -404,14 +412,15 @@ export function RecordPage({
               {task.late ? ' — overdue' : ''}. {task.summary}
             </p>
             {task.description && <p>{task.description}</p>}
-            {task.requiredFields?.map((field) => {
-              const value = taskValue(field.key);
-              const set = (v: string) => setCompletionAnswers((was) => ({ ...was, [field.key]: v }));
-              const id = `task-${field.key}`;
+            {task.requiredFields?.flatMap((field) => Array.from({length:field.groupKey?field.rowCount??0:1},(_,index) => {
+              const inputKey=field.groupKey ? `${field.groupKey}[${index}].${field.key}` : field.key;
+              const value = taskValue(field.key,field.groupKey,index);
+              const set = (v: string) => setCompletionAnswers((was) => ({ ...was, [inputKey]: v }));
+              const id = `task-${inputKey}`;
               const choice = field.type === 'dropdown' || field.type === 'single_choice';
               return (
-                <div key={field.key} style={{ marginTop: 12 }}>
-                  <label htmlFor={id}>{field.label} <span aria-hidden="true">*</span></label>
+                <div key={inputKey} style={{ marginTop: 12 }}>
+                  <label htmlFor={id}>{field.groupLabel ? `${field.groupLabel} ${index+1} · ` : ''}{field.label} <span aria-hidden="true">*</span></label>
                   {field.type === 'long_text' ? (
                     <textarea id={id} className="rc__reasonBox" value={value} onChange={(e) => set(e.target.value)} required />
                   ) : field.type === 'signature_ack' ? (
@@ -438,13 +447,13 @@ export function RecordPage({
                   )}
                 </div>
               );
-            })}
+            }))}
           </div>
           <div className="rc__decisionActions">
             <button
               type="button"
               className="cs__btn cs__btn--primary"
-              disabled={working || task.requiredFields?.some((field) => field.type === 'signature_ack' ? taskValue(field.key) !== 'true' : !taskValue(field.key).trim())}
+              disabled={working || task.requiredFields?.some((field) => (field.groupKey && !field.rowCount) || Array.from({length:field.groupKey?field.rowCount??0:1},(_,index)=>field.type==='signature_ack' ? taskValue(field.key,field.groupKey,index)!=='true' : !taskValue(field.key,field.groupKey,index).trim()).some(Boolean))}
               onClick={() => onCompleteTask(record.instanceId, task.taskKey, taskAnswers())}
             >
               <Icon name="done" />

@@ -50,6 +50,7 @@ export interface PublicField {
   required: boolean;
   requiredWhen?: unknown;
   choices?: { value: string; label: string }[];
+  requiredChoices?: { field: string; values: string[] };
   constraints?: Record<string, unknown>;
   fields?: PublicField[];
   /** Serialised so the browser can hide a section without asking the server. */
@@ -113,7 +114,8 @@ function publicField(field: Blueprint['data']['fields'][number]): PublicField {
     choices: field.choices,
     constraints: field.constraints as Record<string, unknown> | undefined,
     default: field.default,
-    fields: field.fields?.map(publicField),
+    requiredChoices:field.requiredChoices,
+    fields: field.fields?.filter(child=>child.setBy!=='operator'&&child.setBy!=='system').map(publicField),
   };
 }
 
@@ -167,7 +169,10 @@ export async function publicForm(pool: Pool, ref: string): Promise<PublicForm | 
         description: section.description,
         visibleWhen: section.visibleWhen,
         widths: section.widths,
-        fields: section.fields.map((key) => publicField(byKey.get(key)!)),
+        fields: section.fields.filter(key=>{
+          const field=byKey.get(key);
+          return field && field.setBy!=='operator' && field.setBy!=='system';
+        }).map((key) => publicField(byKey.get(key)!)),
       })),
     })),
   };

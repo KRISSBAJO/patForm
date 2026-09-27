@@ -338,6 +338,13 @@ export function validate(bp: Blueprint, requestedDescription?: string): Diagnost
     if (field.type === 'repeating_group' && !field.fields?.length) {
       d.error('TYPE003', at, `Repeating group "${field.key}" contains no fields.`);
     }
+    if(field.requiredChoices) {
+      const source=field.fields?.find(child=>child.key===field.requiredChoices!.field);
+      if(field.type!=='repeating_group'||!source||!['single_choice','dropdown'].includes(source.type)||
+        new Set(field.requiredChoices.values).size!==field.requiredChoices.values.length||
+        field.requiredChoices.values.some(value=>!source.choices?.some(choice=>choice.value===value)))
+        d.error('TYPE010',at,`Required rows for "${field.key}" must name distinct values from a choice field inside that repeating group.`);
+    }
   }
   detectCalcCycles(d, allFields);
 
@@ -1058,11 +1065,7 @@ export function validate(bp: Blueprint, requestedDescription?: string): Diagnost
       const at = `workflow.tasks[${i}].requiredFields`;
       const field = requireField(key, at, `Task "${task.key}" completion`);
       if (!field) continue;
-      if (!bp.data.fields.some(f=>f.key===key)) {
-        d.error('TASK001',at,`Task "${task.key}" requires "${key}" inside a repeating section. Task completion currently collects only top-level operator fields.`,
-          'Use a separate top-level task answer, or collect the repeating-section answer on the form. Do not claim per-row task collection is supported.');
-        continue;
-      }
+      const containingGroup=bp.data.fields.find(f=>f.type==='repeating_group' && f.fields?.some(child=>child.key===key));
       /*
        * A trainer's review records a completion status, a yes/no on
        * competency, a score. Only text was allowed here, so every draft that
@@ -1078,7 +1081,7 @@ export function validate(bp: Blueprint, requestedDescription?: string): Diagnost
       }
       if ('role' in task.assignee) {
         const role = roleByKey.get(task.assignee.role);
-        if (role && (!role.capabilities.includes('edit') || !role.editableFields?.includes(key))) {
+        if (role && (!role.capabilities.includes('edit') || !role.editableFields?.includes(key) || role.hiddenFields?.includes(key) || (containingGroup && role.hiddenFields?.includes(containingGroup.key)))) {
           d.error('TASK002', at, `Task "${task.key}" requires "${key}", but ${role.name} cannot edit it.`);
         }
       }

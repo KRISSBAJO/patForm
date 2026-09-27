@@ -120,6 +120,8 @@ export interface Field {
   compute?: Calc;
   /** repeating_group only */
   fields?: Field[];
+  /** For a repeating group, each listed choice must have its own row. */
+  requiredChoices?: { field: string; values: string[] };
   /**
    * Who supplies this value. `respondent` fields belong on a form page;
    * `operator` fields are filled in during the process (a triage severity, a
@@ -152,6 +154,7 @@ export const Field: z.ZodType<Field> = z.lazy(() =>
       default: z.union([z.string(), z.number(), z.boolean(), z.null()]).optional(),
       compute: Calc.optional(),
       fields: z.array(Field).optional(),
+      requiredChoices: z.object({field:Key,values:z.array(z.string().min(1)).min(1)}).strict().optional(),
       setBy: z.enum(['respondent', 'operator', 'system']).optional(),
       collectionReason: z.string().optional(),
     })

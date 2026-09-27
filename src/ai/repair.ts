@@ -128,6 +128,60 @@ export function repairBlueprint(input: Blueprint, failures: ScenarioResult[] = [
 
   const decisions = repairStaffFixtures(bp, changes, options);
 
+  // A positive scenario may still use the old single-row shorthand for a
+  // nested task. Expand it to the actual number of respondent rows, leaving
+  // every distinct existing row and each security/negative scenario intact.
+  for(const test of bp.tests.filter(test=>test.kind==='happy_path'||test.kind==='rejection')) {
+    const submit=test.steps.find(step=>step.step==='submit');
+    if(submit?.step!=='submit') continue;
+    const completed=completeAnswers(bp,submit.answers);
+    for(const step of test.steps) {
+      if(step.step!=='complete_task'||step.expectDenied||!step.answers) continue;
+      const task=bp.workflow.tasks.find(task=>task.key===step.task);
+      if(!task) continue;
+      for(const group of bp.data.fields.filter(field=>field.type==='repeating_group')) {
+        const keys=(task.requiredFields??[]).filter(key=>group.fields?.some(child=>child.key===key));
+        const rows=completed[group.key];
+        if(!keys.length||!Array.isArray(rows)||rows.length<2||!keys.some(key=>key in step.answers!)) continue;
+        if(group.key in step.answers) continue;
+        step.answers[group.key]=rows.map(()=>Object.fromEntries(keys.filter(key=>key in step.answers!).map(key=>[key,step.answers![key]])));
+        for(const key of keys) delete step.answers[key];
+        changes.push({at:`tests.${test.key}.steps`,change:`Expanded ${group.label} task answers across its ${rows.length} existing test rows. Each row is checked separately.`});
+      }
+    }
+  }
+
+  // A named manual route is an explicit test choice. Supply an operator
+  // prerequisite only when an actor already in that scenario can edit it and
+  // exactly one declared choice makes the route's guard true.
+  for(const test of bp.tests.filter(t=>t.kind!=='missing_data' && t.kind!=='duplicate')) {
+    const known:Record<string,unknown>={};
+    const priorActors:string[]=[];
+    for(let index=0;index<test.steps.length;index++) {
+      const step=test.steps[index]!;
+      if(step.step==='submit') Object.assign(known,completeAnswers(bp,step.answers));
+      if(step.step==='edit' && !step.expectDenied) Object.assign(known,step.answers);
+      if(step.step==='complete_task' && !step.expectDenied) Object.assign(known,step.answers??{});
+      if(step.step!=='manual') continue;
+      const rule=bp.workflow.transitions.find(t=>t.key===step.transition);
+      if(!rule?.when) {priorActors.push(step.as);continue;}
+      const missing=[...new Set(fieldsInExpr(rule.when))].filter(key=>known[key]===undefined);
+      if(missing.length!==1) {priorActors.push(step.as);continue;}
+      const key=missing[0]!;
+      const field=bp.data.fields.find(f=>f.key===key);
+      if(field?.setBy!=='operator'||field.compute) {priorActors.push(step.as);continue;}
+      const values=field.type==='yes_no'?[true,false]:['single_choice','dropdown'].includes(field.type)?field.choices?.map(c=>c.value)??[]:[];
+      const matches=values.filter(value=>evaluate(rule.when!,{answers:{...known,[key]:value},now:new Date('2026-09-21T09:00:00Z')}));
+      const role=[...priorActors,step.as].reverse().find(actor=>bp.roles.some(r=>r.key===actor&&r.kind==='internal'&&r.capabilities.includes('edit')&&r.editableFields?.includes(key)&&!r.hiddenFields?.includes(key)));
+      if(matches.length===1 && role) {
+        test.steps.splice(index,0,{step:'edit',as:role,answers:{[key]:matches[0]}});
+        known[key]=matches[0];index++;
+        changes.push({at:`tests.${test.key}.steps`,change:`Recorded ${field.label} by authorized ${role} before the test's explicit ${step.transition} route. Production rules and permissions are unchanged.`});
+      }
+      priorActors.push(step.as);
+    }
+  }
+
   // Scenario uploads are synthetic references, never real customer evidence.
   // Repair only file inputs explicitly rejected by the engine; incomplete-data
   // cases and all production requirements remain untouched.
@@ -178,6 +232,28 @@ export function repairBlueprint(input: Blueprint, failures: ScenarioResult[] = [
       if (!email || !baseline.includes(email) || test.expect.emails.includes(email)) continue;
       test.expect.emails.push(email);
       changes.push({at:`tests.${test.key}.expect.emails`,change:`Included ${email}, the submission email confirmed by the engine. All other assertions remain.`});
+    }
+  }
+  // An explicitly named manual route in the scenario has already been
+  // exercised by the engine. Its reported side effects belong in that test's
+  // output list; do not infer side effects from routes the scenario never ran.
+  for(const result of failures) {
+    const test=bp.tests.find(item=>item.key===result.test);
+    if(!test||!['happy_path','rejection','timeout'].includes(test.kind)) continue;
+    const named=test.steps.filter(step=>step.step==='manual').map(step=>bp.workflow.transitions.find(route=>route.key===step.transition)).filter((route):route is NonNullable<typeof route>=>!!route);
+    for(const kind of ['emails','documents'] as const) {
+      if(!test.expect[kind]) continue;
+      const verb=kind==='emails'?'email':'document';
+      for(const failure of result.failures) {
+        const key=failure.match(new RegExp(`^unexpected ${verb} "([^"]+)" was produced$`))?.[1];
+        if(!key||test.expect[kind]!.includes(key)) continue;
+        const declared=named.some(route=>route.actions.some(action=>kind==='emails'
+          ? action.do==='send_email' && action.template===key
+          : action.do==='generate_document' && action.document===key));
+        if(!declared) continue;
+        test.expect[kind]!.push(key);
+        changes.push({at:`tests.${test.key}.expect.${kind}`,change:`Included ${key}, produced by a route explicitly run in this scenario. Existing expectations remain.`});
+      }
     }
   }
   return {blueprint:bp,changes,decisions};

@@ -356,10 +356,19 @@ export function completeAnswers(bp: Blueprint, given: Answers): Answers {
     if (!changed) break;
   }
   for (const field of bp.data.fields) {
-    if (field.type !== 'repeating_group' || !Array.isArray(answers[field.key])) continue;
+    if (field.type !== 'repeating_group') continue;
+    if (field.requiredChoices) {
+      const rows=Array.isArray(answers[field.key]) ? [...answers[field.key] as Answers[]] : [];
+      for(const value of field.requiredChoices.values) {
+        if(!rows.some(row=>row?.[field.requiredChoices!.field]===value)) rows.push({[field.requiredChoices.field]:value});
+      }
+      answers[field.key]=rows;
+    }
+    if (!Array.isArray(answers[field.key])) continue;
     answers[field.key] = (answers[field.key] as Answers[]).map((row) => {
       const completed = { ...row };
       for (const child of field.fields ?? []) {
+        if (child.setBy === 'operator' || child.setBy === 'system') continue;
         if (completed[child.key] !== undefined) continue;
         if (child.required || (child.requiredWhen && evaluate(child.requiredWhen, { answers: { ...answers, ...completed }, now: new Date('2026-10-01') }))) {
           completed[child.key] = placeholderFor(child);
@@ -398,7 +407,7 @@ function placeholderFor(field: Blueprint['data']['fields'][number]): unknown {
       return 'receipt-file:00000000-0000-4000-8000-000000000001';
     case 'repeating_group':
       return [
-        Object.fromEntries((field.fields ?? []).map((child) => [child.key, placeholderFor(child)])),
+        Object.fromEntries((field.fields ?? []).filter(child=>child.setBy!=='operator'&&child.setBy!=='system').map((child) => [child.key, placeholderFor(child)])),
       ];
     case 'phone':
       return '+44 7700 900000';

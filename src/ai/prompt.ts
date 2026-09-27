@@ -9,7 +9,7 @@ import type { Diagnostic } from '../compiler/diagnostics.js';
  * record says exactly which instructions produced it. Eval results are only
  * comparable within a version.
  */
-export const PROMPT_VERSION = 'blueprint-gen@17';
+export const PROMPT_VERSION = 'blueprint-gen@18';
 
 export const SYSTEM_PROMPT = `You design business processes for an operations platform.
 
@@ -111,7 +111,8 @@ Timers and reminders
 
 Tests
 - File evidence in scenario answers must be a synthetic "receipt-file:00000000-0000-4000-8000-000000000001" reference (or an array of these for multiple files), never a filename or URL. These references are test samples, not actual uploads. Omit unspecified required file answers in positive tests so the runner supplies them; preserve deliberately missing evidence in missing_data tests.
-- Task requiredFields must reference top-level operator fields in data.fields. A child field inside a repeating_group cannot be collected by task completion. Do not flatten a per-defect or per-document requirement into a single answer while claiming per-record collection; disclose that unsupported capability.
+- A task may collect operator fields inside a repeating group, with a separate answer for every existing row; it cannot create new rows. For a one-row sample test, answer the child field directly. For multiple rows, use an array under the group key with one object per row and only the task's required child keys. Keep after-submission image upload as an explicit limitation: task completion still does not collect files.
+- For a handover checklist where specific document kinds are mandatory, set the repeating group's requiredChoices to {"field":"handover_item","values":[...exact required choice values...]}, mark the group required, and require evidence for mandatory rows. A computed count of missing verification cannot establish that required rows exist: an empty group counts as zero. Positive scenarios must include the required rows and actual synthetic file references; a missing-document scenario must prove completion is blocked.
 - Include happy_path, missing_data, timeout, duplicate, and permission scenarios. Include a rejection scenario only when the workflow has an actual rejected outcome. A scenario names only the answers that matter to it.
 - A permission scenario asserts that a role is allowed or refused one of: submit, view, edit, approve, export, operate.
 - "missing_data" means the FORM is incomplete so nothing starts. A valid submission that takes a different legitimate route is a second happy_path, not missing_data.

@@ -10,6 +10,21 @@ import type { ScenarioResult } from '../src/runtime/scenarios.js';
 const fixture = () => Blueprint.parse(JSON.parse(readFileSync('processes/employee-onboarding.blueprint.json','utf8')));
 const result = (bp: Blueprint, passed = true, failures: string[] = []): ScenarioResult[] => bp.tests.map(t=>({process:bp.key,test:t.key,kind:t.kind,passed,failures}));
 
+test('repair records an authorized operator choice for a declared guarded route',()=>{
+  const bp=fixture();
+  bp.data.fields.push({key:'stop_recommended',label:'Stop recommended',type:'yes_no',setBy:'operator',classification:'internal'});
+  const inspector=bp.roles.find(r=>r.key==='it_operator')!;
+  inspector.capabilities.push('edit');inspector.editableFields=[...inspector.editableFields??[],'stop_recommended'];
+  bp.workflow.transitions.push({key:'chosen_safety_route',from:'manager_review',to:'hr_review',trigger:{on:'manual',by:['it_operator']},when:{op:'eq',left:{field:'stop_recommended'},right:{literal:true}},actions:[]});
+  const testCase=bp.tests.find(t=>t.kind==='happy_path')!;
+  testCase.steps.splice(1,0,{step:'manual',as:'it_operator',transition:'chosen_safety_route'});
+  const fixed=repairBlueprint(bp);
+  const index=fixed.blueprint.tests.find(t=>t.key===testCase.key)!.steps.findIndex(s=>s.step==='manual'&&s.transition==='chosen_safety_route');
+  assert.ok(index>0);
+  assert.deepEqual(fixed.blueprint.tests.find(t=>t.key===testCase.key)!.steps[index-1],{step:'edit',as:'it_operator',answers:{stop_recommended:true}});
+  assert.ok(!bp.tests.find(t=>t.key===testCase.key)!.steps.some(s=>s.step==='edit'&&s.answers.stop_recommended===true));
+});
+
 test('file fixture repair targets engine failures and preserves real evidence requirements',async()=>{
   const bp=fixture();
   const photo={key:'photo',label:'Photo',type:'file' as const,setBy:'respondent' as const,classification:'internal' as const,required:true};
@@ -170,6 +185,23 @@ test('staff test edit is schema supported and compiler rejects an unauthorized w
   bp.tests[0]!.steps.splice(1,0,{step:'edit',as:'new_hire',answers:{full_name:'Changed'}});
   assert.equal(Blueprint.safeParse(bp).success,true);
   assert.ok(validate(bp).items.some(d=>d.code==='TEST004'));
+});
+test('repair expands a positive test task answer across mandatory checklist rows',()=>{
+  const bp=fixture();
+  bp.data.fields.push({key:'handover_rows',label:'Handover rows',type:'repeating_group',classification:'internal',setBy:'respondent',required:true,
+    requiredChoices:{field:'kind',values:['certificate','warranty']},fields:[
+      {key:'kind',label:'Kind',type:'single_choice',classification:'internal',setBy:'respondent',choices:[{value:'certificate',label:'Certificate'},{value:'warranty',label:'Warranty'}]},
+      {key:'verified',label:'Verified',type:'yes_no',classification:'internal',setBy:'operator'},
+    ]});
+  bp.experience.pages[0]!.sections[0]!.fields.push('handover_rows');
+  bp.workflow.tasks.find(task=>task.key==='issue_equipment')!.requiredFields=['verified'];
+  const happy=bp.tests.find(test=>test.kind==='happy_path')!;
+  happy.steps.push({step:'complete_task',task:'issue_equipment',as:'it_operator',answers:{verified:true}});
+  const fixed=repairBlueprint(bp).blueprint.tests.find(test=>test.key===happy.key)!;
+  const completion=fixed.steps.at(-1)!;
+  assert.equal(completion.step,'complete_task');
+  assert.deepEqual(completion.answers,{handover_rows:[{verified:true},{verified:true}]});
+  assert.deepEqual(bp.tests.find(test=>test.key===happy.key)!.steps.at(-1),{step:'complete_task',task:'issue_equipment',as:'it_operator',answers:{verified:true}});
 });
 
 test('approval fixture records its declared decision through existing staff edit authority',()=>{

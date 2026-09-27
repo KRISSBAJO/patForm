@@ -682,6 +682,27 @@
                       "$ref": "#/definitions/ProcessBlueprint/properties/data/properties/fields/items"
                     }
                   },
+                  "requiredChoices": {
+                    "type": "object",
+                    "properties": {
+                      "field": {
+                        "$ref": "#/definitions/ProcessBlueprint/properties/key"
+                      },
+                      "values": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "minItems": 1
+                      }
+                    },
+                    "required": [
+                      "field",
+                      "values"
+                    ],
+                    "additionalProperties": false
+                  },
                   "setBy": {
                     "type": "string",
                     "enum": [
@@ -1890,6 +1911,31 @@
                         "step",
                         "task",
                         "as"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "step": {
+                          "type": "string",
+                          "const": "edit"
+                        },
+                        "as": {
+                          "$ref": "#/definitions/ProcessBlueprint/properties/key"
+                        },
+                        "answers": {
+                          "type": "object",
+                          "additionalProperties": {}
+                        },
+                        "expectDenied": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "step",
+                        "as",
+                        "answers"
                       ],
                       "additionalProperties": false
                     },

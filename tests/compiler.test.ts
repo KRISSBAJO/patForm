@@ -7,7 +7,7 @@ import { validate } from '../src/compiler/validate.js';
 
 const DIR = 'processes';
 
-test('task collection rejects repeating-section fields that the runtime cannot collect',()=>{
+test('task collection accepts authorized operator fields inside a repeating section',()=>{
   const bp=load('employee-onboarding.blueprint.json');
   const task=bp.workflow.tasks[0]!;
   assert.ok(task);
@@ -15,7 +15,10 @@ test('task collection rejects repeating-section fields that the runtime cannot c
   task.requiredFields=[key];
   const field={key,label:'Review',type:'long_text' as const,setBy:'operator' as const,classification:'internal' as const};
   bp.data.fields.push({key:'review_rows',label:'Review rows',type:'repeating_group',setBy:'respondent',classification:'internal',fields:[field]});
-  assert.ok(validate(bp).errors.some(e=>e.code==='TASK001' && e.message.includes('inside a repeating section')));
+  const role=bp.roles.find(r=>r.key===('role' in task.assignee ? task.assignee.role : ''))!;
+  role.capabilities.push('edit');
+  role.editableFields=[...role.editableFields??[],key];
+  assert.ok(!validate(bp).errors.some(e=>e.code==='TASK001'||e.code==='TASK002'),JSON.stringify(validate(bp).errors.filter(e=>e.code==='TASK001'||e.code==='TASK002')));
 });
 
 function load(file: string) {
