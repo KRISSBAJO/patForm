@@ -4,8 +4,35 @@ import {readFileSync} from 'node:fs';
 import {Blueprint} from '../src/blueprint/index.js';
 import {createPool} from '../src/runtime/db.js';
 import {runScenarios,type ScenarioProgress} from '../src/runtime/scenarios.js';
+import {Engine} from '../src/runtime/engine.js';
 
 const localDatabase = !!process.env.DATABASE_URL && ['localhost','127.0.0.1','[::1]'].includes(new URL(process.env.DATABASE_URL).hostname);
+
+test('a protected form accepts its assigned staff role and refuses everyone else', {skip: !localDatabase}, async()=>{
+  const bp=Blueprint.parse(JSON.parse(readFileSync('processes/expense-approval.blueprint.json','utf8')));
+  bp.experience.access={mode:'workspace',role:'finance_ops'};
+  bp.roles.find(role=>role.key==='finance_ops')!.capabilities.push('submit');
+  bp.roles.find(role=>role.key==='line_manager')!.capabilities.push('submit');
+  const submit=bp.tests[0]!.steps.find(step=>step.step==='submit')!;
+  assert.equal(submit.step,'submit');
+  if(submit.step!=='submit')return;
+  const pool=createPool();
+  try {
+    const engine=new Engine(pool);
+    const tenantId=await engine.createTenant('protected-form-test',{scenario:true});
+    const version=await engine.publish(tenantId,bp,'test');
+    const financeId=await engine.createActor(tenantId,'finance@scenario.test','Finance','operator');
+    const managerId=await engine.createActor(tenantId,'manager@scenario.test','Manager','approver');
+    await engine.grant({tenantId,actorId:financeId,processKey:bp.key,roleKey:'finance_ops'});
+    await engine.grant({tenantId,actorId:managerId,processKey:bp.key,roleKey:'line_manager'});
+    const request={version,answers:submit.answers,now:new Date('2026-09-21T09:00:00Z')};
+    await assert.rejects(engine.submit({...request,principal:{kind:'respondent',tenantId}}),/signed-in finance_ops/);
+    await assert.rejects(engine.submit({...request,principal:{kind:'actor',tenantId,actorId:managerId}}),/signed-in finance_ops/);
+    const accepted=await engine.submit({...request,principal:{kind:'actor',tenantId,actorId:financeId}});
+    assert.ok(accepted.instanceId);
+    assert.equal(accepted.duplicate,false);
+  } finally {await pool.end();}
+});
 
 test('scenario runner accepts counted sequential votes but still rejects a repeated voter', {skip: !localDatabase}, async()=>{
   const bp=Blueprint.parse(JSON.parse(readFileSync('processes/employee-onboarding.blueprint.json','utf8')));
