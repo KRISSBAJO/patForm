@@ -1,5 +1,6 @@
 import type { Screening } from './screening.js';
 import type { Principal } from './policy.js';
+import { AuthorizationError } from './policy.js';
 import { resolveForm } from './form-links.js';
 import { createHash, randomBytes } from 'node:crypto';
 import type { Blueprint } from '../blueprint/index.js';
@@ -379,6 +380,9 @@ export async function submitForm(
   }
 
   const bp = version.blueprint;
+  if (bp.experience.access?.mode === 'workspace' && args.principal?.kind !== 'actor') {
+    throw new AuthorizationError('submit', `only a signed-in ${bp.experience.access.role} can submit this form`);
+  }
   const answers = withCalculatedFields(bp.data.fields, args.answers);
 
   const errors = validateAnswers(bp, answers, { now });
