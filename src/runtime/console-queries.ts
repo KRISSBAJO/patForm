@@ -3,6 +3,7 @@ import { answerText } from '../blueprint/display.js';
 import type { Client, Pool } from './db.js';
 import { inTransaction } from './db.js';
 import { authorize, redact, require_, type Principal } from './policy.js';
+import { earlierEvidence } from './evidence-history.js';
 import { currentRequestId } from './trace.js';
 
 /**
@@ -387,7 +388,8 @@ export async function recordDetail(pool: Pool, principal: Principal, instanceId:
       processKey: instance.process_key, blueprint: bp, instanceId,
     })).allowed;
 
-    const events = await client.query('select seq, type, payload, actor, occurred_at from event where instance_id = $1 order by seq desc', [instanceId]);
+    const events = await client.query<{ seq: number; type: string; payload: Record<string, unknown>; actor: string; occurred_at: Date }>('select seq, type, payload, actor, occurred_at from event where instance_id = $1 order by seq desc', [instanceId]);
+    const evidenceHistory = earlierEvidence(bp, decision.roles, decision.workspaceRole, instance.data, events.rows);
     const approvals = await client.query('select approval_key, approvers, status, decision, decided_by, decided_at, reason, signature_name, due_at from approval_request where instance_id = $1 order by id', [instanceId]);
     const tasks = await client.query('select task_key, assignee, status, due_at, completed_at, completed_by from task where instance_id = $1 order by id', [instanceId]);
     const emails = await client.query('select template_key, recipients, subject, status, sent_at from email_log where instance_id = $1 order by id', [instanceId]);
@@ -461,7 +463,14 @@ export async function recordDetail(pool: Pool, principal: Principal, instanceId:
               : {}),
           };
         }),
-      events: events.rows.filter((event) => canAddNote || event.type !== 'record_note_added'),
+      // Earlier answers can contain confidential values. Only the separately
+      // authorized evidence list above may expose historical file references.
+      events: events.rows.filter((event) => canAddNote || event.type !== 'record_note_added').map((event) => {
+        if (event.type !== 'record_updated') return event;
+        const { previous: _previous, ...payload } = event.payload ?? {};
+        return { ...event, payload };
+      }),
+      evidenceHistory,
       notes: notes.rows.map((note) => ({ id: note.seq, text: note.text, actor: note.actor_name,
         createdAt: note.occurred_at.toISOString() })),
       canAddNote,

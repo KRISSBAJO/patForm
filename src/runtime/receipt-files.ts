@@ -263,6 +263,15 @@ export async function receiptDownload(pool: Pool, principal: Principal, instance
       }
     }
   }
+  // A correction can replace a file answer. Its earlier version remains
+  // downloadable only when the same viewer may see that historical field.
+  if (!fieldKey && detail.evidenceHistory.some((item) => item.id === fileId)) {
+    const { rows: historic } = await pool.query<{ field_key: string }>(
+      'select field_key from file where id = $1 and instance_id = $2 and tenant_id = $3',
+      [fileId, instanceId, principal.tenantId],
+    );
+    fieldKey = historic[0]?.field_key ?? null;
+  }
   if (!fieldKey) throw new NotFound('No receipt is visible on this record.');
   const { rows } = await pool.query<{ storage_key: string; filename: string; scan_status: string }>(
     'select storage_key, filename, scan_status from file where id = $1 and instance_id = $2 and tenant_id = $3 and field_key = $4',

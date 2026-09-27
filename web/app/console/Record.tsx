@@ -37,6 +37,7 @@ export interface RecordDetail {
   notes?: { id: number; text: string; actor: string | null; createdAt: string }[];
   /** Documents the process generated for this record: a letter, a certificate, a receipt. */
   documents?: { id: number; document_key: string; filename: string; checksum: string; byte_size: number | null; created_at: string }[];
+  evidenceHistory?: { id: string; field: string; row: number | null; at: string; task: string | null }[];
   fields: {
     key: string;
     label: string;
@@ -614,6 +615,19 @@ export function RecordPage({
 
         <div className="rc__side">
           <section className="rc__sidePanel rc__sidePanel--next"><span className="rc__eyebrow">CURRENT OUTCOME</span><h2>What happens next</h2><p>{record.nextAction}</p></section>
+          {!!record.evidenceHistory?.length && <section className="rc__sidePanel rc__sidePanel--docs">
+            <span className="rc__eyebrow">EVIDENCE HISTORY</span><h2>Earlier photos and files</h2>
+            <p>Files from previous correction and inspection rounds remain available.</p>
+            <ul className="rc__docs">{record.evidenceHistory.map((item) => <li key={item.id}>
+              <span className="rc__docText"><strong>{item.field}{item.row ? ` · row ${item.row}` : ''}</strong><small>{new Date(item.at).toLocaleString()}</small></span>
+              <button type="button" className="cs__btn" onClick={async () => {
+                const response = await fetch(`/api/records/${record.instanceId}/receipts/${item.id}`);
+                const result = await response.json();
+                if (!response.ok) { setReceiptError(result.error ?? 'The file is unavailable.'); return; }
+                window.location.assign(result.url);
+              }}>Open</button>
+            </li>)}</ul>
+          </section>}
           {record.documents && record.documents.length > 0 && (
             <section className="rc__sidePanel rc__sidePanel--docs">
               <span className="rc__eyebrow">DOCUMENTS</span>
