@@ -102,6 +102,7 @@ Permissions and data protection
 - intent.sensitivityCeiling must be at least as high as the highest field classification.
 - NEVER put a restricted field into an email body, a webhook payload, or a document that leaves the platform.
 - A respondent role may never have "operate" or "administer".
+- If only assigned staff should start the form (for example, a signed-in Inspector conducting site inspections), set experience.access to {"mode":"workspace","role":"<internal submitter role key>"}. That role must be internal and have "submit". Use {"mode":"public"} or omit access only when anyone with the link may submit. Do not claim a form is internal-only in intent.assumptions while leaving its link public. Add a permission scenario that checks an unrelated role cannot submit.
 - A role may not have a field in both hiddenFields and editableFields.
 - Give a "collectionReason" for every restricted field. If you cannot justify collecting it, do not collect it.
 

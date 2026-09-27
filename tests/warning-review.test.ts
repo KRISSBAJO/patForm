@@ -7,6 +7,20 @@ import { verifiedRepair } from '../src/ai/verified-repair.js';
 import { repairBlueprint } from '../src/ai/repair.js';
 import { validate } from '../src/compiler/validate.js';
 const fixture=()=>Blueprint.parse(JSON.parse(readFileSync('processes/employee-onboarding.blueprint.json','utf8')));
+test('repair asks who may start an internal-only form and applies the answer',()=>{
+  const bp=fixture();
+  const inspector=bp.roles.find(role=>role.kind==='internal')!;
+  inspector.capabilities.push('submit');
+  bp.intent.assumptions=[{statement:'Inspection records are created by internal inspectors rather than by the client or public.',affects:'intake'}];
+  const pending=reviewWarnings(bp);
+  assert.ok(pending.decisions.some(decision=>decision.key==='review:form-access'));
+  assert.equal(bp.experience.access,undefined);
+  const selected=reviewWarnings(bp,{'review:form-access':inspector.key});
+  assert.deepEqual(bp.experience.access,{mode:'workspace',role:inspector.key});
+  assert.equal(bp.intent.assumptions[0]?.confirmed,true);
+  assert.ok(!selected.decisions.some(decision=>decision.key==='review:assumptions'));
+  assert.ok(!validate(bp).warnings.some(warning=>warning.code==='BLD001'));
+});
 test('child fields use a real group input instead of a scalar',()=>{
   const bp=fixture();bp.data.fields.push({key:'risk_group',label:'Risk assessment',type:'short_text',classification:'internal',setBy:'operator',fields:[{key:'risk_note',label:'Risk note',type:'short_text',classification:'internal'}]});
   const fixed=repairBlueprint(bp);

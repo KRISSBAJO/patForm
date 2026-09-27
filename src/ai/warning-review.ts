@@ -75,12 +75,35 @@ export function reviewWarnings(bp:Blueprint, answers:Record<string,string> = {})
       changes.push({at:'outputs.exportFields',change:value==='exclude'?'Removed sensitive answers from standard exports.':'Editor explicitly approved sensitive answers in standard exports.'});
     });
   }
-  const assumptions=warnings.filter(w=>w.code==='BLD001');
+  const accessAssumptions=(bp.intent.assumptions??[]).map((assumption,index)=>({assumption,index})).filter(({assumption})=>
+    !assumption.confirmed && /\b(internal|staff|inspector)\b/i.test(assumption.statement) &&
+    /\b(public|client|external|anyone|signed.in|created by|submitted by)\b/i.test(assumption.statement));
+  if (accessAssumptions.length && !bp.experience.access) {
+    const submitRoles=internal.filter(role=>role.capabilities.includes('submit'));
+    if (submitRoles.length) {
+      const accessWarnings=warnings.filter(w=>w.code==='BLD001' && accessAssumptions.some(({index})=>w.at===`intent.assumptions[${index}]`));
+      accessWarnings.forEach(w=>handled.add(w));
+      choose({key:'review:form-access',kind:'choice',group:'Who can start this form?',
+        prompt:'Who is allowed to create a new record?',
+        detail:'This controls the form link, saved answers, uploads and submissions. Staff must sign in and hold the selected process role.',
+        roles:[{key:'public',name:'Anyone with the link'},...submitRoles.map(role=>({key:role.key,name:`Signed-in ${role.name}`}))]},value=>{
+          bp.experience.access=value==='public'?{mode:'public'}:{mode:'workspace',role:value};
+          accessAssumptions.forEach(({assumption})=>{
+            assumption.statement=value==='public'
+              ? 'Anyone with the form link may start this process.'
+              : `Only signed-in ${submitRoles.find(role=>role.key===value)!.name} members may start this process.`;
+            assumption.confirmed=true;
+          });
+          changes.push({at:'experience.access',change:value==='public'?'The form stays open to anyone with the link.':`Only signed-in ${submitRoles.find(role=>role.key===value)!.name} members can start the form.`});
+        });
+    }
+  }
+  const assumptions=warnings.filter(w=>w.code==='BLD001'&&!handled.has(w));
   if(assumptions.length) {
     assumptions.forEach(w=>handled.add(w));
-    choose({key:'review:assumptions',kind:'choice',allowCustom:true,group:'Confirm the proposed behavior',prompt:'Does this behavior match your pilot?',detail:bp.intent.assumptions.filter(a=>!a.confirmed).map(a=>a.statement).join('\n\n'),roles:[{key:'confirm',name:'Yes, use this behavior'},{key:'defer',name:'Leave these claims unconfirmed for now'}]},value=>{
+    choose({key:'review:assumptions',kind:'choice',allowCustom:true,group:'Confirm the proposed behavior',prompt:'Does this behavior match your pilot?',detail:assumptions.map(w=>bp.intent.assumptions[Number(w.at.match(/\[(\d+)\]/)?.[1])]!.statement).join('\n\n'),roles:[{key:'confirm',name:'Yes, use this behavior'},{key:'defer',name:'Leave these claims unconfirmed for now'}]},value=>{
       if(value==='confirm') {
-        bp.intent.assumptions.forEach(a=>a.confirmed=true);
+        assumptions.forEach(w=>{bp.intent.assumptions[Number(w.at.match(/\[(\d+)\]/)?.[1])]!.confirmed=true;});
         changes.push({at:'intent.assumptions',change:'Editor confirmed the listed assumptions. No workflow behavior was changed.'});
       } else changes.push({at:'intent.assumptions',change:'Claims remain unconfirmed and their warning stays visible.'});
     });

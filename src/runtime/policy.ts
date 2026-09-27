@@ -134,7 +134,9 @@ export async function authorize(client: Client, args: AuthorizeArgs): Promise<De
   //    authorization in public resume links), so the principal carries an
   //    instance rather than a promise.
   if (principal.kind === 'respondent') {
-    if (action === 'submit') return { allowed: true, reason: 'respondent', roles: [] };
+    if (action === 'submit') return blueprint.experience.access?.mode === 'workspace'
+      ? { allowed: false, reason: `only a signed-in ${blueprint.experience.access.role} can submit this form`, roles: [] }
+      : { allowed: true, reason: 'respondent', roles: [] };
 
     // §20.1 step 6: an approver asks for changes and the respondent answers.
     // The blueprint's respondent role already says which fields that may
@@ -191,6 +193,11 @@ export async function authorize(client: Client, args: AuthorizeArgs): Promise<De
   const roleKeys = memberships.map((m) => m.role_key);
   const needed = CAPABILITY_FOR[action];
   const workspaceRole = actor.workspace_role;
+
+  if (action === 'submit' && blueprint.experience.access?.mode === 'workspace' &&
+      !roleKeys.includes(blueprint.experience.access.role)) {
+    return { allowed: false, reason: `only a signed-in ${blueprint.experience.access.role} can submit this form`, roles: roleKeys, workspaceRole };
+  }
 
   // 6. Approving comes only from a process role. See WORKSPACE_GRANTS above.
   if (action === 'approve') {
