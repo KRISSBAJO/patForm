@@ -4,6 +4,7 @@ import { evaluate } from '../runtime/expr.js';
 import { normalizeBlueprint, type Normalization } from './normalize.js';
 import type { ScenarioResult } from '../runtime/scenarios.js';
 import { completeAnswers } from '../runtime/scenarios.js';
+import { checkField } from '../blueprint/answers.js';
 
 const canonical = (value: unknown): string => {
   if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
@@ -126,6 +127,43 @@ export function repairBlueprint(input: Blueprint, failures: ScenarioResult[] = [
   }
 
   const decisions = repairStaffFixtures(bp, changes, options);
+
+  // Scenario uploads are synthetic references, never real customer evidence.
+  // Repair only file inputs explicitly rejected by the engine; incomplete-data
+  // cases and all production requirements remain untouched.
+  for (const result of failures) {
+    const test=bp.tests.find(t=>t.key===result.test);
+    if(!test || test.kind==='missing_data') continue;
+    const paths=new Set(result.failures.flatMap(f=>f.startsWith('submission was rejected for missing fields: ')
+      ? f.slice('submission was rejected for missing fields: '.length).split(', ').map(p=>p.trim()) : []));
+    for(const step of test.steps) {
+      if(step.step!=='submit') continue;
+      for(const path of paths) {
+        const parts=path.split('.');
+        let fields=bp.data.fields;
+        let answers=step.answers;
+        for(let i=0;i<parts.length;i++) {
+          const part=parts[i]!;
+          const row=part.match(/^([^[]+)\[(\d+)\]$/);
+          const field=fields.find(f=>f.key===(row?.[1] ?? part));
+          if(!field) break;
+          if(row) {
+            const rows=answers[field.key];
+            const value=Array.isArray(rows)?rows[Number(row[2])]:undefined;
+            if(field.type!=='repeating_group' || !value || typeof value!=='object' || Array.isArray(value)) break;
+            fields=field.fields ?? [];
+            answers=value as Record<string,unknown>;
+          } else {
+            const value=answers[field.key];
+            if(i!==parts.length-1 || field.type!=='file' || value===undefined || value===null || value==='' || (Array.isArray(value)&&!value.length) || !checkField(field,value)) break;
+            const reference='receipt-file:00000000-0000-4000-8000-000000000001';
+            answers[field.key]=Array.isArray(value)?[reference]:reference;
+            changes.push({at:`tests.${test.key}.answers.${path}`,change:'Replaced an invalid sample upload with a scenario-only file reference. Required evidence and all assertions are unchanged; this does not test S3 delivery.'});
+          }
+        }
+      }
+    }
+  }
 
   // Only restore baseline emails proven to be sent by an unconditional submission rule,
   // and only after the real engine reported them as unexpected. Never erase failed expectations.

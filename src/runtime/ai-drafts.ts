@@ -182,14 +182,21 @@ export async function processNextAiDraft(pool: Pool): Promise<boolean> {
       }
       if (!best) throw new InvalidInput(error);
       // The process identity is not part of the change request.
-      const proposal = Blueprint.parse({ ...best.blueprint, key: source.key });
-      const diagnostics = validate(proposal);
-      await pool.query('update ai_draft_job set stage = $2 where id = $1', [job.id, 'checking']);
-      const scenarios = diagnostics.publishable
+        let proposal = Blueprint.parse({ ...best.blueprint, key: source.key });
+        let diagnostics = validate(proposal);
+        await pool.query('update ai_draft_job set stage = $2 where id = $1', [job.id, 'checking']);
+        const repaired = repairProposal && diagnostics.publishable
+          ? await verifiedRepair(proposal,bp => runScenarios(pool,bp,testProgress)) : null;
+        if(repaired) {
+          proposal=repaired.blueprint;
+          diagnostics=validate(proposal);
+        }
+        const scenarios = repaired ? repaired.scenarios : diagnostics.publishable
         ? proposal.key === best.blueprint.key && best.scenarios ? best.scenarios : await runScenarios(pool, proposal,testProgress)
         : [];
       const review = {
-        requiresApproval:repairProposal,
+          requiresApproval:repairProposal,
+          changes:repaired?.changes ?? [],
         provider: bestProvider,
         diagnostics: diagnostics.items,
         tests: { passed: scenarios.filter((item) => item.passed).length, total: scenarios.length,

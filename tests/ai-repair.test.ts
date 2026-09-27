@@ -10,6 +10,36 @@ import type { ScenarioResult } from '../src/runtime/scenarios.js';
 const fixture = () => Blueprint.parse(JSON.parse(readFileSync('processes/employee-onboarding.blueprint.json','utf8')));
 const result = (bp: Blueprint, passed = true, failures: string[] = []): ScenarioResult[] => bp.tests.map(t=>({process:bp.key,test:t.key,kind:t.kind,passed,failures}));
 
+test('file fixture repair targets engine failures and preserves real evidence requirements',async()=>{
+  const bp=fixture();
+  const photo={key:'photo',label:'Photo',type:'file' as const,setBy:'respondent' as const,classification:'internal' as const,required:true};
+  bp.data.fields.push(photo,{key:'defects',label:'Defects',type:'repeating_group',setBy:'respondent',classification:'internal',fields:[{...photo,key:'defect_photo'}]});
+  bp.experience.pages[0]!.sections[0]!.fields.push('photo','defects');
+  const happy=bp.tests.find(t=>t.kind==='happy_path')!;
+  const missing=bp.tests.find(t=>t.kind==='missing_data')!;
+  for(const t of [happy,missing]) t.steps=[{step:'submit',answers:{photo:'cover.jpg',defects:[{defect_photo:['defect.jpg']}]}}];
+  const before=JSON.stringify(bp); let runs=0;
+  assert.equal(validate(bp).publishable,true,JSON.stringify(validate(bp).errors));
+  const fixed=await verifiedRepair(bp,async candidate=>{
+    runs++;
+    const step=candidate.tests.find(t=>t.key===happy.key)!.steps[0]!;
+    assert.ok(step.step==='submit');
+    return result(candidate).map(s=>s.test===happy.key && step.answers.photo==='cover.jpg'
+      ? {...s,passed:false,failures:['submission was rejected for missing fields: photo, defects[0].defect_photo']} : s);
+  });
+  assert.equal(runs,2);
+  assert.equal(fixed.ready,true);
+  const step=fixed.blueprint.tests.find(t=>t.key===happy.key)!.steps[0]!;
+  assert.ok(step.step==='submit');
+  assert.match(String(step.answers.photo),/^receipt-file:/);
+  assert.match(String((step.answers.defects as {defect_photo:string[]}[])[0]!.defect_photo[0]),/^receipt-file:/);
+  assert.deepEqual(fixed.blueprint.tests.find(t=>t.key===missing.key),missing);
+  assert.deepEqual(fixed.blueprint.data.fields,bp.data.fields);
+  assert.deepEqual(fixed.blueprint.tests.find(t=>t.key===happy.key)!.expect,happy.expect);
+  assert.equal(JSON.stringify(bp),before);
+  assert.equal(repairBlueprint(bp).changes.filter(c=>c.at.includes('.answers.photo')).length,0);
+});
+
 test('repair removes an empty duplicate while preserving actions and the input',()=>{
   const bp = fixture();
   const original = bp.workflow.transitions.find(t=>t.trigger.on==='submission')!;
@@ -154,3 +184,5 @@ test('approval fixture records its declared decision through existing staff edit
   assert.deepEqual(fixed.blueprint.workflow,bp.workflow);
   assert.equal(repairBlueprint(fixed.blueprint).changes.length,0);
 });
+
+
