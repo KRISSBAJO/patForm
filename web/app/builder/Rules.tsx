@@ -25,8 +25,9 @@
  *     idempotency keys, and two the same collapse into one run.
  */
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { Diagnostic } from './Builder';
+import { ruleProblems } from './rule-guidance';
 import { ChoiceMenu } from './ChoiceMenu';
 import './rules.css';
 import { FlowMap } from './FlowMap';
@@ -61,14 +62,14 @@ export interface RuleField {
 }
 
 const TRIGGERS = [
-  { on: 'submission', label: 'the form is submitted' },
-  { on: 'record_updated', label: 'somebody edits the record' },
-  { on: 'approval_decided', label: 'a decision is made' },
-  { on: 'task_completed', label: 'a task is finished' },
-  { on: 'tasks_completed', label: 'several tasks are all finished' },
-  { on: 'timer', label: 'time passes in this state' },
-  { on: 'inbound_webhook', label: 'another system tells us' },
-  { on: 'manual', label: 'somebody presses a button' },
+  { on: 'submission', label: 'Form submitted' },
+  { on: 'record_updated', label: 'Record updated' },
+  { on: 'approval_decided', label: 'Approval decided' },
+  { on: 'task_completed', label: 'Task completed' },
+  { on: 'tasks_completed', label: 'All tasks completed' },
+  { on: 'timer', label: 'Timer elapsed' },
+  { on: 'inbound_webhook', label: 'External event received' },
+  { on: 'manual', label: 'Manual action' },
 ];
 
 const ACTIONS = [
@@ -158,7 +159,7 @@ export function ruleSentence(t: Transition, ctx: RuleContext): string {
         : trigger.on === 'timer'
           ? `${trigger.afterHoursInState} hours pass`
           : trigger.on === 'manual'
-            ? 'somebody presses a button'
+            ? 'an authorized operator chooses this action'
             : trigger.on === 'inbound_webhook'
               ? `${trigger.event} arrives`
               : trigger.on === 'record_updated'
@@ -166,7 +167,7 @@ export function ruleSentence(t: Transition, ctx: RuleContext): string {
                 : 'the form is submitted';
 
   const condition = conditionWords(t.when, ctx);
-  return `When ${when}${condition ? `, if ${condition}` : ''}, move to ${label(ctx.states, t.to)}`;
+  return `In ${(t.from ? label(ctx.states, t.from) : 'a starting status')}, when ${when}${condition ? `, if ${condition}` : ''}, move to ${(t.to ? label(ctx.states, t.to) : 'a next status')}`;
 }
 
 export function RulesEditor({
@@ -181,7 +182,11 @@ export function RulesEditor({
   onAdd,
   onAppend,
   onRemove,
+  creation,
+  onCancelCreation,
 }: {
+  creation?: { target?: string };
+  onCancelCreation: () => void;
   selectedIndex: number | null;
   onSelectRule: (index: number) => void;
   onBack: () => void;
@@ -231,6 +236,7 @@ export function RulesEditor({
   const issuesFor = (index: number, transition: Transition) => diagnostics.filter((d) =>
     d.at.startsWith(`workflow.transitions[${index}]`) || d.at.includes(transition.key));
 
+  if (creation) return <RuleGuide ctx={ctx} transitions={transitions} target={creation.target} onCancel={onCancelCreation} onAppend={onAppend} />;
   if (selectedIndex !== null) {
     const transition = transitions[selectedIndex];
     if (!transition) return <div className="rl rl--detail"><button type="button" className="rl__back" onClick={onBack}>← Back to workflow</button><p>This rule is no longer in the process.</p></div>;
@@ -256,7 +262,7 @@ export function RulesEditor({
       <div className="rl__intro">
         <div><span className="rl__eyebrow">Workflow</span><h2>Automation</h2><p>Decide what moves each record forward. Select a rule to edit its trigger, condition and outcome.</p></div>
         <button type="button" className="bd__btn" onClick={onAdd}>
-          + Add rule
+          + Add automation
         </button>
       </div>
 
@@ -472,7 +478,7 @@ function Rule({
             : next === 'inbound_webhook'
               ? { on: next, event: 'something.happened' }
               : next === 'manual'
-                ? { on: next, by: [ctx.roles[0]?.key ?? ''] }
+                ? { on: next, by: [] }
                 : { on: next },
   );
 
@@ -486,25 +492,15 @@ function Rule({
       </header>
 
       <section className="rl__stage">
-        <div className="rl__stageHead"><span>01</span><div><h3>What starts this rule?</h3><p>Select the event the process waits for.</p></div></div>
+        <div className="rl__stageHead"><span>01</span><div><h3>What starts this rule?</h3><p>Choose where this automation is available and what triggers it. Finished statuses cannot start new rules.</p></div></div>
       <div className="rl__row">
-        <div className="rl__control"><span>While the record is</span><ChoiceMenu label="Starting status" value={transition.from} groups={[{ label: 'Statuses', options: ctx.states.map((s) => ({ value: s.key, label: s.name, detail: s.type })) }]} onChange={(from) => set({ from })} /></div>
-        <div className="rl__control"><span>When this happens</span><ChoiceMenu label="Event that starts this rule" value={on} groups={[{ label: 'Events', options: TRIGGERS.map((t) => ({ value: t.on, label: t.label })) }]} onChange={changeTrigger} /></div>
+        <div className="rl__control"><span>Starting status</span><ChoiceMenu label="Starting status" searchable value={transition.from} groups={[{ label: 'Statuses', options: [...ctx.states].filter(s => s.type !== 'terminal' || s.key === transition.from).sort((a,b) => a.name.localeCompare(b.name)).map((s) => ({ value: s.key, label: s.name, detail: s.type === 'terminal' ? 'Finished — cannot start an automation' : s.type === 'initial' ? 'Before submission' : 'In progress' })) }]} onChange={(from) => set({ from, ...(on === 'submission' && ctx.states.find(s => s.key === from)?.type !== 'initial' ? { trigger: { on: 'manual', by: [] } } : {}) })} /></div>
+        <div className="rl__control"><span>Trigger</span><ChoiceMenu label="Event that starts this rule" value={on} groups={[{ label: 'Events', options: TRIGGERS.filter(t => t.on !== 'submission' || ctx.states.find(s => s.key === transition.from)?.type === 'initial' || t.on === on).sort((a,b) => a.label.localeCompare(b.label)).map((t) => ({ value: t.on, label: t.label })) }]} onChange={changeTrigger} /></div>
 
+        {on === 'manual' && <fieldset className="rl__set"><legend>Who can use this action?</legend>{ctx.roles.map(role => <label key={role.key} className="rl__setItem"><input type="checkbox" checked={Array.isArray(trigger.by) && (trigger.by as string[]).includes(role.key)} onChange={event => { const by = Array.isArray(trigger.by) ? trigger.by as string[] : []; setTrigger({ ...trigger, by: event.target.checked ? [...by, role.key] : by.filter(key => key !== role.key) }); }} />{role.name}</label>)}<p>Choose the roles authorized to move this record.</p></fieldset>}
         {on === 'approval_decided' && (
           <>
-            <select
-              className="bd__input"
-              aria-label="Which approval"
-              value={String(trigger.approval ?? '')}
-              onChange={(e) => setTrigger({ ...trigger, approval: e.target.value })}
-            >
-              {ctx.approvals.map((a) => (
-                <option key={a.key} value={a.key}>
-                  {a.name}
-                </option>
-              ))}
-            </select>
+            <ChoiceMenu label="Which approval" searchable value={String(trigger.approval ?? '')} groups={[{ label: 'Available choices', options: [...ctx.approvals].sort((a,b) => a.name.localeCompare(b.name)).map(item => ({ value: item.key, label: item.name })) }]} onChange={value => setTrigger({ ...trigger, approval: value })} />
             <select
               className="bd__input"
               aria-label="Which decision"
@@ -519,18 +515,7 @@ function Rule({
         )}
 
         {on === 'task_completed' && (
-          <select
-            className="bd__input"
-            aria-label="Which task"
-            value={String(trigger.task ?? '')}
-            onChange={(e) => setTrigger({ ...trigger, task: e.target.value })}
-          >
-            {ctx.tasks.map((t) => (
-              <option key={t.key} value={t.key}>
-                {t.name}
-              </option>
-            ))}
-          </select>
+          <ChoiceMenu label="Which task" searchable value={String(trigger.task ?? '')} groups={[{ label: 'Available choices', options: [...ctx.tasks].sort((a,b) => a.name.localeCompare(b.name)).map(item => ({ value: item.key, label: item.name })) }]} onChange={value => setTrigger({ ...trigger, task: value })} />
         )}
 
         {/*
@@ -613,7 +598,7 @@ function Rule({
       <section className="rl__stage">
         <div className="rl__stageHead"><span>03</span><div><h3>Where does the record go?</h3><p>Choose its next status after the event.</p></div></div>
       <div className="rl__row">
-        <ChoiceMenu label="Next status" value={transition.to} groups={[{ label: 'Statuses', options: ctx.states.map((s) => ({ value: s.key, label: s.name, detail: s.type })) }]} onChange={(to) => set({ to })} />
+        <ChoiceMenu label="Next status" searchable value={transition.to} groups={[{ label: 'Statuses', options: [...ctx.states].sort((a,b) => a.name.localeCompare(b.name)).map((s) => ({ value: s.key, label: s.name, detail: s.type === 'terminal' ? 'Finished' : 'In progress' })) }]} onChange={(to) => set({ to })} />
       </div>
       </section>
 
@@ -849,63 +834,19 @@ function Actions({
               )}
 
               {kind === 'send_email' && (
-                <select
-                  className="bd__input"
-                  aria-label="Which message"
-                  value={String(action.template ?? '')}
-                  onChange={(e) => setAt(i, { ...action, template: e.target.value })}
-                >
-                  {ctx.templates.map((t) => (
-                    <option key={t.key} value={t.key}>
-                      {t.name}
-                    </option>
-                  ))}
-                </select>
+                <ChoiceMenu label="Which message" searchable value={String(action.template ?? '')} groups={[{ label: 'Available choices', options: [...ctx.templates].sort((a,b) => a.name.localeCompare(b.name)).map(item => ({ value: item.key, label: item.name })) }]} onChange={value => setAt(i, { ...action, template: value })} />
               )}
 
               {kind === 'request_approval' && (
-                <select
-                  className="bd__input"
-                  aria-label="Which approval"
-                  value={String(action.approval ?? '')}
-                  onChange={(e) => setAt(i, { ...action, approval: e.target.value })}
-                >
-                  {ctx.approvals.map((a) => (
-                    <option key={a.key} value={a.key}>
-                      {a.name}
-                    </option>
-                  ))}
-                </select>
+                <ChoiceMenu label="Which approval" searchable value={String(action.approval ?? '')} groups={[{ label: 'Available choices', options: [...ctx.approvals].sort((a,b) => a.name.localeCompare(b.name)).map(item => ({ value: item.key, label: item.name })) }]} onChange={value => setAt(i, { ...action, approval: value })} />
               )}
 
               {kind === 'create_task' && (
-                <select
-                  className="bd__input"
-                  aria-label="Which task"
-                  value={String(action.task ?? '')}
-                  onChange={(e) => setAt(i, { ...action, task: e.target.value })}
-                >
-                  {ctx.tasks.map((t) => (
-                    <option key={t.key} value={t.key}>
-                      {t.name}
-                    </option>
-                  ))}
-                </select>
+                <ChoiceMenu label="Which task" searchable value={String(action.task ?? '')} groups={[{ label: 'Available choices', options: [...ctx.tasks].sort((a,b) => a.name.localeCompare(b.name)).map(item => ({ value: item.key, label: item.name })) }]} onChange={value => setAt(i, { ...action, task: value })} />
               )}
 
               {kind === 'generate_document' && (
-                <select
-                  className="bd__input"
-                  aria-label="Which document"
-                  value={String(action.document ?? '')}
-                  onChange={(e) => setAt(i, { ...action, document: e.target.value })}
-                >
-                  {ctx.documents.map((d) => (
-                    <option key={d.key} value={d.key}>
-                      {d.name}
-                    </option>
-                  ))}
-                </select>
+                <ChoiceMenu label="Which document" searchable value={String(action.document ?? '')} groups={[{ label: 'Available choices', options: [...ctx.documents].sort((a,b) => a.name.localeCompare(b.name)).map(item => ({ value: item.key, label: item.name })) }]} onChange={value => setAt(i, { ...action, document: value })} />
               )}
 
               {kind === 'call_webhook' && (
@@ -918,18 +859,7 @@ function Actions({
               )}
 
               {kind === 'assign' && (
-                <select
-                  className="bd__input"
-                  aria-label="Assign to"
-                  value={String((action.to as { role?: string })?.role ?? '')}
-                  onChange={(e) => setAt(i, { ...action, to: { role: e.target.value } })}
-                >
-                  {ctx.roles.map((r) => (
-                    <option key={r.key} value={r.key}>
-                      {r.name}
-                    </option>
-                  ))}
-                </select>
+                <ChoiceMenu label="Assign to" searchable value={String((action.to as { role?: string })?.role ?? '')} groups={[{ label: 'Available choices', options: [...ctx.roles].sort((a,b) => a.name.localeCompare(b.name)).map(item => ({ value: item.key, label: item.name })) }]} onChange={value => setAt(i, { ...action, to: { role: value } })} />
               )}
 
               {kind === 'wait' && (
@@ -970,4 +900,38 @@ function Actions({
       </div>
     </div>
   );
+}
+
+function RuleGuide({ ctx, transitions, target, onAppend, onCancel }: { ctx: RuleContext; transitions: Transition[]; target?: string; onAppend: (rule: Transition) => void; onCancel: () => void }) {
+  const [candidate, setCandidate] = useState<Transition | null>(null);
+  const [reviewed, setReviewed] = useState(false);
+  useEffect(() => { setCandidate(null); setReviewed(false); }, [target]);
+  const templates = [
+    { key: 'manual', title: 'Return for investigation', body: 'Let an authorized operator return a record before final closure.' },
+    { key: 'approval', title: 'Request approval', body: 'Move to a review status and ask an existing approval group to decide.' },
+    { key: 'reminder', title: 'Send a reminder', body: 'After a delay, send an existing email template. Choose the status the record should keep or enter.' },
+    { key: 'submission', title: 'Route a submission', body: 'Move a newly submitted form into its first working status.' },
+    { key: 'custom', title: 'Custom automation', body: 'Choose your starting status, trigger, conditions and destination.' },
+  ];
+  const choose = (kind: string) => {
+    const initial = ctx.states.find(s => s.type === 'initial')?.key ?? '';
+    const rule: Transition = { key: `rule_${crypto.randomUUID().replaceAll('-', '').slice(0,12)}`, from: kind === 'submission' ? initial : '', to: target ?? '', trigger: kind === 'submission' ? { on: 'submission' } : kind === 'reminder' ? { on: 'timer', afterHoursInState: 24 } : { on: 'manual', by: [] }, actions: [] };
+    if (kind === 'approval') rule.actions = [{ do: 'request_approval', key: 'request_review', approval: ctx.approvals[0]?.key ?? '' }];
+    if (kind === 'reminder') rule.actions = [{ do: 'send_email', key: 'send_reminder', template: ctx.templates[0]?.key ?? '' }];
+    setCandidate(rule); setReviewed(false);
+  };
+  const problems = candidate ? ruleProblems(candidate, ctx.states, transitions) : [];
+  return <div className="rl rl--detail">
+    <button type="button" className="rl__back" onClick={onCancel}>← Back to workflow</button>
+    <div className="rl__detailIntro"><span>Add automation</span><h2>{target ? `Connect ${label(ctx.states, target)}` : 'What should happen next?'}</h2><p>{target ? 'This status has no entry path. Choose the intended behavior and where it starts. Nothing is saved until you review and add it.' : 'Choose a starting point. Configure and review the behavior before adding it to your draft.'}</p></div>
+    {!candidate ? <div className="rl__templates">{templates.map(template => <button type="button" key={template.key} className="rl__template" onClick={() => choose(template.key)} disabled={(template.key === 'approval' && !ctx.approvals.length) || (template.key === 'reminder' && !ctx.templates.length)}><strong>{template.title}</strong><span>{template.body}</span>{template.key === 'approval' && !ctx.approvals.length && <small>Add an approval group first.</small>}{template.key === 'reminder' && !ctx.templates.length && <small>Add an email template first.</small>}</button>)}</div> : <>
+      <button type="button" className="rl__back" onClick={() => setCandidate(null)}>Choose a different template</button>
+      <Rule transition={candidate} ctx={ctx} diagnostics={[]} onChange={next => { setCandidate(next); setReviewed(false); }} onRemove={() => setCandidate(null)} />
+      <section className="rl__review"><h3>Review before adding</h3><p>{ruleSentence(candidate, ctx)}</p><p>{candidate.actions.length ? `${candidate.actions.length} additional action(s) will run. Review the recipients and assignments above.` : 'This automation moves the record without sending messages.'}</p>
+      {problems.length > 0 && <ul role="status">{problems.map(problem => <li key={problem}>{problem}</li>)}</ul>}
+      <label><input type="checkbox" checked={reviewed} onChange={event => setReviewed(event.target.checked)} /> I have reviewed the starting status, destination and authorized roles.</label>
+      <button type="button" className="bd__btn bd__btn--primary" disabled={!reviewed || problems.length > 0} onClick={() => onAppend(candidate)}>Add reviewed automation</button>
+      </section>
+    </>}
+  </div>;
 }

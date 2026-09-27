@@ -84,6 +84,19 @@ export function normalizeBlueprint(input: Blueprint): { blueprint: Blueprint; ch
     }
   };
 
+  // Resolve a unique human-readable status name to its existing key. Never
+  // invent routes or reopen terminal states: those are business decisions.
+  const stateKey = (raw: string, at: string): string => {
+    if (bp.workflow.states.some(state => state.key === raw)) return raw;
+    const matches = bp.workflow.states.filter(state => slug(state.name) === slug(raw) || slug(state.key) === slug(raw));
+    return matches.length === 1 ? note(at, `Status "${raw}" resolved to existing key ${matches[0]!.key}`, matches[0]!.key) : raw;
+  };
+  bp.workflow.transitions.forEach((transition, index) => {
+    transition.from = stateKey(transition.from, `workflow.transitions[${index}].from`);
+    transition.to = stateKey(transition.to, `workflow.transitions[${index}].to`);
+  });
+  bp.intent.completionState = stateKey(bp.intent.completionState, 'intent.completionState');
+
   // Everywhere a condition can live.
   bp.workflow.transitions.forEach((t, i) => fixExpr(t.when, `workflow.transitions[${i}].when`));
   bp.experience.pages.forEach((p, pi) => {

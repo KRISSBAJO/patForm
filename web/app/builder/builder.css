@@ -2582,3 +2582,4 @@ a.bd__newBtn {
   .bd__editor { padding: 12px; background-image: none; }
   .bd__editor > .bd__freeze, .bd__editor > .bd__overview { padding: 18px 16px; box-shadow: none; }
 }
+.bd__groupHead .bd__add[aria-label="Add automation"] { width: auto; min-width: 104px; padding: 5px 8px; font-size: 11px; white-space: nowrap; }

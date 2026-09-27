@@ -64,7 +64,9 @@ The state graph
 - intent.completionState must name a terminal state whose outcome is "success", and a path must reach it.
 - Every state must be reachable from the initial state.
 - Every non-terminal state needs at least one way out, or records stall there forever.
-- No transition may leave a terminal state.
+- No transition may leave a terminal state. If users may return a record for further investigation, provide an explicit manual transition from a reachable non-terminal review state with authorized role keys. Do not promise reopening a finished record; that runtime capability does not exist. Explain any unmet after-closure reopening requirement in intent questions.
+- Before returning the workflow, trace every state from the initial state. A self-loop does not make a state reachable. Include a real incoming route for every named status; do not create an orphan Reopened status.
+- Submission triggers only leave the initial state. Later review changes use approval/task completion, record updates, or manual actions with explicit authorized roles. Do not use submission as a placeholder trigger.
 - A transition from a state back to itself must have a timer trigger or a condition. Otherwise it fires forever.
 - A "submission" trigger must leave the initial state. If you write more than one submission transition, every one of them needs a "when" that cannot overlap the others.
 
@@ -258,6 +260,8 @@ export function repairTurn(diagnostics: Diagnostic[]): string {
 Errors that must be fixed:
 ${errors.map(render).join('\n')}
 ${warnings.length ? `\nWarnings worth fixing while you are here:\n${warnings.map(render).join('\n')}` : ''}
+
+For FLOW003, repair the missing incoming path according to the requested process; self-loops do not establish reachability. Never invent permission to reopen a terminal record. For FLOW004, preserve final outcomes and place return paths before final closure. For FLOW009, choose a trigger consistent with the intended operator action instead of blindly moving the source to the initial state.
 
 Return the corrected blueprint as one JSON object. Change what the diagnostics point at and leave the rest of your design alone — do not restructure the process, rename keys that were fine, or drop sections to make errors go away. If assessment questions are placeholders or scoring uses fake fields, replace those with complete real questions, answer keys and explanations; this requires rebuilding the assessment fields. Removing a required field to satisfy a placement error, or deleting a blocking task instead of waiting for it, is a worse blueprint, not a fixed one.`;
 }

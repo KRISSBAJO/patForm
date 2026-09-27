@@ -514,9 +514,10 @@ export function Builder({ view = 'home' }: { view?: 'home' | 'processes' } = {})
   const [diagnostics, setDiagnostics] = useState<Diagnostic[]>([]);
   const [publishable, setPublishable] = useState(false);
   const [tab, setTab] = useState<Tab>('fields');
+  const [ruleCreation, setRuleCreation] = useState<{ target?: string } | undefined>();
   const [ruleFocusIndex, setRuleFocusIndex] = useState<number | null>(null);
   const editorRef = useRef<HTMLElement>(null);
-  useEffect(() => { editorRef.current?.scrollTo({ top: 0 }); }, [ruleFocusIndex]);
+  useEffect(() => { editorRef.current?.scrollTo({ top: 0 }); }, [ruleFocusIndex, ruleCreation]);
   const [side, setSide] = useState<Side>('checks');
   const [headerEditRequest, setHeaderEditRequest] = useState(0);
   const [overview, setOverview] = useState(false);
@@ -618,6 +619,7 @@ export function Builder({ view = 'home' }: { view?: 'home' | 'processes' } = {})
     setDiagnostics(detail.diagnostics);
     setPublishable(detail.publishable);
     setTab('fields');
+    setRuleCreation(undefined);
     setRuleFocusIndex(null);
     setSide('checks');
     setOverview(false);
@@ -1183,9 +1185,10 @@ export function Builder({ view = 'home' }: { view?: 'home' | 'processes' } = {})
                 tab={tab}
                 index={index}
                 overview={overview}
-                onOverview={() => { setRuleFocusIndex(null); setOverview(true); setSide('checks'); }}
+                onOverview={() => { setRuleCreation(undefined); setRuleFocusIndex(null); setOverview(true); setSide('checks'); }}
                 onEditHeader={() => { setSide('preview'); setHeaderEditRequest((request) => request + 1); }}
                 onSelect={(t, i) => {
+                  setRuleCreation(undefined);
                   setOverview(false);
                   setTab(t);
                   setIndex(i);
@@ -1346,6 +1349,8 @@ export function Builder({ view = 'home' }: { view?: 'home' | 'processes' } = {})
                 )}
                 {tab === 'rules' && (
                   <RulesEditor
+                    creation={ruleCreation}
+                    onCancelCreation={() => setRuleCreation(undefined)}
                     selectedIndex={ruleFocusIndex}
                     onSelectRule={(i) => { setRuleFocusIndex(i); setIndex(i); }}
                     onBack={() => { setRuleFocusIndex(null); setSide('checks'); }}
@@ -1367,6 +1372,7 @@ export function Builder({ view = 'home' }: { view?: 'home' | 'processes' } = {})
                     diagnostics={diagnostics}
                     draftId={draft?.id}
                     onAppend={(rule) => {
+                      setRuleCreation(undefined);
                       setRuleFocusIndex(blueprint.workflow.transitions.length);
                       mutate((bp) => {
                         bp.workflow.transitions = [...(bp.workflow.transitions ?? []), rule as never];
@@ -1377,7 +1383,7 @@ export function Builder({ view = 'home' }: { view?: 'home' | 'processes' } = {})
                         bp.workflow.transitions[i] = next as never;
                       })
                     }
-                    onAdd={() => { setRuleFocusIndex(blueprint.workflow.transitions.length); addItem('rules'); }}
+                    onAdd={() => addItem('rules')}
                     onRemove={(i) => {
                       setRuleFocusIndex(null);
                       mutate((bp) => {
@@ -1426,7 +1432,9 @@ export function Builder({ view = 'home' }: { view?: 'home' | 'processes' } = {})
                       blueprint={blueprint}
                       errors={errors}
                       warnings={warnings}
+                      onConnect={(target) => { setSide('checks'); setOverview(false); setTab('rules'); setRuleFocusIndex(null); setRuleCreation({ target }); }}
                       onGo={(where) => {
+                        setRuleCreation(undefined);
                         setOverview(false);
                         setTab(where.tab);
                         setIndex(where.index);
@@ -1560,6 +1568,7 @@ export function Builder({ view = 'home' }: { view?: 'home' | 'processes' } = {})
 
   function addItem(which: Tab) {
     if (!blueprint) return;
+    if (which === 'rules') { setSide('checks'); setOverview(false); setTab('rules'); setRuleFocusIndex(null); setRuleCreation({}); return; }
     const n = Date.now().toString(36).slice(-4);
     mutate((bp) => {
       if (which === 'fields') {
@@ -1573,18 +1582,6 @@ export function Builder({ view = 'home' }: { view?: 'home' | 'processes' } = {})
       }
       if (which === 'states') {
         bp.workflow.states.push({ key: `new_state_${n}`, name: 'New state', type: 'active' });
-      }
-      if (which === 'rules') {
-        bp.workflow.transitions = bp.workflow.transitions ?? [];
-        const first = bp.workflow.states.find((st) => st.type === 'initial') ?? bp.workflow.states[0];
-        const target = bp.workflow.states.find((st) => st.key !== first?.key) ?? first;
-        bp.workflow.transitions.push({
-          key: `new_rule_${n}`,
-          from: first?.key ?? '',
-          to: target?.key ?? '',
-          trigger: { on: 'submission' },
-          actions: [],
-        });
       }
       if (which === 'approvals') {
         bp.workflow.approvals = bp.workflow.approvals ?? [];
@@ -2476,9 +2473,10 @@ function Outline({
               className="bd__add"
               onClick={() => { onAdd(g.tab); setMobileOpen(false); }}
               disabled={readOnly}
-              title={readOnly ? 'someone else has this draft' : `Add a ${g.label.slice(0, -1).toLowerCase()}`}
+              title={readOnly ? 'someone else has this draft' : g.tab === 'rules' ? 'Add automation' : `Add a ${g.label.slice(0, -1).toLowerCase()}`}
+              aria-label={g.tab === 'rules' ? 'Add automation' : undefined}
             >
-              +
+              {g.tab === 'rules' ? 'Add automation' : '+'}
             </button>
           </header>
           {g.items.map((item, i) => ({ item, i })).filter(({ item }) =>
@@ -3916,7 +3914,9 @@ function DiagnosticsPanel({
   warnings,
   onGo,
   onAcceptAssumption,
+  onConnect,
 }: {
+  onConnect: (target: string) => void;
   blueprint: Blueprint;
   errors: Diagnostic[];
   warnings: Diagnostic[];
@@ -3946,6 +3946,7 @@ function DiagnosticsPanel({
 
       {[...errors, ...warnings].map((d, i) => {
         const where = locate(d, blueprint);
+        const unreachable = d.code === 'FLOW003' ? blueprint.workflow.states[Number(d.at.match(/states\[(\d+)\]/)?.[1])] : undefined;
         const assumptionIndex = d.code === 'BLD001' ? Number(d.at.match(/assumptions\[(\d+)\]/)?.[1]) : -1;
         const isAssumption = d.code === 'BLD001' && Number.isInteger(assumptionIndex) && assumptionIndex >= 0;
         const isDecision = d.code === 'BLD002';
@@ -3958,12 +3959,13 @@ function DiagnosticsPanel({
             className={`bd__diagItem bd__diagItem--${d.severity}${where ? ' bd__diagItem--go' : ''}`}
           >
             <header><strong>{isAssumption ? 'Confirm assumption' : isDecision ? 'Decision needed' : d.severity === 'error' ? 'Fix before publishing' : 'Review recommendation'}</strong><span className="bd__diagAt">{d.severity}</span></header>
-            <p>{isAssumption ? shortAssumption : isDecision ? d.message.replace(/^(Needs an answer|Undecided):\s*/, '') : d.message}</p>
+            <p>{unreachable ? `No automation moves records into ${unreachable.name}. Choose how they should enter this status. Finished records cannot be reopened by an ordinary rule.` : isAssumption ? shortAssumption : isDecision ? d.message.replace(/^(Needs an answer|Undecided):\s*/, '') : d.message}</p>
             {isAssumption && (shortAssumption === assumptionText
               ? <button type="button" className="bd__insightAction" onClick={() => onAcceptAssumption(assumptionIndex)}>Confirm reviewed</button>
               : <details className="bd__insightDetail"><summary>Review full assumption</summary><p>{assumptionText}</p><button type="button" className="bd__insightAction" onClick={() => onAcceptAssumption(assumptionIndex)}>Confirm reviewed</button></details>)}
             {isDecision && <button type="button" className="bd__insightAction" onClick={() => onGo({ tab: decisionIsAssignment ? 'roles' : 'states', index: 0 })}>{decisionIsAssignment ? 'Configure assignment' : 'Review workflow'}</button>}
-            {!isAssumption && !isDecision && where && <button type="button" className="bd__insightAction" onClick={() => onGo(where)}>Edit {where.tab === 'fields' ? 'field' : where.tab === 'rules' ? 'rule' : where.tab === 'roles' ? 'role' : 'setting'} →</button>}
+            {unreachable && <button type="button" className="bd__insightAction" onClick={() => onConnect(unreachable.key)}>Configure entry path →</button>}
+            {!unreachable && !isAssumption && !isDecision && where && <button type="button" className="bd__insightAction" onClick={() => onGo(where)}>Edit {where.tab === 'fields' ? 'field' : where.tab === 'rules' ? 'rule' : where.tab === 'roles' ? 'role' : 'setting'} →</button>}
             {d.fix && <details className="bd__insightDetail"><summary>Why this matters</summary><p>{d.fix}</p></details>}
           </article>
         );

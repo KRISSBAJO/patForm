@@ -527,3 +527,21 @@
   .rl__stage { padding: 17px 15px; }
   .rl--detail .rl__head { align-items: flex-start; }
 }
+
+/* Guided automation setup and compact, readable choices. */
+.rl__templates { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
+.rl__template { padding: 20px; border: 1px solid #d8e5dc; border-radius: 12px; background: #fff; text-align: left; display: flex; flex-direction: column; gap: 9px; color: var(--ink); }
+.rl__template:hover { border-color: var(--green); background: #f5faf6; }
+.rl__template:disabled { opacity: .65; cursor: not-allowed; }
+.rl__template strong { font-size: 14px; font-weight: 600; }
+.rl__template span, .rl__template small { font-size: 12px; line-height: 1.55; color: #526b5e; }
+.rl__review { margin-top: 18px; border: 1px solid #bedbc8; border-radius: 12px; padding: 22px; background: #f2f9f4; }
+.rl__review p, .rl__review li, .rl__review label { font-size: 13px; line-height: 1.6; }
+.rl__review label { display: flex; align-items: flex-start; gap: 8px; margin: 16px 0; }
+.rl__review ul { color: #993c27; padding-left: 20px; }
+.rl .bd__choiceTrigger { font-size: 13px; min-height: 42px; }
+.rl .bd__choiceOption strong { font-size: 13px; font-weight: 500; }
+.rl .bd__choiceOption small { font-size: 11px; }
+.rl .bd__choiceOption { padding: 10px 12px; min-height: 42px; }
+.rl .bd__choiceList { padding-bottom: 10px; max-height: 280px; }
+@media(max-width:760px) { .rl__templates { grid-template-columns: 1fr; } }
