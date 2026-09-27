@@ -532,8 +532,9 @@ export class Engine {
       }
       const {merged,touched,previous}=collectTaskAnswers(bp,declared?.requiredFields??[],instance.data,answers,editRoles);
       if (touched.length) {
-        await client.query('update instance set data = $1 where id = $2', [JSON.stringify(merged), instance.id]);
-        instance.data = merged;
+        const recalculated=withCalculatedFields(bp.data.fields,merged);
+        await client.query('update instance set data = $1 where id = $2', [JSON.stringify(recalculated), instance.id]);
+        instance.data = recalculated;
         await appendEvent(client, {
           tenantId: instance.tenant_id,
           instanceId: instance.id,

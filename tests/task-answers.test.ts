@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {Blueprint} from '../src/blueprint/index.js';
 import {collectTaskAnswers} from '../src/runtime/task-answers.js';
+import {withCalculatedFields} from '../src/runtime/expr.js';
 
 const fixture=()=>{
   const bp=Blueprint.parse(JSON.parse(readFileSync('processes/employee-onboarding.blueprint.json','utf8')));
@@ -50,4 +51,14 @@ test('single-row task answers remain compatible with earlier scenarios',()=>{
   const bp=fixture();
   const result=collectTaskAnswers(bp,['correction'],{defects:[{title:'First'}]},{correction:'Fixed'},['it_operator']);
   assert.deepEqual(result.merged.defects,[{title:'First',correction:'Fixed'}]);
+});
+test('verification changes the calculated missing count used by the next rule',()=>{
+  const bp=fixture();
+  bp.data.fields.push({key:'missing_verification',label:'Missing verification',type:'calculated',setBy:'system',classification:'internal',
+    compute:{op:'count',over:'defects',where:{op:'ne',left:{field:'verified'},right:{literal:true}}}});
+  const initial=withCalculatedFields(bp.data.fields,{defects:[{title:'First'},{title:'Second'}]});
+  assert.equal(initial.missing_verification,2);
+  const task=collectTaskAnswers(bp,['verified'],initial,{defects:[{verified:true},{verified:true}]},['it_operator']);
+  const updated=withCalculatedFields(bp.data.fields,task.merged);
+  assert.equal(updated.missing_verification,0);
 });
