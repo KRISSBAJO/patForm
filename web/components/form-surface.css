@@ -5,6 +5,8 @@
  */
 
 .fm {
+  --fm-font: var(--font-ui, system-ui);
+  --fm-display: var(--fm-font);
   min-height: 100vh;
   background: var(--paper);
   padding: 0 0 64px;
@@ -37,7 +39,7 @@
 
 .fm__shell {
   width: 100%;
-  max-width: 640px;
+  max-width: 860px;
   margin: 0 auto;
   padding: 0 20px;
 }
@@ -133,10 +135,19 @@
 .fm__title {
   margin: 0;
   font-family: var(--fm-display, var(--font-display)), Georgia, serif;
-  font-size: 30px;
+  font-size: 26px;
   font-weight: 600;
   line-height: 1.15;
   letter-spacing: -0.02em;
+}
+
+.fm__organization {
+  display: block;
+  color: var(--green-deep);
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 6px;
+  overflow-wrap: anywhere;
 }
 
 .fm__lede {
@@ -506,7 +517,7 @@ textarea.fm__input {
 */
 
 .fm__shell {
-  max-width: 600px;
+  max-width: 860px;
 }
 
 .fm__card {

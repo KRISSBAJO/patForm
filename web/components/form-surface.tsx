@@ -112,6 +112,7 @@ export interface PublicForm {
   /** The link this form is reached by, `/f/<publicId>`. */
   publicId?: string;
   processName: string;
+  organizationName?: string;
   version: number;
   showProgress: boolean;
   saveAndResume: boolean;
@@ -158,10 +159,12 @@ export function widthOf(section: Section, key: string): string {
 export function FormHeader({
   branding,
   fallbackName,
+  organizationName,
   note,
 }: {
   branding?: Branding;
   fallbackName: string;
+  organizationName?: string;
   note?: string;
 }) {
   return (
@@ -177,6 +180,7 @@ export function FormHeader({
         {/* eslint-disable-next-line @next/next/no-img-element */}
         {branding?.logoUrl && <img className="fm__logo" src={branding.logoUrl} alt="" />}
         <div className="fm__brandText">
+          {organizationName && <span className="fm__organization">{organizationName}</span>}
           <span className="fm__process">{branding?.title ?? fallbackName}</span>
           {branding?.tagline && <span className="fm__tagline">{branding.tagline}</span>}
         </div>

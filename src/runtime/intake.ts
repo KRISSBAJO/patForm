@@ -61,6 +61,8 @@ export interface PublicForm {
   /** The link to reach this form by: `/f/<publicId>`. */
   publicId: string;
   processName: string;
+  /** Public identity of the workspace issuing this form; never an account's personal details. */
+  organizationName?: string;
   version: number;
   showProgress: boolean;
   saveAndResume: boolean;
@@ -133,6 +135,9 @@ export async function publicForm(pool: Pool, ref: string): Promise<PublicForm | 
   );
   if (!rows.length) return null;
   const bp = rows[0]!.blueprint;
+  const { rows: organizations } = await pool.query<{ name: string }>(
+    'select name from tenant where id = $1', [form.tenantId],
+  );
 
   const byKey = new Map(bp.data.fields.map((f) => [f.key, f]));
 
@@ -143,6 +148,7 @@ export async function publicForm(pool: Pool, ref: string): Promise<PublicForm | 
     // names the form unambiguously.
     publicId: form.publicId,
     processName: bp.name,
+    organizationName: organizations[0]?.name,
     version: rows[0]!.version,
     showProgress: bp.experience.showProgress,
     saveAndResume: bp.experience.saveAndResume,

@@ -457,6 +457,7 @@ export function Form({ processKey: fromUrl }: { processKey: string }) {
         <FormHeader
           branding={brand}
           fallbackName={form.processName}
+          organizationName={form.organizationName}
           note={form.saveAndResume ? saveNote : undefined}
         />
 
