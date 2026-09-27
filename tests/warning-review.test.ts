@@ -5,6 +5,7 @@ import { Blueprint } from '../src/blueprint/index.js';
 import { reviewWarnings } from '../src/ai/warning-review.js';
 import { verifiedRepair } from '../src/ai/verified-repair.js';
 import { repairBlueprint } from '../src/ai/repair.js';
+import { validate } from '../src/compiler/validate.js';
 const fixture=()=>Blueprint.parse(JSON.parse(readFileSync('processes/employee-onboarding.blueprint.json','utf8')));
 test('child fields use a real group input instead of a scalar',()=>{
   const bp=fixture();bp.data.fields.push({key:'risk_group',label:'Risk assessment',type:'short_text',classification:'internal',setBy:'operator',fields:[{key:'risk_note',label:'Risk note',type:'short_text',classification:'internal'}]});
@@ -45,6 +46,14 @@ test('review never pretends a deferred business decision changed the workflow',(
   assert.equal(bp.intent.openDecisions.length,1);
   assert.equal(JSON.stringify(bp.workflow),workflow);
   assert.ok(review.accepted.some(d=>d.code==='BLD002'));
+});
+test('unverified AI claims can be left visible without calling a model',()=>{
+  const bp=fixture();bp.intent.assumptions=[{statement:'Every reinspection is stored forever as a separate record',affects:'audit'}];
+  const review=reviewWarnings(bp,{'review:assumptions':'defer'});
+  assert.equal(review.decisions.length,0);
+  assert.equal(review.requests.length,0);
+  assert.equal(bp.intent.assumptions[0]!.confirmed,undefined);
+  assert.ok(validate(bp).warnings.some(d=>d.code==='BLD001'));
 });
 test('verified repair does not save while warning choices are unanswered, and retests chosen changes',async()=>{
   const bp=fixture();bp.intent.assumptions=[{statement:'Allow anonymous reports for this pilot',affects:'intake'}];

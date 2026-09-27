@@ -78,9 +78,11 @@ export function reviewWarnings(bp:Blueprint, answers:Record<string,string> = {})
   const assumptions=warnings.filter(w=>w.code==='BLD001');
   if(assumptions.length) {
     assumptions.forEach(w=>handled.add(w));
-    choose({key:'review:assumptions',kind:'choice',allowCustom:true,group:'Confirm the proposed behavior',prompt:'Does this behavior match your pilot?',detail:bp.intent.assumptions.filter(a=>!a.confirmed).map(a=>a.statement).join('\n\n'),roles:[{key:'confirm',name:'Yes, use this behavior'}]},()=>{
-      bp.intent.assumptions.forEach(a=>a.confirmed=true);
-      changes.push({at:'intent.assumptions',change:'Editor confirmed the listed assumptions. No workflow behavior was changed.'});
+    choose({key:'review:assumptions',kind:'choice',allowCustom:true,group:'Confirm the proposed behavior',prompt:'Does this behavior match your pilot?',detail:bp.intent.assumptions.filter(a=>!a.confirmed).map(a=>a.statement).join('\n\n'),roles:[{key:'confirm',name:'Yes, use this behavior'},{key:'defer',name:'Leave these claims unconfirmed for now'}]},value=>{
+      if(value==='confirm') {
+        bp.intent.assumptions.forEach(a=>a.confirmed=true);
+        changes.push({at:'intent.assumptions',change:'Editor confirmed the listed assumptions. No workflow behavior was changed.'});
+      } else changes.push({at:'intent.assumptions',change:'Claims remain unconfirmed and their warning stays visible.'});
     });
   }
   const resolved=new Set<number>();
