@@ -44,6 +44,13 @@ export const Page = z
 export const Experience = z
   .object({
     pages: z.array(Page).min(1),
+    /** Restrict the form and every intake endpoint to members of one process role. */
+    access: z
+      .discriminatedUnion('mode', [
+        z.object({ mode: z.literal('public') }).strict(),
+        z.object({ mode: z.literal('workspace'), role: Key }).strict(),
+      ])
+      .optional(),
     showProgress: z.boolean().default(true),
     /** Section 6.3: autosave and secure resume link. */
     saveAndResume: z.boolean().default(false),

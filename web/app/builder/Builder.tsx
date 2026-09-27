@@ -147,6 +147,7 @@ export interface BpSection {
 }
 
 export interface BpExperience {
+  access?: { mode: 'public' } | { mode: 'workspace'; role: string };
   showProgress?: boolean;
   saveAndResume?: boolean;
   confirmation?: { message: string; showStatusLink?: boolean };
@@ -1499,6 +1500,14 @@ export function Builder({ view = 'home' }: { view?: 'home' | 'processes' } = {})
                           const experience = { ...(bp.experience ?? {}) } as Record<string, unknown>;
                           if (next) experience.layout = next;
                           else delete experience.layout;
+                          bp.experience = experience as typeof bp.experience;
+                        })
+                      }
+                      onAccess={(next) =>
+                        mutate((bp) => {
+                          const experience = { ...(bp.experience ?? {}) } as Record<string, unknown>;
+                          if (next) experience.access = next;
+                          else delete experience.access;
                           bp.experience = experience as typeof bp.experience;
                         })
                       }

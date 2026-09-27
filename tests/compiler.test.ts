@@ -36,6 +36,17 @@ function load(file: string) {
 
 const realProcesses = readdirSync(DIR).filter((f) => f.endsWith('.blueprint.json') && !f.startsWith('_'));
 
+test('restricted form access requires an internal submitter role', () => {
+  const bp = load('expense-approval.blueprint.json');
+  const internal = bp.roles.find(role => role.kind === 'internal')!;
+  bp.experience.access = { mode: 'workspace', role: internal.key };
+  assert.ok(validate(bp).errors.some(item => item.code === 'SEC012'));
+  internal.capabilities.push('submit');
+  assert.ok(!validate(bp).errors.some(item => item.code === 'SEC012'));
+  bp.experience.access = { mode: 'workspace', role: 'unknown_role' };
+  assert.ok(validate(bp).errors.some(item => item.code === 'SEC012'));
+});
+
 test('there are three hand-compiled reference processes', () => {
   assert.equal(realProcesses.length, 3);
 });

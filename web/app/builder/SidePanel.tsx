@@ -37,12 +37,14 @@ import './side.css';
 // it back the other way would make these two modules depend on each other.
 interface Shape {
   name: string;
+  roles?: { key: string; name: string; kind: string; capabilities?: string[] }[];
   data: { fields: PreviewField[] };
   experience?: {
     showProgress?: boolean;
     saveAndResume?: boolean;
     confirmation?: { message: string; showStatusLink?: boolean };
     branding?: PublicForm['branding'];
+    access?: { mode: 'public' } | { mode: 'workspace'; role: string };
     layout?: Layout;
     pages?: {
       key: string;
@@ -100,6 +102,7 @@ export function FormPreview({
   blueprint,
   onBranding,
   onLayout,
+  onAccess,
   previewKey,
   draftId,
   editHeaderRequest,
@@ -110,6 +113,7 @@ export function FormPreview({
   onBranding?: (next: NonNullable<PublicForm['branding']>) => void;
   /** How the pages are split for the respondent; undefined means as designed. */
   onLayout?: (next: Layout | undefined) => void;
+  onAccess?: (next: { mode: 'workspace'; role: string } | undefined) => void;
   previewKey?: string;
   draftId?: string;
   editHeaderRequest?: number;
@@ -202,6 +206,9 @@ export function FormPreview({
           designedPages={designed.length}
           onBranding={onBranding}
           onLayout={onLayout}
+          access={blueprint.experience?.access}
+          submitRoles={(blueprint.roles ?? []).filter((role) => role.kind === 'internal' && role.capabilities?.includes('submit'))}
+          onAccess={onAccess}
           draftId={draftId}
           onClose={closeSettings}
         />
@@ -327,17 +334,23 @@ export function FormPreview({
 function FormSettings({
   branding,
   layout,
+  access,
+  submitRoles,
   designedPages,
   onBranding,
   onLayout,
+  onAccess,
   draftId,
   onClose,
 }: {
   branding?: PublicForm['branding'];
   layout?: Layout;
+  access?: { mode: 'public' } | { mode: 'workspace'; role: string };
+  submitRoles: { key: string; name: string }[];
   designedPages: number;
   onBranding: (next: NonNullable<PublicForm['branding']>) => void;
   onLayout?: (next: Layout | undefined) => void;
+  onAccess?: (next: { mode: 'workspace'; role: string } | undefined) => void;
   draftId?: string;
   onClose: () => void;
 }) {
@@ -406,6 +419,20 @@ function FormSettings({
       </header>
 
       <div className="sp__drawerBody">
+        {onAccess && (
+          <section className="sp__group" aria-labelledby="sp-group-access">
+            <h3 id="sp-group-access">Who can start this form</h3>
+            <div className="sp__field">
+              <label htmlFor="sp-access">Access</label>
+              <select id="sp-access" className="sp__select" value={access?.mode === 'workspace' ? access.role : ''}
+                onChange={(e) => onAccess(e.target.value ? { mode: 'workspace', role: e.target.value } : undefined)}>
+                <option value="">Anyone with the link</option>
+                {submitRoles.map((role) => <option key={role.key} value={role.key}>Signed-in {role.name}</option>)}
+              </select>
+              <small>Signed-in access applies to the form, saved answers, uploads and submission.</small>
+            </div>
+          </section>
+        )}
         <section className="sp__group" aria-labelledby="sp-group-look">
           <h3 id="sp-group-look">Look</h3>
 

@@ -11,7 +11,7 @@ import { pushConfig, removeSubscription, saveSubscription, testPush } from '../r
 import { createView, deleteView, listViews, type Schedule, type ViewParams } from '../runtime/saved-views.js';
 import { isPublicApiPath, publicHandler } from './public-server.js';
 import { aiDraftStatus, applyAiRevision, queueAiDraft, queueAiRevision } from '../runtime/ai-drafts.js';
-import { AuthorizationError, requireWorkspaceCapability, WORKSPACE_GRANTS, type Principal } from '../runtime/policy.js';
+import { AuthorizationError, authorize as authorizeProcess, requireWorkspaceCapability, WORKSPACE_GRANTS, type Principal } from '../runtime/policy.js';
 import type { Capability } from '../blueprint/roles.js';
 import {
   devicesFor,
@@ -213,15 +213,15 @@ route('GET', /^\/api\/forms\/([a-z0-9_-]+)\/receipts\/([0-9a-f-]{36})$/, async (
   return receiptStatus(pool, { form: parts[3]!, token, reference: `receipt-file:${parts[5]}` });
 });
 
-route('POST', /^\/api\/forms\/([a-z0-9_-]+)\/submit$/, async ({ pool, engine, url }, body) => {
+route('POST', /^\/api\/forms\/([a-z0-9_-]+)\/submit$/, async ({ pool, engine, url, principal }, body) => {
   const key = url.pathname.split('/')[3]!;
   const { token, answers, ticket, trap } = body as { token?: string; answers?: Answers; ticket?: unknown; trap?: unknown };
-  const screening = screen({ processKey: (await resolveForm(pool, key)).publicId, ticket, trap });
-  const { held, ...result } = await submitForm(pool, { processKey: key, token, answers: answers ?? {}, screening });
+  const screening = principal.kind === 'actor' ? undefined : screen({ processKey: (await resolveForm(pool, key)).publicId, ticket, trap });
+  const { held, ...result } = await submitForm(pool, { processKey: key, token, answers: answers ?? {}, screening, principal });
   if (held) {
     // The reasons, never the answers: a log line is not where unvetted
     // personal data should end up.
-    logIfEnabled('warn', 'intake.held', { process: key, reasons: screening.reasons, elapsedMs: screening.elapsedMs });
+    logIfEnabled('warn', 'intake.held', { process: key, reasons: screening?.reasons, elapsedMs: screening?.elapsedMs });
     return result;
   }
   // Deliver the receipt before answering, so the confirmation page is not the
@@ -1632,10 +1632,40 @@ async function main(): Promise<void> {
           throw new HttpError(404, 'a resume link does not reach that');
         }
 
-        // ---- the public form needs no session at all
+        // ---- forms may be public or limited to a named workspace role
         if (url.pathname.startsWith('/api/forms/')) {
           const match = routes.find((r) => r.method === req.method && r.pattern.test(url.pathname));
           if (!match) throw new HttpError(404, `no route for ${req.method} ${url.pathname}`);
+          const formRef = processKeyFrom(url.pathname);
+          const formTarget = await resolveForm(pool, formRef);
+          const { rows: formVersions } = await pool.query<{ blueprint: Blueprint }>(
+            `select blueprint from process_version where tenant_id = $1 and process_key = $2
+             order by version desc limit 1`, [formTarget.tenantId, formTarget.processKey],
+          );
+          const published = formVersions[0]?.blueprint;
+          if (!published) throw new HttpError(404, 'no such form');
+          let formPrincipal: Principal = { kind: 'respondent', tenantId: formTarget.tenantId };
+          let formActorId = '';
+          if (published.experience.access?.mode === 'workspace') {
+            const session = await resolveSession(pool, readCookie(req, SESSION_COOKIE) ?? '');
+            if (!session) throw new HttpError(401, 'sign in to start this inspection');
+            if (session.tenantId !== formTarget.tenantId) throw new HttpError(403, 'this inspection belongs to another workspace');
+            formActorId = session.actorId;
+            formPrincipal = { kind: 'actor', tenantId: session.tenantId, actorId: session.actorId };
+            const policyClient = await pool.connect();
+            let decision;
+            try {
+              decision = await authorizeProcess(policyClient, {
+                principal: formPrincipal, action: 'submit', tenantId: session.tenantId,
+                processKey: formTarget.processKey, blueprint: published,
+              });
+            } finally {
+              policyClient.release();
+            }
+            if (!decision.allowed || !decision.roles.includes(published.experience.access.role)) {
+              throw new HttpError(403, `only a signed-in ${published.experience.access.role} can open this form`);
+            }
+          }
 
           /*
            * §12.3. This is the only door with no credential on it, so it is
@@ -1672,11 +1702,10 @@ async function main(): Promise<void> {
           }
 
           const body = req.method === 'POST' ? await readBody(req, url.pathname.endsWith('/receipts') ? 7 * 1024 * 1024 : Number.MAX_SAFE_INTEGER) : {};
-          const anonymous: Principal = { kind: 'respondent', tenantId: '' };
           return send(
             res,
             200,
-            await match.handler({ engine, pool, principal: anonymous, actorId: '', url }, body),
+            await match.handler({ engine, pool, principal: formPrincipal, actorId: formActorId, url }, body),
             [],
             rateHeaders,
           );

@@ -371,11 +371,14 @@ export function Form({ processKey: fromUrl }: { processKey: string }) {
   };
 
   if (loadError) {
+    const signInRequired = loadError.includes('sign in to start this inspection');
+    const inspectorRequired = loadError.includes('only a signed-in');
     return (
       <div className="fm">
         <div className="fm__card">
-          <h1 className="fm__title">This form is not available</h1>
+          <h1 className="fm__title">{signInRequired ? 'Sign in to start this inspection' : inspectorRequired ? 'Inspector access required' : 'This form is not available'}</h1>
           <p className="fm__lede">{loadError}</p>
+          {signInRequired && <a href="/console">Sign in to the workspace</a>}
         </div>
       </div>
     );

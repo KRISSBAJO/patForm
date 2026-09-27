@@ -138,7 +138,10 @@ async function runOne(
               ? (step.answers as Answers)
               : completeAnswers(bp, step.answers as Answers);
 
-          const result = await engine.submit({ version, answers, now });
+          const submitter = bp.experience.access?.mode === 'workspace'
+            ? cast.get(bp.experience.access.role)?.principal
+            : undefined;
+          const result = await engine.submit({ version, answers, now, principal: submitter });
           if (result.rejected) {
             if (test.kind !== 'missing_data') {
               fail(`submission was rejected for missing fields: ${result.rejected.join(', ')}`);

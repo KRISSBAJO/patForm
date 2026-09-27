@@ -819,6 +819,40 @@
               },
               "minItems": 1
             },
+            "access": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "mode": {
+                      "type": "string",
+                      "const": "public"
+                    }
+                  },
+                  "required": [
+                    "mode"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "mode": {
+                      "type": "string",
+                      "const": "workspace"
+                    },
+                    "role": {
+                      "$ref": "#/definitions/ProcessBlueprint/properties/key"
+                    }
+                  },
+                  "required": [
+                    "mode",
+                    "role"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            },
             "showProgress": {
               "type": "boolean",
               "default": true
@@ -1503,6 +1537,10 @@
                     "type": "boolean",
                     "default": false
                   },
+                  "signatureRequired": {
+                    "type": "boolean",
+                    "default": false
+                  },
                   "notTheSubmitter": {
                     "type": "boolean",
                     "default": false
@@ -1876,6 +1914,15 @@
                         },
                         "reason": {
                           "type": "string"
+                        },
+                        "signatureName": {
+                          "type": "string"
+                        },
+                        "signatureConfirmed": {
+                          "type": "boolean"
+                        },
+                        "expectDenied": {
+                          "type": "boolean"
                         }
                       },
                       "required": [

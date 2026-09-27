@@ -1,4 +1,5 @@
 import type { Screening } from './screening.js';
+import type { Principal } from './policy.js';
 import { resolveForm } from './form-links.js';
 import { createHash, randomBytes } from 'node:crypto';
 import type { Blueprint } from '../blueprint/index.js';
@@ -363,6 +364,7 @@ export async function submitForm(
      * approximates.
      */
     screening?: Screening;
+    principal?: Principal;
   },
 ): Promise<SubmitResult> {
   const now = args.now ?? new Date();
@@ -416,7 +418,7 @@ export async function submitForm(
     version: { id: version.id, tenant_id: version.tenant_id, process_key: bp.key, version: 0, blueprint: bp },
     answers,
     now,
-    principal: { kind: 'respondent', tenantId: version.tenant_id },
+    principal: args.principal ?? { kind: 'respondent', tenantId: version.tenant_id },
   });
 
   if (result.rejected) {

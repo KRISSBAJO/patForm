@@ -228,13 +228,17 @@ export class Engine {
 
     return inTransaction(this.pool, async (client) => {
       await requireIntakeOpen(client, args.version.tenant_id, true);
-      await require_(client, {
+      const submissionAccess = await require_(client, {
         principal,
         action: 'submit',
         tenantId: args.version.tenant_id,
         processKey: bp.key,
         blueprint: bp,
       }, this.pool);
+      if (bp.experience.access?.mode === 'workspace' &&
+          (principal.kind !== 'actor' || !submissionAccess.roles.includes(bp.experience.access.role))) {
+        throw new AuthorizationError('submit', `only a signed-in ${bp.experience.access.role} can submit this form`);
+      }
 
       const { rows } = await client.query<{ id: string }>(
         `insert into instance

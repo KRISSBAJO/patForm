@@ -240,6 +240,14 @@ export function validate(bp: Blueprint, requestedDescription?: string): Diagnost
   };
 
   // ------------------------------------------------------------------ intent
+  if (bp.experience.access?.mode === 'workspace') {
+    const role = roleByKey.get(bp.experience.access.role);
+    if (!role || role.kind !== 'internal' || !role.capabilities.includes('submit')) {
+      d.error('SEC012', 'experience.access',
+        `The form requires a signed-in ${bp.experience.access.role}, but that role cannot start an inspection.`,
+        'Choose an internal role with submit permission.');
+    }
+  }
   if (!roleByKey.has(bp.intent.owner)) {
     d.error('REF012', 'intent.owner', `Unknown owner role "${bp.intent.owner}".`);
   }
