@@ -7,6 +7,17 @@ import { validate } from '../src/compiler/validate.js';
 
 const DIR = 'processes';
 
+test('task collection rejects repeating-section fields that the runtime cannot collect',()=>{
+  const bp=load('employee-onboarding.blueprint.json');
+  const task=bp.workflow.tasks[0]!;
+  assert.ok(task);
+  const key='nested_review';
+  task.requiredFields=[key];
+  const field={key,label:'Review',type:'long_text' as const,setBy:'operator' as const,classification:'internal' as const};
+  bp.data.fields.push({key:'review_rows',label:'Review rows',type:'repeating_group',setBy:'respondent',classification:'internal',fields:[field]});
+  assert.ok(validate(bp).errors.some(e=>e.code==='TASK001' && e.message.includes('inside a repeating section')));
+});
+
 function load(file: string) {
   const parsed = Blueprint.safeParse(JSON.parse(readFileSync(join(DIR, file), 'utf8')));
   assert.ok(parsed.success, `${file} does not match the blueprint schema: ${JSON.stringify(parsed.error?.issues?.slice(0, 3), null, 2)}`);

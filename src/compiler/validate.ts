@@ -1058,6 +1058,11 @@ export function validate(bp: Blueprint, requestedDescription?: string): Diagnost
       const at = `workflow.tasks[${i}].requiredFields`;
       const field = requireField(key, at, `Task "${task.key}" completion`);
       if (!field) continue;
+      if (!bp.data.fields.some(f=>f.key===key)) {
+        d.error('TASK001',at,`Task "${task.key}" requires "${key}" inside a repeating section. Task completion currently collects only top-level operator fields.`,
+          'Use a separate top-level task answer, or collect the repeating-section answer on the form. Do not claim per-row task collection is supported.');
+        continue;
+      }
       /*
        * A trainer's review records a completion status, a yes/no on
        * competency, a score. Only text was allowed here, so every draft that

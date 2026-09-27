@@ -9,7 +9,7 @@ import type { Diagnostic } from '../compiler/diagnostics.js';
  * record says exactly which instructions produced it. Eval results are only
  * comparable within a version.
  */
-export const PROMPT_VERSION = 'blueprint-gen@16';
+export const PROMPT_VERSION = 'blueprint-gen@17';
 
 export const SYSTEM_PROMPT = `You design business processes for an operations platform.
 
@@ -110,6 +110,8 @@ Timers and reminders
 - An unsubmitted public form has no record yet. Do not invent an abandonment state or timer for a visitor who never submitted. A timeout test for that case can advance the clock and expect zero instances. A timer from the initial state cannot run when every valid submission leaves it immediately.
 
 Tests
+- File evidence in scenario answers must be a synthetic "receipt-file:00000000-0000-4000-8000-000000000001" reference (or an array of these for multiple files), never a filename or URL. These references are test samples, not actual uploads. Omit unspecified required file answers in positive tests so the runner supplies them; preserve deliberately missing evidence in missing_data tests.
+- Task requiredFields must reference top-level operator fields in data.fields. A child field inside a repeating_group cannot be collected by task completion. Do not flatten a per-defect or per-document requirement into a single answer while claiming per-record collection; disclose that unsupported capability.
 - Include happy_path, missing_data, timeout, duplicate, and permission scenarios. Include a rejection scenario only when the workflow has an actual rejected outcome. A scenario names only the answers that matter to it.
 - A permission scenario asserts that a role is allowed or refused one of: submit, view, edit, approve, export, operate.
 - "missing_data" means the FORM is incomplete so nothing starts. A valid submission that takes a different legitimate route is a second happy_path, not missing_data.
