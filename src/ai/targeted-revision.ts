@@ -39,9 +39,19 @@ export function applyTargetedRevision(source:Blueprint, input:unknown):Blueprint
 }
 
 export async function proposeTargetedRevision(provider:Provider, source:Blueprint, description:string):Promise<Blueprint> {
-  const response=await provider.generate({description,stage:'targeted-repair',shape:Patch,
-    system:'Return a small set of replacements, not a blueprint. Implement only the explicit business choices. Allowed paths: /intent/openDecisions, /intent/assumptions, /intent/retentionDays, /workflow/transitions/INDEX/when or /to, /tests/INDEX/steps or /expect. Preserve approval requirements, security tests, duplicate policy and expected outputs. Never modify roles, documents, fields, email recipients or task authorities. Leave a decision unresolved if these paths cannot implement it.',
-    user:JSON.stringify({request:description,source}),schema:zodToJsonSchema(Patch) as Record<string,unknown>});
-  if(response.meta.refusal) throw new Error(response.meta.refusal);
-  return applyTargetedRevision(source,response.parsed??extractJson(response.text));
+  const system='Return a small set of replacements, not a blueprint. Every change has EXACTLY two keys: path and value. Example: {"changes":[{"path":"/intent/retentionDays","value":365}]}. Do not put expect, operation, reason or other keys on a change. Implement only the explicit business choices. Allowed paths: /intent/openDecisions, /intent/assumptions, /intent/retentionDays, /workflow/transitions/INDEX/when or /to, /tests/INDEX/steps or /expect. Replace the entire allowed leaf; nested paths such as /intent/openDecisions/0/provisionally are forbidden. Preserve approval requirements, security tests, duplicate policy and expected outputs. Never modify roles, documents, fields, email recipients or task authorities. Never change permission or duplicate test scenarios. Scenario steps use the source format: manual steps have step="manual", transition=<existing transition key>, as=<role>; permission steps have step="permission", action=submit|view|edit|approve|export|operate, NOT a transition key. Leave a decision unresolved if these paths cannot implement it.';
+  let feedback='';
+  for(let attempt=0;attempt<2;attempt++) {
+    const response=await provider.generate({description,stage:'targeted-repair',shape:Patch,system,
+      user:JSON.stringify({request:description,source})+feedback,schema:zodToJsonSchema(Patch) as Record<string,unknown>});
+    if(response.meta.refusal) throw new Error(response.meta.refusal);
+    try { return applyTargetedRevision(source,response.parsed??extractJson(response.text)); }
+    catch(error) {
+      if(attempt===1) throw error;
+      const issues=error instanceof z.ZodError ? error.issues.slice(0,12).map(i=>`${i.path.join('.')}: ${i.message}`).join('\n')
+        : error instanceof Error ? error.message : 'Invalid patch';
+      feedback=`\n\nThe proposed patch was rejected. Correct these errors and return a new complete changes object for the SAME original source. Nothing from your previous patch was applied:\n${issues}`;
+    }
+  }
+  throw new Error('Targeted repair could not produce a valid patch');
 }

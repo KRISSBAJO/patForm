@@ -36,6 +36,18 @@ test('provider repair requests a bounded patch instead of another blueprint',asy
   }},bp,'Retain for two years');
   assert.equal(next.intent.retentionDays,730);
 });
+test('targeted repair retries malformed patches with validation feedback before fallback',async()=>{
+  const bp=fixture(); let calls=0;
+  const next=await proposeTargetedRevision({name:'fake',model:'test',generate:async request=>{
+    calls++;
+    if(calls===2) {
+      assert.match(request.user,/proposed patch was rejected/);
+      assert.match(request.user,/Unrecognized key/);
+    }
+    return {text:'',parsed:{changes:[calls===1 ? {path:'/intent/retentionDays',value:365,expect:'unsupported'} : {path:'/intent/retentionDays',value:365}]},meta:{provider:'fake',model:'test',mode:'structured',latencyMs:1}};
+  }},bp,'Retain for one year');
+  assert.equal(calls,2); assert.equal(next.intent.retentionDays,365);
+});
 test('repair wires a task on a unique entry and is idempotent',()=>{
   const bp=fixture();
   bp.workflow.states.push({key:'unique_task_stage',name:'Task stage',type:'active'});

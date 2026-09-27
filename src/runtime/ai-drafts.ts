@@ -169,7 +169,14 @@ export async function processNextAiDraft(pool: Pool): Promise<boolean> {
           if (result.blueprint) break;
           error = `${name} could not make a fully checked revision.`;
         } catch (cause) {
-          error = `${name} could not complete generation.`;
+          const message=cause instanceof Error ? cause.message : '';
+          error = cause instanceof Error && cause.name==='ZodError'
+            ? `${name} returned repair changes in an invalid format. Your original draft has not changed.`
+            : /Repair cannot|Unsafe repair path|Repair path does not exist/.test(message)
+              ? `${name} proposed changes outside the supported repair controls. Your original draft has not changed.`
+              : /credit balance|insufficient.*credit/i.test(message)
+                ? `${name} could not finish because its API credit balance is too low. Your original draft has not changed.`
+                : `${name} could not complete generation.`;
           console.warn('AI revision provider failed:', name, cause instanceof Error ? cause.message : String(cause));
         }
       }
