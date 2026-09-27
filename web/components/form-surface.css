@@ -349,10 +349,36 @@ textarea.fm__input {
 
 .fm__files {
   margin: 10px 0 0;
-  padding-left: 18px;
+  padding: 0;
+  list-style: none;
   font-size: calc(14px * var(--fm-scale, 1));
   color: var(--ink-soft);
 }
+
+.fm__files li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 64px;
+  padding: 8px;
+  margin-top: 8px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--paper);
+}
+
+.fm__fileThumb {
+  width: 54px;
+  height: 54px;
+  flex: none;
+  object-fit: cover;
+  border-radius: 8px;
+  background: var(--paper-3);
+}
+
+.fm__fileName { min-width: 0; overflow-wrap: anywhere; font-weight: 600; color: var(--ink); }
+.fm__fileStatus { margin-left: auto; white-space: nowrap; font-size: 0.8em; }
+.fm__files li button { border: 0; background: transparent; color: var(--green); cursor: pointer; font: inherit; }
 
 .fm__computed {
   display: block;

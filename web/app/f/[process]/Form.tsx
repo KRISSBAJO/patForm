@@ -100,6 +100,7 @@ export function Form({ processKey: fromUrl }: { processKey: string }) {
     if (saving === 'saved') setSaidSaved(true);
   }, [saving]);
   const [receiptUploads, setReceiptUploads] = useState<Record<string, string>>({});
+  const [fileDetails, setFileDetails] = useState<Record<string, { filename: string; status: string; previewUrl: string | null }>>({});
   // Focus follows the reader: to the page title when the page changes, to the
   // first answer that needs attention when a check fails, to the thank-you
   // when it is done. Without this a screen reader is left on a button whose
@@ -275,8 +276,11 @@ export function Form({ processKey: fromUrl }: { processKey: string }) {
       for (const [key, value] of pending) {
         try {
           const id = String(value).slice('receipt-file:'.length);
-          const result = await api<{ status: string; filename: string }>(`/api/forms/${processKey}/receipts/${id}?token=${encodeURIComponent(token)}`);
-          if (active) setReceiptUploads((prev) => ({ ...prev, [key]: result.status === 'clean' ? `${result.filename} — scan passed` : result.status === 'scanning' ? 'Scanning for malware…' : 'The file did not pass its security scan. Choose another.' }));
+          const result = await api<{ status: string; filename: string; previewUrl: string | null }>(`/api/forms/${processKey}/receipts/${id}?token=${encodeURIComponent(token)}`);
+          if (active) {
+            setFileDetails((prev) => ({ ...prev, [value]: result }));
+            setReceiptUploads((prev) => ({ ...prev, [key]: result.status === 'clean' ? `${result.filename} — scan passed` : result.status === 'scanning' ? 'Scanning for malware…' : 'The file did not pass its security scan. Choose another.' }));
+          }
         } catch {
           if (active) setReceiptUploads((prev) => ({ ...prev, [key]: 'Could not check the scan yet. Try again shortly.' }));
         }
@@ -517,6 +521,7 @@ export function Form({ processKey: fromUrl }: { processKey: string }) {
                           nestedErrors={errors}
                           onChange={(v) => set(field.key, v)}
                           onFileUpload={uploadReceipt}
+                          fileDetails={fileDetails}
                         />
                       )}
                       {(field.key === 'receipt_reference' || field.key === 'invoice_evidence_reference') && (

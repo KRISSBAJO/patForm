@@ -231,6 +231,7 @@ export function Field({
   nestedErrors,
   onChange,
   onFileUpload,
+  fileDetails,
 }: {
   field: PublicField;
   value: unknown;
@@ -239,6 +240,7 @@ export function Field({
   nestedErrors?: Record<string, string>;
   onChange: (value: unknown) => void;
   onFileUpload?: (fieldKey: string, file: File) => Promise<string>;
+  fileDetails?: Record<string, { filename: string; status: string; previewUrl: string | null }>;
 }) {
   const id = `f-${field.key}`;
   const describedBy = [field.help ? `${id}-help` : null, error ? `${id}-error` : null].filter(Boolean).join(' ');
@@ -471,6 +473,7 @@ export function Field({
           accept={(c.accept as string[]) ?? undefined}
           describedBy={describedBy || undefined}
           onFileUpload={onFileUpload}
+          fileDetails={fileDetails}
         />,
       );
 
@@ -483,7 +486,7 @@ export function Field({
       );
 
     case 'repeating_group':
-      return <RepeatingGroup field={field} value={value} computed={computed} error={error} nestedErrors={nestedErrors} onChange={onChange} onFileUpload={onFileUpload} />;
+      return <RepeatingGroup field={field} value={value} computed={computed} error={error} nestedErrors={nestedErrors} onChange={onChange} onFileUpload={onFileUpload} fileDetails={fileDetails} />;
 
     case 'address':
       return wrap(
@@ -518,6 +521,7 @@ function FileField({
   accept,
   describedBy,
   onFileUpload,
+  fileDetails,
 }: {
   field: PublicField;
   value: unknown;
@@ -525,6 +529,7 @@ function FileField({
   accept?: string[];
   describedBy?: string;
   onFileUpload?: (fieldKey: string, file: File) => Promise<string>;
+  fileDetails?: Record<string, { filename: string; status: string; previewUrl: string | null }>;
 }) {
   const [uploading, setUploading] = useState(false);
   const [message, setMessage] = useState('');
@@ -564,7 +569,9 @@ function FileField({
         <ul className="fm__files">
           {files.map((reference, index) => (
             <li key={`${reference}-${index}`}>
-              File {index + 1} uploaded{' '}
+              {fileDetails?.[reference]?.previewUrl && <img className="fm__fileThumb" src={fileDetails[reference].previewUrl!} alt={`${field.label} ${index + 1} preview`} />}
+              <span className="fm__fileName">{fileDetails?.[reference]?.filename ?? `File ${index + 1}`}</span>{' '}
+              <span className="fm__fileStatus">{fileDetails?.[reference]?.status === 'clean' ? 'Ready' : fileDetails?.[reference]?.status === 'quarantined' ? 'Not accepted' : 'Scanning'}</span>{' '}
               <button type="button" onClick={() => onChange(max > 1 ? files.filter((_, i) => i !== index) : null)}>Remove</button>
             </li>
           ))}
@@ -582,6 +589,7 @@ function RepeatingGroup({
   nestedErrors,
   onChange,
   onFileUpload,
+  fileDetails,
 }: {
   field: PublicField;
   value: unknown;
@@ -590,6 +598,7 @@ function RepeatingGroup({
   nestedErrors?: Record<string, string>;
   onChange: (v: unknown) => void;
   onFileUpload?: (fieldKey: string, file: File) => Promise<string>;
+  fileDetails?: Record<string, { filename: string; status: string; previewUrl: string | null }>;
 }) {
   const rows = Array.isArray(value) ? (value as Record<string, unknown>[]) : [];
 
@@ -619,6 +628,7 @@ function RepeatingGroup({
                 error={nestedErrors?.[`${field.key}[${index}].${child.key}`]}
                 onChange={(v) => update(index, child.key, v)}
                 onFileUpload={onFileUpload}
+                fileDetails={fileDetails}
               />
             ))}
           </div>

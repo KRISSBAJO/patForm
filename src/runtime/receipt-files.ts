@@ -94,8 +94,8 @@ export async function receiptStatus(pool: Pool, args: { form: string; token: str
   const id = REFERENCE.exec(args.reference)?.[1];
   if (!id) throw new InvalidInput('Invalid receipt reference.');
   const form = await resolveForm(pool, args.form);
-  const { rows } = await pool.query<{ storage_key: string; scan_status: string; filename: string }>(
-    `select f.storage_key, f.scan_status, f.filename from file f
+  const { rows } = await pool.query<{ storage_key: string; scan_status: string; filename: string; content_type: string }>(
+    `select f.storage_key, f.scan_status, f.filename, f.content_type from file f
       join draft d on d.id = f.draft_id join process_version pv on pv.id = d.process_version_id
      where f.id = $1 and f.tenant_id = $2 and d.token_hash = $3 and pv.process_key = $4 and d.expires_at > now()`,
     [id, form.tenantId, tokenHash(args.token), form.processKey],
@@ -103,7 +103,12 @@ export async function receiptStatus(pool: Pool, args: { form: string; token: str
   if (!rows[0]) throw new NotFound('No receipt belongs to this draft.');
   const status = await scanStatus(rows[0].storage_key);
   if (status !== rows[0].scan_status) await pool.query('update file set scan_status = $2 where id = $1', [id, status === 'scanning' ? 'unscanned' : status]);
-  return { status, filename: rows[0].filename };
+  const { storage: s3, bucket } = config();
+  const previewUrl = status === 'clean' && rows[0].content_type.startsWith('image/')
+    ? await getSignedUrl(s3, new GetObjectCommand({ Bucket: bucket, Key: rows[0].storage_key,
+        ResponseContentType: rows[0].content_type, ResponseContentDisposition: 'inline' }), { expiresIn: 90 })
+    : null;
+  return { status, filename: rows[0].filename, previewUrl };
 }
 
 /** A task upload belongs to one record and one declared answer, never to a reusable public-form token. */
