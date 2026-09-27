@@ -378,7 +378,7 @@ export function Form({ processKey: fromUrl }: { processKey: string }) {
         <div className="fm__card">
           <h1 className="fm__title">{signInRequired ? 'Sign in to start this inspection' : inspectorRequired ? 'Inspector access required' : 'This form is not available'}</h1>
           <p className="fm__lede">{loadError}</p>
-          {signInRequired && <a href="/console">Sign in to the workspace</a>}
+          {signInRequired && <a href={`/console?next=${encodeURIComponent(`/f/${processKey}`)}`}>Sign in and return to this inspection</a>}
         </div>
       </div>
     );

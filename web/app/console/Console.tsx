@@ -978,14 +978,14 @@ function NavIcon({
 /**
  * Where to go after signing in, when somebody arrived from elsewhere.
  *
- * Only the consent screen, and only as a path on this site. A sign-in page
- * that followed any `next` would be an open redirect with this domain's name
- * on it — the link a phishing email wants.
+ * Only the consent screen or a form link on this site. Do not follow an
+ * arbitrary `next`: a sign-in page would otherwise become an open redirect.
  */
 function returnPath(): string | null {
   if (typeof window === 'undefined') return null;
   const next = new URLSearchParams(window.location.search).get('next');
-  if (!next || !next.startsWith('/oauth/authorize?') || next.startsWith('//')) return null;
+  if (!next || next.startsWith('//') ||
+      (!next.startsWith('/oauth/authorize?') && !/^\/f\/[a-z0-9_-]+$/.test(next))) return null;
   return next;
 }
 
