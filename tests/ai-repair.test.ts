@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { Blueprint } from '../src/blueprint/index.js';
 import { repairBlueprint } from '../src/ai/repair.js';
 import { verifiedRepair } from '../src/ai/verified-repair.js';
+import { validate } from '../src/compiler/validate.js';
 import type { ScenarioResult } from '../src/runtime/scenarios.js';
 
 const fixture = () => Blueprint.parse(JSON.parse(readFileSync('processes/employee-onboarding.blueprint.json','utf8')));
@@ -94,4 +95,62 @@ test('unrepairable errors and failures never become a successful repair',async()
   assert.equal(runs,0); assert.equal(invalid.ready,false); assert.ok(invalid.questions.length);
   const failed=await verifiedRepair(fixture(),async candidate=>result(candidate,false,['expected task was not created']));
   assert.equal(failed.ready,false);
+});
+
+function staffFixture() {
+  const bp=missingFixture();
+  const f=bp.data.fields.find(f=>f.key==='sample_route')!;
+  f.setBy='operator';
+  // Move the operator condition after submission, as in incident triage.
+  const submit=bp.workflow.transitions.find(t=>t.trigger.on==='submission')!;
+  delete submit.when;
+  submit.actions=submit.actions.filter(a=>a.do!=='create_task');
+  bp.workflow.transitions.unshift({key:'triage_fixture',from:submit.to,to:'provisioning',trigger:{on:'record_updated'},when:{op:'eq',left:{field:f.key},right:{literal:'standard'}},actions:[{do:'create_task',task:'issue_equipment'}]});
+  const editor=bp.roles.find(r=>r.key==='hiring_manager')!;
+  editor.capabilities.push('edit');editor.editableFields=[...(editor.editableFields ?? []),f.key];
+  return bp;
+}
+
+test('repair adds an authorized staff fixture step without exposing operator fields on submission',()=>{
+  const bp=staffFixture();
+  const fixed=repairBlueprint(bp);
+  const t=fixed.blueprint.tests.find(t=>t.kind==='happy_path')!;
+  assert.deepEqual(t.steps[1],{step:'edit',as:'hiring_manager',answers:{sample_route:'standard'}});
+  assert.deepEqual(fixed.blueprint.roles,bp.roles);
+  assert.deepEqual(fixed.blueprint.workflow,bp.workflow);
+  assert.equal(repairBlueprint(fixed.blueprint).changes.length,0);
+});
+
+test('ambiguous staff authority produces a picker and a valid choice continues repair',()=>{
+  const bp=staffFixture();
+  const second=bp.roles.find(r=>r.key==='hr_approver')!;
+  second.capabilities.push('edit');second.editableFields=[...(second.editableFields ?? []),'sample_route'];
+  const pending=repairBlueprint(bp);
+  assert.equal(pending.decisions.length,1);
+  const decision=pending.decisions[0]!;
+  assert.deepEqual(decision.roles.map(r=>r.key).sort(),['hiring_manager','hr_approver']);
+  const fixed=repairBlueprint(bp,[],{staff:{[decision.key]:'hr_approver'}});
+  assert.equal(fixed.decisions.length,0);
+  assert.equal((fixed.blueprint.tests.find(t=>t.kind==='happy_path')!.steps[1] as {as:string}).as,'hr_approver');
+  assert.equal(repairBlueprint(bp,[],{staff:{[decision.key]:'it_operator'}}).decisions.length,1,'a choice cannot grant editing permission');
+});
+
+test('staff test edit is schema supported and compiler rejects an unauthorized writer',()=>{
+  const bp=fixture();
+  bp.tests[0]!.steps.splice(1,0,{step:'edit',as:'new_hire',answers:{full_name:'Changed'}});
+  assert.equal(Blueprint.safeParse(bp).success,true);
+  assert.ok(validate(bp).items.some(d=>d.code==='TEST004'));
+});
+
+test('approval fixture records its declared decision through existing staff edit authority',()=>{
+  const bp=fixture();
+  bp.data.fields.push({key:'approval_decision',label:'Recorded decision',type:'dropdown',classification:'internal',setBy:'operator',choices:[{value:'approved',label:'Approved'},{value:'rejected',label:'Rejected'}]});
+  const rule=bp.workflow.transitions.find(t=>t.trigger.on==='approval_decided' && t.trigger.approval==='manager_approval' && t.trigger.decision==='approved')!;
+  rule.when={op:'eq',left:{field:'approval_decision'},right:{literal:'approved'}};
+  const role=bp.roles.find(r=>r.key==='hiring_manager')!;
+  role.capabilities.push('edit');role.editableFields=[...(role.editableFields??[]),'approval_decision'];
+  const fixed=repairBlueprint(bp);
+  assert.deepEqual(fixed.blueprint.tests.find(t=>t.kind==='happy_path')!.steps[1],{step:'edit',as:'hiring_manager',answers:{approval_decision:'approved'}});
+  assert.deepEqual(fixed.blueprint.workflow,bp.workflow);
+  assert.equal(repairBlueprint(fixed.blueprint).changes.length,0);
 });

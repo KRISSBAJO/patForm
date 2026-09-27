@@ -1258,6 +1258,14 @@ export function validate(bp: Blueprint, requestedDescription?: string): Diagnost
           }
         }
       }
+      if (step.step === 'edit') {
+        const role = roleByKey.get(step.as);
+        if (!role) d.error('TEST002', at, `Unknown role "${step.as}".`);
+        for (const key of Object.keys(step.answers)) requireField(key, at, 'Staff test answer');
+        if (!step.expectDenied && role && (role.kind !== 'internal' || !role.capabilities.includes('edit') || Object.keys(step.answers).some(key=>!role.editableFields?.includes(key) || role.hiddenFields?.includes(key)))) {
+          d.error('TEST004', at, `Role "${step.as}" cannot edit these test answers.`, 'Use an existing authorized staff role.');
+        }
+      }
       if (step.step === 'manual') {
         const transition = bp.workflow.transitions.find((item) => item.key === step.transition);
         if (!transition || transition.trigger.on !== 'manual') d.error('TEST002', at, `Unknown manual step "${step.transition}".`);

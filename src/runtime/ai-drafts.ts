@@ -32,9 +32,12 @@ export async function queueAiDraft(pool: Pool, principal: Principal, input: NewP
 }
 
 /** Revise the selected draft without changing it until the owner accepts the proposal. */
-export async function queueAiRevision(pool: Pool, principal: Principal, draftId: string, request: string, repair = false) {
+export async function queueAiRevision(pool: Pool, principal: Principal, draftId: string, request: string, repair = false, staff:unknown = {}) {
   if (principal.kind !== 'actor') throw new InvalidInput('Sign in to revise a process.');
-  if (repair) request = REPAIR_REQUEST;
+  if (repair) {
+    if (!staff || typeof staff!=='object' || Array.isArray(staff) || Object.keys(staff).length>20 || Object.entries(staff).some(([key,value])=>key.length>256 || typeof value!=='string' || value.length>100)) throw new InvalidInput('Choose staff from the repair options.');
+    request = REPAIR_REQUEST + '\n' + JSON.stringify(staff);
+  }
   if (typeof request !== 'string' || request.trim().length < 20 || request.length > 8000)
     throw new InvalidInput('Describe the changes in 20–8,000 characters.');
   const draft = await loadDraft(pool, principal, draftId);
@@ -108,12 +111,13 @@ export async function processNextAiDraft(pool: Pool): Promise<boolean> {
   try {
     if (job.source_draft_id) {
       const source = Blueprint.parse(job.source_blueprint);
-      if (job.description === REPAIR_REQUEST) {
+      if (job.description.startsWith(REPAIR_REQUEST)) {
         await pool.query('update ai_draft_job set stage = $2, note = $3 where id = $1', [job.id,'checking','Repairing the draft and running its tests']);
-        const result = await verifiedRepair(source,bp => runScenarios(pool,bp));
+        const staff = JSON.parse(job.description.slice(REPAIR_REQUEST.length).trim() || '{}') as Record<string,string>;
+        const result = await verifiedRepair(source,bp => runScenarios(pool,bp),{staff});
         const saved = result.ready ? await saveDraft(pool, { principal: {kind: 'actor',tenantId:job.tenant_id,actorId:job.actor_id},
           draftId:job.source_draft_id,blueprint:result.blueprint,baseRevision:job.source_revision! }) : null;
-        const review = { automaticRepair:true, ready:result.ready, revision:saved?.revision, results:result.scenarios, changes:result.changes, questions:result.questions,
+        const review = { automaticRepair:true, ready:result.ready, revision:saved?.revision, results:result.scenarios, changes:result.changes, questions:result.questions, decisions:result.decisions,
           diagnostics:result.diagnostics, tests:{passed:result.scenarios.filter(s=>s.passed).length,total:result.scenarios.length,
           failures:result.scenarios.filter(s=>!s.passed).map(s=>({name:s.test,failures:s.failures}))}};
         await pool.query(`update ai_draft_job set status = 'ready', stage = 'saving', proposal = $2, review = $3,
@@ -168,7 +172,7 @@ export async function processNextAiDraft(pool: Pool): Promise<boolean> {
     await pool.query(`update ai_draft_job set status = 'ready', draft_id = $2, error = $3, completed_at = now(), description = ''
       where id = $1`, [job.id, draft.id, draft.reviewNote ?? null]);
   } catch (error) {
-    const message = error instanceof InvalidInput || error instanceof DraftConflict ? error.message : job.description === REPAIR_REQUEST ? 'Repair could not finish. Please try again.' : 'AI generation could not finish. Please try again.';
+    const message = error instanceof InvalidInput || error instanceof DraftConflict ? error.message : job.description.startsWith(REPAIR_REQUEST) ? 'Repair could not finish. Please try again.' : 'AI generation could not finish. Please try again.';
     await pool.query(`update ai_draft_job set status = 'failed', error = $2, completed_at = now(), description = ''
       where id = $1`, [job.id, message.slice(0, 500)]);
     console.error('AI draft job failed:', job.id, error instanceof Error ? error.message : String(error));

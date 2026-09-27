@@ -6,7 +6,7 @@ import './improve.css';
 type Blueprint = { key: string; name: string; roles?: { key: string; name: string }[]; data?: { fields?: { key: string; label: string }[] }; workflow?: { states?: { key: string; name: string }[]; transitions?: { key: string; name?: string }[]; tasks?: { key: string; name: string }[]; approvals?: { key: string; name: string }[] }; communications?: { email?: { key: string; name: string }[] }; outputs?: { documents?: { key: string; name: string }[] }; tests?: { key: string }[]; experience?: { pages?: { key: string; title: string }[] } };
 type Draft = { id: string; processName: string; blueprint: Blueprint; revision: number };
 type Diagnostic = { code: string; severity: 'error' | 'warning'; message: string };
-type Job = { id: string; status: 'queued' | 'running' | 'ready' | 'failed'; stage: string; error?: string | null; source_revision: number; source_blueprint: Blueprint; proposal?: Blueprint | null; review?: { automaticRepair?: boolean; ready?: boolean; changes?: {at:string;change:string}[]; questions?: string[]; provider?: string; diagnostics: Diagnostic[]; tests: { passed: number; total: number; failures: { name: string; failures: string[] }[] } } | null; applied_at?: string | null };
+type Job = { id: string; status: 'queued' | 'running' | 'ready' | 'failed'; stage: string; error?: string | null; source_revision: number; source_blueprint: Blueprint; proposal?: Blueprint | null; review?: { automaticRepair?: boolean; ready?: boolean; changes?: {at:string;change:string}[]; questions?: string[]; decisions?: {key:string;prompt:string;roles:{key:string;name:string}[]}[]; provider?: string; diagnostics: Diagnostic[]; tests: { passed: number; total: number; failures: { name: string; failures: string[] }[] } } | null; applied_at?: string | null };
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, { credentials: 'same-origin', cache: 'no-store', headers: { 'content-type': 'application/json' }, ...init });
@@ -39,6 +39,7 @@ function changes(before: Blueprint, after: Blueprint) {
 }
 
 export function ImproveDraft() {
+  const [staff, setStaff] = useState<Record<string,string>>({});
   const [automatic, setAutomatic] = useState(false);
   const autoStarted = useRef(false);
   const [draftId, setDraftId] = useState('');
@@ -89,8 +90,8 @@ export function ImproveDraft() {
     if (!draft || (!automatic && request.trim().length < 20)) return;
     setBusy(true); setError('');
     try {
-      const queued = await api<{ jobId: string }>(`/api/builder/drafts/${draft.id}/improve`, { method: 'POST', body: JSON.stringify({ request: request.trim(), repair: automatic }) });
-      setJobId(queued.jobId);
+      const queued = await api<{ jobId: string }>(`/api/builder/drafts/${draft.id}/improve`, { method: 'POST', body: JSON.stringify({ request: request.trim(), repair: automatic, staff }) });
+      setJob(null); setJobId(queued.jobId);
       window.history.replaceState({}, '', `/builder/improve?draft=${draft.id}&job=${queued.jobId}${automatic ? '&repair=1' : ''}`);
     } catch (cause) { setError((cause as Error).message); }
     finally { setBusy(false); }
@@ -121,11 +122,12 @@ export function ImproveDraft() {
       {job && job.status !== 'ready' && job.status !== 'failed' && <section className="improve__card" role="status"><div className="improve__spinner"/> <strong>{automatic ? 'Repairing and retesting your draft' : job.stage === 'checking' ? 'Checking the proposed workflow' : 'AI is revising your draft'}</strong><p>You can leave and return using this page link.</p></section>}
       {job?.status === 'failed' && <section className="improve__card improve__card--warning"><h2>{automatic ? 'Repair could not finish' : 'AI could not make a proposal'}</h2><p>{job.error}</p><button onClick={() => { autoStarted.current = false; setJob(null); setJobId(''); window.history.replaceState({}, '', `/builder/improve?draft=${draftId}${automatic ? '&repair=1' : ''}`); }}>Try again</button></section>}
       {automatic && job?.status === 'ready' && <section className="improve__card" role="status">
-        <h2>{job.review?.ready ? 'Checks passed. Saving repairs…' : 'A decision or further repair is needed'}</h2>
+        <h2>{job.review?.ready ? 'Checks passed. Saving repairs…' : job.review?.decisions?.length ? 'Choose staff to continue repair' : 'A decision or further repair is needed'}</h2>
         <p>{job.review?.tests.passed ?? 0} of {job.review?.tests.total ?? 0} tests passed.</p>
         {!job.review?.ready && <><p>Your draft is unchanged. Repair could not verify these remaining issues.</p>
+          {!!job.review?.decisions?.length && <div className="improve__staff">{job.review.decisions.map(decision=><label key={decision.key}>{decision.prompt}<select value={staff[decision.key] ?? ''} onChange={event=>setStaff(was=>({...was,[decision.key]:event.target.value}))}><option value="">Choose staff role…</option>{decision.roles.map(role=><option key={role.key} value={role.key}>{role.name}</option>)}</select></label>)}<p>Only roles with existing permission to update these answers are listed.</p><button disabled={busy || job.review.decisions.some(d=>!staff[d.key])} onClick={()=>void start()}>{busy ? 'Continuing…' : 'Continue repair'}</button></div>}
           {job.review?.questions?.map((question,index)=><p key={index}>{question}</p>)}
-          {job.review?.tests.failures.map(item=><p key={item.name}>{item.name}: {item.failures.join('; ')}</p>)}
+          {!!job.review?.tests.failures.length && <details><summary>Test details</summary>{job.review.tests.failures.map(item=><p key={item.name}>{item.name}: {item.failures.join('; ')}</p>)}</details>}
           <a href={`/builder?draft=${draftId}`}>Return to draft</a></>}
         <details><summary>Repairs checked</summary>{job.review?.changes?.map((change,index)=><p key={index}>{change.change}</p>)}</details>
       </section>}

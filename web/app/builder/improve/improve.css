@@ -4,3 +4,5 @@
 @media(max-width:600px){.improve__actions{width:100%;align-items:stretch;flex-direction:column}}
 
 .improve--repair h1{font-family:inherit;font-size:26px;font-weight:600;line-height:1.3}.improve--repair h2{font-family:inherit;font-size:18px;font-weight:600;line-height:1.4}.improve--repair .improve__lead{font-size:14px}.improve--repair .improve__eyebrow{font-size:11px;letter-spacing:.06em}
+
+.improve__staff label{display:block;margin:18px 0;font-size:14px;font-weight:500}.improve__staff select{display:block;width:100%;margin-top:8px;padding:10px 12px;border:1px solid #b9cfc1;border-radius:8px;background:#fff;color:inherit;font:inherit}

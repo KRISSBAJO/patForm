@@ -170,6 +170,7 @@ export type BpTestStep =
   | { step: 'submit'; answers: Record<string, unknown> }
   | { step: 'decide'; approval: string; as: string; decision: 'approved' | 'rejected' | 'changes_requested'; reason?: string }
   | { step: 'complete_task'; task: string; as: string; answers?: Record<string, unknown>; expectDenied?: boolean }
+  | { step: 'edit'; as: string; answers: Record<string, unknown>; expectDenied?: boolean }
   | { step: 'advance_hours'; hours: number }
   | { step: 'manual'; transition: string; as: string }
   | { step: 'attempt'; as: string; action: 'submit' | 'view' | 'edit' | 'approve' | 'export' | 'operate'; expectDenied: boolean };

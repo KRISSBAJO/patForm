@@ -201,6 +201,23 @@ async function runOne(
           break;
         }
 
+        case 'edit': {
+          if (!instanceId) { fail('staff edit ran before submission'); break; }
+          const member = cast.get(step.as);
+          if (!member) { fail(`scenario names unknown role "${step.as}"`); break; }
+          let saved = false;
+          try {
+            const result = await engine.updateRecord({instanceId,patch:step.answers as Answers,principal:member.principal,now});
+            saved = result.saved;
+            if (!step.expectDenied && !saved) fail(`"${step.as}" could not edit ${result.refused?.join(', ') ?? 'the record'}`);
+          } catch (err) {
+            if (!step.expectDenied) fail(`"${step.as}" was refused the edit: ${err instanceof Error ? err.message : String(err)}`);
+          }
+          if (step.expectDenied && saved) fail(`"${step.as}" edited the record but should have been refused`);
+          await engine.drain(now, `scenario:${test.key}`, tenantId);
+          break;
+        }
+
         case 'advance_hours': {
           /*
            * The whole reason the tenant has to be named. This moves the clock
