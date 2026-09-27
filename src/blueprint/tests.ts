@@ -28,6 +28,7 @@ export const Step = z.discriminatedUnion('step', [
       reason: z.string().optional(),
       signatureName: z.string().optional(),
       signatureConfirmed: z.boolean().optional(),
+      expectDenied: z.boolean().optional(),
     })
     .strict(),
   z.object({

@@ -31,7 +31,7 @@ export interface RecordDetail {
   nextAction: string;
   stateType?: string;
   completedAt?: string | null;
-  approvals?: { approval_key: string; status: string; decision: string | null; signature_name: string | null; decided_by: string | null; decided_at: string | null; reason: string | null }[];
+  approvals?: { approval_key: string; status: string; decision: string | null; signature_name: string | null; decided_by: string | null; decided_at: string | null; reason: string | null; votes?: { actor: string; decision: string; signature_name: string | null; decided_at: string }[] }[];
   viewerRoles: string[];
   canAddNote?: boolean;
   notes?: { id: number; text: string; actor: string | null; createdAt: string }[];
@@ -356,10 +356,12 @@ export function RecordPage({
         <span className="rc__statePill"><span aria-hidden="true" />{record.stateName}</span>
       </header>
 
-      {record.approvals?.filter(item => item.signature_name).map(item => (
+      {record.approvals?.filter(item => item.signature_name || item.votes?.some(vote => vote.signature_name)).map(item => (
         <section className="rc__noteComposer" key={`${item.approval_key}:${item.decided_at}`} aria-label="Electronic sign-off">
-          <div><h3>Electronic sign-off</h3><p>{item.approval_key.replace(/_/g, ' ')} · {item.decision?.replace(/_/g, ' ')} · {item.decided_at ? new Date(item.decided_at).toLocaleString() : ''}</p></div>
-          <p><strong>{item.signature_name}</strong> signed while authenticated as {who(item.decided_by)}.</p>
+          <div><h3>Electronic sign-off</h3><p>{item.approval_key.replace(/_/g, ' ')}</p></div>
+          {(item.votes?.filter(vote => vote.signature_name).length ? item.votes!.filter(vote => vote.signature_name).map(vote => ({ name: vote.signature_name!, actor: vote.actor, decision: vote.decision, at: vote.decided_at })) : item.signature_name ? [{ name: item.signature_name, actor: item.decided_by, decision: item.decision, at: item.decided_at }] : []).map((signed, index) =>
+            <p key={`${signed.actor}:${index}`}><strong>{signed.name}</strong> signed as {who(signed.actor)} · {signed.decision?.replace(/_/g, ' ')} · {signed.at ? new Date(signed.at).toLocaleString() : ''}</p>
+          )}
           {item.reason && <p>{item.reason}</p>}
         </section>
       ))}

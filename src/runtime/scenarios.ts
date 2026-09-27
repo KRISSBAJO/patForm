@@ -174,9 +174,10 @@ async function runOne(
             });
             // A counted vote may leave a sequential/quorum/majority request open.
             // The engine returns progress only after accepting and storing the vote.
-            if (!applied && !progress) fail(`decision "${step.decision}" on "${step.approval}" did not apply`);
+            if (step.expectDenied) fail(`"${step.as}" decided "${step.approval}" but should have been refused`);
+            else if (!applied && !progress) fail(`decision "${step.decision}" on "${step.approval}" did not apply`);
           } catch (err) {
-            fail(`"${step.as}" was refused the decision: ${err instanceof Error ? err.message : String(err)}`);
+            if (!step.expectDenied) fail(`"${step.as}" was refused the decision: ${err instanceof Error ? err.message : String(err)}`);
           }
           await engine.drain(now, `scenario:${test.key}`, tenantId);
           break;

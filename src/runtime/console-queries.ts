@@ -390,7 +390,11 @@ export async function recordDetail(pool: Pool, principal: Principal, instanceId:
 
     const events = await client.query<{ seq: number; type: string; payload: Record<string, unknown>; actor: string; occurred_at: Date }>('select seq, type, payload, actor, occurred_at from event where instance_id = $1 order by seq desc', [instanceId]);
     const evidenceHistory = earlierEvidence(bp, decision.roles, decision.workspaceRole, instance.data, events.rows);
-    const approvals = await client.query('select approval_key, approvers, status, decision, decided_by, decided_at, reason, signature_name, due_at from approval_request where instance_id = $1 order by id', [instanceId]);
+    const approvals = await client.query<{ id: string; approval_key: string; approvers: string[]; status: string; decision: string | null; decided_by: string | null; decided_at: Date | null; reason: string | null; signature_name: string | null; due_at: Date | null }>('select id, approval_key, approvers, status, decision, decided_by, decided_at, reason, signature_name, due_at from approval_request where instance_id = $1 order by id', [instanceId]);
+    const approvalVotes = await client.query<{ request_id: string; actor: string; decision: string; signature_name: string | null; decided_at: Date }>(
+      'select request_id, actor, decision, signature_name, decided_at from approval_vote where request_id = any($1::bigint[]) order by id',
+      [approvals.rows.map((approval) => approval.id)],
+    );
     const tasks = await client.query('select task_key, assignee, status, due_at, completed_at, completed_by from task where instance_id = $1 order by id', [instanceId]);
     const emails = await client.query('select template_key, recipients, subject, status, sent_at from email_log where instance_id = $1 order by id', [instanceId]);
     const documents = await client.query('select id, document_key, filename, checksum, byte_size, created_at from document where instance_id = $1 order by id', [instanceId]);
@@ -474,7 +478,9 @@ export async function recordDetail(pool: Pool, principal: Principal, instanceId:
       notes: notes.rows.map((note) => ({ id: note.seq, text: note.text, actor: note.actor_name,
         createdAt: note.occurred_at.toISOString() })),
       canAddNote,
-      approvals: approvals.rows,
+      approvals: approvals.rows.map(({ id, ...approval }) => ({ ...approval,
+        votes: approvalVotes.rows.filter((vote) => vote.request_id === id).map(({ request_id: _requestId, ...vote }) => vote),
+      })),
       tasks: tasks.rows,
       emails: emails.rows,
       documents: documents.rows,
