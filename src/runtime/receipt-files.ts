@@ -106,7 +106,7 @@ export async function receiptStatus(pool: Pool, args: { form: string; token: str
   const { storage: s3, bucket } = config();
   const previewUrl = status === 'clean' && rows[0].content_type.startsWith('image/')
     ? await getSignedUrl(s3, new GetObjectCommand({ Bucket: bucket, Key: rows[0].storage_key,
-        ResponseContentType: rows[0].content_type, ResponseContentDisposition: 'inline' }), { expiresIn: 90 })
+        ResponseContentType: rows[0].content_type, ResponseContentDisposition: 'inline' }), { expiresIn: 3600 })
     : null;
   return { status, filename: rows[0].filename, previewUrl };
 }

@@ -569,7 +569,7 @@ function FileField({
         <ul className="fm__files">
           {files.map((reference, index) => (
             <li key={`${reference}-${index}`}>
-              {fileDetails?.[reference]?.previewUrl && <img className="fm__fileThumb" src={fileDetails[reference].previewUrl!} alt={`${field.label} ${index + 1} preview`} />}
+              {fileDetails?.[reference]?.previewUrl && <a href={fileDetails[reference].previewUrl!} target="_blank" rel="noreferrer" aria-label={`Open ${field.label} image ${index + 1} at full size`}><img className="fm__fileThumb" src={fileDetails[reference].previewUrl!} alt="" /></a>}
               <span className="fm__fileName">{fileDetails?.[reference]?.filename ?? `File ${index + 1}`}</span>{' '}
               <span className="fm__fileStatus">{fileDetails?.[reference]?.status === 'clean' ? 'Ready' : fileDetails?.[reference]?.status === 'quarantined' ? 'Not accepted' : 'Scanning'}</span>{' '}
               <button type="button" onClick={() => onChange(max > 1 ? files.filter((_, i) => i !== index) : null)}>Remove</button>
