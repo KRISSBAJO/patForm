@@ -272,23 +272,29 @@ export function Form({ processKey: fromUrl }: { processKey: string }) {
     Object.entries(answers).forEach(([key, value]) => collect(key, value));
     if (!pending.length) return;
     let active = true;
+    const finished = new Set<string>();
+    const total = new Set(pending.map(([, value]) => value)).size;
+    let interval: ReturnType<typeof setInterval> | undefined;
     const check = async () => {
       for (const [key, value] of pending) {
+        if (finished.has(value)) continue;
         try {
           const id = String(value).slice('receipt-file:'.length);
           const result = await api<{ status: string; filename: string; previewUrl: string | null }>(`/api/forms/${processKey}/receipts/${id}?token=${encodeURIComponent(token)}`);
           if (active) {
             setFileDetails((prev) => ({ ...prev, [value]: result }));
             setReceiptUploads((prev) => ({ ...prev, [key]: result.status === 'clean' ? `${result.filename} — scan passed` : result.status === 'scanning' ? 'Scanning for malware…' : 'The file did not pass its security scan. Choose another.' }));
+            if (result.status !== 'scanning') finished.add(value);
           }
         } catch {
           if (active) setReceiptUploads((prev) => ({ ...prev, [key]: 'Could not check the scan yet. Try again shortly.' }));
         }
       }
+      if (finished.size === total && interval) clearInterval(interval);
     };
     void check();
-    const interval = setInterval(() => void check(), 5000);
-    return () => { active = false; clearInterval(interval); };
+    interval = setInterval(() => void check(), 5000);
+    return () => { active = false; if (interval) clearInterval(interval); };
   }, [token, processKey, answers]);
 
   const set = (key: string, value: unknown) => {
