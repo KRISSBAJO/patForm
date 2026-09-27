@@ -1252,17 +1252,37 @@ export function validate(bp: Blueprint, requestedDescription?: string): Diagnost
         // task answers also needs process-level edit rights for every field.
         // Checking this before the expensive scenario run gives AI a precise
         // permission error instead of a cascade of unopened-task failures.
-        const answers = Object.keys(step.answers ?? {});
+        const answers = Object.entries(step.answers ?? {});
         if (!step.expectDenied && answers.length) {
-          if (task) for (const key of answers) {
+          const supplied: { key: string; group?: string }[] = [];
+          for (const [key, value] of answers) {
+            const group = bp.data.fields.find(field => field.key === key && field.type === 'repeating_group');
+            if (group && Array.isArray(value)) {
+              for (const row of value) {
+                if (!row || typeof row !== 'object' || Array.isArray(row)) {
+                  d.error('TEST004', at, `Task "${step.task}" needs one answer object per ${group.label} row.`);
+                  continue;
+                }
+                for (const childKey of Object.keys(row)) {
+                  if (!group.fields?.some(field => field.key === childKey)) {
+                    d.error('TEST004', at, `"${childKey}" is not a field in ${group.label}.`);
+                    continue;
+                  }
+                  supplied.push({ key: childKey, group: key });
+                }
+              }
+            } else supplied.push({ key });
+          }
+          if (task) for (const { key } of supplied) {
             if (!task.requiredFields.includes(key)) {
               d.error('TEST004', at, `Task "${task.key}" cannot collect "${key}" in this scenario.`,
                 `Add "${key}" to the task's requiredFields or remove it from the scenario answer.`);
             }
           }
-          if (role && (!role.capabilities.includes('edit') || answers.some((key) => !role.editableFields?.includes(key)))) {
+          if (role && (!role.capabilities.includes('edit') || supplied.some(({ key, group }) =>
+            !role.editableFields?.includes(key) || role.hiddenFields?.includes(key) || (group && role.hiddenFields?.includes(group))))) {
             d.error('TEST004', at, `Role "${role.key}" cannot edit the answers supplied when completing task "${step.task}".`,
-              `Grant the role edit and list ${answers.join(', ')} in its editableFields, or have the task collect no answers.`);
+              `Grant the role edit and list the task's child fields in its editableFields, or have the task collect no answers.`);
           }
         }
       }

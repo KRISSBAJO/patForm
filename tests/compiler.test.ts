@@ -19,6 +19,13 @@ test('task collection accepts authorized operator fields inside a repeating sect
   role.capabilities.push('edit');
   role.editableFields=[...role.editableFields??[],key];
   assert.ok(!validate(bp).errors.some(e=>e.code==='TASK001'||e.code==='TASK002'),JSON.stringify(validate(bp).errors.filter(e=>e.code==='TASK001'||e.code==='TASK002')));
+  const scenario=bp.tests.find(test=>test.kind==='happy_path')!;
+  const completion=scenario.steps.find(step=>step.step==='complete_task' && step.task===task.key)!;
+  if(completion.step!=='complete_task') throw new Error('expected task completion');
+  completion.answers={review_rows:[{nested_review:'Checked first'},{nested_review:'Checked second'}]};
+  assert.ok(!validate(bp).errors.some(e=>e.code==='TEST004'),JSON.stringify(validate(bp).errors.filter(e=>e.code==='TEST004')));
+  completion.answers={review_rows:[{nested_review:'Checked'}, {unrelated:'Wrong field'}]};
+  assert.ok(validate(bp).errors.some(e=>e.code==='TEST004'));
 });
 
 function load(file: string) {
