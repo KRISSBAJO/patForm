@@ -156,7 +156,7 @@ async function runOne(
           }
           const principal = member.principal;
           try {
-            const { applied } = await engine.decide({
+            const { applied, progress } = await engine.decide({
               instanceId,
               approvalKey: step.approval,
               decision: step.decision,
@@ -164,7 +164,9 @@ async function runOne(
               reason: step.reason,
               now,
             });
-            if (!applied) fail(`decision "${step.decision}" on "${step.approval}" did not apply`);
+            // A counted vote may leave a sequential/quorum/majority request open.
+            // The engine returns progress only after accepting and storing the vote.
+            if (!applied && !progress) fail(`decision "${step.decision}" on "${step.approval}" did not apply`);
           } catch (err) {
             fail(`"${step.as}" was refused the decision: ${err instanceof Error ? err.message : String(err)}`);
           }
