@@ -234,13 +234,17 @@ export function repairBlueprint(input: Blueprint, failures: ScenarioResult[] = [
       changes.push({at:`tests.${test.key}.expect.emails`,change:`Included ${email}, the submission email confirmed by the engine. All other assertions remain.`});
     }
   }
-  // An explicitly named manual route in the scenario has already been
-  // exercised by the engine. Its reported side effects belong in that test's
-  // output list; do not infer side effects from routes the scenario never ran.
+  // An explicitly named manual route or completed task has already been
+  // exercised by the engine. Add only side effects the engine actually
+  // reported; a declaration alone is not proof that a guarded route ran.
   for(const result of failures) {
     const test=bp.tests.find(item=>item.key===result.test);
     if(!test||!['happy_path','rejection','timeout'].includes(test.kind)) continue;
-    const named=test.steps.filter(step=>step.step==='manual').map(step=>bp.workflow.transitions.find(route=>route.key===step.transition)).filter((route):route is NonNullable<typeof route>=>!!route);
+    const named=test.steps.flatMap(step=>step.step==='manual'
+      ? bp.workflow.transitions.filter(route=>route.key===step.transition)
+      : step.step==='complete_task' && !step.expectDenied
+        ? bp.workflow.transitions.filter(route=>route.trigger.on==='task_completed'&&route.trigger.task===step.task)
+        : []);
     for(const kind of ['emails','documents'] as const) {
       if(!test.expect[kind]) continue;
       const verb=kind==='emails'?'email':'document';
@@ -252,7 +256,7 @@ export function repairBlueprint(input: Blueprint, failures: ScenarioResult[] = [
           : action.do==='generate_document' && action.document===key));
         if(!declared) continue;
         test.expect[kind]!.push(key);
-        changes.push({at:`tests.${test.key}.expect.${kind}`,change:`Included ${key}, produced by a route explicitly run in this scenario. Existing expectations remain.`});
+        changes.push({at:`tests.${test.key}.expect.${kind}`,change:`Included ${key}, confirmed by the engine after an explicit scenario step. Existing expectations remain.`});
       }
     }
   }

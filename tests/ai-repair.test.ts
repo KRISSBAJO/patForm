@@ -222,6 +222,19 @@ test('repair expects only engine-proven outputs from a route named by the test',
   const repaired=repairBlueprint(bp,[result]).blueprint.tests.find(test=>test.key===happy.key)!;
   assert.deepEqual(repaired.expect.emails,['welcome_packet','submission_receipt']);
 });
+test('repair expects an engine-proven email caused by an explicit task completion',()=>{
+  const bp=fixture();
+  const happy=bp.tests.find(test=>test.kind==='happy_path')!;
+  const route=bp.workflow.transitions[0]!;
+  bp.workflow.transitions.push({key:'after_equipment',from:route.from,to:route.to,
+    trigger:{on:'task_completed',task:'issue_equipment'},actions:[{do:'send_email',key:'reinspect_notice',template:'submission_receipt'}]});
+  happy.expect.emails=['welcome_packet'];
+  const result:ScenarioResult={process:bp.key,test:happy.key,kind:happy.kind,passed:false,failures:[
+    'unexpected email "submission_receipt" was produced','unexpected email "unrelated" was produced',
+  ]};
+  const repaired=repairBlueprint(bp,[result]).blueprint.tests.find(test=>test.key===happy.key)!;
+  assert.deepEqual(repaired.expect.emails,['welcome_packet','submission_receipt']);
+});
 
 test('approval fixture records its declared decision through existing staff edit authority',()=>{
   const bp=fixture();
