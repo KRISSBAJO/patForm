@@ -1648,8 +1648,8 @@ async function main(): Promise<void> {
           let formActorId = '';
           if (published.experience.access?.mode === 'workspace') {
             const session = await resolveSession(pool, readCookie(req, SESSION_COOKIE) ?? '');
-            if (!session) throw new HttpError(401, 'sign in to start this inspection');
-            if (session.tenantId !== formTarget.tenantId) throw new HttpError(403, 'this inspection belongs to another workspace');
+            if (!session) throw new HttpError(401, 'sign in to open this form');
+            if (session.tenantId !== formTarget.tenantId) throw new HttpError(403, 'this form belongs to another workspace');
             formActorId = session.actorId;
             formPrincipal = { kind: 'actor', tenantId: session.tenantId, actorId: session.actorId };
             const policyClient = await pool.connect();

@@ -371,14 +371,14 @@ export function Form({ processKey: fromUrl }: { processKey: string }) {
   };
 
   if (loadError) {
-    const signInRequired = loadError.includes('sign in to start this inspection');
-    const inspectorRequired = loadError.includes('only a signed-in');
+    const signInRequired = loadError.includes('sign in to open this form');
+    const roleRequired = loadError.includes('only a signed-in');
     return (
       <div className="fm">
         <div className="fm__card">
-          <h1 className="fm__title">{signInRequired ? 'Sign in to start this inspection' : inspectorRequired ? 'Inspector access required' : 'This form is not available'}</h1>
+          <h1 className="fm__title">{signInRequired ? 'Sign in to open this form' : roleRequired ? 'Access required' : 'This form is not available'}</h1>
           <p className="fm__lede">{loadError}</p>
-          {signInRequired && <a href={`/console?next=${encodeURIComponent(`/f/${processKey}`)}`}>Sign in and return to this inspection</a>}
+          {signInRequired && <a href={`/console?next=${encodeURIComponent(`/f/${processKey}`)}`}>Sign in and return to this form</a>}
         </div>
       </div>
     );

@@ -71,6 +71,11 @@ export function Launch() {
     approvalPeopleChosen && /The people in the chain are roles|Who exactly approves this where you work/.test(item.message)
   )) ?? [];
   const formUrl = setup?.live?.public_id ? `${typeof window === 'undefined' ? '' : window.location.origin}/f/${setup.live.public_id}` : '';
+  const formAccess = setup?.draft.blueprint.experience?.access;
+  const submitRole = formAccess?.mode === 'workspace' ? setup?.roles.find((role) => role.key === formAccess.role) : undefined;
+  const accessDescription = formAccess?.mode === 'workspace'
+    ? `Only signed-in ${submitRole?.name ?? formAccess.role} members can open, save, and submit this form.`
+    : 'Anyone with the link can open and submit this form.';
 
   const assign = async (role: Role, member: Member) => {
     setBusy(true); setError(''); setNotice('');
@@ -197,13 +202,13 @@ export function Launch() {
             {warnings.length > 0 && <details><summary>{warnings.length} warnings to review</summary><ul>{warnings.map((item, index) => <li key={index}>{item.message}</li>)}</ul></details>}
             <div className="la__check"><strong>Sample records</strong><span>{tests ? `${tests.passed} of ${tests.total} passed` : 'Not run yet'}</span><button type="button" disabled={busy || !setup.draft.publishable} onClick={() => void runTests()}>{busy ? 'Working…' : tests ? 'Run again' : 'Run sample records'}</button></div>
             {tests && tests.passed !== tests.total && <ul className="la__failures">{tests.results.filter((item) => !item.passed).map((item) => <li key={item.test}>{item.test}: {item.failures.join('; ')}</li>)}</ul>}
-            {impact && <div className="la__impact"><h3>What publishing changes</h3><p>{impact.inFlight} existing records will stay on their current version. {impact.fields.added.length} fields will be added; {impact.fields.removed.length} removed.</p><p>The form becomes available to anyone with its link.</p>{impact.warnings.length > 0 && <ul>{impact.warnings.map((item, index) => <li key={index}>{item.message}</li>)}</ul>}</div>}
+            {impact && <div className="la__impact"><h3>What publishing changes</h3><p>{impact.inFlight} existing records will stay on their current version. {impact.fields.added.length} fields will be added; {impact.fields.removed.length} removed.</p><p>{accessDescription}</p>{impact.warnings.length > 0 && <ul>{impact.warnings.map((item, index) => <li key={index}>{item.message}</li>)}</ul>}</div>}
             <div className="la__actions"><button type="button" className="la__secondary" onClick={() => setPhase('people')}>← People</button>{!impact ? <button type="button" disabled={busy || !setup.draft.publishable || missing.length > 0 || !tests || tests.passed !== tests.total} onClick={() => void reviewPublish()}>Review launch →</button> : <button type="button" disabled={busy || missing.length > 0} onClick={() => void publish()}>Publish this process</button>}</div>
           </section>}
 
           {phase === 'done' && <section className="la__panel la__done" aria-labelledby="la-done-title">
             <span className="la__eyebrow">LIVE · VERSION {setup.live?.version}</span><h2 id="la-done-title">Your process is ready</h2>
-            <p>Send this form link to someone who needs to make a request. When they submit it, the right people see their work in the console.</p>
+            <p>{accessDescription} When someone submits it, the right people see their work in the console.</p>
             {formUrl && <div className="la__link"><a href={formUrl} target="_blank" rel="noreferrer">{formUrl}</a><button type="button" onClick={() => { void navigator.clipboard.writeText(formUrl).then(() => setNotice('Form link copied.')); }}>Copy link</button></div>}
             {formUrl && <ShareForm url={formUrl} name={setup.draft.processName} />}
             <div className="la__actions"><a className="la__actionLink" href={formUrl} target="_blank" rel="noreferrer">Try the form →</a><a href={`/console?process=${encodeURIComponent(setup.draft.processKey)}`}>Go to approvals and records</a><button type="button" className="la__secondary" onClick={() => setPhase('people')}>Manage people</button><a href={`/builder?process=${encodeURIComponent(setup.draft.processKey)}`}>Edit in builder</a></div>

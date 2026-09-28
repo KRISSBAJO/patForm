@@ -136,7 +136,7 @@ export function reviewWarnings(bp:Blueprint, answers:Record<string,string> = {})
       continue;
     }
     if(/\bretain|\bretention/i.test(decision.question)) {
-      choose({key,kind:'days',group:'Retention',prompt:decision.question,detail:'Enter how many days completed records and their stored attachments should be kept. The existing retention job will delete them after this period. Your private draft is reviewed and tested before saving.',roles:[]},value=>{
+      choose({key,kind:'days',group:'Retention',prompt:decision.question,detail:'Enter how many days completed records and their stored attachments should be kept. An authorized administrator must run the retention job to delete records after this period. Your private draft is reviewed and tested before saving.',roles:[]},value=>{
         bp.intent.retentionDays=Number(value);resolved.add(index);
         changes.push({at:'intent.retentionDays',change:`Set retention to ${value} days after completion.`});
       });continue;
