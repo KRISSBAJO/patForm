@@ -151,7 +151,20 @@ export async function generateStaged(provider: Provider, options: StagedOptions)
       throw new StageFailed(stage, [response.meta.refusal], response.meta);
     }
     const candidate = response.parsed ?? tryExtract(response.text);
-    const parsed = shape.safeParse(candidate);
+    let parsed = shape.safeParse(candidate);
+    // A section with the right content but a missing envelope is safe to
+    // normalize locally. Validate the section before accepting it; never
+    // invent missing data or bypass the blueprint/compiler checks below.
+    if (!parsed.success && stage !== 'form:identity') {
+      const key = stage.split(':')[1];
+      const sectionShape = key ? SECTION[key] : undefined;
+      if (key && sectionShape) {
+        const record = candidate && typeof candidate === 'object' && !Array.isArray(candidate)
+          ? candidate as Record<string, unknown> : undefined;
+        const section = record && key in record ? record[key] : candidate;
+        if (sectionShape.safeParse(section).success) parsed = shape.safeParse({ [key]: section });
+      }
+    }
     if (!parsed.success) {
       const issues = parsed.error.issues.slice(0, 12).map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`);
       attempts.push({ attempt: counter, stage, meta: response.meta, shapeOk: false, shapeIssues: issues, errors: [], warnings: [] });

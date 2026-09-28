@@ -121,6 +121,21 @@ test('a stage that will not take shape is retried once, then given up', async ()
   assert.equal(out.attempts.filter((a) => a.stage === 'finish:outputs' && !a.shapeOk).length, 2);
 });
 
+test('valid section without its wrapper is accepted without another model request', async () => {
+  const bp = onboarding();
+  const provider = scripted(bp);
+  const generate = provider.generate.bind(provider);
+  provider.generate = async request => {
+    const result = await generate(request);
+    if (request.stage === 'form:data') return { ...result, parsed: bp.data, text: JSON.stringify(bp.data) };
+    return result;
+  };
+  const out = await generateStaged(provider, { description: 'x'.repeat(3000) });
+  assert.equal(out.decision, 'publishable');
+  assert.equal(provider.calls.filter(stage => stage === 'form:data').length, 1);
+  assert.equal(out.blueprint?.data.fields.length, bp.data.fields.length);
+});
+
 test('sections for a repair follow where the errors point', () => {
   const at = (a: string, code = 'X') => ({ code, severity: 'error' as const, at: a, message: '' });
   assert.deepEqual(sectionsFor([at('workflow.transitions[3].to')]), ['workflow', 'tests']);

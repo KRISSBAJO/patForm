@@ -20,6 +20,19 @@ test('invalid JSON retry includes safe syntax feedback and repeats only the curr
   assert.ok(!feedback.includes('private-value'));
   assert.equal(calls[1].response_format.type,'json_object');
 });
+test('empty JSON response is retried once with a complete response instruction',async()=>{
+  const calls:any[]=[];
+  const client:any={chat:{completions:{create:async(body:any)=>{
+    calls.push(body);
+    return {choices:[{finish_reason:'stop',message:{content:calls.length===1?'':'{"data":{"fields":[]}}'}}]};
+  }}}};
+  const provider=new DeepSeekProvider({apiKey:'test',client});
+  const response=await provider.generate({...request,schema:{type:'object',properties:{data:{type:'object'}}}});
+  assert.deepEqual(response.parsed,{data:{fields:[]}});
+  assert.equal(calls.length,2);
+  assert.match(calls[0].messages[0].content,/top-level keys: "data"/);
+  assert.match(calls[1].messages[1].content,/Do not return an empty answer/);
+});
 test('repeated malformed JSON fails after one retry with stage and safe location',async()=>{
   let count=0;
   const client:any={chat:{completions:{create:async()=>{count++;return {choices:[{finish_reason:'stop',message:{content:'{"private-value": [}'}}]};}}}};

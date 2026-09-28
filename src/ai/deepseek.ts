@@ -31,18 +31,24 @@ export class DeepSeekProvider implements Provider {
     try {
       return await this.once(request);
     } catch (error) {
-      if (!(error instanceof Error) || !/invalid JSON/.test(error.message)) throw error;
+      if (!(error instanceof Error) || !/invalid JSON|returned no JSON content/.test(error.message)) throw error;
       console.warn(`DeepSeek ${request.stage ?? 'blueprint'} retry: ${error.message}`);
-      return this.once({...request,user:`${request.user}\n\nThe previous response could not be parsed: ${error.message}. Return only this stage's complete JSON object. Correct escaping, commas and closing brackets. Do not add prose or repeat other sections.`});
+      return this.once({...request,user:`${request.user}\n\nThe previous response was unusable: ${error.message}. Return this stage's complete JSON object. Correct escaping, commas and closing brackets. Do not return an empty answer, prose, or other sections.`});
     }
   }
 
   private async once(request: GenerationRequest): Promise<ProviderResponse> {
     const started = Date.now();
+    const properties = request.schema?.properties;
+    const keys = properties && typeof properties === 'object' && !Array.isArray(properties)
+      ? Object.keys(properties) : [];
+    const envelope = keys.length
+      ? `The response must be a JSON object with exactly these top-level keys: ${keys.map((key) => JSON.stringify(key)).join(', ')}. Put section fields inside their named key, never at the root. Do not return an empty object or an empty response.`
+      : 'Return a complete, nonempty JSON object.';
     const completion = await this.client.chat.completions.create({
       model: this.model,
       messages: [
-        { role: 'system', content: `${request.system}\n\nReturn one JSON object. It must match this JSON schema:\n${JSON.stringify(request.schema)}` },
+        { role: 'system', content: `${request.system}\n\n${envelope}\nReturn one JSON object. It must match this JSON schema:\n${JSON.stringify(request.schema)}` },
         { role: 'user', content: request.user },
       ],
       response_format: { type: 'json_object' },
