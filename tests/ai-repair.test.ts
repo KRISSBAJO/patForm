@@ -5,6 +5,7 @@ import { Blueprint } from '../src/blueprint/index.js';
 import { repairBlueprint } from '../src/ai/repair.js';
 import { verifiedRepair } from '../src/ai/verified-repair.js';
 import { validate } from '../src/compiler/validate.js';
+import { validateAnswers } from '../src/blueprint/answers.js';
 import type { ScenarioResult } from '../src/runtime/scenarios.js';
 
 const fixture = () => Blueprint.parse(JSON.parse(readFileSync('processes/employee-onboarding.blueprint.json','utf8')));
@@ -53,6 +54,27 @@ test('file fixture repair targets engine failures and preserves real evidence re
   assert.deepEqual(fixed.blueprint.tests.find(t=>t.key===happy.key)!.expect,happy.expect);
   assert.equal(JSON.stringify(bp),before);
   assert.equal(repairBlueprint(bp).changes.filter(c=>c.at.includes('.answers.photo')).length,0);
+});
+
+test('repair updates expired sample dates only in scenarios the engine rejected',()=>{
+  const bp=fixture();
+  bp.data.fields.push({key:'needed_by',label:'Needed by',type:'date',required:true,setBy:'respondent',classification:'internal',constraints:{minDaysFromToday:1}});
+  bp.experience.pages[0]!.sections[0]!.fields.push('needed_by');
+  const happy=bp.tests.find(t=>t.kind==='happy_path')!;
+  const duplicate=bp.tests.find(t=>t.kind==='duplicate')!;
+  const missing=bp.tests.find(t=>t.kind==='missing_data')!;
+  for(const testCase of [happy,duplicate,missing]) for(const step of testCase.steps) if(step.step==='submit') step.answers.needed_by='2026-07-01';
+  const before=JSON.stringify(bp);
+  const failures=[happy,duplicate].map(testCase=>({process:bp.key,test:testCase.key,kind:testCase.kind,passed:false,failures:['submission was rejected for missing fields: needed_by']}));
+  const repaired=repairBlueprint(bp,failures).blueprint;
+  for(const testCase of [happy,duplicate]) for(const step of repaired.tests.find(t=>t.key===testCase.key)!.steps) if(step.step==='submit') {
+    assert.equal(step.answers.needed_by,'2026-10-01');
+    assert.ok(!validateAnswers(repaired,step.answers,{now:new Date('2026-09-21T09:00:00Z')}).some(error=>error.field==='needed_by'));
+    assert.ok(!validateAnswers(repaired,{...step.answers,needed_by:'2026-09-22'},{now:new Date('2026-09-21T09:00:00Z')}).some(error=>error.field==='needed_by'), 'scenario validation uses its simulated date');
+  }
+  assert.equal((repaired.tests.find(t=>t.key===missing.key)!.steps[0] as {answers:Record<string,unknown>}).answers.needed_by,'2026-07-01');
+  assert.equal(JSON.stringify(bp),before);
+  assert.equal(repairBlueprint(repaired,failures).changes.filter(change=>change.at.includes('needed_by')).length,0);
 });
 
 test('repair removes an empty duplicate while preserving actions and the input',()=>{

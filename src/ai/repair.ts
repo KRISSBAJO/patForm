@@ -12,7 +12,7 @@ const canonical = (value: unknown): string => {
   return JSON.stringify(value);
 };
 
-/** Repairs mechanics and test fixtures. Never changes authorities, outcomes or existing answers. */
+/** Repairs mechanics and engine-proven invalid test fixtures, never production authority or outcomes. */
 export interface RepairOptions { staff?: Record<string,string>; reviewWarnings?: boolean }
 export interface RepairDecision { key:string; prompt:string; roles:{key:string;name:string}[]; kind?:'choice'|'roles'|'days'; detail?:string; group?:string; allowCustom?:boolean }
 export function repairBlueprint(input: Blueprint, failures: ScenarioResult[] = [], options: RepairOptions = {}) {
@@ -182,9 +182,8 @@ export function repairBlueprint(input: Blueprint, failures: ScenarioResult[] = [
     }
   }
 
-  // Scenario uploads are synthetic references, never real customer evidence.
-  // Repair only file inputs explicitly rejected by the engine; incomplete-data
-  // cases and all production requirements remain untouched.
+  // Repair only sample inputs explicitly rejected by the engine. Incomplete-
+  // data cases and all production requirements remain untouched.
   for (const result of failures) {
     const test=bp.tests.find(t=>t.key===result.test);
     if(!test || test.kind==='missing_data') continue;
@@ -209,10 +208,26 @@ export function repairBlueprint(input: Blueprint, failures: ScenarioResult[] = [
             answers=value as Record<string,unknown>;
           } else {
             const value=answers[field.key];
-            if(i!==parts.length-1 || field.type!=='file' || value===undefined || value===null || value==='' || (Array.isArray(value)&&!value.length) || !checkField(field,value)) break;
-            const reference='receipt-file:00000000-0000-4000-8000-000000000001';
-            answers[field.key]=Array.isArray(value)?[reference]:reference;
-            changes.push({at:`tests.${test.key}.answers.${path}`,change:'Replaced an invalid sample upload with a scenario-only file reference. Required evidence and all assertions are unchanged; this does not test S3 delivery.'});
+            if(i!==parts.length-1 || value===undefined || value===null || value==='' || (Array.isArray(value)&&!value.length)) break;
+            if(field.type==='file' && checkField(field,value)) {
+              const reference='receipt-file:00000000-0000-4000-8000-000000000001';
+              answers[field.key]=Array.isArray(value)?[reference]:reference;
+              changes.push({at:`tests.${test.key}.answers.${path}`,change:'Replaced an invalid sample upload with a scenario-only file reference. Required evidence and all assertions are unchanged; this does not test S3 delivery.'});
+            }
+            if(field.type==='date') {
+              const now=new Date('2026-09-21T09:00:00Z');
+              const context={answers,labelOf:(key:string)=>key,now};
+              if(!checkField(field,value,context)) break;
+              const min=field.constraints?.minDaysFromToday ?? 0;
+              const max=field.constraints?.maxDaysFromToday ?? Number.POSITIVE_INFINITY;
+              if(min>max) break;
+              const days=Math.max(min,Math.min(10,max));
+              const base=Date.UTC(now.getUTCFullYear(),now.getUTCMonth(),now.getUTCDate());
+              const sample=new Date(base+days*86_400_000).toISOString().slice(0,10);
+              if(checkField(field,sample,context)) break;
+              answers[field.key]=sample;
+              changes.push({at:`tests.${test.key}.answers.${path}`,change:`Replaced an invalid sample date with ${sample} inside the field's allowed range. Production validation and scenario expectations are unchanged.`});
+            }
           }
         }
       }

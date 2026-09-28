@@ -61,6 +61,7 @@ export function visibleFields(bp: Blueprint, answers: Answers, now = new Date())
 export interface Others {
   answers: Answers;
   labelOf: (key: string) => string;
+  now?: Date;
 }
 
 export function checkField(field: Field, value: unknown, others?: Others): string | null {
@@ -103,7 +104,7 @@ export function checkField(field: Field, value: unknown, others?: Others): strin
       if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
         return custom ?? 'Enter a date.';
       }
-      const days = Math.round((Date.parse(`${value}T00:00:00Z`) - startOfToday()) / 86_400_000);
+      const days = Math.round((Date.parse(`${value}T00:00:00Z`) - startOfToday(others?.now)) / 86_400_000);
       if (c?.minDaysFromToday !== undefined && days < c.minDaysFromToday) {
         return custom ?? `${field.label} is too far in the past.`;
       }
@@ -255,7 +256,7 @@ export function validateAnswers(
     if (opts.scope && !opts.scope.includes(field.key)) continue;
 
     const required = Boolean(field.required || (field.requiredWhen && evaluate(field.requiredWhen, { answers, now })));
-    const message = checkField({ ...field, required }, answers[field.key], { answers, labelOf });
+    const message = checkField({ ...field, required }, answers[field.key], { answers, labelOf, now });
     if (message) errors.push({ field: field.key, message });
 
     // Rows inside a repeating group are checked against the group's own fields.
@@ -273,7 +274,7 @@ export function validateAnswers(
           }
           const rowAnswers = { ...answers, ...row };
           const required = Boolean(child.required || (child.requiredWhen && evaluate(child.requiredWhen, { answers: rowAnswers, now })));
-          const childMessage = checkField({ ...child, required }, row?.[child.key], { answers: rowAnswers, labelOf });
+          const childMessage = checkField({ ...child, required }, row?.[child.key], { answers: rowAnswers, labelOf, now });
           if (childMessage) {
             errors.push({ field: `${field.key}[${index}].${child.key}`, message: childMessage });
           }
@@ -285,7 +286,6 @@ export function validateAnswers(
   return errors;
 }
 
-function startOfToday(): number {
-  const now = new Date();
+function startOfToday(now = new Date()): number {
   return Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
 }
