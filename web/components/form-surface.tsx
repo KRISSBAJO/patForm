@@ -216,7 +216,7 @@ export function FieldCell({
   children: ReactNode;
 }) {
   return (
-    <div className="fm__cell" data-width={widthOf(section, fieldKey)}>
+    <div className="fm__cell" id={`fm-cell-${fieldKey}`} data-width={widthOf(section, fieldKey)}>
       {children}
     </div>
   );

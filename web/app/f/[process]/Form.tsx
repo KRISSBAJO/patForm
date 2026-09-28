@@ -454,6 +454,14 @@ export function Form({ processKey: fromUrl }: { processKey: string }) {
   const page = form.pages[pageIndex]!;
   const last = pageIndex === form.pages.length - 1;
   const shown = (key: string) => !visible || visible.has(key);
+  const pageFields = page.sections.flatMap((section) => section.fields).filter((field) => shown(field.key));
+  const missingFields = pageFields.filter((field) => Object.keys(errors).some((key) => key === field.key || key.startsWith(`${field.key}[`)));
+  const focusField = (key: string) => {
+    const cell = document.getElementById(`fm-cell-${key}`);
+    const control = cell?.querySelector<HTMLElement>('input:not([type="hidden"]), select, textarea, button');
+    control?.focus({ preventScroll: true });
+    cell?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  };
 
   const brand = form.branding;
   const saveNote = saving === 'saving' ? 'Saving…' : saving === 'saved' ? 'Saved — you can close this and come back' : '';
@@ -488,14 +496,24 @@ export function Form({ processKey: fromUrl }: { processKey: string }) {
         <div className="fm__card">
           <h1 className="fm__title" ref={titleRef} tabIndex={-1}>{page.title}</h1>
           {page.description && <p className="fm__lede">{page.description}</p>}
+          {pageFields.some((field) => field.required) && (
+            <p className="fm__requiredNote"><span className="fm__req" aria-hidden="true">*</span> Required answers</p>
+          )}
 
           {errors._ && <p className="fm__formError" role="alert">{errors._}</p>}
-          <p className="fm__srOnly" role="status">
-            {(() => {
-              const n = Object.keys(errors).filter((k) => k !== '_').length;
-              return n === 0 ? '' : n === 1 ? '1 answer needs attention.' : `${n} answers need attention.`;
-            })()}
-          </p>
+          {missingFields.length > 0 && (
+            <div className="fm__errorSummary" role="alert" aria-labelledby="fm-error-title">
+              <strong id="fm-error-title">{missingFields.length === 1 ? '1 answer needs attention' : `${missingFields.length} answers need attention`}</strong>
+              <p>Complete these answers to continue:</p>
+              <ul>
+                {missingFields.map((field) => (
+                  <li key={field.key}>
+                    <button type="button" onClick={() => focusField(field.key)}>{field.label}</button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           {form.saveAndResume && (
             <p className="fm__srOnly" role="status">{saidSaved ? 'Your answers are saved as you go. You can close this and come back.' : ''}</p>
           )}
