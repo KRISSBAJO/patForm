@@ -125,6 +125,7 @@ export async function listMembers(pool: Pool, principal: Principal) {
     'select workspace_role from actor where id = $1 and tenant_id = $2 and active',
     [principal.actorId, principal.tenantId],
   );
+  if (me[0]?.workspace_role === 'pre_hire') throw new InvalidInput('your access to the workspace starts on your first day');
   const administers = me[0]
     ? (WORKSPACE_GRANTS[me[0].workspace_role] as readonly Capability[]).includes('administer')
     : false;

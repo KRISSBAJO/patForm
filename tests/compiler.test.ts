@@ -47,8 +47,8 @@ test('restricted form access requires an internal submitter role', () => {
   assert.ok(validate(bp).errors.some(item => item.code === 'SEC012'));
 });
 
-test('there are six hand-compiled reference processes', () => {
-  assert.equal(realProcesses.length, 6); // the original three, the expense claim and cash advance (Module 5), and the purchase request (Module 6)
+test('there are seven hand-compiled reference processes', () => {
+  assert.equal(realProcesses.length, 7); // the original three, the expense claim and cash advance (Module 5), the purchase request (Module 6), the hiring request (Module 7)
 });
 
 for (const file of realProcesses) {

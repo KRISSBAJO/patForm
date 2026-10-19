@@ -28,6 +28,7 @@ import { importDirectory } from '../runtime/directory-import.js';
 import { createLegalEntity, createOrgUnit, orgChart, reportingHistory, setManager, setMemberPlacement, updateOrgUnit } from '../runtime/org.js';
 import { addRate, advanceMovements, disburseAdvance, expenseSummary, exportPaid, listAdvances, listBudgets, listExports, listRates, listSettlements, moveSettlement, myBeneficiary, readExpenseSettings, recordAdvanceReturn, revealBeneficiary, reviewLines, saveBeneficiary, saveBudget, settlementLines, updateExpenseSettings, verifyBeneficiary } from '../runtime/expenses.js';
 import { addQuote, approveOrder, cancelOrder, createAgreement, createOrder, createVendor, enterInvoice, exportInvoices, listAgreements, listInvoices, listOrders, listQuotes, listRequisitions, listVendors, openQuotes, orderDetail, payInvoice, procurementSummary, readProcurementSettings, receiveGoods, returnGoods, revealVendorBank, reviewInvoice, reviseOrder, saveVendorBank, selectQuote, setQuoteDeadline, setVendorStatus, updateProcurementSettings, updateVendor, vendorHistory, verifyVendorBank } from '../runtime/procurement.js';
+import { acknowledgeDocument, addCaseNote, addCertification, cancelLeave, completeTask, createDocument, decideLeave, decideProbation, exceptTask, hrSummary, leaveToApprove, listCaseNotes, listCases, listCompensation, listDocuments, listEmployees, listHiring, listHolidays, listLeaveTypes, listReconciliations, listTeams, listTemplates, myDocuments, myLeave, myTasks, readHrSettings, requestLeave, resolveReconciliation, saveHoliday, saveLeaveType, saveTemplate, sendDocument, setCompensation, setEntitlement, setTeamMember, startOffboarding, startOnboarding, startProbationReview, startTransfer, updateEmployee, updateHrSettings, upcoming, urgentTermination } from '../runtime/hr.js';
 import { enabledModules, listModules, setModule, updateWorkspaceSettings, workspaceSettings } from '../runtime/modules.js';
 import { createDelegation, createGrant, listAuthority, revokeDelegation, revokeGrant as revokeAuthorityGrant, workspaceAudit } from '../runtime/authority.js';
 import { logIfEnabled, requestIdFrom, withTrace } from '../runtime/trace.js';
@@ -970,6 +971,54 @@ route('POST', /^\/api\/procurement\/invoices$/, async ({ pool, principal }, b) =
 route('POST', /^\/api\/procurement\/invoices\/([0-9a-f-]{36})\/review$/, async ({ pool, principal, url }, b) => reviewInvoice(pool, principal, pid(url, 4), obj(b)));
 route('POST', /^\/api\/procurement\/invoices\/([0-9a-f-]{36})\/pay$/, async ({ pool, principal, url }, b) => payInvoice(pool, principal, pid(url, 4), obj(b)));
 route('POST', /^\/api\/procurement\/invoices\/export$/, async ({ pool, principal }) => exportInvoices(pool, principal));
+
+// ---- HR (PRD Module 7). Every route refuses when the module is off; who may
+// do what is decided in runtime/hr.ts.
+const hb = (b: unknown) => (b ?? {}) as Record<string, unknown>;
+const hid = (url: URL, i: number) => url.pathname.split('/')[i]!;
+route('GET', /^\/api\/hr\/summary$/, async ({ pool, principal }) => hrSummary(pool, principal));
+route('GET', /^\/api\/hr\/settings$/, async ({ pool, principal }) => readHrSettings(pool, principal));
+route('POST', /^\/api\/hr\/settings$/, async ({ pool, principal }, b) => updateHrSettings(pool, principal, hb(b)));
+route('GET', /^\/api\/hr\/teams$/, async ({ pool, principal }) => listTeams(pool, principal));
+route('POST', /^\/api\/hr\/teams$/, async ({ pool, principal }, b) => setTeamMember(pool, principal, hb(b)));
+route('GET', /^\/api\/hr\/templates$/, async ({ pool, principal }) => listTemplates(pool, principal));
+route('POST', /^\/api\/hr\/templates$/, async ({ pool, principal }, b) => saveTemplate(pool, principal, hb(b)));
+route('GET', /^\/api\/hr\/employees$/, async ({ pool, principal }) => listEmployees(pool, principal));
+route('POST', /^\/api\/hr\/employees\/([0-9a-f-]{36})$/, async ({ pool, principal, url }, b) => updateEmployee(pool, principal, hid(url, 4), hb(b)));
+route('GET', /^\/api\/hr\/employees\/([0-9a-f-]{36})\/pay$/, async ({ pool, principal, url }) => listCompensation(pool, principal, hid(url, 4)));
+route('POST', /^\/api\/hr\/employees\/([0-9a-f-]{36})\/pay$/, async ({ pool, principal, url }, b) => setCompensation(pool, principal, hid(url, 4), hb(b)));
+route('POST', /^\/api\/hr\/employees\/([0-9a-f-]{36})\/certifications$/, async ({ pool, principal, url }, b) => addCertification(pool, principal, hid(url, 4), hb(b)));
+route('GET', /^\/api\/hr\/cases$/, async ({ pool, principal, url }) => listCases(pool, principal, { status: url.searchParams.get('status') ?? undefined }));
+route('POST', /^\/api\/hr\/cases\/onboarding$/, async ({ pool, principal }, b) => startOnboarding(pool, principal, hb(b)));
+route('POST', /^\/api\/hr\/cases\/offboarding$/, async ({ pool, principal }, b) => startOffboarding(pool, principal, hb(b)));
+route('POST', /^\/api\/hr\/cases\/urgent-termination$/, async ({ pool, principal }, b) => urgentTermination(pool, principal, hb(b)));
+route('POST', /^\/api\/hr\/cases\/transfer$/, async ({ pool, principal }, b) => startTransfer(pool, principal, hb(b)));
+route('POST', /^\/api\/hr\/cases\/probation$/, async ({ pool, principal }, b) => startProbationReview(pool, principal, hb(b)));
+route('POST', /^\/api\/hr\/cases\/([0-9a-f-]{36})\/probation-decision$/, async ({ pool, principal, url }, b) => decideProbation(pool, principal, hid(url, 4), hb(b)));
+route('GET', /^\/api\/hr\/cases\/([0-9a-f-]{36})\/notes$/, async ({ pool, principal, url }) => listCaseNotes(pool, principal, hid(url, 4)));
+route('POST', /^\/api\/hr\/cases\/([0-9a-f-]{36})\/notes$/, async ({ pool, principal, url }, b) => addCaseNote(pool, principal, hid(url, 4), hb(b)));
+route('GET', /^\/api\/hr\/tasks\/mine$/, async ({ pool, principal }) => myTasks(pool, principal));
+route('POST', /^\/api\/hr\/tasks\/([0-9a-f-]{36})\/complete$/, async ({ pool, principal, url }, b) => completeTask(pool, principal, hid(url, 4), hb(b)));
+route('POST', /^\/api\/hr\/tasks\/([0-9a-f-]{36})\/except$/, async ({ pool, principal, url }, b) => exceptTask(pool, principal, hid(url, 4), hb(b)));
+route('GET', /^\/api\/hr\/leave\/types$/, async ({ pool, principal }) => listLeaveTypes(pool, principal));
+route('POST', /^\/api\/hr\/leave\/types$/, async ({ pool, principal }, b) => saveLeaveType(pool, principal, hb(b)));
+route('GET', /^\/api\/hr\/leave\/holidays$/, async ({ pool, principal }) => listHolidays(pool, principal));
+route('POST', /^\/api\/hr\/leave\/holidays$/, async ({ pool, principal }, b) => saveHoliday(pool, principal, hb(b)));
+route('GET', /^\/api\/hr\/leave\/mine$/, async ({ pool, principal }) => myLeave(pool, principal));
+route('POST', /^\/api\/hr\/leave$/, async ({ pool, principal }, b) => requestLeave(pool, principal, hb(b)));
+route('GET', /^\/api\/hr\/leave\/to-approve$/, async ({ pool, principal }) => leaveToApprove(pool, principal));
+route('POST', /^\/api\/hr\/leave\/([0-9a-f-]{36})\/decide$/, async ({ pool, principal, url }, b) => decideLeave(pool, principal, hid(url, 4), hb(b)));
+route('POST', /^\/api\/hr\/leave\/([0-9a-f-]{36})\/cancel$/, async ({ pool, principal, url }) => cancelLeave(pool, principal, hid(url, 4)));
+route('POST', /^\/api\/hr\/leave\/entitlements$/, async ({ pool, principal }, b) => setEntitlement(pool, principal, hb(b)));
+route('GET', /^\/api\/hr\/documents$/, async ({ pool, principal }) => listDocuments(pool, principal));
+route('POST', /^\/api\/hr\/documents$/, async ({ pool, principal }, b) => createDocument(pool, principal, hb(b)));
+route('POST', /^\/api\/hr\/documents\/([0-9a-f-]{36})\/send$/, async ({ pool, principal, url }, b) => sendDocument(pool, principal, hid(url, 4), hb(b)));
+route('GET', /^\/api\/hr\/documents\/mine$/, async ({ pool, principal }) => myDocuments(pool, principal));
+route('POST', /^\/api\/hr\/documents\/requests\/([0-9a-f-]{36})\/acknowledge$/, async ({ pool, principal, url }) => acknowledgeDocument(pool, principal, hid(url, 5)));
+route('GET', /^\/api\/hr\/reconciliation$/, async ({ pool, principal }) => listReconciliations(pool, principal));
+route('POST', /^\/api\/hr\/reconciliation\/([0-9a-f-]{36})$/, async ({ pool, principal, url }, b) => resolveReconciliation(pool, principal, hid(url, 4), hb(b)));
+route('GET', /^\/api\/hr\/upcoming$/, async ({ pool, principal, url }) => upcoming(pool, principal, Number(url.searchParams.get('days') ?? 60)));
+route('GET', /^\/api\/hr\/hiring$/, async ({ pool, principal }) => listHiring(pool, principal));
 
 // ---- modules and workspace settings (PRD ORG-01): which shelves are on.
 route('GET', /^\/api\/modules$/, async ({ pool, principal }) => listModules(pool, principal));

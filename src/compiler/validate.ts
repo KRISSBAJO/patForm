@@ -207,7 +207,7 @@ export function validate(bp: Blueprint, requestedDescription?: string): Diagnost
     if (amount && !['number', 'currency', 'calculated'].includes(amount.type)) {
       d.error('TYPE010', at, `Finance amount "${amount.key}" is a ${amount.type}, not an amount.`);
     }
-    for (const key of [bp.finance.receiptField, bp.finance.categoryField, bp.finance.advanceReferenceField, bp.finance.currencyField, bp.finance.costCentreField, bp.finance.titleField, bp.finance.neededByField]) {
+    for (const key of [bp.finance.receiptField, bp.finance.categoryField, bp.finance.advanceReferenceField, bp.finance.currencyField, bp.finance.costCentreField, bp.finance.titleField, bp.finance.neededByField, bp.finance.headcountField]) {
       if (key) requireField(key, at, 'Finance field');
     }
     for (const key of [bp.finance.baseAmountField, bp.finance.fxRateField]) {

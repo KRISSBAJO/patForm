@@ -45,6 +45,12 @@ export const WORKSPACE_GRANTS = {
   approver: ['view'],
   analyst: ['view', 'report'],
   read_only: ['view'],
+  /**
+   * PRD HR-02, acceptance 1: someone who has not started yet. They can sign
+   * in to do their own onboarding tasks and hold no capability at all until
+   * the activation task gives them their real role.
+   */
+  pre_hire: [],
 } as const satisfies Record<string, readonly Capability[]>;
 
 export type WorkspaceRole = keyof typeof WORKSPACE_GRANTS;

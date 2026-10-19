@@ -465,6 +465,24 @@ export async function recordFinanceOutcome(
     return [{ type: 'advance_recorded', payload: { reference, amount, currency, status: 'approved' } }];
   }
 
+  if (finance.kind === 'hiring') {
+    // HR-01: an approved hiring request opens a requisition for its hires.
+    // The budget hold becomes consumed at the estimated cost.
+    const requested = finance.baseAmountField ? round(num(args.data[finance.baseAmountField])) : amount;
+    const reference = `HR-${args.instanceId.slice(0, 8).toUpperCase()}`;
+    const position = (finance.titleField ? text(args.data[finance.titleField], 200) : '') || 'Position';
+    const headcount = Math.max(1, Math.trunc(num(finance.headcountField ? args.data[finance.headcountField] : 1) || 1));
+    const costCentre = finance.costCentreField ? text(args.data[finance.costCentreField], 60) || null : null;
+    const { rows } = await client.query<{ id: string }>(
+      `insert into hiring_requisition (tenant_id, instance_id, reference, position, headcount, cost_centre, amount)
+       values ($1, $2, $3, $4, $5, $6, $7) on conflict (instance_id) do nothing returning id`,
+      [args.tenantId, args.instanceId, reference, position, headcount, costCentre, requested]);
+    await client.query(
+      `update budget_reservation set status = 'consumed', amount = $2, updated_at = now() where instance_id = $1 and status = 'reserved'`,
+      [args.instanceId, requested]);
+    return rows[0] ? [{ type: 'hiring_opened', payload: { reference, position, headcount } }] : [];
+  }
+
   if (finance.kind === 'purchase') {
     // PRC-03: an approved request becomes a requisition waiting to be sourced.
     // The budget hold becomes consumed at the requested amount; the order and

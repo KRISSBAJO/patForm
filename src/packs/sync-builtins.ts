@@ -47,6 +47,14 @@ export const REFERENCES = [
     audience: 'Organisations that want every purchase approved, ordered from an approved supplier, and paid only for what arrived.',
   },
   {
+    file: 'hiring-request.blueprint.json',
+    key: 'hiring_request',
+    name: 'Hiring request',
+    category: 'People',
+    summary: 'A manager asks to hire; their manager approves the need and HR approves the position and budget. Each hire then starts an onboarding with tasks for HR, IT, Facilities, Finance and the manager.',
+    audience: 'Organisations that want every position justified and budgeted before anyone is offered a job.',
+  },
+  {
     file: 'church-worker-onboarding.blueprint.json',
     key: 'volunteer_safeguarding',
     name: 'Volunteer onboarding with safeguarding',

@@ -3,6 +3,7 @@ import { deliverBatch } from './runtime/webhooks.js';
 import { Engine, newWorkerId } from './runtime/engine.js';
 import { sweepExpiredTokens } from './runtime/retention.js';
 import { sweepHeld } from './runtime/held.js';
+import { applyDueChanges } from './runtime/hr.js';
 import { checkSendingHealth } from './runtime/delivery-health.js';
 import { runDueReports } from './runtime/saved-views.js';
 import { notifyWaitingWork } from './runtime/push.js';
@@ -103,6 +104,9 @@ async function main(): Promise<void> {
         // need a tighter clock than this.
         const reports = await runDueReports(pool, now);
         if (reports) console.log(`  ${now.toISOString()}  sent ${reports} scheduled report(s)`);
+        // HR transfers whose effective date has come: unit, title, entity.
+        const transfers = await applyDueChanges(pool);
+        if (transfers) console.log(`  ${now.toISOString()}  applied ${transfers} transfer(s)`);
         const swept = await sweepExpiredTokens(pool);
         const held = await sweepHeld(pool);
         await cleanupExpiredReceipts(pool);

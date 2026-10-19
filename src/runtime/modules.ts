@@ -53,9 +53,9 @@ export const MODULES: readonly ModuleDefinition[] = [
   {
     key: 'hr',
     name: 'Employee lifecycle and HR requests',
-    summary: 'Onboarding, leave, changes and offboarding, coordinated across departments.',
+    summary: 'Hiring, onboarding, leave, transfers, probation, documents and offboarding, with tasks for each team and pay kept to HR.',
     categories: ['People'],
-    status: 'templates_only',
+    status: 'available',
   },
   {
     key: 'appraisals',

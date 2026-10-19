@@ -1921,3 +1921,249 @@ create table if not exists vendor_invoice_line (
 
 
 alter table procurement_settings add column if not exists manager_limit numeric(18, 2) not null default 1000;
+
+-- ---------------------------------------------------------------- people HR
+--
+-- PRD Module 7. Employment records, lifecycle cases (onboarding, offboarding,
+-- transfer, probation, urgent termination) built from editable templates of
+-- team tasks, leave, document acknowledgments, restricted case notes, and the
+-- declared owner of each HR field. Teams see their tasks and the basic facts
+-- about a person; pay, notes and restricted cases are HR's alone.
+
+-- A future employee can sign in to do their own onboarding tasks and nothing
+-- else, until the activation task gives them their real role (acceptance 1).
+alter table actor drop constraint if exists actor_workspace_role_check;
+alter table actor add constraint actor_workspace_role_check
+  check (workspace_role in ('owner','admin','builder','operator','approver','analyst','read_only','pre_hire'));
+alter table invitation drop constraint if exists invitation_workspace_role_check;
+alter table invitation add constraint invitation_workspace_role_check
+  check (workspace_role in ('owner','admin','builder','operator','approver','analyst','read_only','pre_hire'));
+
+create table if not exists hr_settings (
+  tenant_id          uuid primary key references tenant(id),
+  -- HR-12: who owns each field. 'patform' or the name of the outside system.
+  field_owners       jsonb not null default '{"identity":"patform","employment_status":"patform","compensation":"patform","leave_balance":"patform","payroll_ref":"patform"}'::jsonb,
+  activation_role    text not null default 'read_only',
+  anniversary_notice_days int not null default 14,
+  updated_by         uuid references actor(id),
+  updated_at         timestamptz not null default now()
+);
+
+-- Who is in which team. HR is also every owner and admin.
+create table if not exists hr_team_member (
+  tenant_id  uuid not null references tenant(id),
+  team       text not null check (team in ('hr', 'it', 'facilities', 'finance')),
+  actor_id   uuid not null references actor(id),
+  added_at   timestamptz not null default now(),
+  primary key (tenant_id, team, actor_id)
+);
+
+create table if not exists employee_record (
+  id               uuid primary key default gen_random_uuid(),
+  tenant_id        uuid not null references tenant(id),
+  actor_id         uuid references actor(id),
+  email            text not null,
+  name             text not null,
+  employment_type  text not null default 'employee' check (employment_type in ('employee', 'contractor', 'intern')),
+  status           text not null default 'pre_hire' check (status in ('pre_hire', 'active', 'leaving', 'left')),
+  location         text,
+  start_date       date,
+  end_date         date,
+  probation_end    date,
+  payroll_ref      text,
+  external_ref     text,
+  created_at       timestamptz not null default now(),
+  updated_at       timestamptz not null default now(),
+  unique (tenant_id, email)
+);
+create unique index if not exists employee_record_actor_uq on employee_record (actor_id) where actor_id is not null;
+
+-- HR-06: pay is separate, so no query that serves a team can reach it.
+create table if not exists employee_compensation (
+  id             bigserial primary key,
+  tenant_id      uuid not null references tenant(id),
+  employee_id    uuid not null references employee_record(id),
+  amount         numeric(18, 2) not null check (amount >= 0),
+  currency       text not null,
+  period         text not null default 'year' check (period in ('year', 'month', 'hour')),
+  effective_from date not null,
+  reason         text,
+  entered_by     uuid references actor(id),
+  created_at     timestamptz not null default now()
+);
+
+create table if not exists employee_certification (
+  id          uuid primary key default gen_random_uuid(),
+  tenant_id   uuid not null references tenant(id),
+  employee_id uuid not null references employee_record(id),
+  name        text not null,
+  expires_on  date not null,
+  created_at  timestamptz not null default now()
+);
+
+-- HR-02, HR-03: a template is a list of team tasks; a task may wait for
+-- other tasks and for the start or end date, and may carry an action.
+create table if not exists lifecycle_template (
+  id          uuid primary key default gen_random_uuid(),
+  tenant_id   uuid not null references tenant(id),
+  kind        text not null check (kind in ('onboarding', 'offboarding', 'transfer', 'probation')),
+  name        text not null,
+  employment_type text,
+  location    text,
+  tasks       jsonb not null,
+  active      boolean not null default true,
+  updated_by  uuid references actor(id),
+  updated_at  timestamptz not null default now()
+);
+
+create table if not exists lifecycle_case (
+  id            uuid primary key default gen_random_uuid(),
+  tenant_id     uuid not null references tenant(id),
+  employee_id   uuid not null references employee_record(id),
+  kind          text not null check (kind in ('onboarding', 'offboarding', 'transfer', 'probation', 'urgent_termination')),
+  status        text not null default 'open' check (status in ('open', 'closed', 'cancelled')),
+  restricted    boolean not null default false,
+  effective_date date,
+  summary       text,
+  changes       jsonb,
+  applied_at    timestamptz,
+  authorized_by uuid references actor(id),
+  created_by    uuid references actor(id),
+  created_at    timestamptz not null default now(),
+  closed_at     timestamptz
+);
+create index if not exists lifecycle_case_open on lifecycle_case (tenant_id, status, kind);
+
+create table if not exists lifecycle_task (
+  id            uuid primary key default gen_random_uuid(),
+  case_id       uuid not null references lifecycle_case(id),
+  key           text not null,
+  title         text not null,
+  team          text not null check (team in ('hr', 'it', 'facilities', 'finance', 'manager', 'employee')),
+  critical      boolean not null default false,
+  prerequisites jsonb not null default '[]'::jsonb,
+  wait_until    date,
+  action        text check (action in ('activate_access', 'revoke_access', 'finance_clearance')),
+  status        text not null default 'open' check (status in ('open', 'done', 'excepted')),
+  note          text,
+  evidence_ref  text,
+  completed_by  uuid references actor(id),
+  completed_at  timestamptz,
+  unique (case_id, key)
+);
+
+-- HR-10: notes on a case, kept to HR unless shared, and labelled by kind.
+create table if not exists case_note (
+  id          bigserial primary key,
+  case_id     uuid not null references lifecycle_case(id),
+  category    text not null default 'general' check (category in ('general', 'health', 'disciplinary', 'compensation')),
+  shared      boolean not null default false,
+  body        text not null,
+  author_id   uuid references actor(id),
+  created_at  timestamptz not null default now(),
+  check (category = 'general' or not shared)
+);
+
+-- HR-05: leave.
+create table if not exists leave_type (
+  id           uuid primary key default gen_random_uuid(),
+  tenant_id    uuid not null references tenant(id),
+  key          text not null,
+  name         text not null,
+  annual_days  numeric(6, 2) not null default 0 check (annual_days >= 0),
+  unlimited    boolean not null default false,
+  active       boolean not null default true,
+  unique (tenant_id, key)
+);
+create table if not exists leave_entitlement (
+  tenant_id    uuid not null references tenant(id),
+  employee_id  uuid not null references employee_record(id),
+  leave_type_id uuid not null references leave_type(id),
+  year         int not null,
+  days         numeric(6, 2) not null check (days >= 0),
+  primary key (employee_id, leave_type_id, year)
+);
+create table if not exists public_holiday (
+  tenant_id  uuid not null references tenant(id),
+  day        date not null,
+  name       text not null,
+  primary key (tenant_id, day)
+);
+create table if not exists leave_request (
+  id            uuid primary key default gen_random_uuid(),
+  tenant_id     uuid not null references tenant(id),
+  employee_id   uuid not null references employee_record(id),
+  leave_type_id uuid not null references leave_type(id),
+  start_date    date not null,
+  end_date      date not null,
+  days          numeric(6, 2) not null check (days > 0),
+  reason        text,
+  status        text not null default 'requested' check (status in ('requested', 'approved', 'rejected', 'cancelled')),
+  approver_id   uuid references actor(id),
+  decided_by    uuid references actor(id),
+  decided_at    timestamptz,
+  decision_note text,
+  created_at    timestamptz not null default now(),
+  check (end_date >= start_date)
+);
+create index if not exists leave_request_employee on leave_request (employee_id, start_date);
+
+-- HR-07: documents to receive or agree to, by version.
+create table if not exists hr_document (
+  id          uuid primary key default gen_random_uuid(),
+  tenant_id   uuid not null references tenant(id),
+  title       text not null,
+  version     text not null,
+  kind        text not null check (kind in ('receipt', 'agreement')),
+  document_ref text,
+  created_by  uuid references actor(id),
+  created_at  timestamptz not null default now(),
+  unique (tenant_id, title, version)
+);
+create table if not exists document_request (
+  id              uuid primary key default gen_random_uuid(),
+  tenant_id       uuid not null references tenant(id),
+  document_id     uuid not null references hr_document(id),
+  employee_id     uuid not null references employee_record(id),
+  due_date        date,
+  status          text not null default 'sent' check (status in ('sent', 'acknowledged', 'excepted')),
+  statement       text,
+  acknowledged_at timestamptz,
+  exception_reason text,
+  created_at      timestamptz not null default now(),
+  unique (document_id, employee_id)
+);
+
+-- HR-12: a change to a field another system owns becomes a task, not an overwrite.
+create table if not exists hr_reconciliation (
+  id          uuid primary key default gen_random_uuid(),
+  tenant_id   uuid not null references tenant(id),
+  employee_id uuid not null references employee_record(id),
+  field       text not null,
+  owner       text not null,
+  current_value text,
+  proposed_value text,
+  status      text not null default 'open' check (status in ('open', 'applied', 'dismissed')),
+  raised_by   uuid references actor(id),
+  resolved_by uuid references actor(id),
+  note        text,
+  created_at  timestamptz not null default now(),
+  resolved_at timestamptz
+);
+
+-- HR-01: an approved hiring request, waiting for its hires.
+create table if not exists hiring_requisition (
+  id           uuid primary key default gen_random_uuid(),
+  tenant_id    uuid not null references tenant(id),
+  instance_id  uuid not null references instance(id) unique,
+  reference    text not null,
+  position     text not null,
+  headcount    int not null check (headcount > 0),
+  filled       int not null default 0 check (filled >= 0),
+  cost_centre  text,
+  amount       numeric(18, 2) not null default 0,
+  status       text not null default 'open' check (status in ('open', 'filled', 'cancelled')),
+  created_at   timestamptz not null default now(),
+  check (filled <= headcount)
+);
+alter table lifecycle_case add column if not exists hiring_id uuid references hiring_requisition(id);

@@ -45,7 +45,9 @@ export const Blueprint = z
      */
     finance: z
       .object({
-        kind: z.enum(['claim', 'advance', 'purchase']),
+        kind: z.enum(['claim', 'advance', 'purchase', 'hiring']),
+        /** HR-01: how many people a hiring request is for. */
+        headcountField: Key.optional(),
         amountField: Key,
         receiptField: Key.optional(),
         categoryField: Key.optional(),
