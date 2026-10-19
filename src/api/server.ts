@@ -1950,7 +1950,7 @@ async function main(): Promise<void> {
             if (req.method === 'POST') {
               const b = (await readBody(req, 1024 * 1024)) as Record<string, unknown>;
               if (action === 'code') return send(res, 200, await esign.requestCode(pool, t!, ctx));
-              if (action === 'verify') return send(res, 200, await esign.verifyCode(pool, t!, b.code, ctx));
+              if (action === 'verify') return send(res, 200, await esign.verifyCode(pool, t!, b.code, ctx, b.smsCode));
               if (action === 'consent') return send(res, 200, await esign.giveConsent(pool, t!, sess, ctx));
               if (action === 'sign') return send(res, 200, await esign.signDocument(pool, t!, sess, b, ctx));
               if (action === 'decline') return send(res, 200, await esign.declineDocument(pool, t!, sess, b, ctx));

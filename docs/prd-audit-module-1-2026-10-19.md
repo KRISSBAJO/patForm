@@ -602,9 +602,39 @@ DocuSign remains available as an option.
 What it is: a simple electronic signature, which is what most commercial
 contracts need. What it is not: a qualified signature; documents that the
 law requires to carry one (some deeds and wills, in some countries) need a
-qualified provider. Not built yet: a PDF digital signature (PAdES) over the
-sealed file with a certificate, SMS codes, and signing on behalf of a
-company by several authorised people.
+qualified provider. Added the same day:
+
+- Certificate seal (`esign-seal.ts`): when SIGN_SEAL_P12_BASE64 and
+  SIGN_SEAL_PASSPHRASE hold a certificate, the finished PDF carries a PDF
+  digital signature (adbe.pkcs7.detached, SHA-256) over the whole file.
+  Acrobat and other readers show the seal and report any later change; the
+  verify page reports it too when given the file. A certificate from a
+  provider on Adobe's trusted list is shown as trusted; one made with
+  `scripts/make-seal-certificate.mts` gives the same tamper protection but
+  is shown as "identity unknown".
+- Codes by text message (`sms.ts`): per signer, the sender chooses an email
+  code, a text-message code, or both (both must be right). Providers:
+  Termii (SMS_PROVIDER=termii, TERMII_API_KEY, TERMII_SENDER_ID,
+  TERMII_CHANNEL) or Twilio (SMS_PROVIDER=twilio, TWILIO_ACCOUNT_SID,
+  TWILIO_AUTH_TOKEN, TWILIO_FROM). Without a provider, text-message codes
+  are refused when the envelope is made, never faked. The certificate says
+  how each signer was verified.
+- Companies signing through several authorised people: signers can be
+  grouped under a company with "any N of these" and a recorded authority
+  (e.g. a board resolution). Company boxes are placed per signatory slot;
+  each signatory confirms "I am authorised to sign on behalf of …" (stored
+  with the time) and takes the next slot; when N have signed, the rest are
+  told they are no longer needed and their links say so. The PDF shows
+  "For and on behalf of" with names and job titles; the certificate lists
+  the company, the rule, the authority and who signed.
+
+Found and fixed while testing: the signer's job title came out as the
+document's title, because both columns are called `title` and the
+document's overwrote the signer's when joined.
+
+Not built: a trusted timestamp from a timestamping authority inside the
+seal (for long-term validation), and an optional check against a company
+register of who may sign.
 
 Operations: the web proxy now passes PDFs through byte for byte and
 forwards the caller's address; on the Vercel-plus-Render setup set

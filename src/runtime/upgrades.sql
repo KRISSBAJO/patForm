@@ -185,7 +185,7 @@ create index if not exists process_export_tenant on process_export (tenant_id, o
 alter table platform_email drop constraint if exists platform_email_kind_check;
 alter table platform_email add constraint platform_email_kind_check
   check (kind in ('invitation', 'verify_email', 'password_reset', 'delivery_alert', 'task_assigned', 'record_shared', 'scheduled_report',
-                  'signature_request', 'signature_code', 'signature_completed', 'signature_declined', 'signature_reminder'));
+                  'signature_request', 'signature_code', 'signature_completed', 'signature_declined', 'signature_reminder', 'signature_not_needed'));
 
 -- The Records page's filters with a name, shared by the workspace; and, when
 -- scheduled, emailed to whoever scheduled it, rendered under their roles.
@@ -2118,7 +2118,7 @@ alter table gov_file add constraint gov_file_purpose_check check (purpose in ('c
 alter table platform_email drop constraint if exists platform_email_kind_check;
 alter table platform_email add constraint platform_email_kind_check
   check (kind in ('invitation', 'verify_email', 'password_reset', 'delivery_alert', 'task_assigned', 'record_shared', 'scheduled_report',
-                  'signature_request', 'signature_code', 'signature_completed', 'signature_declined', 'signature_reminder'));
+                  'signature_request', 'signature_code', 'signature_completed', 'signature_declined', 'signature_reminder', 'signature_not_needed'));
 
 create table if not exists sign_envelope (
   id               uuid primary key default gen_random_uuid(),
@@ -2211,3 +2211,46 @@ create trigger sign_event_no_change before update or delete on sign_event for ea
 
 -- Reminders resend the same personal link, so it is kept sealed as well as hashed.
 alter table sign_recipient add column if not exists token_sealed text;
+
+-- Patform Sign: codes by SMS, and companies signing through several
+-- authorised people ("any 2 of these 3 directors").
+create table if not exists sign_party (
+  id             uuid primary key default gen_random_uuid(),
+  envelope_id    uuid not null references sign_envelope(id),
+  name           text not null,
+  required_count int not null check (required_count between 1 and 20),
+  routing_order  int not null default 1,
+  authority_note text,
+  completed_at   timestamptz,
+  created_at     timestamptz not null default now()
+);
+
+alter table sign_recipient add column if not exists party_id uuid references sign_party(id);
+alter table sign_recipient add column if not exists title text;
+alter table sign_recipient add column if not exists phone text;
+alter table sign_recipient add column if not exists verify_by text not null default 'email';
+alter table sign_recipient drop constraint if exists sign_recipient_verify_by_check;
+alter table sign_recipient add constraint sign_recipient_verify_by_check check (verify_by in ('email', 'sms', 'email_and_sms'));
+alter table sign_recipient add column if not exists sms_otp_hash text;
+alter table sign_recipient add column if not exists authority_confirmed_at timestamptz;
+alter table sign_recipient add column if not exists authority_statement text;
+alter table sign_recipient add column if not exists party_slot int;
+alter table sign_recipient drop constraint if exists sign_recipient_status_check;
+alter table sign_recipient add constraint sign_recipient_status_check check (status in ('waiting', 'sent', 'viewed', 'signed', 'declined', 'not_needed'));
+
+alter table sign_field add column if not exists party_id uuid references sign_party(id);
+alter table sign_field add column if not exists slot int;
+alter table sign_field add column if not exists filled_by uuid references sign_recipient(id);
+alter table sign_field alter column recipient_id drop not null;
+alter table sign_field drop constraint if exists sign_field_owner_check;
+alter table sign_field add constraint sign_field_owner_check check (recipient_id is not null or (party_id is not null and slot is not null));
+alter table sign_field drop constraint if exists sign_field_kind_check;
+alter table sign_field add constraint sign_field_kind_check check (kind in ('signature', 'initials', 'date', 'name', 'text', 'title'));
+
+-- The certificate seal applied to the finished file, when one is configured.
+alter table sign_envelope add column if not exists seal jsonb;
+
+alter table platform_email drop constraint if exists platform_email_kind_check;
+alter table platform_email add constraint platform_email_kind_check
+  check (kind in ('invitation', 'verify_email', 'password_reset', 'delivery_alert', 'task_assigned', 'record_shared', 'scheduled_report',
+                  'signature_request', 'signature_code', 'signature_completed', 'signature_declined', 'signature_reminder', 'signature_not_needed'));

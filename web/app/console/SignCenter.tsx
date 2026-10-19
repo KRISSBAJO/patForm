@@ -10,13 +10,15 @@ import { postJson } from './stepup';
 import { PdfPages, PageBox } from '../../components/pdf-pages';
 
 type Envelope = { id: string; number: number; title: string; status: string; routing: string; created_at: string; sent_at: string | null; completed_at: string | null; expires_at: string; final_sha256: string | null; contract: string | null; signers: number; signed: number };
-type Recipient = { id: string; name: string; email: string; role: string; routing_order: number; status: string; notified_at: string | null; verified_at: string | null; signed_at: string | null; declined_at: string | null; decline_reason: string | null };
-type Field = { id?: string; recipient_id: string; kind: Kind; page: number; x: number; y: number; width: number; height: number; required: boolean; label: string | null };
-type Detail = { envelope: Envelope & { page_count: number; original_sha256: string; void_reason: string | null }; recipients: Recipient[]; fields: Field[]; events: { kind: string; occurred_at: string; recipient: string | null; ip: string | null }[] };
-type Kind = 'signature' | 'initials' | 'date' | 'name' | 'text';
-type Row = { name: string; email: string; role: 'signer' | 'cc'; order: number };
+type Recipient = { id: string; name: string; email: string; role: string; routing_order: number; status: string; party_id: string | null; party: string | null; title: string | null; verify_by: string; notified_at: string | null; verified_at: string | null; signed_at: string | null; declined_at: string | null; decline_reason: string | null };
+type Field = { id?: string; recipient_id: string | null; party_id?: string | null; slot?: number | null; kind: Kind; page: number; x: number; y: number; width: number; height: number; required: boolean; label: string | null };
+type Party = { id: string; name: string; required_count: number; signed: number; authority_note: string | null; completed_at: string | null };
+type Detail = { envelope: Envelope & { page_count: number; original_sha256: string; void_reason: string | null; seal: { subject: string; selfIssued: boolean } | null }; recipients: Recipient[]; parties: Party[]; fields: Field[]; events: { kind: string; occurred_at: string; recipient: string | null; ip: string | null }[] };
+type Kind = 'signature' | 'initials' | 'date' | 'name' | 'text' | 'title';
+type Row = { name: string; email: string; role: 'signer' | 'cc'; order: number; party: string; title: string; phone: string; verifyBy: 'email' | 'sms' | 'email_and_sms' };
+const blank = (order: number): Row => ({ name: '', email: '', role: 'signer', order, party: '', title: '', phone: '', verifyBy: 'email' });
 
-const SIZE: Record<Kind, [number, number]> = { signature: [0.26, 0.06], initials: [0.1, 0.05], date: [0.16, 0.03], name: [0.26, 0.03], text: [0.26, 0.03] };
+const SIZE: Record<Kind, [number, number]> = { signature: [0.26, 0.06], initials: [0.1, 0.05], date: [0.16, 0.03], name: [0.26, 0.03], text: [0.26, 0.03], title: [0.26, 0.03] };
 const COLORS = ['#1f6feb', '#b26b00', '#8250df', '#1a7f37', '#cf222e', '#0969da'];
 const day = (v: string | null) => (v ? new Date(v).toLocaleString() : '');
 
@@ -44,11 +46,13 @@ export function SignCenter({ startContract, onClose }: { startContract?: { id: s
   const [message, setMessage] = useState('');
   const [routing, setRouting] = useState<'sequential' | 'parallel'>('sequential');
   const [days, setDays] = useState('30');
-  const [rows, setRows] = useState<Row[]>([{ name: '', email: '', role: 'signer', order: 1 }]);
+  const [rows, setRows] = useState<Row[]>([blank(1)]);
+  const [partyRules, setPartyRules] = useState<Record<string, { required: string; note: string }>>({});
   const [docRef, setDocRef] = useState<{ ref: string; name: string } | null>(null);
   const [detail, setDetail] = useState<Detail | null>(null);
   const [pdf, setPdf] = useState<ArrayBuffer | null>(null);
   const [fields, setFields] = useState<Field[]>([]);
+  // A box belongs to a person ("r:<id>") or to a company's numbered signatory ("p:<id>:<slot>").
   const [current, setCurrent] = useState<{ recipient: string; kind: Kind }>({ recipient: '', kind: 'signature' });
   const [textLabel, setTextLabel] = useState('');
   const [voidWhy, setVoidWhy] = useState('');
@@ -58,19 +62,27 @@ export function SignCenter({ startContract, onClose }: { startContract?: { id: s
   const open = async (id: string, next: 'place' | 'detail') => {
     const d = await get<Detail>(`/api/sign/envelopes/${id}`);
     setDetail(d); setFields(d.fields); setPdf(await pdfOf(id));
-    setCurrent({ recipient: d.recipients.find((r) => r.role === 'signer')?.id ?? '', kind: 'signature' });
+    const firstPerson = d.recipients.find((r) => r.role === 'signer' && !r.party_id);
+    setCurrent({ recipient: firstPerson ? `r:${firstPerson.id}` : d.parties[0] ? `p:${d.parties[0].id}:1` : '', kind: 'signature' });
     setMode(next);
   };
   const act = async (work: () => Promise<string | void>) => { setBusy(true); setNote(null); try { const m = await work(); if (m) setNote(m); await loadList(); } catch (err) { setNote(err instanceof Error ? err.message : String(err)); } finally { setBusy(false); } };
   const signers = (detail?.recipients ?? []).filter((r) => r.role === 'signer');
-  const color = (rid: string) => COLORS[Math.max(0, signers.findIndex((s) => s.id === rid)) % COLORS.length]!;
+  const owners = [
+    ...signers.filter((s) => !s.party_id).map((s) => ({ key: `r:${s.id}`, label: s.name })),
+    ...(detail?.parties ?? []).flatMap((p) => Array.from({ length: p.required_count }, (_, i) => ({ key: `p:${p.id}:${i + 1}`, label: `${p.name} — signatory ${i + 1}` }))),
+  ];
+  const keyOf = (f: Field) => f.party_id ? `p:${f.party_id}:${f.slot}` : `r:${f.recipient_id}`;
+  const color = (key: string) => COLORS[Math.max(0, owners.findIndex((o) => o.key === key)) % COLORS.length]!;
+  const toBody = (f: Field) => ({ ...(f.party_id ? { partyId: f.party_id, slot: f.slot } : { recipientId: f.recipient_id }), kind: f.kind, page: f.page, x: f.x, y: f.y, width: f.width, height: f.height, required: f.required, label: f.label });
+  const companies = [...new Set(rows.filter((r) => r.role === 'signer' && r.party.trim()).map((r) => r.party.trim()))];
 
   return <div className="ig__form" style={{ gridTemplateColumns: '1fr' }}>
     <div className="ig__formTitle"><strong>Patform Sign</strong><p>Send a document for signature. Each signer confirms their email with a code, agrees to sign electronically and signs; the finished PDF carries every signature and a certificate, and can be checked at <a href="/sign/verify" target="_blank" rel="noopener">the verify page</a>.</p></div>
     {note && <p className="ig__notice" role="status">{note}</p>}
 
     {mode === 'list' && <>
-      <div className="pp2__roleEdit"><button type="button" className="cs__btn cs__btn--primary" onClick={() => { setMode('compose'); setTitle(''); setDocRef(null); setRows([{ name: '', email: '', role: 'signer', order: 1 }]); }}>Send a PDF for signature</button>{onClose && <button type="button" className="cs__btn" onClick={onClose}>Close</button>}</div>
+      <div className="pp2__roleEdit"><button type="button" className="cs__btn cs__btn--primary" onClick={() => { setMode('compose'); setTitle(''); setDocRef(null); setRows([blank(1)]); setPartyRules({}); }}>Send a PDF for signature</button>{onClose && <button type="button" className="cs__btn" onClick={onClose}>Close</button>}</div>
       <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>{(list ?? []).map((e) => <li key={e.id} className="ig__row"><div className="ig__rowMain">
         <strong>PS-{e.number} {e.title}</strong><span className={`ig__status ${e.status === 'completed' ? '' : 'ig__status--off'}`}>{e.status}{e.status === 'sent' ? ` · ${e.signed} of ${e.signers} signed` : ''}</span>
         <p>{e.contract ? `Contract: ${e.contract} · ` : ''}{e.routing === 'parallel' ? 'all at once' : 'in order'} · {e.sent_at ? `sent ${day(e.sent_at)}` : `created ${day(e.created_at)}`}{e.completed_at ? ` · completed ${day(e.completed_at)}` : ''}</p></div>
@@ -79,7 +91,9 @@ export function SignCenter({ startContract, onClose }: { startContract?: { id: s
     </>}
 
     {mode === 'compose' && <form onSubmit={(e) => { e.preventDefault(); void act(async () => {
-      const r = await postJson<{ id: string }>('/api/sign/envelopes', { ...(startContract ? { contractId: startContract.id } : { documentRef: docRef?.ref }), title, message, routing, expiresInDays: Number(days), recipients: rows.filter((x) => x.name || x.email) });
+      const r = await postJson<{ id: string }>('/api/sign/envelopes', { ...(startContract ? { contractId: startContract.id } : { documentRef: docRef?.ref }), title, message, routing, expiresInDays: Number(days),
+        recipients: rows.filter((x) => x.name || x.email).map((x) => ({ name: x.name, email: x.email, role: x.role, order: x.order, party: x.role === 'signer' ? x.party.trim() || undefined : undefined, title: x.title || undefined, phone: x.phone || undefined, verifyBy: x.verifyBy })),
+        parties: companies.map((c) => ({ name: c, required: Number(partyRules[c]?.required || 1), order: rows.find((x) => x.party.trim() === c)?.order ?? 1, authorityNote: partyRules[c]?.note || undefined })) });
       await open(r.id, 'place');
       return 'Saved as a draft. Now place the boxes each signer fills, then send.';
     }); }} style={{ display: 'grid', gap: 12 }}>
@@ -96,41 +110,53 @@ export function SignCenter({ startContract, onClose }: { startContract?: { id: s
         <div><label className="cs__label" htmlFor={`ps-n${i}`}>Name</label><input id={`ps-n${i}`} className="cs__input" value={r.name} onChange={(e) => setRows((x) => x.map((y, j) => j === i ? { ...y, name: e.target.value } : y))} /></div>
         <div><label className="cs__label" htmlFor={`ps-e${i}`}>Email</label><input id={`ps-e${i}`} type="email" className="cs__input" value={r.email} onChange={(e) => setRows((x) => x.map((y, j) => j === i ? { ...y, email: e.target.value } : y))} /></div>
         <div><label className="cs__label" htmlFor={`ps-r${i}`}>Role</label><select id={`ps-r${i}`} className="cs__input" value={r.role} onChange={(e) => setRows((x) => x.map((y, j) => j === i ? { ...y, role: e.target.value as 'signer' | 'cc' } : y))}><option value="signer">Signs</option><option value="cc">Gets a copy</option></select></div>
+        {r.role === 'signer' && <div><label className="cs__label" htmlFor={`ps-c${i}`}>For a company (optional)</label><input id={`ps-c${i}`} className="cs__input" placeholder="e.g. Acme Ltd" value={r.party} onChange={(e) => setRows((x) => x.map((y, j) => j === i ? { ...y, party: e.target.value } : y))} /></div>}
+        {r.role === 'signer' && <div><label className="cs__label" htmlFor={`ps-t${i}`}>Job title</label><input id={`ps-t${i}`} className="cs__input" value={r.title} onChange={(e) => setRows((x) => x.map((y, j) => j === i ? { ...y, title: e.target.value } : y))} /></div>}
+        {r.role === 'signer' && <div><label className="cs__label" htmlFor={`ps-v${i}`}>Confirm by</label><select id={`ps-v${i}`} className="cs__input" value={r.verifyBy} onChange={(e) => setRows((x) => x.map((y, j) => j === i ? { ...y, verifyBy: e.target.value as Row['verifyBy'] } : y))}><option value="email">Email code</option><option value="sms">Text-message code</option><option value="email_and_sms">Email and text codes</option></select></div>}
+        {r.role === 'signer' && r.verifyBy !== 'email' && <div><label className="cs__label" htmlFor={`ps-p${i}`}>Mobile (+country code)</label><input id={`ps-p${i}`} className="cs__input" inputMode="tel" placeholder="+2348012345678" value={r.phone} onChange={(e) => setRows((x) => x.map((y, j) => j === i ? { ...y, phone: e.target.value } : y))} /></div>}
         {routing === 'sequential' && r.role === 'signer' && <div><label className="cs__label" htmlFor={`ps-o${i}`}>Order</label><input id={`ps-o${i}`} type="number" min={1} className="cs__input" style={{ width: 70 }} value={r.order} onChange={(e) => setRows((x) => x.map((y, j) => j === i ? { ...y, order: Number(e.target.value) || 1 } : y))} /></div>}
         <button type="button" className="cs__btn" onClick={() => setRows((x) => x.filter((_, j) => j !== i))} disabled={rows.length === 1}>Remove</button>
       </div>)}
-      <div className="pp2__roleEdit"><button type="button" className="cs__btn" onClick={() => setRows((x) => [...x, { name: '', email: '', role: 'signer', order: x.length + 1 }])}>Add a recipient</button>
+      {companies.map((c) => { const members = rows.filter((x) => x.role === 'signer' && x.party.trim() === c).length; return <div key={c} className="pp2__roleEdit" style={{ alignItems: 'end' }}>
+        <strong style={{ alignSelf: 'center' }}>{c}</strong>
+        <div><label className="cs__label" htmlFor={`pr-${c}`}>Signatures needed (of {members})</label><input id={`pr-${c}`} type="number" min={1} max={members} className="cs__input" style={{ width: 90 }} value={partyRules[c]?.required ?? '1'} onChange={(e) => setPartyRules((x) => ({ ...x, [c]: { required: e.target.value, note: x[c]?.note ?? '' } }))} /></div>
+        <div><label className="cs__label" htmlFor={`pn-${c}`}>Authority (e.g. board resolution reference)</label><input id={`pn-${c}`} className="cs__input" value={partyRules[c]?.note ?? ''} onChange={(e) => setPartyRules((x) => ({ ...x, [c]: { required: x[c]?.required ?? '1', note: e.target.value } }))} /></div>
+      </div>; })}
+      <div className="pp2__roleEdit"><button type="button" className="cs__btn" onClick={() => setRows((x) => [...x, blank(x.length + 1)])}>Add a recipient</button>
         <button type="submit" className="cs__btn cs__btn--primary" disabled={busy || (!startContract && !docRef)}>Next: place the boxes</button>
         <button type="button" className="cs__btn" onClick={() => { if (onClose && startContract) onClose(); else setMode('list'); }}>Cancel</button></div>
     </form>}
 
     {mode === 'place' && detail && pdf && <>
       <div className="pp2__roleEdit" style={{ position: 'sticky', top: 0, background: 'var(--surface, #fff)', zIndex: 3, padding: '8px 0' }}>
-        <div><label className="cs__label" htmlFor="pl-who">Box for</label><select id="pl-who" className="cs__input" value={current.recipient} onChange={(e) => setCurrent((c) => ({ ...c, recipient: e.target.value }))}>{signers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
-        <div><label className="cs__label" htmlFor="pl-kind">Kind</label><select id="pl-kind" className="cs__input" value={current.kind} onChange={(e) => setCurrent((c) => ({ ...c, kind: e.target.value as Kind }))}><option value="signature">Signature</option><option value="initials">Initials</option><option value="date">Date signed</option><option value="name">Printed name</option><option value="text">Text to fill</option></select></div>
+        <div><label className="cs__label" htmlFor="pl-who">Box for</label><select id="pl-who" className="cs__input" value={current.recipient} onChange={(e) => setCurrent((c) => ({ ...c, recipient: e.target.value }))}>{owners.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}</select></div>
+        <div><label className="cs__label" htmlFor="pl-kind">Kind</label><select id="pl-kind" className="cs__input" value={current.kind} onChange={(e) => setCurrent((c) => ({ ...c, kind: e.target.value as Kind }))}><option value="signature">Signature</option><option value="initials">Initials</option><option value="date">Date signed</option><option value="name">Printed name</option><option value="title">Job title</option><option value="text">Text to fill</option></select></div>
         {current.kind === 'text' && <div><label className="cs__label" htmlFor="pl-label">Label</label><input id="pl-label" className="cs__input" placeholder="e.g. Company number" value={textLabel} onChange={(ev) => setTextLabel(ev.target.value)} /></div>}
         <span className="ig__muted" style={{ alignSelf: 'center' }}>Click a page to place a box; click a box to remove it. {fields.length} placed.</span>
-        <button type="button" className="cs__btn" disabled={busy} onClick={() => void act(async () => { await postJson(`/api/sign/envelopes/${detail.envelope.id}/fields`, { fields: fields.map((f) => ({ recipientId: f.recipient_id, kind: f.kind, page: f.page, x: f.x, y: f.y, width: f.width, height: f.height, required: f.required, label: f.label })) }); return 'Boxes saved.'; })}>Save</button>
+        <button type="button" className="cs__btn" disabled={busy} onClick={() => void act(async () => { await postJson(`/api/sign/envelopes/${detail.envelope.id}/fields`, { fields: fields.map(toBody) }); return 'Boxes saved.'; })}>Save</button>
         <button type="button" className="cs__btn cs__btn--primary" disabled={busy} onClick={() => void act(async () => {
-          await postJson(`/api/sign/envelopes/${detail.envelope.id}/fields`, { fields: fields.map((f) => ({ recipientId: f.recipient_id, kind: f.kind, page: f.page, x: f.x, y: f.y, width: f.width, height: f.height, required: f.required, label: f.label })) });
+          await postJson(`/api/sign/envelopes/${detail.envelope.id}/fields`, { fields: fields.map(toBody) });
           const r = await postJson<{ notified: number }>(`/api/sign/envelopes/${detail.envelope.id}/send`, {});
           await open(detail.envelope.id, 'detail');
-          return `Sent. ${r.notified} signer(s) emailed.${signers.some((s) => !fields.some((f) => f.recipient_id === s.id && f.kind === 'signature')) ? ' Signers without a signature box sign on an added signature page.' : ''}`;
+          return `Sent. ${r.notified} signer(s) emailed.${owners.some((o) => !fields.some((f) => keyOf(f) === o.key && f.kind === 'signature')) ? ' Anyone without a signature box signs on an added signature page.' : ''}`;
         })}>Send</button>
         <button type="button" className="cs__btn" onClick={() => { setMode('list'); setDetail(null); setPdf(null); }}>Later</button>
       </div>
-      <p className="ig__muted">{signers.map((s) => <span key={s.id} style={{ color: color(s.id), marginRight: 12 }}>■ {s.name}</span>)}</p>
+      <p className="ig__muted">{owners.map((o) => <span key={o.key} style={{ color: color(o.key), marginRight: 12 }}>■ {o.label}</span>)}</p>
       <PdfPages data={pdf}
         onPageClick={(page, x, y) => { if (!current.recipient) return; const [w, h] = SIZE[current.kind]; const label = current.kind === 'text' ? (textLabel.trim() || 'Text') : null;
-          setFields((f) => [...f, { recipient_id: current.recipient, kind: current.kind, page, x: Math.max(0, Math.min(1 - w, x - w / 2)), y: Math.max(0, Math.min(1 - h, y - h / 2)), width: w, height: h, required: true, label }]); }}
-        overlay={(page) => fields.map((f, i) => f.page === page && <PageBox key={i} x={f.x} y={f.y} width={f.width} height={f.height} color={color(f.recipient_id)} title="Click to remove" onClick={() => setFields((all) => all.filter((_, j) => j !== i))}>{f.kind} · {signers.find((s) => s.id === f.recipient_id)?.name.split(' ')[0]}</PageBox>)} />
+          const [kindOf, idOf, slotOf] = current.recipient.split(':');
+          const owner = kindOf === 'p' ? { recipient_id: null, party_id: idOf!, slot: Number(slotOf) } : { recipient_id: idOf!, party_id: null, slot: null };
+          setFields((f) => [...f, { ...owner, kind: current.kind, page, x: Math.max(0, Math.min(1 - w, x - w / 2)), y: Math.max(0, Math.min(1 - h, y - h / 2)), width: w, height: h, required: true, label }]); }}
+        overlay={(page) => fields.map((f, i) => f.page === page && <PageBox key={i} x={f.x} y={f.y} width={f.width} height={f.height} color={color(keyOf(f))} title="Click to remove" onClick={() => setFields((all) => all.filter((_, j) => j !== i))}>{f.kind} · {owners.find((o) => o.key === keyOf(f))?.label.split(' ')[0]}{f.party_id ? ` ${f.slot}` : ''}</PageBox>)} />
     </>}
 
     {mode === 'detail' && detail && <>
       <p><strong>PS-{detail.envelope.number} {detail.envelope.title}</strong> · {detail.envelope.status}{detail.envelope.void_reason ? ` (${detail.envelope.void_reason})` : ''} · expires {day(detail.envelope.expires_at)}</p>
-      {detail.envelope.final_sha256 && <p className="ig__muted" style={{ wordBreak: 'break-all' }}>Signed copy SHA-256: {detail.envelope.final_sha256}</p>}
+      {detail.envelope.final_sha256 && <p className="ig__muted" style={{ wordBreak: 'break-all' }}>Signed copy SHA-256: {detail.envelope.final_sha256}{detail.envelope.seal ? ` · sealed with ${detail.envelope.seal.subject}${detail.envelope.seal.selfIssued ? ' (self-issued certificate)' : ''}` : ''}</p>}
+      {detail.parties.map((p) => <p key={p.id}><strong>{p.name}</strong>: {p.signed} of {p.required_count} required signature(s){p.completed_at ? ' — done' : ''}{p.authority_note ? ` · authority: ${p.authority_note}` : ''}</p>)}
       <table className="ex__table"><thead><tr><th scope="col">Recipient</th><th scope="col">Status</th><th scope="col">Verified</th><th scope="col">Signed</th></tr></thead>
-        <tbody>{detail.recipients.map((r) => <tr key={r.id}><td>{r.name}<br /><small>{r.email} · {r.role === 'cc' ? 'copy' : `signer ${r.routing_order}`}</small></td><td>{r.status}{r.decline_reason ? `: ${r.decline_reason}` : ''}</td><td>{day(r.verified_at)}</td><td>{day(r.signed_at)}</td></tr>)}</tbody></table>
+        <tbody>{detail.recipients.map((r) => <tr key={r.id}><td>{r.name}{r.title ? `, ${r.title}` : ''}<br /><small>{r.email} · {r.role === 'cc' ? 'copy' : r.party ? `for ${r.party}` : `signer ${r.routing_order}`}{r.verify_by !== 'email' ? ` · ${r.verify_by === 'sms' ? 'text code' : 'email + text codes'}` : ''}</small></td><td>{r.status === 'not_needed' ? 'not needed' : r.status}{r.decline_reason ? `: ${r.decline_reason}` : ''}</td><td>{day(r.verified_at)}</td><td>{day(r.signed_at)}</td></tr>)}</tbody></table>
       <div className="pp2__roleEdit">
         {detail.envelope.status === 'completed' && <button type="button" className="cs__btn cs__btn--primary" onClick={() => void act(async () => { const blob = new Blob([await pdfOf(detail.envelope.id)], { type: 'application/pdf' }); const url = URL.createObjectURL(blob); window.open(url, '_blank', 'noopener'); setTimeout(() => URL.revokeObjectURL(url), 60_000); })}>Open the signed copy</button>}
         {detail.envelope.status === 'sent' && <button type="button" className="cs__btn" disabled={busy} onClick={() => void act(async () => { const r = await postJson<{ reminded: number }>(`/api/sign/envelopes/${detail.envelope.id}/remind`, {}); return `Reminded ${r.reminded} signer(s).`; })}>Remind now</button>}

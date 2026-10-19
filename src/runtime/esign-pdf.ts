@@ -10,6 +10,7 @@
  */
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from 'pdf-lib';
 import type { SignatureValue } from '../blueprint/signature.js';
+import { addSealPlaceholder, applySeal, sealConfig } from './esign-seal.js';
 
 export async function pageCount(bytes: Buffer): Promise<number> {
   try {
@@ -21,12 +22,14 @@ export async function pageCount(bytes: Buffer): Promise<number> {
 }
 
 interface Recipient { id: string; name: string; email: string; role: string; routing_order: number; signature: SignatureValue | null; initials: SignatureValue | null;
-  verified_at: Date | null; consented_at: Date | null; viewed_at: Date | null; signed_at: Date | null; ip: string | null; user_agent: string | null; notified_at: Date | null }
-interface Field { recipient_id: string; kind: string; page: number; x: number; y: number; width: number; height: number; value: string | null }
+  verified_at: Date | null; consented_at: Date | null; viewed_at: Date | null; signed_at: Date | null; ip: string | null; user_agent: string | null; notified_at: Date | null;
+  status?: string; title?: string | null; phone?: string | null; verify_by?: string; party_id?: string | null; party_slot?: number | null; authority_confirmed_at?: Date | null; authority_statement?: string | null }
+interface Field { recipient_id: string | null; filled_by?: string | null; kind: string; page: number; x: number; y: number; width: number; height: number; value: string | null }
+interface Party { id: string; name: string; required_count: number; authority_note: string | null }
 interface Event { kind: string; occurred_at: Date; ip: string | null; name: string | null }
 export interface SealInput {
   envelope: { id: string; number: number; title: string; workspace: string; originalSha256: string; routing: string; completedAt: Date };
-  recipients: Recipient[]; fields: Field[]; events: Event[];
+  recipients: Recipient[]; fields: Field[]; events: Event[]; parties?: Party[];
 }
 
 const ink = rgb(0.05, 0.12, 0.35);
@@ -72,7 +75,8 @@ export async function sealPdf(original: Buffer, input: SealInput): Promise<Buffe
   const pages = doc.getPages();
 
   for (const f of input.fields) {
-    const r = byId.get(f.recipient_id);
+    // A company box belongs to whoever signed that signatory slot.
+    const r = byId.get(f.filled_by ?? f.recipient_id ?? '');
     const page = pages[f.page - 1];
     if (!r || !page || !f.value) continue;
     const cb = page.getCropBox();
@@ -87,7 +91,8 @@ export async function sealPdf(original: Buffer, input: SealInput): Promise<Buffe
   }
 
   // Signers with no signature field get a block on a signature page.
-  const unplaced = input.recipients.filter((r) => r.role === 'signer' && r.signature && !input.fields.some((f) => f.recipient_id === r.id && f.kind === 'signature'));
+  const parties = new Map((input.parties ?? []).map((p) => [p.id, p]));
+  const unplaced = input.recipients.filter((r) => r.role === 'signer' && r.signature && r.status !== 'not_needed' && !input.fields.some((f) => (f.filled_by ?? f.recipient_id) === r.id && f.kind === 'signature'));
   if (unplaced.length) {
     let page = doc.addPage([595.28, 841.89]); let y = 780;
     page.drawText('Signatures', { x: 50, y, size: 16, font: bold }); y -= 30;
@@ -95,7 +100,8 @@ export async function sealPdf(original: Buffer, input: SealInput): Promise<Buffe
       if (y < 120) { page = doc.addPage([595.28, 841.89]); y = 780; }
       await drawSignature(doc, page, r.signature!, { x: 50, y: y - 50, w: 240, h: 50 }, script);
       page.drawLine({ start: { x: 50, y: y - 55 }, end: { x: 300, y: y - 55 }, thickness: 0.5, color: grey });
-      page.drawText(`${r.name} · ${r.email}`, { x: 50, y: y - 70, size: 9, font: regular });
+      const party = r.party_id ? parties.get(r.party_id) : null;
+      page.drawText(`${party ? `For and on behalf of ${party.name}: ` : ''}${r.name}${r.title ? `, ${r.title}` : ''} · ${r.email}`, { x: 50, y: y - 70, size: 9, font: regular });
       page.drawText(`Signed ${when(r.signed_at)}`, { x: 50, y: y - 82, size: 9, font: regular, color: grey });
       y -= 110;
     }
@@ -119,13 +125,22 @@ export async function sealPdf(original: Buffer, input: SealInput): Promise<Buffe
   line(`Completed: ${when(e.completedAt)}`);
   line(`Original document SHA-256: ${e.originalSha256}`, { size: 8 });
   y -= 8;
+  const how = (r: Recipient) => r.verify_by === 'sms' ? `one-time code by text message to ${r.phone ?? 'their phone'}` : r.verify_by === 'email_and_sms' ? `one-time codes to the same address and by text message to ${r.phone ?? 'their phone'}` : 'one-time code to the same address';
+  for (const party of input.parties ?? []) {
+    const signed = input.recipients.filter((r) => r.party_id === party.id && r.status === 'signed');
+    line(`${party.name}: ${party.required_count} authorised signature(s) required; signed by ${signed.map((r) => `${r.name}${r.title ? ` (${r.title})` : ''}`).join(', ') || 'nobody'}`, { size: 10, font: bold });
+    if (party.authority_note) line(`Authority recorded by the sender: ${party.authority_note}`, { indent: 12 });
+  }
+  if ((input.parties ?? []).length) y -= 4;
   line('Signers and copies', { size: 12, font: bold });
   for (const r of input.recipients) {
     y -= 4;
-    line(`${r.name} <${r.email}> — ${r.role === 'cc' ? 'receives a copy' : `signer ${r.routing_order}`}`, { font: bold });
-    if (r.role === 'signer') {
-      line(`Identity: link sent to this email address; one-time code to the same address verified ${when(r.verified_at)}`, { indent: 12 });
+    const party = r.party_id ? parties.get(r.party_id) : null;
+    line(`${r.name} <${r.email}> — ${r.role === 'cc' ? 'receives a copy' : party ? `signatory for ${party.name}${r.title ? `, ${r.title}` : ''}` : `signer ${r.routing_order}`}${r.status === 'not_needed' ? ' — not needed (enough signatories signed)' : ''}`, { font: bold });
+    if (r.role === 'signer' && r.status !== 'not_needed') {
+      line(`Identity: link sent to this email address; ${how(r)} verified ${when(r.verified_at)}`, { indent: 12 });
       line(`Agreed to sign electronically: ${when(r.consented_at)}`, { indent: 12 });
+      if (r.authority_statement) line(`Confirmed authority: "${r.authority_statement}" ${when(r.authority_confirmed_at ?? null)}`, { indent: 12 });
       line(`Signed: ${when(r.signed_at)} · method: ${r.signature?.method === 'drawn' ? 'drawn' : 'typed and adopted'} · printed name: ${r.signature?.name ?? '—'}`, { indent: 12 });
       line(`IP address: ${r.ip ?? '—'} · browser: ${(r.user_agent ?? '—').slice(0, 110)}`, { indent: 12, color: grey, size: 8 });
     }
@@ -135,11 +150,15 @@ export async function sealPdf(original: Buffer, input: SealInput): Promise<Buffe
   for (const v of input.events) line(`${when(v.occurred_at)}  ${v.kind.replace(/_/g, ' ')}${v.name ? ` · ${v.name}` : ''}${v.ip ? ` · ${v.ip}` : ''}`, { size: 8 });
   y -= 8;
   line('About this signature', { size: 12, font: bold });
-  line('Each signer opened a personal link and confirmed control of their email address with a one-time code, agreed to sign electronically, and signed. This is a simple electronic signature. The SHA-256 of this completed file is recorded by Patform; any copy can be checked at the verify page named in the completion email. A changed copy will not match.', { size: 8 });
+  line('Each signer opened a personal link and confirmed it was them with a one-time code, agreed to sign electronically, and signed. This is a simple electronic signature. The SHA-256 of this completed file is recorded by Patform; any copy can be checked at the verify page named in the completion email. A changed copy will not match.', { size: 8 });
+  const sealInfo = sealConfig()?.info;
+  if (sealInfo) line(`This file is sealed with a digital certificate (${sealInfo.subject}; issued by ${sealInfo.issuer}${sealInfo.selfIssued ? ', self-issued' : ''}). PDF readers show the seal and report any change made after it.`, { size: 8 });
 
   doc.setProducer('Patform Sign');
   doc.setSubject(`Envelope PS-${e.number}`);
   doc.setKeywords([`envelope:${e.id}`, `original-sha256:${e.originalSha256}`]);
   doc.setModificationDate(e.completedAt);
-  return Buffer.from(await doc.save({ useObjectStreams: false }));
+  if (sealInfo) addSealPlaceholder(doc, { number: e.number, workspace: e.workspace });
+  const saved = Buffer.from(await doc.save({ useObjectStreams: false }));
+  return sealInfo ? applySeal(saved) : saved;
 }

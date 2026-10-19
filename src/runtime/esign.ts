@@ -32,6 +32,8 @@ import { seal, open as unseal } from './secret-box.js';
 import { signatureProblem, type SignatureValue } from '../blueprint/signature.js';
 import { govContractFor, govInTeam, govMember, GOV_FILE_REF } from './gov.js';
 import { sealPdf, pageCount } from './esign-pdf.js';
+import { checkSeal, sealConfig } from './esign-seal.js';
+import { PHONE, maskPhone, normalisePhone, sendSms, smsConfigured } from './sms.js';
 
 const UUID = /^[0-9a-f-]{36}$/;
 const EMAIL = /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i;
@@ -39,6 +41,7 @@ const text = (v: unknown, max: number) => (typeof v === 'string' ? v.trim().slic
 const hash = (v: string | Buffer) => createHash('sha256').update(v).digest('hex');
 const token = () => randomBytes(32).toString('base64url');
 const CODE_MINUTES = 10; const SESSION_HOURS = 2; const FINAL_DAYS = 30;
+export const authorityText = (party: string) => `I confirm I am authorised to sign this document on behalf of ${party}.`;
 export const CONSENT_TEXT = 'I agree to use electronic records and signatures for this document. I understand my electronic signature is as binding as a signature on paper, and that I can ask the sender for a paper copy.';
 
 export interface Ctx { ip?: string | null; userAgent?: string | null }
@@ -79,12 +82,19 @@ async function nextNumber(client: Client, tenantId: string) {
   return rows[0]!.n;
 }
 
-interface RecipientIn { name: string; email: string; role: 'signer' | 'cc'; order: number }
+type VerifyBy = 'email' | 'sms' | 'email_and_sms';
+interface RecipientIn { name: string; email: string; role: 'signer' | 'cc'; order: number; title: string | null; phone: string | null; verifyBy: VerifyBy; party: string | null }
 function readRecipients(v: unknown): RecipientIn[] {
   const list = (Array.isArray(v) ? v : []).map((x, i) => {
     const o = (x ?? {}) as Record<string, unknown>;
-    const r: RecipientIn = { name: text(o.name, 120), email: text(o.email, 200).toLowerCase(), role: o.role === 'cc' ? 'cc' : 'signer', order: Math.max(1, Math.trunc(Number(o.order ?? i + 1)) || i + 1) };
+    const verifyBy: VerifyBy = o.verifyBy === 'sms' ? 'sms' : o.verifyBy === 'email_and_sms' ? 'email_and_sms' : 'email';
+    const phone = text(o.phone, 30) ? normalisePhone(text(o.phone, 30)) : null;
+    const r: RecipientIn = { name: text(o.name, 120), email: text(o.email, 200).toLowerCase(), role: o.role === 'cc' ? 'cc' : 'signer', order: Math.max(1, Math.trunc(Number(o.order ?? i + 1)) || i + 1),
+      title: text(o.title, 120) || null, phone, verifyBy, party: text(o.party, 200) || null };
     if (r.name.length < 2 || !EMAIL.test(r.email)) throw new InvalidInput(`recipient ${i + 1} needs a name and an email address`);
+    if (phone && !PHONE.test(phone)) throw new InvalidInput(`recipient ${i + 1}: write the phone number in international form, e.g. +2348012345678`);
+    if (verifyBy !== 'email' && !phone) throw new InvalidInput(`recipient ${i + 1}: a text-message code needs a phone number`);
+    if (r.party && r.role !== 'signer') throw new InvalidInput(`recipient ${i + 1}: only signers sign for a company`);
     return r;
   });
   if (!list.some((r) => r.role === 'signer')) throw new InvalidInput('add at least one signer');
@@ -102,6 +112,19 @@ export async function createEnvelope(pool: Pool, principal: Principal, body: Rec
   if (!(days >= 1 && days <= 365)) throw new InvalidInput('expiresInDays must be 1 to 365');
   const reminder = body.reminderDays === undefined ? 3 : Math.trunc(Number(body.reminderDays));
   if (!(reminder >= 0 && reminder <= 30)) throw new InvalidInput('reminderDays must be 0 to 30');
+  if (recipients.some((r) => r.verifyBy !== 'email') && !smsConfigured()) throw new InvalidInput('text messages are not set up on this server; use email codes or ask whoever runs Patform to add an SMS provider');
+  // Companies signing through several authorised people: "any 2 of these 3".
+  const parties = (Array.isArray(body.parties) ? body.parties : []).map((x, i) => {
+    const o = (x ?? {}) as Record<string, unknown>;
+    const name = text(o.name, 200);
+    const members = recipients.filter((r) => r.party === name);
+    const required = Math.trunc(Number(o.required ?? 1));
+    if (!name) throw new InvalidInput(`company ${i + 1} needs a name`);
+    if (!members.length) throw new InvalidInput(`no signers are listed for ${name}`);
+    if (!(required >= 1 && required <= members.length)) throw new InvalidInput(`${name}: between 1 and ${members.length} signatures can be required`);
+    return { name, required, order: Math.max(1, Math.trunc(Number(o.order ?? members[0]!.order)) || 1), authorityNote: text(o.authorityNote, 500) || null };
+  });
+  for (const r of recipients) if (r.party && !parties.some((pp) => pp.name === r.party)) throw new InvalidInput(`say how many signatures ${r.party} needs`);
   let fileId: string; let contractId: string | null = null; let version: number | null = null; let title = text(body.title, 200);
   if (body.contractId) {
     contractId = text(body.contractId, 36);
@@ -136,15 +159,23 @@ export async function createEnvelope(pool: Pool, principal: Principal, body: Rec
        values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, now() + make_interval(days => $12), $13) returning id`,
       [w.tenantId, number, title, text(body.message, 2000) || null, contractId, version, fileId, docSha, pages, routing, reminder, days, w.actorId]);
     const envelopeId = rows[0]!.id;
+    const partyIds = new Map<string, { id: string; order: number }>();
+    for (const pp of parties) {
+      const { rows: made } = await client.query<{ id: string }>(`insert into sign_party (envelope_id, name, required_count, routing_order, authority_note) values ($1, $2, $3, $4, $5) returning id`,
+        [envelopeId, pp.name, pp.required, routing === 'parallel' ? 1 : pp.order, pp.authorityNote]);
+      partyIds.set(pp.name, { id: made[0]!.id, order: pp.order });
+    }
     const ids: string[] = [];
     for (const r of recipients) {
       const { rows: a } = await client.query<{ id: string }>('select id from actor where tenant_id = $1 and lower(email) = $2 and active', [w.tenantId, r.email]);
-      const { rows: made } = await client.query<{ id: string }>(`insert into sign_recipient (envelope_id, name, email, role, routing_order, actor_id) values ($1, $2, $3, $4, $5, $6) returning id`,
-        [envelopeId, r.name, r.email, r.role, routing === 'parallel' ? 1 : r.order, a[0]?.id ?? null]);
+      const party = r.party ? partyIds.get(r.party)! : null;
+      const { rows: made } = await client.query<{ id: string }>(
+        `insert into sign_recipient (envelope_id, name, email, role, routing_order, actor_id, title, phone, verify_by, party_id) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) returning id`,
+        [envelopeId, r.name, r.email, r.role, routing === 'parallel' ? 1 : party ? party.order : r.order, a[0]?.id ?? null, r.title, r.phone, r.verifyBy, party?.id ?? null]);
       ids.push(made[0]!.id);
     }
-    await event(client, envelopeId, null, 'created', { by: w.actorId, sha256: docSha, pages });
-    return { id: envelopeId, number, pages, recipients: ids };
+    await event(client, envelopeId, null, 'created', { by: w.actorId, sha256: docSha, pages, companies: parties.map((pp) => `${pp.name} (${pp.required} required)`) });
+    return { id: envelopeId, number, pages, recipients: ids, parties: [...partyIds.entries()].map(([name, v]) => ({ name, id: v.id })) };
   });
 }
 
@@ -154,31 +185,42 @@ export async function setFields(pool: Pool, principal: Principal, envelopeId: st
     const { e } = await envelopeFor(client, principal, envelopeId, true);
     if (e.status !== 'draft') throw new InvalidInput('fields can only change before the envelope is sent');
     const { rows: rec } = await client.query<{ id: string; role: string }>('select id, role from sign_recipient where envelope_id = $1', [envelopeId]);
+    const { rows: prt } = await client.query<{ id: string; required_count: number }>('select id, required_count from sign_party where envelope_id = $1', [envelopeId]);
     const fields = (Array.isArray(body.fields) ? body.fields : []).map((x, i) => {
       const o = (x ?? {}) as Record<string, unknown>;
       const kind = text(o.kind, 20);
-      if (!['signature', 'initials', 'date', 'name', 'text'].includes(kind)) throw new InvalidInput(`field ${i + 1}: kind must be signature, initials, date, name or text`);
-      const r = rec.find((y) => y.id === o.recipientId);
-      if (!r || r.role !== 'signer') throw new InvalidInput(`field ${i + 1} must belong to a signer`);
+      if (!['signature', 'initials', 'date', 'name', 'text', 'title'].includes(kind)) throw new InvalidInput(`field ${i + 1}: kind must be signature, initials, date, name, title or text`);
+      let r: { id: string } | null = null; let partyId: string | null = null; let slot: number | null = null;
+      if (o.partyId) {
+        const pp = prt.find((y) => y.id === o.partyId);
+        slot = Math.trunc(Number(o.slot));
+        if (!pp || !(slot >= 1 && slot <= pp.required_count)) throw new InvalidInput(`field ${i + 1}: a company box is for signatory 1 to the number required`);
+        partyId = pp.id;
+      } else {
+        const found = rec.find((y) => y.id === o.recipientId);
+        if (!found || found.role !== 'signer') throw new InvalidInput(`field ${i + 1} must belong to a signer`);
+        r = found;
+      }
       const n = (k: string) => Number(o[k]);
       const page = Math.trunc(n('page'));
       if (!(page >= 1 && page <= e.page_count)) throw new InvalidInput(`field ${i + 1}: the document has ${e.page_count} page(s)`);
       const [x0, y0, wd, ht] = [n('x'), n('y'), n('width'), n('height')];
       if (![x0, y0, wd, ht].every(Number.isFinite) || x0 < 0 || y0 < 0 || wd <= 0 || ht <= 0 || x0 + wd > 1.0001 || y0 + ht > 1.0001) throw new InvalidInput(`field ${i + 1} is off the page`);
-      return { recipientId: r.id, kind, page, x: x0, y: y0, width: wd, height: ht, required: o.required !== false, label: text(o.label, 120) || null };
+      return { recipientId: r?.id ?? null, partyId, slot, kind, page, x: x0, y: y0, width: wd, height: ht, required: o.required !== false, label: text(o.label, 120) || null };
     });
     if (fields.length > 400) throw new InvalidInput('at most 400 fields');
     await client.query('delete from sign_field where envelope_id = $1', [envelopeId]);
-    for (const fl of fields) await client.query(`insert into sign_field (envelope_id, recipient_id, kind, page, x, y, width, height, required, label) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-      [envelopeId, fl.recipientId, fl.kind, fl.page, fl.x, fl.y, fl.width, fl.height, fl.required, fl.label]);
+    for (const fl of fields) await client.query(`insert into sign_field (envelope_id, recipient_id, party_id, slot, kind, page, x, y, width, height, required, label) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+      [envelopeId, fl.recipientId, fl.partyId, fl.slot, fl.kind, fl.page, fl.x, fl.y, fl.width, fl.height, fl.required, fl.label]);
     return { fields: fields.length };
   });
 }
 
 /** Emails the next signers their personal links (in order, or all at once). */
 async function notifyNext(client: Client | Pool, e: EnvelopeRow, from: string) {
-  const { rows: pending } = await client.query<{ id: string; name: string; email: string; routing_order: number; role: string; status: string }>(
-    `select id, name, email, routing_order, role, status from sign_recipient where envelope_id = $1 and role = 'signer' and status in ('waiting', 'sent', 'viewed') order by routing_order`, [e.id]);
+  const { rows: pending } = await client.query<{ id: string; name: string; email: string; routing_order: number; role: string; status: string; party: string | null; title: string | null; verify_by: VerifyBy }>(
+    `select r.id, r.name, r.email, r.routing_order, r.role, r.status, p.name as party, r.title, r.verify_by from sign_recipient r left join sign_party p on p.id = r.party_id
+      where r.envelope_id = $1 and r.role = 'signer' and r.status in ('waiting', 'sent', 'viewed') order by r.routing_order`, [e.id]);
   if (!pending.length) return 0;
   const next = e.routing === 'parallel' ? pending : pending.filter((p) => p.routing_order === pending[0]!.routing_order);
   let sent = 0;
@@ -187,7 +229,7 @@ async function notifyNext(client: Client | Pool, e: EnvelopeRow, from: string) {
     await client.query(`update sign_recipient set status = 'sent', token_hash = $2, token_sealed = $3, notified_at = now() where id = $1`, [r.id, hash(t), seal(t, `sign_recipient:${r.id}`)]);
     await mailer(client, { kind: 'signature_request', to: r.email, tenantId: e.tenant_id, idempotencyKey: `sign-request:${r.id}`,
       subject: `Please sign: ${e.title}`,
-      text: `Hello ${r.name},\n\n${from} has asked you to sign "${e.title}".${e.message ? `\n\n${e.message}` : ''}\n\nReview and sign here: ${appUrl()}/sign/${t}\n\nThis link is personal to you; do not forward it. We will email you a code to confirm it is you. It expires on ${e.expires_at.toISOString().slice(0, 10)}.\n\nSent with Patform Sign.` });
+      text: `Hello ${r.name},\n\n${from} has asked you to sign "${e.title}"${r.party ? ` on behalf of ${r.party}${r.title ? ` as ${r.title}` : ''}` : ''}.${e.message ? `\n\n${e.message}` : ''}\n\nReview and sign here: ${appUrl()}/sign/${t}\n\nThis link is personal to you; do not forward it. We will ${r.verify_by === 'email' ? 'email you a code' : r.verify_by === 'sms' ? 'text a code to your phone' : 'email you a code and text another to your phone'} to confirm it is you. It expires on ${e.expires_at.toISOString().slice(0, 10)}.\n\nSent with Patform Sign.` });
     await event(client, e.id, r.id, 'sent', { to: r.email });
     sent++;
   }
@@ -258,10 +300,13 @@ export async function listEnvelopes(pool: Pool, principal: Principal) {
 export async function envelopeDetail(pool: Pool, principal: Principal, envelopeId: string) {
   const { e } = await envelopeFor(pool, principal, envelopeId);
   const { rows: recipients } = await pool.query(
-    `select id, name, email, role, routing_order, status, notified_at, viewed_at, verified_at, consented_at, signed_at, declined_at, decline_reason, last_reminded_at from sign_recipient where envelope_id = $1 order by role, routing_order, created_at`, [envelopeId]);
-  const { rows: fields } = await pool.query(`select id, recipient_id, kind, page, x::float, y::float, width::float, height::float, required, label, (value is not null) as filled from sign_field where envelope_id = $1 order by page, y`, [envelopeId]);
+    `select r.id, r.name, r.email, r.role, r.routing_order, r.status, r.notified_at, r.viewed_at, r.verified_at, r.consented_at, r.signed_at, r.declined_at, r.decline_reason, r.last_reminded_at, r.title, r.verify_by, r.party_id, p.name as party
+       from sign_recipient r left join sign_party p on p.id = r.party_id where r.envelope_id = $1 order by r.role, r.routing_order, r.created_at`, [envelopeId]);
+  const { rows: fields } = await pool.query(`select id, recipient_id, party_id, slot, kind, page, x::float, y::float, width::float, height::float, required, label, (value is not null) as filled from sign_field where envelope_id = $1 order by page, y`, [envelopeId]);
   const { rows: events } = await pool.query(`select v.kind, v.detail, v.ip, v.occurred_at, r.name as recipient from sign_event v left join sign_recipient r on r.id = v.recipient_id where v.envelope_id = $1 order by v.id`, [envelopeId]);
-  return { envelope: e, recipients, fields, events };
+  const { rows: parties } = await pool.query(
+    `select p.id, p.name, p.required_count, p.authority_note, p.completed_at, (select count(*)::int from sign_recipient r where r.party_id = p.id and r.status = 'signed') as signed from sign_party p where p.envelope_id = $1 order by p.routing_order`, [envelopeId]);
+  return { envelope: e, recipients, fields, events, parties };
 }
 
 /** The document's bytes for the sender's field placement and preview, or the sealed copy once complete. */
@@ -315,7 +360,7 @@ interface RecipientRow { id: string; envelope_id: string; name: string; email: s
 async function byToken(client: Client | Pool, t: string, lock = false) {
   if (!/^[A-Za-z0-9_-]{30,60}$/.test(t)) throw new InvalidInput('this link is not valid');
   const { rows } = await client.query<RecipientRow & { e_status: string; tenant_id: string; expires_at: Date; title: string; message: string | null; workspace: string; sender: string | null; completed_at: Date | null; page_count: number }>(
-    `select r.*, e.status as e_status, e.tenant_id, e.expires_at, e.title, e.message, e.completed_at, e.page_count, t.name as workspace, a.display_name as sender
+    `select r.*, r.title as signer_title, e.status as e_status, e.tenant_id, e.expires_at, e.title, e.message, e.completed_at, e.page_count, t.name as workspace, a.display_name as sender
        from sign_recipient r join sign_envelope e on e.id = r.envelope_id join tenant t on t.id = e.tenant_id left join actor a on a.id = e.created_by
       where r.token_hash = $1 ${lock ? 'for update of r' : ''}`, [hash(t)]);
   if (!rows[0]) throw new InvalidInput('this link is not valid');
@@ -326,19 +371,34 @@ function sessionOk(r: { session_hash: string | null; session_expires_at: Date | 
   const a = Buffer.from(hash(session)); const b = Buffer.from(r.session_hash);
   return a.length === b.length && timingSafeEqual(a, b);
 }
+interface SignerExtra { party_id: string | null; signer_title: string | null; phone: string | null; verify_by: VerifyBy; sms_otp_hash: string | null; authority_confirmed_at: Date | null }
+async function partyOf(client: Client | Pool, partyId: string | null) {
+  if (!partyId) return null;
+  const { rows } = await client.query<{ id: string; name: string; required_count: number; signed: number; authority_note: string | null }>(
+    `select p.id, p.name, p.required_count, p.authority_note, (select count(*)::int from sign_recipient r where r.party_id = p.id and r.status = 'signed') as signed from sign_party p where p.id = $1`, [partyId]);
+  return rows[0] ?? null;
+}
 const mask = (email: string) => email.replace(/^(.)(.*)(@.*)$/, (_, a: string, b: string, c: string) => `${a}${'•'.repeat(Math.min(6, b.length))}${c}`);
 
 /** What the signing page shows. Nothing about the document until the code is verified. */
 export async function signerView(pool: Pool, t: string, session?: string) {
   const r = await byToken(pool, t);
-  const base = { title: r.title, workspace: r.workspace, sender: r.sender, name: r.name, email: mask(r.email), expiresAt: r.expires_at };
+  const x = r as typeof r & SignerExtra;
+  const party = await partyOf(pool, x.party_id);
+  const base = { title: r.title, workspace: r.workspace, sender: r.sender, name: r.name, email: mask(r.email), expiresAt: r.expires_at, verifyBy: x.verify_by, phone: x.phone ? maskPhone(x.phone) : null,
+    party: party ? { name: party.name, required: party.required_count, signed: party.signed } : null, signerTitle: x.signer_title };
+  if (r.status === 'not_needed') return { ...base, stage: 'closed' as const, status: `no longer needed: enough people have signed for ${party?.name ?? 'the company'}` };
   if (r.e_status === 'completed') return { ...base, stage: 'completed' as const, completedAt: r.completed_at };
   if (r.e_status !== 'sent' || r.expires_at < new Date()) return { ...base, stage: 'closed' as const, status: r.e_status === 'sent' ? 'expired' : r.e_status };
   if (r.status === 'signed') return { ...base, stage: 'signed' as const };
   if (r.status === 'declined') return { ...base, stage: 'closed' as const, status: 'declined' };
   if (!sessionOk(r, session)) return { ...base, stage: 'verify' as const };
-  const { rows: fields } = await pool.query(`select id, kind, page, x::float, y::float, width::float, height::float, required, label from sign_field where recipient_id = $1 order by page, y, x`, [r.id]);
-  return { ...base, stage: 'sign' as const, message: r.message, pages: r.page_count, consented: Boolean(r.consented_at), consentText: CONSENT_TEXT, fields };
+  // Own boxes, and the company's boxes for the next signatory slot (the slot is fixed when signing).
+  const { rows: fields } = await pool.query(
+    `select id, kind, page, x::float, y::float, width::float, height::float, required, label, slot from sign_field
+      where recipient_id = $1 or (party_id = $2 and slot = $3) order by page, y, x`, [r.id, x.party_id, (party?.signed ?? 0) + 1]);
+  return { ...base, stage: 'sign' as const, message: r.message, pages: r.page_count, consented: Boolean(r.consented_at), consentText: CONSENT_TEXT,
+    authorityText: party ? authorityText(party.name) : null, authorityNote: party?.authority_note ?? null, fields };
 }
 
 export async function requestCode(pool: Pool, t: string, ctx: Ctx = {}) {
@@ -348,34 +408,44 @@ export async function requestCode(pool: Pool, t: string, ctx: Ctx = {}) {
     const windowStart = r.otp_window_start && r.otp_window_start > new Date(Date.now() - 3600_000) ? r.otp_window_start : new Date();
     const count = windowStart === r.otp_window_start ? r.otp_sent_count : 0;
     if (count >= 5) throw new InvalidInput('too many codes sent; try again in an hour');
+    const x = r as typeof r & SignerExtra;
+    const byEmail = x.verify_by !== 'sms'; const bySms = x.verify_by !== 'email';
     const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
-    await client.query(`update sign_recipient set otp_hash = $2, otp_expires_at = now() + make_interval(mins => $3), otp_attempts = 0, otp_sent_count = $4, otp_window_start = $5 where id = $1`,
-      [r.id, hash(`${r.id}:${code}`), CODE_MINUTES, count + 1, windowStart]);
-    await mailer(client, { kind: 'signature_code', to: r.email, tenantId: r.tenant_id, idempotencyKey: `sign-code:${r.id}:${Date.now()}`, subject: `Your Patform Sign code`,
+    const smsCode = bySms ? String(randomInt(0, 1_000_000)).padStart(6, '0') : null;
+    await client.query(`update sign_recipient set otp_hash = $2, sms_otp_hash = $6, otp_expires_at = now() + make_interval(mins => $3), otp_attempts = 0, otp_sent_count = $4, otp_window_start = $5 where id = $1`,
+      [r.id, byEmail ? hash(`${r.id}:${code}`) : null, CODE_MINUTES, count + 1, windowStart, smsCode ? hash(`${r.id}:sms:${smsCode}`) : null]);
+    if (byEmail) await mailer(client, { kind: 'signature_code', to: r.email, tenantId: r.tenant_id, idempotencyKey: `sign-code:${r.id}:${Date.now()}`, subject: `Your Patform Sign code`,
       text: `Your code to open "${r.title}" is ${code}.\n\nIt expires in ${CODE_MINUTES} minutes. If you did not ask for it, ignore this email.` });
-    await event(client, r.envelope_id, r.id, 'code_sent', {}, ctx);
-    return { sentTo: mask(r.email) };
+    if (smsCode) {
+      try { await sendSms(x.phone!, `${smsCode} is your Patform Sign code for "${r.title.slice(0, 40)}". It expires in ${CODE_MINUTES} minutes.`); }
+      catch (err) { throw new InvalidInput(`the text message could not be sent: ${err instanceof Error ? err.message : String(err)}`); }
+    }
+    await event(client, r.envelope_id, r.id, 'code_sent', { channels: [byEmail && 'email', bySms && 'sms'].filter(Boolean) }, ctx);
+    return { sentTo: [byEmail ? mask(r.email) : null, bySms ? maskPhone(x.phone!) : null].filter(Boolean).join(' and ') };
   });
 }
 
-export async function verifyCode(pool: Pool, t: string, code: unknown, ctx: Ctx = {}) {
+export async function verifyCode(pool: Pool, t: string, code: unknown, ctx: Ctx = {}, smsCode?: unknown) {
   // A wrong code is counted and committed before it is refused; refusing inside
   // the transaction would undo the count, and the lock would never close.
   const out = await inTransaction(pool, async (client): Promise<{ session: string } | { wrong: true }> => {
     const r = await byToken(client, t, true);
     if (r.e_status !== 'sent' || !['sent', 'viewed'].includes(r.status)) throw new InvalidInput('this document is not waiting for your signature');
-    if (!r.otp_hash || !r.otp_expires_at || r.otp_expires_at < new Date()) throw new InvalidInput('the code has expired; ask for a new one');
+    const x = r as typeof r & SignerExtra;
+    const byEmail = x.verify_by !== 'sms'; const bySms = x.verify_by !== 'email';
+    if ((byEmail && !r.otp_hash) || (bySms && !x.sms_otp_hash) || !r.otp_expires_at || r.otp_expires_at < new Date()) throw new InvalidInput('the code has expired; ask for a new one');
     if (r.otp_attempts >= 5) throw new InvalidInput('too many wrong codes; ask for a new one');
-    const given = hash(`${r.id}:${text(code, 10)}`);
-    if (given !== r.otp_hash) {
+    const emailOk = !byEmail || hash(`${r.id}:${text(code, 10)}`) === r.otp_hash;
+    const smsOk = !bySms || hash(`${r.id}:sms:${text(bySms && !byEmail ? code : smsCode, 10)}`) === x.sms_otp_hash;
+    if (!emailOk || !smsOk) {
       await client.query('update sign_recipient set otp_attempts = otp_attempts + 1 where id = $1', [r.id]);
       await event(client, r.envelope_id, r.id, 'code_wrong', {}, ctx);
       return { wrong: true };
     }
     const session = token();
-    await client.query(`update sign_recipient set otp_hash = null, session_hash = $2, session_expires_at = now() + make_interval(hours => $3), verified_at = coalesce(verified_at, now()),
+    await client.query(`update sign_recipient set otp_hash = null, sms_otp_hash = null, session_hash = $2, session_expires_at = now() + make_interval(hours => $3), verified_at = coalesce(verified_at, now()),
                           viewed_at = coalesce(viewed_at, now()), status = 'viewed', ip = $4, user_agent = $5 where id = $1`, [r.id, hash(session), SESSION_HOURS, ctx.ip ?? null, ctx.userAgent?.slice(0, 300) ?? null]);
-    await event(client, r.envelope_id, r.id, 'verified', { method: 'email code' }, ctx);
+    await event(client, r.envelope_id, r.id, 'verified', { method: x.verify_by === 'email' ? 'email code' : x.verify_by === 'sms' ? 'text-message code' : 'email code and text-message code' }, ctx);
     return { session };
   });
   if ('wrong' in out) throw new InvalidInput('that code is not right');
@@ -402,15 +472,27 @@ export async function signDocument(pool: Pool, t: string, session: string | unde
   const sealed = await inTransaction(pool, async (client) => {
     const r = await byToken(client, t, true);
     if (!sessionOk(r, session)) throw new InvalidInput('confirm it is you first');
+    // One signature at a time per envelope, so company signatory slots are handed out in order.
+    await client.query('select 1 from sign_envelope where id = $1 for update', [r.envelope_id]);
     if (r.e_status !== 'sent' || r.expires_at < new Date()) throw new InvalidInput('this document is no longer waiting for signatures');
-    if (!['sent', 'viewed'].includes(r.status)) throw new InvalidInput('you have already responded');
+    const { rows: still } = await client.query<{ status: string }>('select status from sign_recipient where id = $1', [r.id]);
+    if (!['sent', 'viewed'].includes(still[0]!.status)) throw new InvalidInput(still[0]!.status === 'not_needed' ? 'enough people have already signed for the company; your signature is no longer needed' : 'you have already responded');
     if (!r.consented_at) throw new InvalidInput('agree to sign electronically first');
+    const x = r as typeof r & SignerExtra;
+    const party = await partyOf(client, x.party_id);
+    let slot: number | null = null;
+    if (party) {
+      if (body.authority !== true) throw new InvalidInput(`confirm you are authorised to sign on behalf of ${party.name}`);
+      slot = party.signed + 1;
+      if (slot > party.required_count) throw new InvalidInput('enough people have already signed for the company; your signature is no longer needed');
+    }
     const signature = body.signature as SignatureValue;
     const problem = signatureProblem(signature);
     if (problem) throw new InvalidInput(problem);
     const initials = body.initials as SignatureValue | undefined;
     const values = (body.values && typeof body.values === 'object' ? body.values : {}) as Record<string, unknown>;
-    const { rows: fields } = await client.query<{ id: string; kind: string; required: boolean; label: string | null }>('select id, kind, required, label from sign_field where recipient_id = $1', [r.id]);
+    const { rows: fields } = await client.query<{ id: string; kind: string; required: boolean; label: string | null }>(
+      'select id, kind, required, label from sign_field where recipient_id = $1 or (party_id = $2 and slot = $3)', [r.id, x.party_id, slot]);
     if (fields.some((f) => f.kind === 'initials') && signatureProblem(initials)) throw new InvalidInput('add your initials');
     const today = new Date().toISOString().slice(0, 10);
     for (const f of fields) {
@@ -419,14 +501,29 @@ export async function signDocument(pool: Pool, t: string, session: string | unde
       else if (f.kind === 'initials') value = 'initials';
       else if (f.kind === 'date') value = today;
       else if (f.kind === 'name') value = signature.name.trim();
+      else if (f.kind === 'title') value = x.signer_title ?? (text(values[f.id], 120) || null);
       else { value = text(values[f.id], 500) || null; if (!value && f.required) throw new InvalidInput(`fill in "${f.label ?? 'the text field'}"`); }
-      await client.query('update sign_field set value = $2, filled_at = now() where id = $1', [f.id, value]);
+      await client.query('update sign_field set value = $2, filled_at = now(), filled_by = $3 where id = $1', [f.id, value, r.id]);
     }
-    await client.query(`update sign_recipient set status = 'signed', signed_at = now(), signature = $2, initials = $3, ip = $4, user_agent = $5, session_hash = null where id = $1`,
-      [r.id, JSON.stringify(signature), initials ? JSON.stringify(initials) : null, ctx.ip ?? null, ctx.userAgent?.slice(0, 300) ?? null]);
-    await event(client, r.envelope_id, r.id, 'signed', { method: signature.method, name: signature.name.trim(), fields: fields.length }, ctx);
-    const { rows: e } = await client.query<EnvelopeRow>('select * from sign_envelope where id = $1 for update', [r.envelope_id]);
-    const { rows: left } = await client.query<{ n: number }>(`select count(*)::int as n from sign_recipient where envelope_id = $1 and role = 'signer' and status <> 'signed'`, [r.envelope_id]);
+    await client.query(`update sign_recipient set status = 'signed', signed_at = now(), signature = $2, initials = $3, ip = $4, user_agent = $5, session_hash = null, party_slot = $6,
+                          authority_confirmed_at = $7, authority_statement = $8 where id = $1`,
+      [r.id, JSON.stringify(signature), initials ? JSON.stringify(initials) : null, ctx.ip ?? null, ctx.userAgent?.slice(0, 300) ?? null, slot, party ? new Date() : null, party ? authorityText(party.name) : null]);
+    await event(client, r.envelope_id, r.id, 'signed', { method: signature.method, name: signature.name.trim(), fields: fields.length, ...(party ? { for: party.name, slot } : {}) }, ctx);
+    const { rows: e } = await client.query<EnvelopeRow>('select * from sign_envelope where id = $1', [r.envelope_id]);
+    if (party && slot === party.required_count) {
+      // The company has enough: the others are told they are no longer needed.
+      await client.query('update sign_party set completed_at = now() where id = $1', [party.id]);
+      const { rows: others } = await client.query<{ id: string; name: string; email: string; status: string }>(
+        `update sign_recipient set status = 'not_needed', session_hash = null where party_id = $1 and status in ('waiting', 'sent', 'viewed') returning id, name, email, status`, [party.id]);
+      for (const o of others) {
+        await event(client, r.envelope_id, o.id, 'not_needed', { for: party.name });
+        await mailer(client, { kind: 'signature_not_needed', to: o.email, tenantId: r.tenant_id, idempotencyKey: `sign-not-needed:${o.id}`, subject: `No longer needed: ${r.title}`,
+          text: `Hello ${o.name},\n\nEnough authorised people have now signed "${r.title}" on behalf of ${party.name}, so your signature is no longer needed. Nothing more is required from you.` });
+      }
+    }
+    const { rows: left } = await client.query<{ n: number }>(
+      `select (select count(*)::int from sign_recipient where envelope_id = $1 and role = 'signer' and party_id is null and status <> 'signed')
+            + (select count(*)::int from sign_party p where p.envelope_id = $1 and (select count(*) from sign_recipient r where r.party_id = p.id and r.status = 'signed') < p.required_count) as n`, [r.envelope_id]);
     if (left[0]!.n > 0) { await notifyNext(client, e[0]!, r.sender ? `${r.sender} (${r.workspace})` : r.workspace); return null; }
     return e[0]!;
   });
@@ -456,18 +553,22 @@ export async function declineDocument(pool: Pool, t: string, session: string | u
 export async function completeEnvelope(pool: Pool, e: EnvelopeRow) {
   const original = await documentBytes(pool, e.document_file_id);
   if (hash(original) !== e.original_sha256) throw new Error('the original document changed after the envelope was made');
-  const { rows: recipients } = await pool.query<{ id: string; name: string; email: string; role: string; routing_order: number; signature: SignatureValue | null; initials: SignatureValue | null; verified_at: Date | null; consented_at: Date | null; viewed_at: Date | null; signed_at: Date | null; ip: string | null; user_agent: string | null; notified_at: Date | null }>(
-    `select id, name, email, role, routing_order, signature, initials, verified_at, consented_at, viewed_at, signed_at, ip, user_agent, notified_at from sign_recipient where envelope_id = $1 order by role desc, routing_order, created_at`, [e.id]);
-  const { rows: fields } = await pool.query<{ recipient_id: string; kind: string; page: number; x: number; y: number; width: number; height: number; value: string | null }>(
-    `select recipient_id, kind, page, x::float, y::float, width::float, height::float, value from sign_field where envelope_id = $1`, [e.id]);
+  const { rows: recipients } = await pool.query<{ id: string; name: string; email: string; role: string; routing_order: number; signature: SignatureValue | null; initials: SignatureValue | null; verified_at: Date | null; consented_at: Date | null; viewed_at: Date | null; signed_at: Date | null; ip: string | null; user_agent: string | null; notified_at: Date | null;
+    status: string; title: string | null; phone: string | null; verify_by: string; party_id: string | null; party_slot: number | null; authority_confirmed_at: Date | null; authority_statement: string | null }>(
+    `select id, name, email, role, routing_order, signature, initials, verified_at, consented_at, viewed_at, signed_at, ip, user_agent, notified_at, status, title, phone, verify_by, party_id, party_slot, authority_confirmed_at, authority_statement
+       from sign_recipient where envelope_id = $1 order by role desc, routing_order, party_slot nulls first, created_at`, [e.id]);
+  const { rows: fields } = await pool.query<{ recipient_id: string | null; filled_by: string | null; kind: string; page: number; x: number; y: number; width: number; height: number; value: string | null }>(
+    `select recipient_id, filled_by, kind, page, x::float, y::float, width::float, height::float, value from sign_field where envelope_id = $1`, [e.id]);
+  const { rows: parties } = await pool.query<{ id: string; name: string; required_count: number; authority_note: string | null }>('select id, name, required_count, authority_note from sign_party where envelope_id = $1 order by routing_order, created_at', [e.id]);
   const { rows: events } = await pool.query<{ kind: string; occurred_at: Date; ip: string | null; name: string | null }>(
     `select v.kind, v.occurred_at, v.ip, r.name from sign_event v left join sign_recipient r on r.id = v.recipient_id where v.envelope_id = $1 order by v.id`, [e.id]);
   const { rows: t } = await pool.query<{ name: string }>('select name from tenant where id = $1', [e.tenant_id]);
   const completedAt = new Date();
   const finalBytes = await sealPdf(original, {
     envelope: { id: e.id, number: e.number, title: e.title, workspace: t[0]!.name, originalSha256: e.original_sha256, routing: e.routing, completedAt },
-    recipients, fields, events,
+    recipients: recipients.map((r) => ({ ...r, phone: r.phone ? maskPhone(r.phone) : null })), fields, events, parties,
   });
+  const sealInfo = sealConfig()?.info ?? null;
   const finalSha = hash(finalBytes);
   const fileId = randomUUID();
   const key = `gov/files/${e.tenant_id}/${fileId}`;
@@ -475,13 +576,13 @@ export async function completeEnvelope(pool: Pool, e: EnvelopeRow) {
   await inTransaction(pool, async (client) => {
     await client.query(`insert into gov_file (id, tenant_id, purpose, contract_id, filename, content_type, byte_size, sha256, storage_key, scan_status) values ($1, $2, 'signed', $3, $4, 'application/pdf', $5, $6, $7, 'clean')`,
       [fileId, e.tenant_id, e.contract_id, `${e.title.replace(/[^a-zA-Z0-9 ._-]/g, '').slice(0, 60) || 'document'} - signed.pdf`, finalBytes.length, finalSha, key]);
-    await client.query(`update sign_envelope set status = 'completed', completed_at = $2, final_file_id = $3, final_sha256 = $4 where id = $1`, [e.id, completedAt, fileId, finalSha]);
+    await client.query(`update sign_envelope set status = 'completed', completed_at = $2, final_file_id = $3, final_sha256 = $4, seal = $5 where id = $1`, [e.id, completedAt, fileId, finalSha, sealInfo ? JSON.stringify(sealInfo) : null]);
     await event(client, e.id, null, 'completed', { sha256: finalSha });
     await closeContractEnvelope(client, e, 'completed', `gov-file:${fileId}`);
     // Everyone, copies included, gets a personal link to the signed copy for 30 days. Signers keep
     // the link they signed with; only those who never had one (copies) get a new one.
     const { rows: links } = await client.query<{ id: string; token_sealed: string | null }>('select id, token_sealed from sign_recipient where envelope_id = $1', [e.id]);
-    for (const r of recipients) {
+    for (const r of recipients.filter((x) => x.status !== 'not_needed')) {
       const sealedTk = links.find((l) => l.id === r.id)?.token_sealed;
       let tk: string;
       if (sealedTk) tk = unseal(sealedTk, `sign_recipient:${r.id}`).plaintext;
@@ -497,6 +598,7 @@ export async function completeEnvelope(pool: Pool, e: EnvelopeRow) {
 export async function finalDocument(pool: Pool, t: string): Promise<Buffer> {
   const r = await byToken(pool, t);
   if (r.e_status !== 'completed' || !r.completed_at) throw new InvalidInput('the document is not complete');
+  if (r.status === 'not_needed') throw new InvalidInput('your signature was not needed; ask the sender for a copy');
   if (Date.now() - r.completed_at.getTime() > FINAL_DAYS * 86400000) throw new InvalidInput('this download link has expired; ask the sender for a copy');
   const { rows } = await pool.query<{ final_file_id: string }>('select final_file_id from sign_envelope where id = $1', [r.envelope_id]);
   return documentBytes(pool, rows[0]!.final_file_id);
@@ -505,11 +607,14 @@ export async function finalDocument(pool: Pool, t: string): Promise<Buffer> {
 /** Public check: is this the sealed copy Patform produced? Says only what the signers already know. */
 export async function verifyFingerprint(pool: Pool, body: Record<string, unknown>) {
   let sha = text(body.sha256, 64).toLowerCase();
-  if (!sha && typeof body.base64 === 'string') sha = hash(Buffer.from(body.base64, 'base64'));
+  const file = typeof body.base64 === 'string' ? Buffer.from(body.base64, 'base64') : null;
+  if (!sha && file) sha = hash(file);
+  const seal = file ? checkSeal(file) : null;
   if (!/^[0-9a-f]{64}$/.test(sha)) throw new InvalidInput('give the file or its SHA-256');
   const { rows } = await pool.query<{ id: string; number: number; title: string; completed_at: Date; workspace: string }>(
     `select e.id, e.number, e.title, e.completed_at, t.name as workspace from sign_envelope e join tenant t on t.id = e.tenant_id where e.final_sha256 = $1 and e.status = 'completed'`, [sha]);
-  if (!rows[0]) return { valid: false, sha256: sha, note: 'No document signed with Patform Sign has this fingerprint. If it was signed here, it has been changed since.' };
-  const { rows: signers } = await pool.query<{ name: string; signed_at: Date }>(`select name, signed_at from sign_recipient where envelope_id = $1 and role = 'signer' order by signed_at`, [rows[0].id]);
-  return { valid: true, sha256: sha, title: rows[0].title, workspace: rows[0].workspace, envelope: `PS-${rows[0].number}`, completedAt: rows[0].completed_at, signers };
+  if (!rows[0]) return { valid: false, sha256: sha, seal, note: 'No document signed with Patform Sign has this fingerprint. If it was signed here, it has been changed since.' };
+  const { rows: signers } = await pool.query<{ name: string; signed_at: Date; title: string | null; party: string | null }>(
+    `select r.name, r.signed_at, r.title, p.name as party from sign_recipient r left join sign_party p on p.id = r.party_id where r.envelope_id = $1 and r.role = 'signer' and r.status = 'signed' order by r.signed_at`, [rows[0].id]);
+  return { valid: true, sha256: sha, seal, title: rows[0].title, workspace: rows[0].workspace, envelope: `PS-${rows[0].number}`, completedAt: rows[0].completed_at, signers };
 }
