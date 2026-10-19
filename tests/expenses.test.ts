@@ -9,7 +9,7 @@ import { runScenarios } from '../src/runtime/scenarios.js';
 import { setModule } from '../src/runtime/modules.js';
 import { setManager } from '../src/runtime/org.js';
 import {
-  disburseAdvance, expenseSummary, listAdvances, listSettlements, moveSettlement, recordAdvanceReturn, updateExpenseSettings,
+  disburseAdvance, expenseSummary, listAdvances, listSettlements, moveSettlement, recordAdvanceReturn, saveBeneficiary, updateExpenseSettings, verifyBeneficiary,
 } from '../src/runtime/expenses.js';
 import type { Principal } from '../src/runtime/policy.js';
 
@@ -58,7 +58,7 @@ async function workspace(pool: Pool, engine: Engine) {
     await engine.grant({ tenantId, actorId: managerId, processKey: key, roleKey: 'line_manager' });
     await engine.grant({ tenantId, actorId: financeId, processKey: key, roleKey: 'finance_approver' });
   }
-  return { tenantId, owner, finance, managerId, financeId, staffEmail, claim, advance };
+  return { tenantId, owner, finance, managerId, financeId, staffId, staffEmail, claim, advance };
 }
 
 const now = new Date('2026-10-19T09:00:00Z');
@@ -161,6 +161,11 @@ test('approval opens a settlement; payment needs a reference; a failed payment s
     assert.equal(summary.failed, 1);
     const { rows: state } = await pool.query<{ state: string }>('select state from instance where id = $1', [big.instanceId]);
     assert.equal(state[0]!.state, 'approved', 'a failed payment never un-approves the claim');
+    // Paying needs the claimant's bank details, checked by Finance (EXP-09).
+    await assert.rejects(moveSettlement(pool, w.finance, settlement.id, { to: 'paid', reference: 'BATCH-2026-10-19' }), /not given bank details/);
+    await saveBeneficiary(pool, { kind: 'actor', tenantId: w.tenantId, actorId: w.staffId }, { accountName: 'Sam Staff', bankName: 'GTBank', accountNumber: '0123456789' });
+    await assert.rejects(moveSettlement(pool, w.finance, settlement.id, { to: 'paid', reference: 'BATCH-2026-10-19' }), /check the bank details/);
+    await verifyBeneficiary(pool, w.finance, settlement.id);
     // Retry and pay.
     await moveSettlement(pool, w.finance, settlement.id, { to: 'paid', reference: 'BATCH-2026-10-19' });
     await assert.rejects(moveSettlement(pool, w.finance, settlement.id, { to: 'void', note: 'oops' }), /already paid/);

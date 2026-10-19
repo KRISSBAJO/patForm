@@ -50,6 +50,17 @@ export const Blueprint = z
         receiptField: Key.optional(),
         categoryField: Key.optional(),
         advanceReferenceField: Key.optional(),
+        /** EXP-04: the claim's currency (blank means the workspace currency). */
+        currencyField: Key.optional(),
+        /** System-set: the amount in the workspace currency, and the rate used. */
+        baseAmountField: Key.optional(),
+        fxRateField: Key.optional(),
+        /** EXP-05: the budget a claim draws on is found by this field. */
+        costCentreField: Key.optional(),
+        /** EXP-07 and EXP-10: the lines Finance can decide one by one, and export. */
+        linesField: Key.optional(),
+        lineAmountField: Key.optional(),
+        lineDescriptionField: Key.optional(),
         policy: z
           .object({
             autoApproveLimit: Key.optional(),

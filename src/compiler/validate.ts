@@ -207,8 +207,29 @@ export function validate(bp: Blueprint, requestedDescription?: string): Diagnost
     if (amount && !['number', 'currency', 'calculated'].includes(amount.type)) {
       d.error('TYPE010', at, `Finance amount "${amount.key}" is a ${amount.type}, not an amount.`);
     }
-    for (const key of [bp.finance.receiptField, bp.finance.categoryField, bp.finance.advanceReferenceField]) {
+    for (const key of [bp.finance.receiptField, bp.finance.categoryField, bp.finance.advanceReferenceField, bp.finance.currencyField, bp.finance.costCentreField]) {
       if (key) requireField(key, at, 'Finance field');
+    }
+    for (const key of [bp.finance.baseAmountField, bp.finance.fxRateField]) {
+      if (!key) continue;
+      const field = requireField(key, at, 'Finance system field');
+      if (field && (field.type !== 'number' || field.setBy !== 'system')) {
+        d.error('SEC013', at, `Finance field "${key}" must be a number set by the system.`, 'Otherwise a claimant could type their own exchange rate.');
+      }
+    }
+    if (bp.finance.currencyField && !(bp.finance.baseAmountField && bp.finance.fxRateField)) {
+      d.error('REF008', at, 'A claim with a currency field must also name baseAmountField and fxRateField, so the rate is kept on the record.');
+    }
+    if (bp.finance.linesField) {
+      const group = requireField(bp.finance.linesField, at, 'Finance lines');
+      if (group && group.type !== 'repeating_group') d.error('TYPE010', at, `Finance lines "${group.key}" must be a repeating group.`);
+      const child = (k?: string) => group?.fields?.find((f) => f.key === k);
+      if (group && (!bp.finance.lineAmountField || !child(bp.finance.lineAmountField))) {
+        d.error('REF008', at, 'Finance lines need lineAmountField, naming an amount inside the group.');
+      }
+      if (group && bp.finance.lineDescriptionField && !child(bp.finance.lineDescriptionField)) {
+        d.error('REF008', at, `Finance lineDescriptionField "${bp.finance.lineDescriptionField}" is not inside "${group.key}".`);
+      }
     }
     if (bp.finance.kind === 'advance' && bp.finance.advanceReferenceField) {
       d.error('REF008', at, 'An advance cannot retire another advance; remove advanceReferenceField.');

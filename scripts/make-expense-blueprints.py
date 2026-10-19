@@ -31,7 +31,12 @@ policy = [
     {'key': 'policy_auto_approve_limit', 'type': 'number', 'label': 'Auto-approve limit at submission', 'classification': 'internal', 'setBy': 'system'},
     {'key': 'policy_manager_limit', 'type': 'number', 'label': 'Manager limit at submission', 'classification': 'internal', 'setBy': 'system'},
     {'key': 'policy_line_limit', 'type': 'number', 'label': 'Single-item limit at submission', 'classification': 'internal', 'setBy': 'system'},
+    {'key': 'fx_rate', 'type': 'number', 'label': 'Exchange rate used', 'classification': 'internal', 'setBy': 'system'},
+    {'key': 'approval_amount_base', 'type': 'number', 'label': 'Total in the workspace currency', 'classification': 'confidential', 'setBy': 'system'},
 ]
+currency_field = {'key': 'claim_currency', 'type': 'short_text', 'label': 'Currency of the receipts (optional)', 'classification': 'internal',
+                  'constraints': {'maxLength': 3, 'message': 'Use a three-letter code, such as USD.'},
+                  'help': 'Leave blank if you paid in the usual currency. Otherwise give the code, such as USD or GBP; Finance converts it at the rate in force today.'}
 fields = [f for f in c['data']['fields'] if f['key'] != 'manager_email']
 for f in fields:
     if f['key'] == 'receipt_reference':
@@ -41,12 +46,14 @@ advance_field = {'key': 'advance_reference', 'type': 'short_text', 'label': 'Adv
                  'help': 'If this spending was paid from a cash advance, give its reference, for example ADV-1A2B3C4D. Finance takes it off what you still hold.'}
 idx = [f['key'] for f in fields].index('claim_note')
 fields.insert(idx, advance_field)
+fields.insert([f['key'] for f in fields].index('line_items'), currency_field)
 c['data']['fields'] = fields + policy
 for page in c['experience']['pages']:
     for sec in page['sections']:
         sec['fields'] = [k for k in sec['fields'] if k != 'manager_email']
         if 'widths' in sec: sec['widths'].pop('manager_email', None)
         if sec['key'] == 'evidence': sec['fields'] = ['receipt_reference', 'advance_reference', 'claim_note']
+        if sec['key'] == 'items': sec['fields'] = ['claim_currency', 'line_items']
 c['experience']['confirmation']['message'] = 'Your claim has been logged. Small claims are approved straight away; anything larger goes to your manager, and Finance pays it once approved.'
 for r in c['roles']:
     if r['key'] == 'claimant' and 'advance_reference' not in r.get('editableFields', []):
@@ -79,6 +86,8 @@ for t in c['tests']:
 c['finance'] = {
     'kind': 'claim', 'amountField': 'expense_total', 'receiptField': 'receipt_reference',
     'categoryField': 'category', 'advanceReferenceField': 'advance_reference',
+    'currencyField': 'claim_currency', 'baseAmountField': 'approval_amount_base', 'fxRateField': 'fx_rate',
+    'costCentreField': 'cost_centre', 'linesField': 'line_items', 'lineAmountField': 'line_amount', 'lineDescriptionField': 'line_description',
     'policy': {'autoApproveLimit': 'policy_auto_approve_limit', 'managerLimit': 'policy_manager_limit', 'lineLimit': 'policy_line_limit'},
 }
 json.dump(c, open(f'{root}/processes/staff-expense-claim.blueprint.json', 'w', encoding='utf-8'), indent=2, ensure_ascii=False)

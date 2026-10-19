@@ -5309,3 +5309,12 @@ a.cs__navItem {
 .pp2__history summary { cursor: pointer; color: var(--ink-soft); font-weight: 600; }
 .pp2__history ul { margin: 8px 0 0; padding-left: 18px; }
 @media (max-width: 720px) { .pp2__placement { grid-template-columns: 1fr; } }
+
+/* Expenses: line review table. */
+.ex__lines { margin: 12px 0; display: grid; gap: 10px; }
+.ex__table { width: 100%; border-collapse: collapse; font: 13px var(--ui); }
+.ex__table th { text-align: left; color: var(--muted); font-weight: 600; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+.ex__table td { padding: 6px 8px; border-bottom: 1px solid var(--line-soft); vertical-align: middle; }
+.ex__table .cs__input { width: 100%; min-width: 80px; }
+.ex__sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+@media (max-width: 720px) { .ex__table thead { display: none; } .ex__table tr { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 8px 0; } }

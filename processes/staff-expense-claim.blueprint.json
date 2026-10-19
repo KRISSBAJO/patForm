@@ -171,6 +171,17 @@
         }
       },
       {
+        "key": "claim_currency",
+        "type": "short_text",
+        "label": "Currency of the receipts (optional)",
+        "classification": "internal",
+        "constraints": {
+          "maxLength": 3,
+          "message": "Use a three-letter code, such as USD."
+        },
+        "help": "Leave blank if you paid in the usual currency. Otherwise give the code, such as USD or GBP; Finance converts it at the rate in force today."
+      },
+      {
         "key": "line_items",
         "type": "repeating_group",
         "label": "Items claimed",
@@ -256,6 +267,20 @@
         "label": "Single-item limit at submission",
         "classification": "internal",
         "setBy": "system"
+      },
+      {
+        "key": "fx_rate",
+        "type": "number",
+        "label": "Exchange rate used",
+        "classification": "internal",
+        "setBy": "system"
+      },
+      {
+        "key": "approval_amount_base",
+        "type": "number",
+        "label": "Total in the workspace currency",
+        "classification": "confidential",
+        "setBy": "system"
       }
     ],
     "submitterField": "employee_email"
@@ -309,6 +334,7 @@
           {
             "key": "items",
             "fields": [
+              "claim_currency",
               "line_items"
             ]
           },
@@ -1333,6 +1359,13 @@
     "receiptField": "receipt_reference",
     "categoryField": "category",
     "advanceReferenceField": "advance_reference",
+    "currencyField": "claim_currency",
+    "baseAmountField": "approval_amount_base",
+    "fxRateField": "fx_rate",
+    "costCentreField": "cost_centre",
+    "linesField": "line_items",
+    "lineAmountField": "line_amount",
+    "lineDescriptionField": "line_description",
     "policy": {
       "autoApproveLimit": "policy_auto_approve_limit",
       "managerLimit": "policy_manager_limit",

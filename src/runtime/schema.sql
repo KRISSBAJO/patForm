@@ -1544,3 +1544,138 @@ $$ language plpgsql;
 drop trigger if exists advance_movement_no_change on advance_movement;
 create trigger advance_movement_no_change before update or delete on advance_movement
   for each row execute function advance_movement_is_append_only();
+
+-- ------------------------------------------------- expenses, second stage
+--
+-- PRD Module 5: EXP-04 (currency), EXP-05 (budgets), EXP-07 (line-level
+-- decisions), EXP-09 (beneficiary), EXP-10 (accounting export).
+
+-- Settlement amounts are in the workspace currency. What was claimed, in
+-- what currency, at what rate, is kept beside it; approved can be less than
+-- requested once Finance has reviewed lines; advance_applied is what came
+-- off an advance.
+alter table expense_settlement add column if not exists requested_amount numeric(18, 2);
+alter table expense_settlement add column if not exists approved_amount numeric(18, 2);
+alter table expense_settlement add column if not exists advance_applied numeric(18, 2) not null default 0;
+alter table expense_settlement add column if not exists original_currency text;
+alter table expense_settlement add column if not exists original_amount numeric(18, 2);
+alter table expense_settlement add column if not exists fx_rate numeric(18, 8);
+alter table expense_settlement add column if not exists beneficiary_id uuid;
+alter table expense_settlement add column if not exists beneficiary_version int;
+alter table expense_settlement add column if not exists beneficiary_verified_version int;
+alter table expense_settlement add column if not exists beneficiary_verified_by uuid references actor(id);
+alter table expense_settlement add column if not exists beneficiary_verified_at timestamptz;
+alter table expense_settlement add column if not exists export_id uuid;
+alter table expense_settlement add column if not exists exported_at timestamptz;
+update expense_settlement set requested_amount = amount where requested_amount is null;
+update expense_settlement set approved_amount = amount + advance_applied where approved_amount is null;
+
+alter table expense_settings add column if not exists account_codes jsonb not null default '{}'::jsonb;
+alter table expense_settings add column if not exists default_account_code text;
+alter table expense_settings add column if not exists require_verified_beneficiary boolean not null default true;
+
+-- advance movements may now be reversed when Finance cuts a claim that had
+-- already been set against an advance
+alter table advance_movement drop constraint if exists advance_movement_kind_check;
+alter table advance_movement add constraint advance_movement_kind_check
+  check (kind in ('disbursed', 'spent', 'returned', 'voided', 'spent_reversed'));
+
+-- EXP-07: Finance's decision on each line. The submitted amounts stay on
+-- the record untouched; this holds the current decision and the history is
+-- in the record's events.
+create table if not exists expense_line_decision (
+  tenant_id     uuid not null references tenant(id),
+  instance_id   uuid not null references instance(id),
+  line_index    int not null check (line_index >= 0),
+  requested     numeric(18, 2) not null,
+  approved      numeric(18, 2) not null check (approved >= 0),
+  status        text not null check (status in ('approved', 'reduced', 'rejected')),
+  reason        text,
+  decided_by    uuid references actor(id),
+  decided_at    timestamptz not null default now(),
+  primary key (instance_id, line_index),
+  check (approved <= requested)
+);
+
+-- EXP-04: rates Finance keeps, from a foreign currency into the workspace
+-- currency. A claim takes the latest rate in force when it is submitted and
+-- keeps it.
+create table if not exists exchange_rate (
+  id             uuid primary key default gen_random_uuid(),
+  tenant_id      uuid not null references tenant(id),
+  from_currency  text not null check (from_currency ~ '^[A-Z]{3}$'),
+  to_currency    text not null check (to_currency ~ '^[A-Z]{3}$'),
+  rate           numeric(18, 8) not null check (rate > 0),
+  effective_from timestamptz not null default now(),
+  source         text not null,
+  entered_by     uuid references actor(id),
+  created_at     timestamptz not null default now(),
+  check (from_currency <> to_currency)
+);
+create index if not exists exchange_rate_lookup on exchange_rate (tenant_id, from_currency, to_currency, effective_from desc);
+
+-- EXP-05: a budget per cost centre per period, advisory or enforced.
+create table if not exists expense_budget (
+  id           uuid primary key default gen_random_uuid(),
+  tenant_id    uuid not null references tenant(id),
+  cost_centre  text not null,
+  period_start date not null,
+  period_end   date not null,
+  amount       numeric(18, 2) not null check (amount >= 0),
+  mode         text not null default 'advisory' check (mode in ('advisory', 'enforced')),
+  created_by   uuid references actor(id),
+  created_at   timestamptz not null default now(),
+  updated_at   timestamptz not null default now(),
+  check (period_end >= period_start)
+);
+create unique index if not exists expense_budget_period_uq on expense_budget (tenant_id, cost_centre, period_start);
+
+-- What each claim holds against a budget: reserved while it is in progress,
+-- consumed once approved (at the approved amount), released if it is not.
+create table if not exists budget_reservation (
+  id          uuid primary key default gen_random_uuid(),
+  tenant_id   uuid not null references tenant(id),
+  budget_id   uuid not null references expense_budget(id),
+  instance_id uuid not null references instance(id) unique,
+  amount      numeric(18, 2) not null check (amount >= 0),
+  status      text not null default 'reserved' check (status in ('reserved', 'consumed', 'released')),
+  over_budget boolean not null default false,
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now()
+);
+create index if not exists budget_reservation_by_budget on budget_reservation (budget_id, status);
+
+-- EXP-09: where a person is paid. The account number is sealed with the
+-- application key and bound to this row's id; only the last four digits
+-- are ever shown outside the reveal route. Each change bumps the version,
+-- which invalidates any payment checked against the old one.
+create table if not exists expense_beneficiary (
+  id              uuid primary key default gen_random_uuid(),
+  tenant_id       uuid not null references tenant(id),
+  holder          text not null,
+  account_name    text not null,
+  bank_name       text not null,
+  bank_code       text,
+  account_sealed  text not null,
+  account_last4   text not null,
+  version         int not null default 1,
+  updated_by      uuid references actor(id),
+  created_at      timestamptz not null default now(),
+  updated_at      timestamptz not null default now(),
+  unique (tenant_id, holder)
+);
+
+-- EXP-10: each export is a numbered batch, so a ledger import can be
+-- reconciled against exactly the claims it contained.
+create table if not exists expense_export (
+  id          uuid primary key default gen_random_uuid(),
+  tenant_id   uuid not null references tenant(id),
+  batch_no    int not null,
+  rows        int not null,
+  total       numeric(18, 2) not null,
+  currency    text not null,
+  checksum    text not null,
+  created_by  uuid references actor(id),
+  created_at  timestamptz not null default now(),
+  unique (tenant_id, batch_no)
+);

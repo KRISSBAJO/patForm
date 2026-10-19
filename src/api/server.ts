@@ -25,7 +25,7 @@ import {
 } from '../runtime/auth.js';
 import { runRetention } from '../runtime/retention.js';
 import { createLegalEntity, createOrgUnit, orgChart, reportingHistory, setManager, setMemberPlacement, updateOrgUnit } from '../runtime/org.js';
-import { advanceMovements, disburseAdvance, expenseSummary, listAdvances, listSettlements, moveSettlement, readExpenseSettings, recordAdvanceReturn, updateExpenseSettings } from '../runtime/expenses.js';
+import { addRate, advanceMovements, disburseAdvance, expenseSummary, exportPaid, listAdvances, listBudgets, listExports, listRates, listSettlements, moveSettlement, myBeneficiary, readExpenseSettings, recordAdvanceReturn, revealBeneficiary, reviewLines, saveBeneficiary, saveBudget, settlementLines, updateExpenseSettings, verifyBeneficiary } from '../runtime/expenses.js';
 import { enabledModules, listModules, setModule, updateWorkspaceSettings, workspaceSettings } from '../runtime/modules.js';
 import { createDelegation, createGrant, listAuthority, revokeDelegation, revokeGrant as revokeAuthorityGrant, workspaceAudit } from '../runtime/authority.js';
 import { logIfEnabled, requestIdFrom, withTrace } from '../runtime/trace.js';
@@ -888,6 +888,34 @@ route('GET', /^\/api\/expenses\/settlements$/, async ({ pool, principal, url }) 
 );
 route('POST', /^\/api\/expenses\/settlements\/([0-9a-f-]{36})$/, async ({ pool, principal, url }, body) =>
   moveSettlement(pool, principal, url.pathname.split('/')[4]!, (body ?? {}) as Record<string, unknown>),
+);
+route('GET', /^\/api\/expenses\/settlements\/([0-9a-f-]{36})\/lines$/, async ({ pool, principal, url }) =>
+  settlementLines(pool, principal, url.pathname.split('/')[4]!),
+);
+route('POST', /^\/api\/expenses\/settlements\/([0-9a-f-]{36})\/lines$/, async ({ pool, principal, url }, body) =>
+  reviewLines(pool, principal, url.pathname.split('/')[4]!, (body ?? {}) as { lines?: unknown }),
+);
+route('POST', /^\/api\/expenses\/settlements\/([0-9a-f-]{36})\/verify-bank$/, async ({ pool, principal, url }) =>
+  verifyBeneficiary(pool, principal, url.pathname.split('/')[4]!),
+);
+route('POST', /^\/api\/expenses\/settlements\/([0-9a-f-]{36})\/bank$/, async ({ pool, principal, url }) =>
+  revealBeneficiary(pool, principal, url.pathname.split('/')[4]!),
+);
+route('GET', /^\/api\/expenses\/bank$/, async ({ pool, principal }) => myBeneficiary(pool, principal));
+route('POST', /^\/api\/expenses\/bank$/, async ({ pool, principal }, body) =>
+  saveBeneficiary(pool, principal, (body ?? {}) as Record<string, unknown>),
+);
+route('GET', /^\/api\/expenses\/rates$/, async ({ pool, principal }) => listRates(pool, principal));
+route('POST', /^\/api\/expenses\/rates$/, async ({ pool, principal }, body) =>
+  addRate(pool, principal, (body ?? {}) as Record<string, unknown>),
+);
+route('GET', /^\/api\/expenses\/budgets$/, async ({ pool, principal }) => listBudgets(pool, principal));
+route('POST', /^\/api\/expenses\/budgets$/, async ({ pool, principal }, body) =>
+  saveBudget(pool, principal, (body ?? {}) as Record<string, unknown>),
+);
+route('GET', /^\/api\/expenses\/exports$/, async ({ pool, principal }) => listExports(pool, principal));
+route('POST', /^\/api\/expenses\/exports$/, async ({ pool, principal }, body) =>
+  exportPaid(pool, principal, (body ?? {}) as Record<string, unknown>),
 );
 route('GET', /^\/api\/expenses\/advances$/, async ({ pool, principal }) => listAdvances(pool, principal));
 route('GET', /^\/api\/expenses\/advances\/([0-9a-f-]{36})\/movements$/, async ({ pool, principal, url }) =>

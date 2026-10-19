@@ -603,7 +603,7 @@ export function Console() {
             ) : view === 'modules' ? (
               <ModulesView canAdminister={['owner', 'admin'].includes(me.workspace_role)} onChanged={() => void load()} />
             ) : view === 'expenses' ? (
-              <ExpensesView key={settingsRevision} canAdminister={['owner', 'admin'].includes(me.workspace_role)} onOpenRecord={(id) => void open(id)} />
+              <ExpensesView key={settingsRevision} canAdminister={['owner', 'admin'].includes(me.workspace_role)} canOperate={['owner', 'admin', 'operator'].includes(me.workspace_role)} onOpenRecord={(id) => void open(id)} />
             ) : view === 'organisation' ? (
               <OrganisationView key={settingsRevision} canAdminister={['owner', 'admin', 'builder'].includes(me.workspace_role)} processes={session.processes.map((p) => ({ process_key: p.process_key, name: p.name }))} myId={me.id} />
             ) : view === 'people' ? (

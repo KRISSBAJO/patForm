@@ -149,10 +149,26 @@ Acceptance scenarios (4.4):
   reference retires it and only the remainder is paid; money returned is
   recorded against it; every movement is in append-only
   `advance_movement`. Console: an Expenses page in the sidebar when the
-  module is on, with Claims to pay, Advances and Policy. Not done yet:
-  line-level partial approval (EXP-07), currency conversion snapshots
-  (EXP-04), budget reservations (EXP-05), accounting export (EXP-10),
-  beneficiary bank details (EXP-09).
+  module is on, with Claims to pay, Advances and Policy.
+- 19 Oct 2026: the rest of Module 5. EXP-04: Finance keeps exchange rates
+  (`exchange_rate`, never edited); a claim in another currency takes the
+  rate in force at submission and keeps it, with the amount in the
+  workspace currency, and the limits are converted for routing. EXP-05:
+  `expense_budget` per cost centre and period, advisory or enforced;
+  `budget_reservation` held inside the submission transaction under the
+  budget row lock (two claims at once cannot both take the last of it),
+  consumed on approval, released on rejection, expiry or void. EXP-07:
+  `expense_line_decision`; Finance approves, cuts or rejects lines before
+  payment, the submitted claim never changes, and the advance and budget
+  follow. EXP-09: `expense_beneficiary`, account number sealed with the
+  application key (AES-256-GCM, bound to the row), masked everywhere,
+  revealed only through an audited route; payment needs a check at the
+  current version, and a change after the check needs a new one. EXP-10:
+  numbered export batches, one row per approved line with account codes
+  per category, rounding absorbed on the last line, formula-safe, never
+  including bank details. Console: Claims (review lines, check bank,
+  pay), Advances, Budgets, Exports, Policy and rates, My bank details.
+  Production note: set `MFA_ENCRYPTION_KEY`, which also seals bank details.
 
 ## What to build first
 

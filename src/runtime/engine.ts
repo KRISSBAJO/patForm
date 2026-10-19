@@ -22,7 +22,7 @@ import { inTransaction, isUniqueViolation, type Client, type Pool } from './db.j
 import { InvalidInput } from './errors.js';
 import { managerOf } from './org.js';
 import { authorityOf, covers } from './authority.js';
-import { applyFinancePolicy, recordFinanceOutcome } from './expenses.js';
+import { BudgetExceeded, applyFinancePolicy, recordFinanceOutcome, releaseFinanceHolds, reserveBudget } from './expenses.js';
 import { ensurePublicForm } from './form-links.js';
 import { requireIntakeOpen } from './intake-control.js';
 import {
@@ -229,6 +229,7 @@ export class Engine {
     // PRD Module 5: copy the workspace's expense policy onto the claim and
     // check the rules a form cannot (receipt over the threshold, allowed
     // categories, an advance that is the submitter's and still open).
+    let budgetHold: { budgetId: string; amount: number; field: string } | null = null;
     if (bp.finance) {
       let submitterEmail: string | null = null;
       if (principal.kind === 'actor') {
@@ -239,15 +240,17 @@ export class Engine {
         const value = key ? answers[key] : null;
         submitterEmail = typeof value === 'string' ? value : null;
       }
-      const policy = await applyFinancePolicy(this.pool, { bp, tenantId: args.version.tenant_id, answers, submitterEmail });
+      const policy = await applyFinancePolicy(this.pool, { bp, tenantId: args.version.tenant_id, answers, submitterEmail, now: args.now });
       if (policy.rejected.length) return { instanceId: '', duplicate: false, rejected: policy.rejected, problems: policy.problems };
       answers = policy.answers;
+      budgetHold = policy.budget;
     }
 
     const transition = selectSubmissionTransition(bp, answers, args.now);
     const identityKey = identityFor(bp, answers);
 
-    return inTransaction(this.pool, async (client) => {
+    try {
+    return await inTransaction(this.pool, async (client) => {
       await requireIntakeOpen(client, args.version.tenant_id, true);
       await require_(client, {
         principal,
@@ -298,6 +301,12 @@ export class Engine {
 
       const instanceId = rows[0]!.id;
       const instance = await loadInstance(client, instanceId);
+      // EXP-05: held before the first transition, which may approve at once
+      // and consume it. Throws BudgetExceeded for an enforced budget, which
+      // rolls back the record with it.
+      const budget = budgetHold
+        ? await reserveBudget(client, { tenantId: args.version.tenant_id, instanceId, ...budgetHold })
+        : null;
       await applyTransition(client, {
         bp,
         instance,
@@ -315,8 +324,20 @@ export class Engine {
         ? await issueResumeToken(client, { tenantId: args.version.tenant_id, instanceId })
         : undefined;
 
+      if (budget?.over) {
+        await appendEvent(client, {
+          tenantId: args.version.tenant_id, instanceId, type: 'budget_warning',
+          payload: { available: budget.available, amount: budgetHold!.amount, note: 'Over the advisory budget for this cost centre.' },
+          actor: 'system:finance', now: args.now,
+        });
+      }
+
       return { instanceId, duplicate: false, resumeToken };
     });
+    } catch (err) {
+      if (err instanceof BudgetExceeded) return { instanceId: '', duplicate: false, rejected: [err.field], problems: [err.message] };
+      throw err;
+    }
   }
 
   // ------------------------------------------------------------- operations
@@ -1522,6 +1543,9 @@ async function applyTransition(
   // PRD Module 5: a finance process reaching success writes its settlement
   // or advance in this same transaction, so approval and the money record
   // can never disagree.
+  if (bp.finance && target.type === 'terminal' && target.outcome !== 'success') {
+    await releaseFinanceHolds(client, instance.id);
+  }
   if (bp.finance && target.type === 'terminal' && target.outcome === 'success') {
     const submitterId = await submitterActor(client, bp, instance);
     let submitter = submitterOf(bp, instance);
