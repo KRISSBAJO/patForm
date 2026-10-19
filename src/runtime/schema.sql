@@ -2671,3 +2671,9 @@ create table if not exists ops_connector_delivery (
 );
 create unique index if not exists ops_connector_delivery_request on ops_connector_delivery (request_id) where kind = 'provision';
 create unique index if not exists ops_connector_delivery_grant on ops_connector_delivery (grant_id) where kind = 'revoke';
+
+-- Ready-made directory connectors: Microsoft 365 (Graph) and Google Workspace
+-- (Admin SDK). Each role maps to a group; the app identity is in the
+-- environment, the customer's directory is chosen here.
+alter table access_system add column if not exists connector_kind text check (connector_kind in ('webhook', 'microsoft365', 'google_workspace'));
+alter table access_system add column if not exists connector_config jsonb;

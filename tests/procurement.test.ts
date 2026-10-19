@@ -156,7 +156,8 @@ test('JRN-02: request, sealed quotes, order, partial delivery, invoice matching 
     assert.equal(Number((await listBudgets(pool, w.buyer.p))[0].consumed), 4200, 'the budget is held from approval');
 
     // 2. Sealed quotes: amounts hidden until opened after the deadline.
-    const opens = new Date(Date.now() + 2000);
+    // Enough room to add both quotes even when the whole suite is running.
+    const opens = new Date(Date.now() + 5000);
     await setQuoteDeadline(pool, w.buyer.p, req.id, { opensAt: opens.toISOString() });
     await addQuote(pool, w.buyer.p, req.id, { vendorId: a, amount: 4100, leadDays: 5 });
     await addQuote(pool, w.buyer.p, req.id, { vendorId: b, amount: 3900, leadDays: 12 });
@@ -165,7 +166,7 @@ test('JRN-02: request, sealed quotes, order, partial delivery, invoice matching 
     assert.ok(hidden.quotes.every((q) => q.amount === null));
     await assert.rejects(openQuotes(pool, w.buyer.p, req.id), /cannot be opened before/);
     await assert.rejects(selectQuote(pool, w.buyer.p, req.id, { quoteId: hidden.quotes[0]!.id, reason: 'x' }), /open the sealed quotes/);
-    await new Promise((res) => setTimeout(res, 2200));
+    await new Promise((res) => setTimeout(res, Math.max(0, opens.getTime() - Date.now()) + 200));
     await assert.rejects(addQuote(pool, w.buyer.p, req.id, { vendorId: a, amount: 1 }), /deadline for quotes has passed/);
     await openQuotes(pool, w.buyer.p, req.id);
     const open = await listQuotes(pool, w.buyer.p, req.id);

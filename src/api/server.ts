@@ -1083,6 +1083,7 @@ route('POST', or(`assignments/${A}/acknowledge`), async ({ pool, principal, url 
 route('POST', or(`assignments/${A}/return`), async ({ pool, principal, url }, b) => ops.returnAsset(pool, principal, hid(url, 4), hb(b)));
 route('GET', or('systems'), async ({ pool, principal }) => ops.listSystems(pool, principal));
 route('POST', or('systems'), async ({ pool, principal }, b) => ops.saveSystem(pool, principal, hb(b)));
+route('POST', or(`systems/${A}/test`), async ({ pool, principal, url }) => ops.testSystemConnector(pool, principal, hid(url, 4)));
 route('GET', or('access'), async ({ pool, principal }) => ops.listAccess(pool, principal));
 route('POST', or('access'), async ({ pool, principal }, b) => ops.requestAccess(pool, principal, hb(b)));
 route('POST', or(`access/${A}/decide`), async ({ pool, principal, url }, b) => ops.decideAccess(pool, principal, hid(url, 4), hb(b)));

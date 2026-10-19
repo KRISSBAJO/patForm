@@ -30,6 +30,7 @@ import { managerOf } from './org.js';
 import { seal, open as unseal } from './secret-box.js';
 import { sign, verify } from './webhooks.js';
 import { randomBytes } from 'node:crypto';
+import { checkConfig, runDirectoryJob, setupInstructions, testDirectory, type ConnectorKind, type DirectoryConfig } from './directory-connectors.js';
 
 const UUID = /^[0-9a-f-]{36}$/;
 const text = (v: unknown, max: number) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
@@ -419,9 +420,22 @@ export async function awaitingRecovery(pool: Pool, principal: Principal) {
 export async function listSystems(pool: Pool, principal: Principal) {
   const w = await who(pool, principal);
   const { rows } = await pool.query(
-    `select s.id, s.name, s.roles, s.max_days, s.active, s.owner_id, o.display_name as owner, s.connector_actor_id, c.display_name as connector, s.connector_url, (s.connector_secret is not null) as has_secret
+    `select s.id, s.name, s.roles, s.max_days, s.active, s.owner_id, o.display_name as owner, s.connector_actor_id, c.display_name as connector, s.connector_url, (s.connector_secret is not null) as has_secret, s.connector_kind, s.connector_config
        from access_system s join actor o on o.id = s.owner_id left join actor c on c.id = s.connector_actor_id where s.tenant_id = $1 order by s.name`, [w.tenantId]);
-  return rows;
+  return rows.map((r: { connector_kind: ConnectorKind | null; connector_config: DirectoryConfig | null }) => ({
+    ...r,
+    connector_setup: w.admin && (r.connector_kind === 'microsoft365' || r.connector_kind === 'google_workspace') ? setupInstructions(r.connector_kind, r.connector_config ?? {}) : null,
+  }));
+}
+
+/** Setup's "Test connection": signs in to the directory and checks each mapped group. */
+export async function testSystemConnector(pool: Pool, principal: Principal, systemId: string) {
+  const w = await who(pool, principal); requireAdmin(w);
+  const { rows } = await pool.query<{ connector_kind: ConnectorKind | null; connector_config: DirectoryConfig | null }>('select connector_kind, connector_config from access_system where id = $1 and tenant_id = $2', [systemId, w.tenantId]);
+  const r = rows[0];
+  if (!r) throw new InvalidInput('no such system');
+  if (r.connector_kind !== 'microsoft365' && r.connector_kind !== 'google_workspace') throw new InvalidInput('this system has no Microsoft 365 or Google Workspace connector');
+  return testDirectory(r.connector_kind, r.connector_config!);
 }
 
 export async function saveSystem(pool: Pool, principal: Principal, body: Record<string, unknown>) {
@@ -438,7 +452,23 @@ export async function saveSystem(pool: Pool, principal: Principal, body: Record<
     const { rows } = await pool.query('select 1 from actor where id = $1 and tenant_id = $2 and active', [a, w.tenantId]);
     if (!rows[0]) throw new InvalidInput('no such member');
   }
-  const url = text(body.connectorUrl, 500) || null;
+  const kindIn = text(body.connectorKind, 30);
+  const kind: ConnectorKind | null = kindIn === 'microsoft365' || kindIn === 'google_workspace' ? kindIn : kindIn === 'webhook' || text(body.connectorUrl, 500) ? 'webhook' : null;
+  let directory: DirectoryConfig | null = null;
+  if (kind === 'microsoft365' || kind === 'google_workspace') {
+    const d = (body.directory ?? {}) as Record<string, unknown>;
+    const roleGroups: Record<string, string> = {};
+    for (const [k, v] of Object.entries((d.roleGroups ?? {}) as Record<string, unknown>)) { const r = text(k, 120); const g = text(v, 200); if (r && g) roleGroups[r] = g; }
+    directory = {
+      ...(kind === 'microsoft365' ? { tenantId: text(d.tenantId, 120) } : { adminEmail: text(d.adminEmail, 200).toLowerCase() }),
+      domains: list(d.domains, 10).map((x) => x.toLowerCase().replace(/^@/, '')),
+      roleGroups, suspendOnLeave: d.suspendOnLeave === true,
+    };
+    const problems = checkConfig(kind, directory, roles);
+    if (problems.length) throw new InvalidInput(problems.join('; '));
+  }
+  const url = kind === 'webhook' ? text(body.connectorUrl, 500) || null : null;
+  if (kind === 'webhook' && !url) throw new InvalidInput('give the connector address');
   if (url) {
     let parsed: URL;
     try { parsed = new URL(url); } catch { throw new InvalidInput('the connector address must be a web address'); }
@@ -448,15 +478,15 @@ export async function saveSystem(pool: Pool, principal: Principal, body: Record<
   let sid: string;
   if (body.id) {
     sid = id(body.id, 'id');
-    const { rowCount } = await pool.query(`update access_system set name = $3, owner_id = $4, roles = $5, max_days = $6, connector_actor_id = $7, active = $8, connector_url = $9 where id = $1 and tenant_id = $2`,
-      [sid, w.tenantId, name, ownerId, JSON.stringify(roles), maxDays, connector, body.active !== false, url]);
+    const { rowCount } = await pool.query(`update access_system set name = $3, owner_id = $4, roles = $5, max_days = $6, connector_actor_id = $7, active = $8, connector_url = $9, connector_kind = $10, connector_config = $11 where id = $1 and tenant_id = $2`,
+      [sid, w.tenantId, name, ownerId, JSON.stringify(roles), maxDays, connector, body.active !== false, url, kind, directory ? JSON.stringify(directory) : null]);
     if (!rowCount) throw new InvalidInput('no such system');
-    await recordWorkspaceAudit(pool, { tenantId: w.tenantId, actorId: w.actorId, action: 'ops.system_changed', targetId: sid, detail: { name, ownerId, roles, maxDays, connector, url } });
+    await recordWorkspaceAudit(pool, { tenantId: w.tenantId, actorId: w.actorId, action: 'ops.system_changed', targetId: sid, detail: { name, ownerId, roles, maxDays, connector, url, kind, directory } });
   } else {
-    const { rows } = await pool.query<{ id: string }>(`insert into access_system (tenant_id, name, owner_id, roles, max_days, connector_actor_id, connector_url) values ($1, $2, $3, $4, $5, $6, $7) returning id`,
-      [w.tenantId, name, ownerId, JSON.stringify(roles), maxDays, connector, url]);
+    const { rows } = await pool.query<{ id: string }>(`insert into access_system (tenant_id, name, owner_id, roles, max_days, connector_actor_id, connector_url, connector_kind, connector_config) values ($1, $2, $3, $4, $5, $6, $7, $8, $9) returning id`,
+      [w.tenantId, name, ownerId, JSON.stringify(roles), maxDays, connector, url, kind, directory ? JSON.stringify(directory) : null]);
     sid = rows[0]!.id;
-    await recordWorkspaceAudit(pool, { tenantId: w.tenantId, actorId: w.actorId, action: 'ops.system_added', targetId: sid, detail: { name, ownerId, roles, maxDays, connector, url } });
+    await recordWorkspaceAudit(pool, { tenantId: w.tenantId, actorId: w.actorId, action: 'ops.system_added', targetId: sid, detail: { name, ownerId, roles, maxDays, connector, url, kind, directory } });
   }
   // The signing secret is shown once, when first needed or when asked for a new one.
   let secret: string | null = null;
@@ -691,7 +721,7 @@ async function queueProvisioning(client: Client | Pool, requestId: string) {
             jsonb_build_object('event', 'access.provision', 'system', s.name, 'request', jsonb_build_object('id', r.id, 'number', r.number),
               'holder', jsonb_build_object('id', h.id, 'email', h.email, 'name', h.display_name), 'role', r.role, 'expiresOn', r.expires_on)
        from access_request r join access_system s on s.id = r.system_id join actor h on h.id = r.holder_id
-      where r.id = $1 and s.connector_url is not null
+      where r.id = $1 and (s.connector_url is not null or s.connector_kind in ('microsoft365', 'google_workspace'))
      on conflict do nothing`, [requestId]);
 }
 
@@ -700,9 +730,10 @@ async function queueRevokeDeliveries(client: Client | Pool, tenantId?: string) {
     `insert into ops_connector_delivery (tenant_id, system_id, kind, grant_id, payload)
      select g.tenant_id, s.id, 'revoke', g.id,
             jsonb_build_object('event', 'access.revoke', 'system', s.name, 'grant', jsonb_build_object('id', g.id),
-              'holder', jsonb_build_object('id', h.id, 'email', h.email, 'name', h.display_name), 'role', g.role, 'reason', g.revoke_reason)
+              'holder', jsonb_build_object('id', h.id, 'email', h.email, 'name', h.display_name), 'role', g.role, 'reason', g.revoke_reason,
+              'leaving', g.revoke_reason in ('access revoked by HR', 'the holder is no longer active'))
        from access_grant g join access_system s on s.id = g.system_id join actor h on h.id = g.holder_id
-      where g.status = 'revoking' and s.connector_url is not null and ($1::uuid is null or g.tenant_id = $1)
+      where g.status = 'revoking' and (s.connector_url is not null or s.connector_kind in ('microsoft365', 'google_workspace')) and ($1::uuid is null or g.tenant_id = $1)
      on conflict do nothing`, [tenantId ?? null]);
 }
 
@@ -757,22 +788,34 @@ function readOutcome(status: number, raw: string): Outcome {
 export async function deliverConnectors(pool: Pool, args: { workerId: string; now?: Date; fetchImpl?: typeof fetch; batch?: number } = { workerId: 'worker' }) {
   const now = args.now ?? new Date();
   const doFetch = args.fetchImpl ?? fetch;
-  const { rows } = await pool.query<{ id: number; tenant_id: string; system_id: string; kind: string; request_id: string | null; grant_id: string | null; payload: Record<string, unknown>; attempts: number; connector_url: string | null; connector_secret: string | null }>(
+  const { rows } = await pool.query<{ id: number; tenant_id: string; system_id: string; kind: string; request_id: string | null; grant_id: string | null; payload: Record<string, unknown>; attempts: number; connector_url: string | null; connector_secret: string | null; connector_kind: ConnectorKind | null; connector_config: DirectoryConfig | null }>(
     `update ops_connector_delivery d set claimed_by = $1, attempts = d.attempts + 1, available_at = $2 + interval '60 seconds'
        from access_system s
       where s.id = d.system_id and d.id in (select id from ops_connector_delivery where status = 'pending' and available_at <= $2 order by id for update skip locked limit $3)
-      returning d.id, d.tenant_id, d.system_id, d.kind, d.request_id, d.grant_id, d.payload, d.attempts, s.connector_url, s.connector_secret`,
+      returning d.id, d.tenant_id, d.system_id, d.kind, d.request_id, d.grant_id, d.payload, d.attempts, s.connector_url, s.connector_secret, s.connector_kind, s.connector_config`,
     [args.workerId, now, args.batch ?? 20]);
   let sent = 0;
   for (const d of rows) {
+    const directory = d.connector_kind === 'microsoft365' || d.connector_kind === 'google_workspace' ? d.connector_kind : null;
     const fail = async (error: string, status: number | null) => {
-      if (d.attempts >= MAX_ATTEMPTS || !d.connector_url || !d.connector_secret) {
+      if (d.attempts >= MAX_ATTEMPTS || (!directory && (!d.connector_url || !d.connector_secret))) {
         await inTransaction(pool, (c) => applyOutcome(c, d, { status: 'failed', error: `connector unreachable after ${d.attempts} attempt(s): ${error}` }));
       } else {
         const wait = Math.min(2 ** d.attempts, 360);
         await pool.query(`update ops_connector_delivery set last_error = $2, response_status = $3, available_at = $4::timestamptz + make_interval(mins => $5) where id = $1`, [d.id, error, status, now, wait]);
       }
     };
+    if (directory) {
+      const holder = (d.payload.holder ?? {}) as { email?: string };
+      try {
+        const result = await runDirectoryJob(directory, d.connector_config ?? { roleGroups: {} }, { kind: d.kind as 'provision' | 'revoke', email: String(holder.email ?? ''), role: String(d.payload.role ?? ''), leaving: d.payload.leaving === true }, doFetch);
+        await inTransaction(pool, (c) => applyOutcome(c, d, result));
+        sent++;
+      } catch (err) {
+        await fail(err instanceof Error ? err.message : String(err), null);
+      }
+      continue;
+    }
     if (!d.connector_url || !d.connector_secret) { await fail('the connector address or secret was removed', null); continue; }
     const body = JSON.stringify({ ...d.payload, delivery: d.id });
     const secret = unseal(d.connector_secret, `access_system:${d.system_id}`).plaintext;

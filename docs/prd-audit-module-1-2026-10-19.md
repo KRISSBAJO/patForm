@@ -430,7 +430,29 @@ Added the same day:
   retried with backoff for 8 attempts, then shown as failed; IT can still
   finish by hand with evidence.
 
-Not built: ready-made connectors for named systems (Microsoft 365, Google
-Workspace and so on) — each needs its own work and the customer's admin
-credentials, so they wait until a customer needs one.
+- Ready-made Microsoft 365 and Google Workspace connectors
+  (`src/runtime/directory-connectors.ts`). Each role of a system maps to a
+  group in the customer's directory: approval adds the person to the group,
+  removal takes them out, and with "suspend when leaving" an HR removal or a
+  deactivation also disables the account and signs it out everywhere.
+  Patform's own app identity is in the environment (`MS365_CLIENT_ID`,
+  `MS365_CLIENT_SECRET`; `GOOGLE_WORKSPACE_SA_EMAIL`, `_CLIENT_ID`,
+  `_PRIVATE_KEY`); each workspace picks its own directory (Entra tenant, or
+  Google admin to act as) and its admin consents on their side, so one
+  workspace can never reach another's directory. People outside the
+  configured email domains are refused. Setup shows the consent link or
+  the delegation client ID and scopes, and "Test connection" signs in and
+  checks every mapped group. Permanent refusals fail with the reason;
+  rate limits and outages are retried.
+
+To switch the connectors on, fill the five settings in `.env` locally and
+in the Render environment for staging:
+
+- Microsoft: register one multi-tenant app in Patform's Entra tenant, add
+  the application permissions GroupMember.ReadWrite.All and User.Read.All
+  (plus User.ReadWrite.All and User.RevokeSessions.All for suspending
+  leavers), create a client secret.
+- Google: create a service account in a Google Cloud project, enable the
+  Admin SDK API, enable domain-wide delegation, create a JSON key, and copy
+  its client_email, client_id and private_key.
 
