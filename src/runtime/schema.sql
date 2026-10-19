@@ -2167,3 +2167,196 @@ create table if not exists hiring_requisition (
   check (filled <= headcount)
 );
 alter table lifecycle_case add column if not exists hiring_id uuid references hiring_requisition(id);
+
+-- ------------------------------------------------------------- appraisals
+--
+-- PRD Module 8. A template is versioned and validated before publication;
+-- a cycle copies the published template, so a result can always be
+-- recomputed from what was used at the time (11.3). Each stage has its own
+-- window and visibility. Calibration keeps the original score. A rating
+-- never changes pay: recommendations are separate and need HR approval.
+
+create table if not exists review_template (
+  id          uuid primary key default gen_random_uuid(),
+  tenant_id   uuid not null references tenant(id),
+  name        text not null,
+  version     int not null default 1,
+  status      text not null default 'draft' check (status in ('draft', 'published', 'retired')),
+  scale_min   int not null default 1,
+  scale_max   int not null default 5,
+  na_policy   text not null default 'block' check (na_policy in ('block', 'redistribute')),
+  decimals    int not null default 2 check (decimals between 0 and 4),
+  sections    jsonb not null,
+  created_by  uuid references actor(id),
+  created_at  timestamptz not null default now(),
+  published_at timestamptz,
+  check (scale_max > scale_min)
+);
+
+create table if not exists review_cycle (
+  id            uuid primary key default gen_random_uuid(),
+  tenant_id     uuid not null references tenant(id),
+  name          text not null,
+  kind          text not null check (kind in ('annual', 'quarterly', 'probation', 'project', 'continuous')),
+  template      jsonb not null,
+  template_id   uuid references review_template(id),
+  eligibility   jsonb not null default '{}'::jsonb,
+  stages        jsonb not null,
+  peer_mode     text not null default 'confidential' check (peer_mode in ('identified', 'confidential')),
+  min_cohort    int not null default 3 check (min_cohort between 2 and 20),
+  status        text not null default 'draft' check (status in ('draft', 'active', 'published', 'closed')),
+  created_by    uuid references actor(id),
+  created_at    timestamptz not null default now(),
+  launched_at   timestamptz,
+  published_at  timestamptz
+);
+
+-- The eligibility snapshot (APR-01): who was in, and why, at launch.
+create table if not exists review_participant (
+  id            uuid primary key default gen_random_uuid(),
+  tenant_id     uuid not null references tenant(id),
+  cycle_id      uuid not null references review_cycle(id),
+  actor_id      uuid not null references actor(id),
+  manager_id    uuid references actor(id),
+  eligible      boolean not null default true,
+  reason        text,
+  needs_reviewer boolean not null default false,
+  reviewer_note text,
+  unique (cycle_id, actor_id)
+);
+
+create table if not exists reviewer_assignment (
+  id             uuid primary key default gen_random_uuid(),
+  participant_id uuid not null references review_participant(id),
+  reviewer_id    uuid not null references actor(id),
+  stage          text not null check (stage in ('self', 'peer', 'manager', 'additional')),
+  active         boolean not null default true,
+  assigned_by    uuid references actor(id),
+  reason         text,
+  created_at     timestamptz not null default now(),
+  ended_at       timestamptz,
+  ended_reason   text
+);
+create unique index if not exists reviewer_assignment_active_uq on reviewer_assignment (participant_id, reviewer_id, stage) where active;
+
+-- A response by one reviewer at one stage. Kept, and attributed, even when
+-- the assignment ends (acceptance 5).
+create table if not exists assessment (
+  id             uuid primary key default gen_random_uuid(),
+  participant_id uuid not null references review_participant(id),
+  assignment_id  uuid not null references reviewer_assignment(id) unique,
+  reviewer_id    uuid not null references actor(id),
+  stage          text not null,
+  responses      jsonb not null default '{}'::jsonb,
+  narrative      text,
+  recommendation jsonb,
+  calculation    jsonb,
+  score          numeric(8, 4),
+  status         text not null default 'draft' check (status in ('draft', 'submitted')),
+  submitted_at   timestamptz,
+  updated_at     timestamptz not null default now()
+);
+
+create table if not exists calibration_adjustment (
+  id             bigserial primary key,
+  participant_id uuid not null references review_participant(id),
+  original_score numeric(8, 4),
+  adjusted_score numeric(8, 4) not null,
+  evidence       text not null,
+  reason         text not null,
+  actor_id       uuid references actor(id),
+  occurred_at    timestamptz not null default now()
+);
+create or replace function calibration_is_append_only() returns trigger as $$
+begin
+  raise exception 'calibration adjustments are append-only';
+end;
+$$ language plpgsql;
+drop trigger if exists calibration_no_change on calibration_adjustment;
+create trigger calibration_no_change before update or delete on calibration_adjustment
+  for each row execute function calibration_is_append_only();
+
+create table if not exists review_result (
+  participant_id   uuid primary key references review_participant(id),
+  manager_score    numeric(8, 4),
+  calibrated_score numeric(8, 4),
+  summary          text,
+  published_at     timestamptz not null default now(),
+  acknowledged_at  timestamptz,
+  acknowledgement  text,
+  appeal_status    text not null default 'none' check (appeal_status in ('none', 'open', 'upheld', 'changed'))
+);
+
+create table if not exists review_appeal (
+  id              uuid primary key default gen_random_uuid(),
+  participant_id  uuid not null references review_participant(id),
+  reason          text not null,
+  reviewer_id     uuid references actor(id),
+  due_date        date not null,
+  status          text not null default 'open' check (status in ('open', 'upheld', 'changed')),
+  outcome         text,
+  new_score       numeric(8, 4),
+  decided_at      timestamptz,
+  created_at      timestamptz not null default now()
+);
+
+-- APR-11: a recommendation is only a proposal until HR approves it.
+create table if not exists review_recommendation (
+  id             uuid primary key default gen_random_uuid(),
+  tenant_id      uuid not null references tenant(id),
+  participant_id uuid not null references review_participant(id),
+  kind           text not null check (kind in ('promotion', 'pay_increase')),
+  detail         text not null,
+  status         text not null default 'proposed' check (status in ('proposed', 'approved', 'declined')),
+  decided_by     uuid references actor(id),
+  decided_at     timestamptz,
+  decision_note  text,
+  created_at     timestamptz not null default now()
+);
+
+create table if not exists goal (
+  id               uuid primary key default gen_random_uuid(),
+  tenant_id        uuid not null references tenant(id),
+  owner_id         uuid not null references actor(id),
+  cycle_id         uuid references review_cycle(id),
+  aligned_to       uuid references goal(id),
+  title            text not null,
+  description      text,
+  success_criteria text not null,
+  weight           numeric(6, 2) not null default 0 check (weight >= 0 and weight <= 100),
+  target_date      date,
+  status           text not null default 'draft' check (status in ('draft', 'approved', 'achieved', 'missed', 'withdrawn')),
+  progress         int not null default 0 check (progress between 0 and 100),
+  evidence         text,
+  approved_by      uuid references actor(id),
+  created_at       timestamptz not null default now(),
+  updated_at       timestamptz not null default now()
+);
+create table if not exists goal_revision (
+  id          bigserial primary key,
+  goal_id     uuid not null references goal(id),
+  proposed    jsonb not null,
+  previous    jsonb not null,
+  reason      text not null,
+  status      text not null default 'pending' check (status in ('pending', 'approved', 'rejected')),
+  proposed_by uuid references actor(id),
+  decided_by  uuid references actor(id),
+  created_at  timestamptz not null default now(),
+  decided_at  timestamptz
+);
+
+create table if not exists development_item (
+  id             uuid primary key default gen_random_uuid(),
+  tenant_id      uuid not null references tenant(id),
+  employee_id    uuid not null references actor(id),
+  participant_id uuid references review_participant(id),
+  kind           text not null check (kind in ('action', 'training', 'checkin')),
+  title          text not null,
+  owner_id       uuid references actor(id),
+  due_date       date,
+  status         text not null default 'open' check (status in ('open', 'done', 'dropped')),
+  evidence       text,
+  created_by     uuid references actor(id),
+  created_at     timestamptz not null default now(),
+  completed_at   timestamptz
+);

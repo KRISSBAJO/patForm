@@ -129,6 +129,8 @@ export const STEP_UP: { method: string; test: RegExp; when?: (body: unknown) => 
   { method: 'POST', test: /^\/api\/hr\/teams$/, what: 'change who is in an HR team' },
   { method: 'POST', test: /^\/api\/hr\/cases\/urgent-termination$/, what: 'authorise an urgent termination' },
   { method: 'POST', test: /^\/api\/hr\/employees\/[0-9a-f-]{36}\/pay$/, what: 'change pay' },
+  { method: 'POST', test: /^\/api\/appraisals\/cycles\/[0-9a-f-]{36}\/publish$/, what: 'publish review results' },
+  { method: 'POST', test: /^\/api\/appraisals\/recommendations\/[0-9a-f-]{36}\/decide$/, what: 'decide a promotion or pay recommendation' },
   { method: 'POST', test: /^\/api\/procurement\/vendors\/[0-9a-f-]{36}\/bank$/, what: 'change a supplier\'s bank details' },
   { method: 'POST', test: /^\/api\/procurement\/vendors\/[0-9a-f-]{36}\/bank\/reveal$/, what: 'see a supplier\'s bank details' },
   { method: 'POST', test: /^\/api\/procurement\/vendors\/[0-9a-f-]{36}\/status$/, when: (body) => (body as { to?: string })?.to === 'approved', what: 'approve a supplier' },

@@ -15,6 +15,7 @@ import { OrganisationView } from './Organisation';
 import { ExpensesView } from './Expenses';
 import { ProcurementView } from './Procurement';
 import { HRView } from './HR';
+import { AppraisalsView } from './Appraisals';
 import { RecordTrail } from './Trail';
 import { RecordPage } from './Record';
 import { WorkList } from './WorkList';
@@ -147,6 +148,7 @@ export function Console() {
     | 'expenses'
     | 'procurement'
     | 'hr'
+    | 'appraisals'
     | 'held'
   >('work');
   const recordOrigin = useRef<'work' | 'records' | 'ask' | 'processes' | 'expenses' | 'procurement'>('work');
@@ -526,6 +528,7 @@ export function Console() {
 {([{key:'work',label:'My work',icon:'work'},{key:'ask',label:'Ask',icon:'ask'},{key:'records',label:'Records',icon:'records'},{key:'dashboard',label:'Dashboard',icon:'dashboard'},{key:'processes',label:'Processes',icon:'processes'},{key:'people',label:'People',icon:'people'}] as const).map(item => <button type="button" key={item.key} className="cs__navItem" title={item.label} aria-current={view === item.key || (item.key === 'people' && view === 'invite') ? 'page' : undefined} onClick={() => setView(item.key)}><NavIcon name={item.icon}/><span className="cs__navText">{item.label}</span>{item.key === 'work' && counts.needsYou > 0 && <span className="cs__navCount">{counts.needsYou}</span>}</button>)}
 {session.modules?.includes('expenses') && <button type="button" className="cs__navItem" title="Expenses" aria-current={view === 'expenses' ? 'page' : undefined} onClick={() => setView('expenses')}><NavIcon name="data"/><span className="cs__navText">Expenses</span></button>}
 {session.modules?.includes('hr') && <button type="button" className="cs__navItem" title="HR" aria-current={view === 'hr' ? 'page' : undefined} onClick={() => setView('hr')}><NavIcon name="people"/><span className="cs__navText">HR</span></button>}
+{session.modules?.includes('appraisals') && <button type="button" className="cs__navItem" title="Appraisals" aria-current={view === 'appraisals' ? 'page' : undefined} onClick={() => setView('appraisals')}><NavIcon name="dashboard"/><span className="cs__navText">Appraisals</span></button>}
 {session.modules?.includes('procurement') && <button type="button" className="cs__navItem" title="Procurement" aria-current={view === 'procurement' ? 'page' : undefined} onClick={() => setView('procurement')}><NavIcon name="processes"/><span className="cs__navText">Procurement</span></button>}
 <a className="cs__navItem" href="/builder" title="Builder"><NavIcon name="builder"/><span className="cs__navText">Builder</span></a>
 </nav>
@@ -575,7 +578,9 @@ export function Console() {
                                       ? 'Procurement'
                                       : view === 'hr'
                                         ? 'HR'
-                                        : 'My work'}
+                                        : view === 'appraisals'
+                                          ? 'Appraisals'
+                                          : 'My work'}
           </h1>
           {/* The process pill is context for the record views. On People,
               Processes and Your account it named a process the page has
@@ -588,12 +593,12 @@ export function Console() {
             <button type="button" className="cs__btn cs__btn--create" onClick={() => { sessionStorage.removeItem('patform:new-process-description'); window.location.href = '/builder/ai'; }}>
               <span className="cs__createMark" aria-hidden="true">✦</span> Build with AI
             </button>
-          ) : view !== 'security' && <button type="button" className="cs__btn" onClick={() => { if (view === 'integrations' || view === 'data' || view === 'modules' || view === 'organisation' || view === 'expenses' || view === 'procurement' || view === 'hr') setSettingsRevision(value => value + 1); void load(); }}>
+          ) : view !== 'security' && <button type="button" className="cs__btn" onClick={() => { if (view === 'integrations' || view === 'data' || view === 'modules' || view === 'organisation' || view === 'expenses' || view === 'procurement' || view === 'hr' || view === 'appraisals') setSettingsRevision(value => value + 1); void load(); }}>
             Refresh
           </button>}
         </div>
 
-        <div className={`cs__body ${view === 'security' ? 'cs__body--security' : ''} ${view === 'ask' ? 'cs__body--ask' : ''} ${view === 'record' ? 'cs__body--record' : ''} ${view === 'health' ? 'cs__body--health' : ''} ${view === 'dashboard' ? 'cs__body--dashboard' : ''} ${view === 'people' ? 'cs__body--people' : ''} ${view === 'records' ? 'cs__body--records' : ''} ${view === 'work' ? 'cs__body--work' : ''} ${view === 'processes' ? 'cs__body--processes' : ''} ${view === 'held' ? 'cs__body--held' : ''} ${view === 'integrations' ? 'cs__body--integrations' : ''} ${view === 'data' ? 'cs__body--data' : ''} ${view === 'modules' || view === 'organisation' || view === 'expenses' || view === 'procurement' || view === 'hr' ? 'cs__body--integrations' : ''}`}>
+        <div className={`cs__body ${view === 'security' ? 'cs__body--security' : ''} ${view === 'ask' ? 'cs__body--ask' : ''} ${view === 'record' ? 'cs__body--record' : ''} ${view === 'health' ? 'cs__body--health' : ''} ${view === 'dashboard' ? 'cs__body--dashboard' : ''} ${view === 'people' ? 'cs__body--people' : ''} ${view === 'records' ? 'cs__body--records' : ''} ${view === 'work' ? 'cs__body--work' : ''} ${view === 'processes' ? 'cs__body--processes' : ''} ${view === 'held' ? 'cs__body--held' : ''} ${view === 'integrations' ? 'cs__body--integrations' : ''} ${view === 'data' ? 'cs__body--data' : ''} ${view === 'modules' || view === 'organisation' || view === 'expenses' || view === 'procurement' || view === 'hr' || view === 'appraisals' ? 'cs__body--integrations' : ''}`}>
           <div className="cs__left">
             {view === 'record' && record ? (
               <RecordPage
@@ -617,6 +622,8 @@ export function Console() {
               <ModulesView canAdminister={['owner', 'admin'].includes(me.workspace_role)} onChanged={() => void load()} />
             ) : view === 'hr' ? (
               <HRView key={settingsRevision} />
+            ) : view === 'appraisals' ? (
+              <AppraisalsView key={settingsRevision} />
             ) : view === 'procurement' ? (
               <ProcurementView key={settingsRevision} canAdminister={['owner', 'admin'].includes(me.workspace_role)} canOperate={['owner', 'admin', 'operator'].includes(me.workspace_role)} onOpenRecord={(id) => void open(id)} />
             ) : view === 'expenses' ? (

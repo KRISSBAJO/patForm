@@ -60,9 +60,9 @@ export const MODULES: readonly ModuleDefinition[] = [
   {
     key: 'appraisals',
     name: 'Goals, appraisals and development',
-    summary: 'Review cycles, self-assessment, calibration and development plans.',
+    summary: 'Goals, review cycles with self, peer and manager reviews, calibration, appeals and development plans. Ratings never change pay on their own.',
     categories: [],
-    status: 'coming',
+    status: 'available',
   },
   {
     key: 'assets',

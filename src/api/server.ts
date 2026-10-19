@@ -29,6 +29,7 @@ import { createLegalEntity, createOrgUnit, orgChart, reportingHistory, setManage
 import { addRate, advanceMovements, disburseAdvance, expenseSummary, exportPaid, listAdvances, listBudgets, listExports, listRates, listSettlements, moveSettlement, myBeneficiary, readExpenseSettings, recordAdvanceReturn, revealBeneficiary, reviewLines, saveBeneficiary, saveBudget, settlementLines, updateExpenseSettings, verifyBeneficiary } from '../runtime/expenses.js';
 import { addQuote, approveOrder, cancelOrder, createAgreement, createOrder, createVendor, enterInvoice, exportInvoices, listAgreements, listInvoices, listOrders, listQuotes, listRequisitions, listVendors, openQuotes, orderDetail, payInvoice, procurementSummary, readProcurementSettings, receiveGoods, returnGoods, revealVendorBank, reviewInvoice, reviseOrder, saveVendorBank, selectQuote, setQuoteDeadline, setVendorStatus, updateProcurementSettings, updateVendor, vendorHistory, verifyVendorBank } from '../runtime/procurement.js';
 import { acknowledgeDocument, addCaseNote, addCertification, cancelLeave, completeTask, createDocument, decideLeave, decideProbation, exceptTask, hrSummary, leaveToApprove, listCaseNotes, listCases, listCompensation, listDocuments, listEmployees, listHiring, listHolidays, listLeaveTypes, listReconciliations, listTeams, listTemplates, myDocuments, myLeave, myTasks, readHrSettings, requestLeave, resolveReconciliation, saveHoliday, saveLeaveType, saveTemplate, sendDocument, setCompensation, setEntitlement, setTeamMember, startOffboarding, startOnboarding, startProbationReview, startTransfer, updateEmployee, updateHrSettings, upcoming, urgentTermination } from '../runtime/hr.js';
+import * as apr from '../runtime/appraisals.js';
 import { enabledModules, listModules, setModule, updateWorkspaceSettings, workspaceSettings } from '../runtime/modules.js';
 import { createDelegation, createGrant, listAuthority, revokeDelegation, revokeGrant as revokeAuthorityGrant, workspaceAudit } from '../runtime/authority.js';
 import { logIfEnabled, requestIdFrom, withTrace } from '../runtime/trace.js';
@@ -1019,6 +1020,44 @@ route('GET', /^\/api\/hr\/reconciliation$/, async ({ pool, principal }) => listR
 route('POST', /^\/api\/hr\/reconciliation\/([0-9a-f-]{36})$/, async ({ pool, principal, url }, b) => resolveReconciliation(pool, principal, hid(url, 4), hb(b)));
 route('GET', /^\/api\/hr\/upcoming$/, async ({ pool, principal, url }) => upcoming(pool, principal, Number(url.searchParams.get('days') ?? 60)));
 route('GET', /^\/api\/hr\/hiring$/, async ({ pool, principal }) => listHiring(pool, principal));
+
+// ---- Goals, appraisals and development (PRD Module 8). Who may see and do
+// what is decided in runtime/appraisals.ts.
+const A = '([0-9a-f-]{36})';
+const ar = (re: string) => new RegExp(`^/api/appraisals/${re}$`);
+route('GET', ar('summary'), async ({ pool, principal }) => apr.appraisalSummary(pool, principal));
+route('GET', ar('templates'), async ({ pool, principal }) => apr.listTemplates(pool, principal));
+route('POST', ar('templates'), async ({ pool, principal }, b) => apr.saveTemplate(pool, principal, hb(b)));
+route('POST', ar(`templates/${A}/publish`), async ({ pool, principal, url }) => apr.publishTemplate(pool, principal, hid(url, 4)));
+route('GET', ar('cycles'), async ({ pool, principal }) => apr.listCycles(pool, principal));
+route('POST', ar('cycles'), async ({ pool, principal }, b) => apr.createCycle(pool, principal, hb(b)));
+route('POST', ar(`cycles/${A}/launch`), async ({ pool, principal, url }) => apr.launchCycle(pool, principal, hid(url, 4)));
+route('GET', ar(`cycles/${A}/calibration`), async ({ pool, principal, url }) => apr.calibrationView(pool, principal, hid(url, 4)));
+route('GET', ar(`cycles/${A}/report`), async ({ pool, principal, url }) => apr.cycleReport(pool, principal, hid(url, 4)));
+route('POST', ar(`cycles/${A}/publish`), async ({ pool, principal, url }, b) => apr.publishCycle(pool, principal, hid(url, 4), hb(b)));
+route('POST', ar(`participants/${A}/reviewer`), async ({ pool, principal, url }, b) => apr.assignReviewer(pool, principal, hid(url, 4), hb(b)));
+route('POST', ar(`participants/${A}/peer`), async ({ pool, principal, url }, b) => apr.addPeerReviewer(pool, principal, hid(url, 4), hb(b)));
+route('POST', ar(`participants/${A}/calibrate`), async ({ pool, principal, url }, b) => apr.adjustScore(pool, principal, hid(url, 4), hb(b)));
+route('POST', ar(`participants/${A}/acknowledge`), async ({ pool, principal, url }) => apr.acknowledgeResult(pool, principal, hid(url, 4)));
+route('POST', ar(`participants/${A}/appeal`), async ({ pool, principal, url }, b) => apr.appealResult(pool, principal, hid(url, 4), hb(b)));
+route('GET', ar('reviews/mine'), async ({ pool, principal }) => apr.myAssignments(pool, principal));
+route('GET', ar(`reviews/${A}`), async ({ pool, principal, url }) => apr.assessmentForm(pool, principal, hid(url, 4)));
+route('POST', ar(`reviews/${A}`), async ({ pool, principal, url }, b) => apr.saveAssessment(pool, principal, hid(url, 4), hb(b)));
+route('GET', ar('results/mine'), async ({ pool, principal }) => apr.myResults(pool, principal));
+route('GET', ar('appeals'), async ({ pool, principal }) => apr.listAppeals(pool, principal));
+route('POST', ar(`appeals/${A}/reviewer`), async ({ pool, principal, url }, b) => apr.assignAppealReviewer(pool, principal, hid(url, 4), hb(b)));
+route('POST', ar(`appeals/${A}/decide`), async ({ pool, principal, url }, b) => apr.decideAppeal(pool, principal, hid(url, 4), hb(b)));
+route('GET', ar('recommendations'), async ({ pool, principal }) => apr.listRecommendations(pool, principal));
+route('POST', ar(`recommendations/${A}/decide`), async ({ pool, principal, url }, b) => apr.decideRecommendation(pool, principal, hid(url, 4), hb(b)));
+route('GET', ar('goals'), async ({ pool, principal, url }) => apr.listGoals(pool, principal, { ownerId: url.searchParams.get('owner') ?? undefined }));
+route('GET', ar('goals/team'), async ({ pool, principal }) => apr.teamGoals(pool, principal));
+route('POST', ar('goals'), async ({ pool, principal }, b) => apr.createGoal(pool, principal, hb(b)));
+route('POST', ar(`goals/${A}`), async ({ pool, principal, url }, b) => apr.updateGoal(pool, principal, hid(url, 4), hb(b)));
+route('POST', ar(`goals/${A}/approve`), async ({ pool, principal, url }) => apr.approveGoal(pool, principal, hid(url, 4)));
+route('POST', ar('goals/revisions/(\d+)/decide'), async ({ pool, principal, url }, b) => apr.decideGoalRevision(pool, principal, hid(url, 5), hb(b)));
+route('GET', ar('development'), async ({ pool, principal, url }) => apr.listDevelopment(pool, principal, { employeeId: url.searchParams.get('employee') ?? undefined }));
+route('POST', ar('development'), async ({ pool, principal }, b) => apr.addDevelopmentItem(pool, principal, hb(b)));
+route('POST', ar(`development/${A}/close`), async ({ pool, principal, url }, b) => apr.completeDevelopmentItem(pool, principal, hid(url, 4), hb(b)));
 
 // ---- modules and workspace settings (PRD ORG-01): which shelves are on.
 route('GET', /^\/api\/modules$/, async ({ pool, principal }) => listModules(pool, principal));
