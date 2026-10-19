@@ -430,7 +430,10 @@ export async function submitForm(
     // disagreed, which is worth surfacing rather than hiding.
     return {
       ok: false,
-      errors: result.rejected.map((field) => ({ field, message: 'This is required.' })),
+      // A policy refusal (receipt over the threshold, a category Finance does
+      // not accept, an advance that is not theirs) says why; anything else is
+      // a required field the engine caught.
+      errors: result.rejected.map((field, i) => ({ field, message: result.problems?.[i] ?? 'This is required.' })),
     };
   }
 

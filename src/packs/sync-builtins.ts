@@ -23,6 +23,22 @@ export const REFERENCES = [
     audience: 'Finance teams who need an approval threshold that changes with the amount, and a record of who approved what.',
   },
   {
+    file: 'staff-expense-claim.blueprint.json',
+    key: 'staff_expense_claim',
+    name: 'Expense claim',
+    category: 'Finance',
+    summary: 'Staff claim what they spent; their manager from the directory approves, Finance approves larger claims, and Finance records the payment. A claim can retire a cash advance.',
+    audience: 'Finance teams that set their own limits and receipt rules, and need to see what is approved but not yet paid.',
+  },
+  {
+    file: 'cash-advance.blueprint.json',
+    key: 'cash_advance',
+    name: 'Cash advance',
+    category: 'Finance',
+    summary: 'Staff ask for money up front; it is approved at the right level, Finance records when it is paid out, and the holder retires it with an expense claim or returns the balance.',
+    audience: 'Organisations that pay travel or field costs in advance and need to know who still holds what.',
+  },
+  {
     file: 'church-worker-onboarding.blueprint.json',
     key: 'volunteer_safeguarding',
     name: 'Volunteer onboarding with safeguarding',

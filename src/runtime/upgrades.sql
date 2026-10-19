@@ -383,3 +383,93 @@ create table if not exists tenant_module (
   changed_at  timestamptz not null default now(),
   primary key (tenant_id, module_key)
 );
+
+-- ---------------------------------------------------------------- expenses
+--
+-- PRD Module 5. Approval says a claim may be paid; settlement says whether
+-- it was (EXP-08), kept apart so a failed payment is never shown as paid.
+-- Advances are their own record with what is still owed (EXP-06). The
+-- policy numbers live in expense_settings, per workspace, and are copied
+-- onto each claim when it is submitted, so changing them later never
+-- changes how an old claim was routed.
+
+create table if not exists expense_settings (
+  tenant_id               uuid primary key references tenant(id),
+  categories              jsonb not null default '["travel","accommodation","subsistence","equipment","training","other"]'::jsonb,
+  auto_approve_limit      numeric(18, 2) not null default 100,
+  manager_limit           numeric(18, 2) not null default 1000,
+  line_limit              numeric(18, 2) not null default 200,
+  receipt_threshold       numeric(18, 2) not null default 0,
+  advance_retirement_days int not null default 14,
+  updated_by              uuid references actor(id),
+  updated_at              timestamptz not null default now(),
+  check (auto_approve_limit >= 0 and manager_limit >= 0 and line_limit >= 0 and receipt_threshold >= 0),
+  check (advance_retirement_days between 1 and 365)
+);
+
+create table if not exists expense_settlement (
+  id            uuid primary key default gen_random_uuid(),
+  tenant_id     uuid not null references tenant(id),
+  instance_id   uuid not null references instance(id) unique,
+  claimant      text not null,
+  amount        numeric(18, 2) not null check (amount >= 0),
+  currency      text not null,
+  -- awaiting_payment -> paid | failed; failed -> paid | void; nothing leaves paid.
+  status        text not null default 'awaiting_payment'
+                check (status in ('awaiting_payment', 'paid', 'failed', 'void')),
+  reference     text,
+  note          text,
+  advance_id    uuid,
+  paid_at       timestamptz,
+  updated_by    uuid references actor(id),
+  created_at    timestamptz not null default now(),
+  updated_at    timestamptz not null default now()
+);
+create index if not exists expense_settlement_open on expense_settlement (tenant_id, status, created_at desc);
+
+create table if not exists cash_advance (
+  id            uuid primary key default gen_random_uuid(),
+  tenant_id     uuid not null references tenant(id),
+  instance_id   uuid not null references instance(id) unique,
+  reference     text not null,
+  holder        text not null,
+  amount        numeric(18, 2) not null check (amount > 0),
+  currency      text not null,
+  -- approved -> disbursed -> (awaiting_return ->) retired; approved -> void.
+  status        text not null default 'approved'
+                check (status in ('approved', 'disbursed', 'awaiting_return', 'retired', 'void')),
+  outstanding   numeric(18, 2) not null check (outstanding >= 0),
+  spent         numeric(18, 2) not null default 0 check (spent >= 0),
+  returned      numeric(18, 2) not null default 0 check (returned >= 0),
+  disbursed_at  timestamptz,
+  due_at        timestamptz,
+  disbursed_ref text,
+  updated_by    uuid references actor(id),
+  created_at    timestamptz not null default now(),
+  updated_at    timestamptz not null default now(),
+  unique (tenant_id, reference)
+);
+create index if not exists cash_advance_open on cash_advance (tenant_id, status, due_at);
+
+-- Every movement on an advance, append-only: what was spent against it by
+-- which claim, and what was handed back.
+create table if not exists advance_movement (
+  id          bigserial primary key,
+  tenant_id   uuid not null references tenant(id),
+  advance_id  uuid not null references cash_advance(id),
+  kind        text not null check (kind in ('disbursed', 'spent', 'returned', 'voided')),
+  amount      numeric(18, 2) not null check (amount >= 0),
+  instance_id uuid references instance(id),
+  reference   text,
+  actor_id    uuid references actor(id),
+  occurred_at timestamptz not null default now()
+);
+create index if not exists advance_movement_by_advance on advance_movement (advance_id, id);
+create or replace function advance_movement_is_append_only() returns trigger as $$
+begin
+  raise exception 'advance movements are append-only';
+end;
+$$ language plpgsql;
+drop trigger if exists advance_movement_no_change on advance_movement;
+create trigger advance_movement_no_change before update or delete on advance_movement
+  for each row execute function advance_movement_is_append_only();

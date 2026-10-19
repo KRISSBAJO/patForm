@@ -199,6 +199,31 @@ export function validate(bp: Blueprint, requestedDescription?: string): Diagnost
    * respondent principal before it looks at any role at all, so the capability
    * on the role would not save it even if it were granted.
    */
+  // PRD Module 5: the finance config must point at fields that exist, and the
+  // policy fields must be ones a respondent cannot type into.
+  if (bp.finance) {
+    const at = 'finance';
+    const amount = requireField(bp.finance.amountField, at, 'Finance amount');
+    if (amount && !['number', 'currency', 'calculated'].includes(amount.type)) {
+      d.error('TYPE010', at, `Finance amount "${amount.key}" is a ${amount.type}, not an amount.`);
+    }
+    for (const key of [bp.finance.receiptField, bp.finance.categoryField, bp.finance.advanceReferenceField]) {
+      if (key) requireField(key, at, 'Finance field');
+    }
+    if (bp.finance.kind === 'advance' && bp.finance.advanceReferenceField) {
+      d.error('REF008', at, 'An advance cannot retire another advance; remove advanceReferenceField.');
+    }
+    for (const [name, key] of Object.entries(bp.finance.policy)) {
+      if (!key) continue;
+      const field = requireField(key, at, `Finance policy "${name}"`);
+      if (field && (field.type !== 'number' || field.setBy !== 'system')) {
+        d.error('SEC013', at,
+          `Finance policy field "${key}" must be a number set by the system.`,
+          'Otherwise a claimant could type their own approval limit.');
+      }
+    }
+  }
+
   const checkApprover = (p: Party, at: string, approvalKey: string): void => {
     if ('manager' in p) {
       // The manager comes from the directory, so the only thing to check is

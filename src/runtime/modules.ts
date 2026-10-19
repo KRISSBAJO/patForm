@@ -41,7 +41,7 @@ export const MODULES: readonly ModuleDefinition[] = [
     name: 'Expenses, advances and reimbursements',
     summary: 'Claims, advances and their retirement, approval limits, and settlement records for Finance.',
     categories: ['Finance'],
-    status: 'templates_only',
+    status: 'available',
   },
   {
     key: 'procurement',

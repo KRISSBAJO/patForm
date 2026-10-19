@@ -32,6 +32,35 @@ export const Blueprint = z
     communications: Communications,
     outputs: Outputs,
     tests: z.array(ScenarioTest).default([]),
+    /**
+     * PRD Module 5. Marks a process as an expense claim or a cash advance.
+     *
+     * On submission the engine copies the workspace's expense policy into
+     * the `policy` fields (numbers with setBy system, so a respondent cannot send them), so routing
+     * conditions compare against them and an old claim keeps the numbers it
+     * was routed by. It also checks the receipt rule, the allowed categories
+     * and, for a claim that retires an advance, that the advance is the
+     * submitter's and still open. On reaching the success state it writes
+     * the settlement (claim) or the advance record.
+     */
+    finance: z
+      .object({
+        kind: z.enum(['claim', 'advance']),
+        amountField: Key,
+        receiptField: Key.optional(),
+        categoryField: Key.optional(),
+        advanceReferenceField: Key.optional(),
+        policy: z
+          .object({
+            autoApproveLimit: Key.optional(),
+            managerLimit: Key.optional(),
+            lineLimit: Key.optional(),
+          })
+          .strict()
+          .default({}),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 export type Blueprint = z.infer<typeof Blueprint>;

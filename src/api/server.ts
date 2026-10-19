@@ -25,6 +25,7 @@ import {
 } from '../runtime/auth.js';
 import { runRetention } from '../runtime/retention.js';
 import { createLegalEntity, createOrgUnit, orgChart, reportingHistory, setManager, setMemberPlacement, updateOrgUnit } from '../runtime/org.js';
+import { advanceMovements, disburseAdvance, expenseSummary, listAdvances, listSettlements, moveSettlement, readExpenseSettings, recordAdvanceReturn, updateExpenseSettings } from '../runtime/expenses.js';
 import { enabledModules, listModules, setModule, updateWorkspaceSettings, workspaceSettings } from '../runtime/modules.js';
 import { createDelegation, createGrant, listAuthority, revokeDelegation, revokeGrant as revokeAuthorityGrant, workspaceAudit } from '../runtime/authority.js';
 import { logIfEnabled, requestIdFrom, withTrace } from '../runtime/trace.js';
@@ -873,6 +874,30 @@ route('POST', /^\/api\/authority\/delegations\/([0-9a-f-]{36})\/revoke$/, async 
 );
 route('GET', /^\/api\/audit$/, async ({ pool, principal, url }) =>
   workspaceAudit(pool, principal, Number(url.searchParams.get('limit') ?? 200)),
+);
+
+// ---- Expenses (PRD Module 5). Every route refuses when the module is off.
+// Reading and recording payments needs `operate`; changing the policy needs `administer`.
+route('GET', /^\/api\/expenses\/summary$/, async ({ pool, principal }) => expenseSummary(pool, principal));
+route('GET', /^\/api\/expenses\/settings$/, async ({ pool, principal }) => readExpenseSettings(pool, principal));
+route('POST', /^\/api\/expenses\/settings$/, async ({ pool, principal }, body) =>
+  updateExpenseSettings(pool, principal, (body ?? {}) as Record<string, unknown>),
+);
+route('GET', /^\/api\/expenses\/settlements$/, async ({ pool, principal, url }) =>
+  listSettlements(pool, principal, url.searchParams.get('status') ?? undefined),
+);
+route('POST', /^\/api\/expenses\/settlements\/([0-9a-f-]{36})$/, async ({ pool, principal, url }, body) =>
+  moveSettlement(pool, principal, url.pathname.split('/')[4]!, (body ?? {}) as Record<string, unknown>),
+);
+route('GET', /^\/api\/expenses\/advances$/, async ({ pool, principal }) => listAdvances(pool, principal));
+route('GET', /^\/api\/expenses\/advances\/([0-9a-f-]{36})\/movements$/, async ({ pool, principal, url }) =>
+  advanceMovements(pool, principal, url.pathname.split('/')[4]!),
+);
+route('POST', /^\/api\/expenses\/advances\/([0-9a-f-]{36})\/disburse$/, async ({ pool, principal, url }, body) =>
+  disburseAdvance(pool, principal, url.pathname.split('/')[4]!, (body ?? {}) as Record<string, unknown>),
+);
+route('POST', /^\/api\/expenses\/advances\/([0-9a-f-]{36})\/return$/, async ({ pool, principal, url }, body) =>
+  recordAdvanceReturn(pool, principal, url.pathname.split('/')[4]!, (body ?? {}) as Record<string, unknown>),
 );
 
 // ---- modules and workspace settings (PRD ORG-01): which shelves are on.

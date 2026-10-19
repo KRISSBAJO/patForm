@@ -1,0 +1,772 @@
+{
+  "schemaVersion": "0.1",
+  "key": "cash_advance",
+  "name": "Cash advance",
+  "description": "PRD Module 5, EXP-06. Cash paid up front for a trip or a job. The manager from the directory approves, Finance approves anything over the manager limit, and approval opens an advance record. Finance records when it is paid out, which starts the clock for the holder to retire it with an expense claim.",
+  "intent": {
+    "outcome": "Approved cash is paid out up front and later accounted for with receipts or returned.",
+    "owner": "finance_ops",
+    "respondents": "Any member of staff who needs money in advance.",
+    "expectedVolume": {
+      "count": 40,
+      "per": "month"
+    },
+    "sensitivityCeiling": "confidential",
+    "completionState": "approved",
+    "retentionDays": 2555
+  },
+  "roles": [
+    {
+      "key": "finance_ops",
+      "name": "Finance operations",
+      "kind": "internal",
+      "capabilities": [
+        "view",
+        "edit",
+        "operate",
+        "report",
+        "administer"
+      ],
+      "editableFields": [
+        "cost_centre"
+      ]
+    },
+    {
+      "key": "line_manager",
+      "name": "Line manager",
+      "kind": "internal",
+      "capabilities": [
+        "view",
+        "approve"
+      ]
+    },
+    {
+      "key": "finance_approver",
+      "name": "Finance approver",
+      "kind": "internal",
+      "capabilities": [
+        "view",
+        "approve",
+        "report"
+      ]
+    },
+    {
+      "key": "claimant",
+      "name": "Claimant",
+      "kind": "respondent",
+      "capabilities": [
+        "submit",
+        "view"
+      ],
+      "editableFields": [
+        "purpose"
+      ]
+    }
+  ],
+  "data": {
+    "identity": [
+      "employee_email",
+      "needed_by",
+      "cost_centre"
+    ],
+    "submitterField": "employee_email",
+    "fields": [
+      {
+        "key": "claimant_name",
+        "type": "short_text",
+        "label": "Your name",
+        "required": true,
+        "classification": "confidential"
+      },
+      {
+        "key": "employee_email",
+        "type": "email",
+        "label": "Your work email",
+        "required": true,
+        "classification": "internal"
+      },
+      {
+        "key": "needed_by",
+        "type": "date",
+        "label": "When you need it",
+        "required": true,
+        "classification": "internal",
+        "constraints": {
+          "minDaysFromToday": 0,
+          "maxDaysFromToday": 180,
+          "message": "Choose a date from today up to six months ahead."
+        }
+      },
+      {
+        "key": "cost_centre",
+        "type": "dropdown",
+        "label": "Cost centre",
+        "required": true,
+        "classification": "internal",
+        "choices": [
+          {
+            "value": "eng",
+            "label": "Engineering"
+          },
+          {
+            "value": "sales",
+            "label": "Sales"
+          },
+          {
+            "value": "ops",
+            "label": "Operations"
+          },
+          {
+            "value": "admin",
+            "label": "Administration"
+          }
+        ]
+      },
+      {
+        "key": "purpose",
+        "type": "long_text",
+        "label": "What it is for",
+        "required": true,
+        "classification": "internal",
+        "constraints": {
+          "minLength": 15,
+          "message": "Say what the money is for and roughly how it breaks down."
+        }
+      },
+      {
+        "key": "advance_amount",
+        "type": "currency",
+        "label": "Amount needed",
+        "required": true,
+        "classification": "confidential",
+        "constraints": {
+          "min": 1,
+          "message": "Enter the amount you need."
+        }
+      },
+      {
+        "key": "policy_manager_limit",
+        "type": "number",
+        "label": "Manager limit at submission",
+        "classification": "internal",
+        "setBy": "system"
+      }
+    ]
+  },
+  "experience": {
+    "showProgress": false,
+    "saveAndResume": true,
+    "locales": [
+      "en"
+    ],
+    "confirmation": {
+      "message": "Your request is with your manager. Once it is approved, Finance will pay it and give you the advance reference to quote when you claim your receipts.",
+      "showStatusLink": true
+    },
+    "pages": [
+      {
+        "key": "request",
+        "title": "Request an advance",
+        "sections": [
+          {
+            "key": "who",
+            "fields": [
+              "claimant_name",
+              "employee_email"
+            ],
+            "widths": {
+              "claimant_name": "half",
+              "employee_email": "half"
+            }
+          },
+          {
+            "key": "what",
+            "fields": [
+              "advance_amount",
+              "needed_by",
+              "cost_centre",
+              "purpose"
+            ],
+            "widths": {
+              "advance_amount": "half",
+              "needed_by": "half"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "workflow": {
+    "states": [
+      {
+        "key": "draft",
+        "name": "Not yet submitted",
+        "type": "initial"
+      },
+      {
+        "key": "manager_review",
+        "name": "With your manager",
+        "type": "waiting",
+        "slaHours": 48,
+        "publicLabel": "With your manager"
+      },
+      {
+        "key": "finance_review",
+        "name": "With finance",
+        "type": "waiting",
+        "slaHours": 48,
+        "publicLabel": "With finance"
+      },
+      {
+        "key": "approved",
+        "name": "Approved, awaiting payment",
+        "type": "terminal",
+        "outcome": "success",
+        "publicLabel": "Approved"
+      },
+      {
+        "key": "rejected",
+        "name": "Not approved",
+        "type": "terminal",
+        "outcome": "rejected",
+        "publicLabel": "Not approved"
+      },
+      {
+        "key": "expired",
+        "name": "Closed without a decision",
+        "type": "terminal",
+        "outcome": "expired",
+        "publicLabel": "Closed"
+      }
+    ],
+    "approvals": [
+      {
+        "key": "manager_approval",
+        "name": "Manager approval",
+        "approvers": [
+          {
+            "manager": "submitter",
+            "fallback": "line_manager"
+          }
+        ],
+        "mode": "single",
+        "allowRequestChanges": false,
+        "reasonRequired": true,
+        "notTheSubmitter": true,
+        "contextFields": [
+          "claimant_name",
+          "advance_amount",
+          "needed_by",
+          "purpose"
+        ],
+        "dueInHours": 48
+      },
+      {
+        "key": "finance_approval",
+        "name": "Finance approval",
+        "approvers": [
+          {
+            "role": "finance_approver"
+          }
+        ],
+        "mode": "single",
+        "allowRequestChanges": false,
+        "reasonRequired": true,
+        "notTheSubmitter": true,
+        "contextFields": [
+          "claimant_name",
+          "advance_amount",
+          "cost_centre",
+          "purpose"
+        ],
+        "dueInHours": 48
+      }
+    ],
+    "tasks": [],
+    "transitions": [
+      {
+        "key": "submitted",
+        "from": "draft",
+        "to": "manager_review",
+        "trigger": {
+          "on": "submission"
+        },
+        "actions": [
+          {
+            "do": "send_email",
+            "key": "ack",
+            "template": "request_received"
+          },
+          {
+            "do": "request_approval",
+            "key": "ask_manager",
+            "approval": "manager_approval"
+          }
+        ]
+      },
+      {
+        "key": "manager_approved_within_limit",
+        "from": "manager_review",
+        "to": "approved",
+        "trigger": {
+          "on": "approval_decided",
+          "approval": "manager_approval",
+          "decision": "approved"
+        },
+        "when": {
+          "op": "lte",
+          "left": {
+            "field": "advance_amount"
+          },
+          "right": {
+            "field": "policy_manager_limit"
+          }
+        },
+        "actions": [
+          {
+            "do": "send_email",
+            "key": "ok",
+            "template": "advance_approved"
+          }
+        ]
+      },
+      {
+        "key": "manager_approved_over_limit",
+        "from": "manager_review",
+        "to": "finance_review",
+        "trigger": {
+          "on": "approval_decided",
+          "approval": "manager_approval",
+          "decision": "approved"
+        },
+        "when": {
+          "op": "gt",
+          "left": {
+            "field": "advance_amount"
+          },
+          "right": {
+            "field": "policy_manager_limit"
+          }
+        },
+        "actions": [
+          {
+            "do": "request_approval",
+            "key": "ask_finance",
+            "approval": "finance_approval"
+          }
+        ]
+      },
+      {
+        "key": "manager_rejected",
+        "from": "manager_review",
+        "to": "rejected",
+        "trigger": {
+          "on": "approval_decided",
+          "approval": "manager_approval",
+          "decision": "rejected"
+        },
+        "actions": [
+          {
+            "do": "send_email",
+            "key": "no",
+            "template": "advance_rejected"
+          }
+        ]
+      },
+      {
+        "key": "finance_approved",
+        "from": "finance_review",
+        "to": "approved",
+        "trigger": {
+          "on": "approval_decided",
+          "approval": "finance_approval",
+          "decision": "approved"
+        },
+        "actions": [
+          {
+            "do": "send_email",
+            "key": "ok_finance",
+            "template": "advance_approved"
+          }
+        ]
+      },
+      {
+        "key": "finance_rejected",
+        "from": "finance_review",
+        "to": "rejected",
+        "trigger": {
+          "on": "approval_decided",
+          "approval": "finance_approval",
+          "decision": "rejected"
+        },
+        "actions": [
+          {
+            "do": "send_email",
+            "key": "no_finance",
+            "template": "advance_rejected"
+          }
+        ]
+      },
+      {
+        "key": "finance_nudge",
+        "from": "finance_review",
+        "to": "finance_review",
+        "trigger": {
+          "on": "timer",
+          "afterHoursInState": 48
+        },
+        "actions": [
+          {
+            "do": "send_email",
+            "key": "nudge_finance",
+            "template": "finance_reminder"
+          }
+        ]
+      },
+      {
+        "key": "manager_never_decided",
+        "from": "manager_review",
+        "to": "expired",
+        "trigger": {
+          "on": "timer",
+          "afterHoursInState": 336
+        },
+        "actions": [
+          {
+            "do": "send_email",
+            "key": "closed",
+            "template": "request_closed"
+          }
+        ]
+      }
+    ]
+  },
+  "communications": {
+    "fromName": "Finance",
+    "sms": [],
+    "email": [
+      {
+        "key": "request_received",
+        "name": "Request received",
+        "class": "transactional",
+        "to": [
+          {
+            "submitter": true
+          }
+        ],
+        "cc": [],
+        "subject": "We have your advance request",
+        "body": "Hello {{claimant_name}},\n\nYour request for an advance, needed by {{needed_by}}, is with your manager. You will hear from us when it is decided."
+      },
+      {
+        "key": "advance_approved",
+        "name": "Advance approved",
+        "class": "transactional",
+        "to": [
+          {
+            "submitter": true
+          }
+        ],
+        "cc": [],
+        "subject": "Your advance is approved",
+        "body": "Hello {{claimant_name}},\n\nYour advance has been approved. Finance will pay it and give you its reference. Keep your receipts: you retire the advance by making an expense claim that quotes that reference."
+      },
+      {
+        "key": "advance_rejected",
+        "name": "Advance not approved",
+        "class": "transactional",
+        "to": [
+          {
+            "submitter": true
+          }
+        ],
+        "cc": [],
+        "subject": "Your advance was not approved",
+        "body": "Hello {{claimant_name}},\n\nYour advance request was not approved. The reason is on the record; open your request to read it."
+      },
+      {
+        "key": "finance_reminder",
+        "name": "Finance reminder",
+        "class": "reminder",
+        "to": [
+          {
+            "role": "finance_approver"
+          }
+        ],
+        "cc": [],
+        "subject": "An advance request is waiting for finance",
+        "body": "A request for an advance needed by {{needed_by}} has been waiting two days for a finance decision."
+      },
+      {
+        "key": "request_closed",
+        "name": "Request closed",
+        "class": "transactional",
+        "to": [
+          {
+            "submitter": true
+          }
+        ],
+        "cc": [],
+        "subject": "Your advance request was closed",
+        "body": "Hello {{claimant_name}},\n\nYour advance request had no decision for two weeks and has been closed. Send a new request if you still need the money."
+      }
+    ]
+  },
+  "outputs": {
+    "webhookEvents": [],
+    "exportFields": [
+      "employee_email",
+      "needed_by",
+      "cost_centre"
+    ],
+    "documents": [],
+    "dashboard": {
+      "metrics": [
+        {
+          "key": "requests",
+          "name": "Advance requests",
+          "kind": "intake"
+        },
+        {
+          "key": "approved",
+          "name": "Approved",
+          "kind": "completion_rate"
+        },
+        {
+          "key": "time",
+          "name": "Days to decision",
+          "kind": "cycle_time"
+        }
+      ]
+    }
+  },
+  "finance": {
+    "kind": "advance",
+    "amountField": "advance_amount",
+    "policy": {
+      "managerLimit": "policy_manager_limit"
+    }
+  },
+  "tests": [
+    {
+      "key": "small_advance_manager_only",
+      "kind": "happy_path",
+      "name": "An advance within the manager limit needs only the manager",
+      "steps": [
+        {
+          "step": "submit",
+          "answers": {
+            "claimant_name": "Sam Trent",
+            "employee_email": "sam@example.com",
+            "needed_by": "2026-12-01",
+            "cost_centre": "ops",
+            "purpose": "Site visit to Abuja: transport, lodging and meals for three days.",
+            "advance_amount": 400
+          }
+        },
+        {
+          "step": "decide",
+          "approval": "manager_approval",
+          "as": "line_manager",
+          "decision": "approved",
+          "reason": "Trip agreed."
+        }
+      ],
+      "expect": {
+        "state": "approved",
+        "emails": [
+          "request_received",
+          "advance_approved"
+        ],
+        "instanceCount": 1
+      }
+    },
+    {
+      "key": "large_advance_two_approvals",
+      "kind": "happy_path",
+      "name": "An advance over the manager limit also needs finance",
+      "steps": [
+        {
+          "step": "submit",
+          "answers": {
+            "claimant_name": "Sam Trent",
+            "employee_email": "sam@example.com",
+            "needed_by": "2026-12-02",
+            "cost_centre": "ops",
+            "purpose": "Site visit to Abuja: transport, lodging and meals for three days.",
+            "advance_amount": 2500
+          }
+        },
+        {
+          "step": "decide",
+          "approval": "manager_approval",
+          "as": "line_manager",
+          "decision": "approved",
+          "reason": "Agreed."
+        },
+        {
+          "step": "decide",
+          "approval": "finance_approval",
+          "as": "finance_approver",
+          "decision": "approved",
+          "reason": "Budget checked."
+        }
+      ],
+      "expect": {
+        "state": "approved",
+        "emails": [
+          "request_received",
+          "advance_approved"
+        ],
+        "instanceCount": 1
+      }
+    },
+    {
+      "key": "advance_rejected",
+      "kind": "rejection",
+      "name": "A rejected advance opens no record",
+      "steps": [
+        {
+          "step": "submit",
+          "answers": {
+            "claimant_name": "Sam Trent",
+            "employee_email": "sam@example.com",
+            "needed_by": "2026-12-03",
+            "cost_centre": "ops",
+            "purpose": "Site visit to Abuja: transport, lodging and meals for three days.",
+            "advance_amount": 300
+          }
+        },
+        {
+          "step": "decide",
+          "approval": "manager_approval",
+          "as": "line_manager",
+          "decision": "rejected",
+          "reason": "Not needed."
+        }
+      ],
+      "expect": {
+        "state": "rejected",
+        "emails": [
+          "request_received",
+          "advance_rejected"
+        ]
+      }
+    },
+    {
+      "key": "no_amount",
+      "kind": "missing_data",
+      "name": "A request without an amount never reaches a manager",
+      "steps": [
+        {
+          "step": "submit",
+          "answers": {
+            "claimant_name": "Sam Trent",
+            "employee_email": "sam@example.com",
+            "needed_by": "2026-12-04",
+            "cost_centre": "ops",
+            "purpose": "Site visit to Abuja: transport, lodging and meals for three days."
+          }
+        }
+      ],
+      "expect": {
+        "state": "draft",
+        "instanceCount": 0
+      }
+    },
+    {
+      "key": "self_approval",
+      "kind": "permission",
+      "name": "The requester cannot approve their own advance",
+      "steps": [
+        {
+          "step": "submit",
+          "answers": {
+            "claimant_name": "Sam Trent",
+            "employee_email": "sam@example.com",
+            "needed_by": "2026-12-05",
+            "cost_centre": "ops",
+            "purpose": "Site visit to Abuja: transport, lodging and meals for three days.",
+            "advance_amount": 200
+          }
+        },
+        {
+          "step": "attempt",
+          "as": "claimant",
+          "action": "approve",
+          "expectDenied": true
+        },
+        {
+          "step": "attempt",
+          "as": "line_manager",
+          "action": "approve",
+          "expectDenied": false
+        }
+      ],
+      "expect": {
+        "state": "manager_review"
+      }
+    },
+    {
+      "key": "never_decided",
+      "kind": "timeout",
+      "name": "Two weeks without a manager decision closes the request",
+      "steps": [
+        {
+          "step": "submit",
+          "answers": {
+            "claimant_name": "Sam Trent",
+            "employee_email": "sam@example.com",
+            "needed_by": "2026-12-07",
+            "cost_centre": "ops",
+            "purpose": "Site visit to Abuja: transport, lodging and meals for three days.",
+            "advance_amount": 250
+          }
+        },
+        {
+          "step": "advance_hours",
+          "hours": 336
+        }
+      ],
+      "expect": {
+        "state": "expired",
+        "emails": [
+          "request_received",
+          "request_closed"
+        ]
+      }
+    },
+    {
+      "key": "duplicate",
+      "kind": "duplicate",
+      "name": "The same request sent twice opens one advance",
+      "steps": [
+        {
+          "step": "submit",
+          "answers": {
+            "claimant_name": "Sam Trent",
+            "employee_email": "sam@example.com",
+            "needed_by": "2026-12-06",
+            "cost_centre": "ops",
+            "purpose": "Site visit to Abuja: transport, lodging and meals for three days.",
+            "advance_amount": 150
+          }
+        },
+        {
+          "step": "submit",
+          "answers": {
+            "claimant_name": "Sam Trent",
+            "employee_email": "sam@example.com",
+            "needed_by": "2026-12-06",
+            "cost_centre": "ops",
+            "purpose": "Site visit to Abuja: transport, lodging and meals for three days.",
+            "advance_amount": 150
+          }
+        }
+      ],
+      "expect": {
+        "instanceCount": 1
+      }
+    }
+  ]
+}

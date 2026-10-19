@@ -22,6 +22,7 @@ import { inTransaction, isUniqueViolation, type Client, type Pool } from './db.j
 import { InvalidInput } from './errors.js';
 import { managerOf } from './org.js';
 import { authorityOf, covers } from './authority.js';
+import { applyFinancePolicy, recordFinanceOutcome } from './expenses.js';
 import { ensurePublicForm } from './form-links.js';
 import { requireIntakeOpen } from './intake-control.js';
 import {
@@ -212,18 +213,36 @@ export class Engine {
      * that eventually exists should answer to it.
      */
     id?: string;
-  }): Promise<{ instanceId: string; duplicate: boolean; rejected?: string[]; resumeToken?: string }> {
+  }): Promise<{ instanceId: string; duplicate: boolean; rejected?: string[]; problems?: string[]; resumeToken?: string }> {
     const bp = args.version.blueprint;
     const principal: Principal =
       args.principal ?? { kind: 'respondent', tenantId: args.version.tenant_id, label: args.actor };
     const protectedFields=bp.data.fields.filter(field=>field.setBy==='operator'||field.setBy==='system').map(field=>field.key).filter(key=>args.answers[key]!==undefined);
     if(protectedFields.length) return {instanceId:'',duplicate:false,rejected:protectedFields};
-    const answers = withCalculatedFields(bp.data.fields, args.answers);
+    let answers = withCalculatedFields(bp.data.fields, args.answers);
 
     // Requirement 6.3: a submission that does not satisfy the published form
     // never becomes an instance. The form is the gate, not the approver.
     const missing = [...new Set([...missingRequiredFields(bp, answers, args.now),...validateAnswers(bp,answers,{now:args.now}).map(error=>error.field)])];
     if (missing.length) return { instanceId: '', duplicate: false, rejected: missing };
+
+    // PRD Module 5: copy the workspace's expense policy onto the claim and
+    // check the rules a form cannot (receipt over the threshold, allowed
+    // categories, an advance that is the submitter's and still open).
+    if (bp.finance) {
+      let submitterEmail: string | null = null;
+      if (principal.kind === 'actor') {
+        const { rows } = await this.pool.query<{ email: string }>('select email from actor where id = $1 and tenant_id = $2', [principal.actorId, args.version.tenant_id]);
+        submitterEmail = rows[0]?.email ?? null;
+      } else {
+        const key = bp.data.submitterField ?? bp.data.fields.find((f) => f.type === 'email')?.key;
+        const value = key ? answers[key] : null;
+        submitterEmail = typeof value === 'string' ? value : null;
+      }
+      const policy = await applyFinancePolicy(this.pool, { bp, tenantId: args.version.tenant_id, answers, submitterEmail });
+      if (policy.rejected.length) return { instanceId: '', duplicate: false, rejected: policy.rejected, problems: policy.problems };
+      answers = policy.answers;
+    }
 
     const transition = selectSubmissionTransition(bp, answers, args.now);
     const identityKey = identityFor(bp, answers);
@@ -1499,6 +1518,24 @@ async function applyTransition(
      values ($1, $2, $3, $4, $5, $5, $6)`,
     [instance.tenant_id, instance.id, eventId, transition.key, now, currentRequestId()],
   );
+
+  // PRD Module 5: a finance process reaching success writes its settlement
+  // or advance in this same transaction, so approval and the money record
+  // can never disagree.
+  if (bp.finance && target.type === 'terminal' && target.outcome === 'success') {
+    const submitterId = await submitterActor(client, bp, instance);
+    let submitter = submitterOf(bp, instance);
+    if (submitterId) {
+      const { rows } = await client.query<{ email: string }>('select email from actor where id = $1', [submitterId]);
+      submitter = rows[0]?.email ?? submitter;
+    }
+    const events = await recordFinanceOutcome(client, {
+      bp, instanceId: instance.id, tenantId: instance.tenant_id, data: instance.data, submitter: submitter ?? 'unknown', now,
+    });
+    for (const e of events) {
+      await appendEvent(client, { tenantId: instance.tenant_id, instanceId: instance.id, type: e.type, payload: e.payload, actor: 'system:finance', now });
+    }
+  }
 
   instance.state = transition.to;
   instance.state_entered_at = now;
