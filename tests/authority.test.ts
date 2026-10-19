@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { Blueprint } from '../src/blueprint/index.js';
 import { validate } from '../src/compiler/validate.js';
-import { applyUpgrades, createPool } from '../src/runtime/db.js';
+import { createPool } from '../src/runtime/db.js';
 import { Engine } from '../src/runtime/engine.js';
 import { InvalidInput } from '../src/runtime/errors.js';
 import { authorityOf, covers, createDelegation, createGrant, listAuthority, revokeDelegation, revokeGrant, workspaceAudit } from '../src/runtime/authority.js';
@@ -27,7 +27,6 @@ async function workspace(engine: Engine, label: string) {
 test('grants: self-grant refused, entity scope honoured, delegation capped at the holder, revocation audited', { skip: !localDatabase }, async () => {
   const pool = createPool(3);
   try {
-    await applyUpgrades(pool);
     const engine = new Engine(pool);
     const { tenantId, adminId, admin } = await workspace(engine, 'grants');
     const director = await engine.createActor(tenantId, `dir-${stamp()}@auth.test`, 'Director', 'approver');
@@ -125,7 +124,6 @@ test('an approval with a limit refuses above it, admits a delegate, and escalate
 
   const pool = createPool(3);
   try {
-    await applyUpgrades(pool);
     const engine = new Engine(pool);
     const { tenantId, admin } = await workspace(engine, 'limits');
     const manager = await engine.createActor(tenantId, `mgr-${stamp()}@auth.test`, 'Manager', 'approver');

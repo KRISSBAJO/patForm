@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { Blueprint } from '../src/blueprint/index.js';
 import { validate as compile } from '../src/compiler/validate.js';
-import { applyUpgrades, createPool } from '../src/runtime/db.js';
+import { createPool } from '../src/runtime/db.js';
 import { Engine } from '../src/runtime/engine.js';
 import { InvalidInput } from '../src/runtime/errors.js';
 import { createLegalEntity, createOrgUnit, managerOf, orgChart, reportingHistory, setManager, setMemberPlacement, updateOrgUnit } from '../src/runtime/org.js';
@@ -25,7 +25,6 @@ async function workspace(engine: Engine, label: string) {
 test('units nest, refuse loops, and stay inside their workspace', { skip: !localDatabase }, async () => {
   const pool = createPool(3);
   try {
-    await applyUpgrades(pool);
     const engine = new Engine(pool);
     const { tenantId, admin } = await workspace(engine, 'units');
     const other = await workspace(engine, 'units-other');
@@ -64,7 +63,6 @@ test('units nest, refuse loops, and stay inside their workspace', { skip: !local
 test('a manager is a dated line: replacing closes the old one, loops are refused', { skip: !localDatabase }, async () => {
   const pool = createPool(3);
   try {
-    await applyUpgrades(pool);
     const engine = new Engine(pool);
     const { tenantId, admin } = await workspace(engine, 'managers');
     const ceo = await engine.createActor(tenantId, `ceo-${stamp()}@org.test`, 'CEO', 'operator');
@@ -140,7 +138,6 @@ test('an approval addressed to the submitter\'s manager routes by the directory,
 
   const pool = createPool(3);
   try {
-    await applyUpgrades(pool);
     const engine = new Engine(pool);
     const { tenantId, admin } = await workspace(engine, 'routing');
     const manager = await engine.createActor(tenantId, `boss-${stamp()}@org.test`, 'Boss', 'approver');

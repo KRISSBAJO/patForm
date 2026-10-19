@@ -4,6 +4,7 @@ import { validate } from '../compiler/validate.js';
 import type { Diagnostic } from '../compiler/diagnostics.js';
 import { inTransaction, type Client, type Pool } from './db.js';
 import { requireWorkspaceCapability, type Principal } from './policy.js';
+import { categoryAvailable, enabledModules } from './modules.js';
 import { CONTROL_MEANS, rulesFor } from '../packs/rules.js';
 
 /**
@@ -308,7 +309,10 @@ export async function listPacks(
     [args.principal.tenantId, args.category ?? null, args.search ?? null],
   );
 
-  return rows.map((r) => ({
+  // Only the shelves this workspace has switched on. A category no module
+  // claims is part of the platform and always shows.
+  const on = await enabledModules(pool, args.principal.tenantId);
+  return rows.filter((r) => categoryAvailable(r.category, on)).map((r) => ({
     id: r.id,
     packKey: r.pack_key,
     version: r.version,

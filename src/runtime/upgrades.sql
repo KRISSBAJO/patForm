@@ -362,3 +362,24 @@ $$ language plpgsql;
 drop trigger if exists workspace_admin_audit_no_change on workspace_admin_audit;
 create trigger workspace_admin_audit_no_change before update or delete on workspace_admin_audit
   for each row execute function workspace_admin_audit_is_append_only();
+
+-- ----------------------------------------------------------------- modules
+--
+-- PRD ORG-01: which modules a workspace has switched on, and the workspace
+-- settings the modules share. The catalogue of modules lives in code
+-- (runtime/modules.ts); this records the choice. Switching a module off hides
+-- its templates and menus; it deletes nothing.
+
+alter table tenant add column if not exists timezone text not null default 'Europe/London';
+alter table tenant add column if not exists default_currency text not null default 'GBP';
+alter table tenant add column if not exists locale text not null default 'en-GB';
+
+create table if not exists tenant_module (
+  tenant_id   uuid not null references tenant(id),
+  module_key  text not null,
+  enabled     boolean not null default true,
+  plan        text,
+  changed_by  uuid references actor(id),
+  changed_at  timestamptz not null default now(),
+  primary key (tenant_id, module_key)
+);

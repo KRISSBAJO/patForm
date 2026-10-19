@@ -126,6 +126,12 @@ Acceptance scenarios (4.4):
   `/api/authority` and `/api/audit`, step-up on grant, delegate and manager
   changes. Not done: the two-admin approval of privilege increases (only
   self-grant is refused), and console pages for any of it.
+- 19 Oct 2026: the module layer (ORG-01) is built: a module catalogue in
+  `src/runtime/modules.ts`, `tenant_module` per workspace, the pack gallery
+  filtered by enabled modules, workspace settings (name, time zone, default
+  currency, locale) with validation, routes under `/api/modules` and
+  `/api/workspace/settings`, `modules` on `/api/session`, and a
+  "Modules & workspace" page in the console settings menu. Audited.
 
 ## What to build first
 

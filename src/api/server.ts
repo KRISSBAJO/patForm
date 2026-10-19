@@ -25,6 +25,7 @@ import {
 } from '../runtime/auth.js';
 import { runRetention } from '../runtime/retention.js';
 import { createLegalEntity, createOrgUnit, orgChart, reportingHistory, setManager, setMemberPlacement, updateOrgUnit } from '../runtime/org.js';
+import { enabledModules, listModules, setModule, updateWorkspaceSettings, workspaceSettings } from '../runtime/modules.js';
 import { createDelegation, createGrant, listAuthority, revokeDelegation, revokeGrant as revokeAuthorityGrant, workspaceAudit } from '../runtime/authority.js';
 import { logIfEnabled, requestIdFrom, withTrace } from '../runtime/trace.js';
 import { callerFor, limitFor, processKeyFrom, takeIntakeToken } from './intake-limits.js';
@@ -874,6 +875,16 @@ route('GET', /^\/api\/audit$/, async ({ pool, principal, url }) =>
   workspaceAudit(pool, principal, Number(url.searchParams.get('limit') ?? 200)),
 );
 
+// ---- modules and workspace settings (PRD ORG-01): which shelves are on.
+route('GET', /^\/api\/modules$/, async ({ pool, principal }) => listModules(pool, principal));
+route('POST', /^\/api\/modules\/([a-z_]+)$/, async ({ pool, principal, url }, body) =>
+  setModule(pool, principal, url.pathname.split('/')[3]!, (body ?? {}) as { enabled?: unknown; plan?: unknown }),
+);
+route('GET', /^\/api\/workspace\/settings$/, async ({ pool, principal }) => workspaceSettings(pool, principal));
+route('POST', /^\/api\/workspace\/settings$/, async ({ pool, principal }, body) =>
+  updateWorkspaceSettings(pool, principal, (body ?? {}) as Record<string, unknown>),
+);
+
 route('POST', /^\/api\/members\/([0-9a-f-]{36})\/deactivate$/, async ({ pool, principal, url }) =>
   setMemberActive(pool, { principal, actorId: url.pathname.split('/')[3]!, active: false }),
 );
@@ -1148,11 +1159,12 @@ route('POST', /^\/api\/platform\/people\/[0-9a-f-]{36}\/revoke-sessions$/, async
 route('GET', /^\/api\/session$/, async ({ engine, pool, actorId }) => {
   const actor = await engine.actor(actorId);
   if (!actor) throw new HttpError(401, 'unknown actor');
-  const [processes, devices] = await Promise.all([
+  const [processes, devices, modules] = await Promise.all([
     engine.processesFor(actor.tenant_id, actorId),
     devicesFor(pool, actorId),
+    enabledModules(pool, actor.tenant_id),
   ]);
-  return { actor, processes, devices };
+  return { actor, processes, devices, modules: [...modules] };
 });
 
 // ------------------------------------------------- two-step verification
