@@ -365,12 +365,16 @@ export async function invite(
       );
     }
 
-    const { rows: existing } = await client.query<{ id: string; active: boolean }>(
-      'select id, active from actor where tenant_id = $1 and email = $2',
+    const { rows: existing } = await client.query<{ id: string; active: boolean; provisioned_by: string; has_password: boolean }>(
+      `select a.id, a.active, a.provisioned_by, exists (select 1 from credential c where c.actor_id = a.id) as has_password
+         from actor a where a.tenant_id = $1 and a.email = $2`,
       [tenantId, email],
     );
-    if (existing[0]?.active) throw new InvalidInput('somebody with that address is already in this workspace');
-    if (existing[0]) throw new InvalidInput('that address belongs to a deactivated member — reactivate them instead');
+    // Somebody imported from a spreadsheet is already in the directory but
+    // has never signed in; the invitation is how they set their password.
+    const imported = existing[0]?.active && existing[0].provisioned_by === 'import' && !existing[0].has_password;
+    if (existing[0]?.active && !imported) throw new InvalidInput('somebody with that address is already in this workspace');
+    if (existing[0] && !existing[0].active) throw new InvalidInput('that address belongs to a deactivated member — reactivate them instead');
 
     // One open invitation per address. A second would mean two valid links
     // and a question about which role actually applies.
@@ -526,12 +530,29 @@ export async function acceptInvitation(
       invitation.tenant_id,
     ]);
 
-    const { rows: actors } = await client.query<{ id: string }>(
-      `insert into actor (tenant_id, email, display_name, workspace_role, provisioned_by)
-       values ($1, $2, $3, $4, 'invite') returning id`,
-      [invitation.tenant_id, invitation.email, args.displayName.trim() || invitation.email, invitation.workspace_role],
+    // An imported person already exists, with their manager and unit set;
+    // accepting adopts that row rather than creating a second one.
+    const { rows: imported } = await client.query<{ id: string }>(
+      `select a.id from actor a
+        where a.tenant_id = $1 and lower(a.email) = lower($2) and a.provisioned_by = 'import' and a.active
+          and not exists (select 1 from credential c where c.actor_id = a.id)
+        for update`,
+      [invitation.tenant_id, invitation.email],
     );
-    const actorId = actors[0]!.id;
+    let actorId: string;
+    if (imported[0]) {
+      actorId = imported[0].id;
+      if (args.displayName.trim()) {
+        await client.query('update actor set display_name = $2 where id = $1', [actorId, args.displayName.trim()]);
+      }
+    } else {
+      const { rows: actors } = await client.query<{ id: string }>(
+        `insert into actor (tenant_id, email, display_name, workspace_role, provisioned_by)
+         values ($1, $2, $3, $4, 'invite') returning id`,
+        [invitation.tenant_id, invitation.email, args.displayName.trim() || invitation.email, invitation.workspace_role],
+      );
+      actorId = actors[0]!.id;
+    }
 
     await setPassword(client, actorId, args.password);
 

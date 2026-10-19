@@ -169,6 +169,17 @@ Acceptance scenarios (4.4):
   including bank details. Console: Claims (review lines, check bank,
   pay), Advances, Budgets, Exports, Policy and rates, My bank details.
   Production note: set `MFA_ENCRYPTION_KEY`, which also seals bank details.
+- 19 Oct 2026: directory import (ORG-09). People > Import from a
+  spreadsheet: CSV with email, name, unit (nested as "A > B"), manager
+  email, title, role, entity. Every row is checked first and named
+  errors come back per row (bad or duplicate email, unknown or
+  deactivated manager, self-management, reporting loops including ones
+  through existing lines, ambiguous unit names, roles the importer cannot
+  give). Nothing is saved unless every row is clean, and the real run
+  re-checks inside one transaction under the workspace lock. New people
+  are created at once (provisioned_by 'import', no password) with their
+  place in the organisation; their invitation adopts that row. An import
+  never changes an existing member's role.
 
 ## What to build first
 

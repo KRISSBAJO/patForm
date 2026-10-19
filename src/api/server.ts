@@ -24,6 +24,7 @@ import {
   startSession,
 } from '../runtime/auth.js';
 import { runRetention } from '../runtime/retention.js';
+import { importDirectory } from '../runtime/directory-import.js';
 import { createLegalEntity, createOrgUnit, orgChart, reportingHistory, setManager, setMemberPlacement, updateOrgUnit } from '../runtime/org.js';
 import { addRate, advanceMovements, disburseAdvance, expenseSummary, exportPaid, listAdvances, listBudgets, listExports, listRates, listSettlements, moveSettlement, myBeneficiary, readExpenseSettings, recordAdvanceReturn, revealBeneficiary, reviewLines, saveBeneficiary, saveBudget, settlementLines, updateExpenseSettings, verifyBeneficiary } from '../runtime/expenses.js';
 import { enabledModules, listModules, setModule, updateWorkspaceSettings, workspaceSettings } from '../runtime/modules.js';
@@ -834,6 +835,11 @@ route('GET', /^\/api\/members\/grantable$/, async ({ pool, principal, actorId })
   // server will refuse.
   return { roles: grantableRoles(rows[0]!.workspace_role) };
 });
+
+// ---- directory import (ORG-09): check every row first, save only a clean file.
+route('POST', /^\/api\/directory\/import$/, async ({ pool, principal }, body) =>
+  importDirectory(pool, principal, (body ?? {}) as { rows?: unknown; dryRun?: unknown; sendInvitations?: unknown }),
+);
 
 // ---- the organisation directory (PRD Module 1, ORG-02). Reads for every
 // member; writes need `administer`, checked inside org.ts.

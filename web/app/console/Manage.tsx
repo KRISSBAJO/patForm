@@ -18,6 +18,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { ShareForm } from '../../components/share-form';
 import { postJson } from './stepup';
 import { PlacementSection } from './OrgPlacement';
+import { DirectoryImport } from './DirectoryImport';
 
 async function get<T>(path: string): Promise<T> {
   const res = await fetch(path, { credentials: 'same-origin' });
@@ -154,6 +155,7 @@ export function PeopleView({ canAdminister, onInvite }: { canAdminister: boolean
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedRole, setSelectedRole] = useState('');
   const [page, setPage] = useState(1);
+  const [importing, setImporting] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -218,6 +220,11 @@ export function PeopleView({ canAdminister, onInvite }: { canAdminister: boolean
           <p>Find teammates, review access, and manage invitations in one place.</p>
         </div>
         {canAdminister && (
+          <button type="button" className="cs__btn pp__invite" aria-expanded={importing} onClick={() => { setSelectedId(null); setImporting((v) => !v); }}>
+            Import from a spreadsheet
+          </button>
+        )}
+        {canAdminister && (
           <button type="button" className="cs__btn cs__btn--primary pp__invite" onClick={onInvite}>
             <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
               <circle cx="8" cy="7" r="3" />
@@ -239,6 +246,8 @@ export function PeopleView({ canAdminister, onInvite }: { canAdminister: boolean
           {note}
         </p>
       )}
+
+      {importing && <DirectoryImport onClose={() => setImporting(false)} onImported={() => void load()} />}
 
       {selected ? (
         <section className="pp2__detail" aria-label={`Profile for ${selected.display_name}`}>

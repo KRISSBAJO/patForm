@@ -608,3 +608,9 @@ create table if not exists expense_export (
   created_at  timestamptz not null default now(),
   unique (tenant_id, batch_no)
 );
+
+-- Directory import: people created from a spreadsheet, waiting for their
+-- invitation to set a password.
+alter table actor drop constraint if exists actor_provisioned_by_check;
+alter table actor add constraint actor_provisioned_by_check
+  check (provisioned_by in ('seed', 'signup', 'invite', 'scim', 'import'));

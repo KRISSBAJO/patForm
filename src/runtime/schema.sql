@@ -56,7 +56,7 @@ create table actor (
    */
   email_verified_at timestamptz,
   provisioned_by text not null default 'seed'
-    check (provisioned_by in ('seed', 'signup', 'invite', 'scim')),
+    check (provisioned_by in ('seed', 'signup', 'invite', 'scim', 'import')),
   created_at  timestamptz not null default now(),
   unique (tenant_id, email)
 );

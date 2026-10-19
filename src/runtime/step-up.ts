@@ -122,6 +122,7 @@ export const STEP_UP: { method: string; test: RegExp; when?: (body: unknown) => 
   },
   { method: 'POST', test: /^\/api\/members\/[0-9a-f-]{36}\/role$/, what: "change somebody's role" },
   { method: 'POST', test: /^\/api\/authority\/grants$/, what: 'grant approval authority' },
+  { method: 'POST', test: /^\/api\/directory\/import$/, when: (body) => (body as { dryRun?: boolean })?.dryRun === false, what: 'import people' },
   { method: 'POST', test: /^\/api\/expenses\/settings$/, what: 'change the expense policy' },
   { method: 'POST', test: /^\/api\/expenses\/settlements\/[0-9a-f-]{36}\/bank$/, what: 'see bank details' },
   { method: 'POST', test: /^\/api\/expenses\/bank$/, what: 'change bank details' },

@@ -5318,3 +5318,18 @@ a.cs__navItem {
 .ex__table .cs__input { width: 100%; min-width: 80px; }
 .ex__sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 @media (max-width: 720px) { .ex__table thead { display: none; } .ex__table tr { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 8px 0; } }
+
+/* Directory import. */
+.dim { margin-bottom: 18px; padding: 22px 24px; display: grid; gap: 14px; }
+.dim__head { display: flex; justify-content: space-between; gap: 18px; align-items: flex-start; }
+.dim__head h3 { margin: 0 0 6px; font: 600 17px var(--ui); color: var(--ink); }
+.dim__head p { margin: 0; color: var(--muted); font: 13px/1.5 var(--ui); }
+.dim__step { display: grid; gap: 10px; }
+.dim__text { width: 100%; font: 12px/1.45 ui-monospace, Consolas, monospace; }
+.dim__note { margin: 0; color: var(--muted); font-size: 12px; }
+.dim__table td small { color: var(--muted); }
+.dim__bad td { background: #fff6f5; }
+.dim__err { color: var(--red-text); }
+.dim__warn { color: #876841; }
+.dim__list { margin: 0; padding-left: 18px; font-size: 12px; color: var(--red-text); }
+.dim__go { align-items: center; justify-content: space-between; }
