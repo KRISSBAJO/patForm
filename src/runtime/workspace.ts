@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { inTransaction, type Client, type Pool } from './db.js';
 import { setPassword } from './auth.js';
+import { recordWorkspaceAudit } from './authority.js';
 import { WORKSPACE_GRANTS, requireWorkspaceCapability, type Principal, type WorkspaceRole } from './policy.js';
 import type { Capability } from '../blueprint/roles.js';
 import { logIfEnabled } from './trace.js';
@@ -643,6 +644,10 @@ export async function setMemberActive(
       sessionsRevoked = rowCount ?? 0;
     }
 
+    await recordWorkspaceAudit(client, {
+      tenantId, actorId: principal.actorId, action: args.active ? 'member.reactivated' : 'member.deactivated',
+      targetId: args.actorId, detail: { sessionsRevoked },
+    });
     logIfEnabled('info', args.active ? 'member.reactivated' : 'member.deactivated', {
       tenantId,
       target: args.actorId,
@@ -686,6 +691,10 @@ export async function changeRole(
       args.actorId,
       tenantId,
     ]);
+    await recordWorkspaceAudit(client, {
+      tenantId, actorId: principal.actorId, action: 'member.role_changed', targetId: args.actorId,
+      detail: { from: target[0].workspace_role, to: args.workspaceRole },
+    });
     return { actorId: args.actorId, workspaceRole: args.workspaceRole };
   });
 }

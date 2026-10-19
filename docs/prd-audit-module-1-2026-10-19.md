@@ -116,6 +116,16 @@ Acceptance scenarios (4.4):
   `routing_unresolved` events, routes under `/api/org` and
   `/api/members/:id/{manager,placement,reporting}`, and the builder option.
   No People-page UI for it yet; membership lifecycle enum (ORG-03) not done.
+- 19 Oct 2026: step 3 (ORG-05/06) and most of step 4 (ORG-07, admin audit)
+  are built: `authority_grant` (limit, currency, decision type, entity
+  scope, validity), `delegation` (capped at the holder, no chaining),
+  `approval.authority` on the blueprint with escalation at routing and a
+  second check at decide time, delegates admitted to named approvals,
+  `workspace_admin_audit` (append-only) written for grants, delegations,
+  role changes, deactivation and manager changes, routes under
+  `/api/authority` and `/api/audit`, step-up on grant, delegate and manager
+  changes. Not done: the two-admin approval of privilege increases (only
+  self-grant is refused), and console pages for any of it.
 
 ## What to build first
 

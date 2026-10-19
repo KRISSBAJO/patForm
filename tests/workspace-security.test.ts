@@ -15,7 +15,7 @@ const localDatabase = !!process.env.DATABASE_URL && ['localhost', '127.0.0.1', '
 const stamp = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 test('an administrator cannot sign out a member of another workspace', { skip: !localDatabase }, async () => {
-  const pool = createPool();
+  const pool = createPool(3);
   try {
     const engine = new Engine(pool);
     const tenantA = await engine.createTenant(`revoke-a-${stamp()}`, { scenario: true });
@@ -47,7 +47,7 @@ test('an administrator cannot sign out a member of another workspace', { skip: !
 });
 
 test('one email in two workspaces signs in by password, and asks when both fit', { skip: !localDatabase }, async () => {
-  const pool = createPool();
+  const pool = createPool(3);
   try {
     const engine = new Engine(pool);
     const email = `shared-${stamp()}@example.test`;
@@ -80,7 +80,7 @@ test('one email in two workspaces signs in by password, and asks when both fit',
 });
 
 test('only administrators see device counts and last activity in the member list', { skip: !localDatabase }, async () => {
-  const pool = createPool();
+  const pool = createPool(3);
   try {
     const engine = new Engine(pool);
     const tenantId = await engine.createTenant(`members-${stamp()}`, { scenario: true });
@@ -109,7 +109,7 @@ test('concurrent record history writes never collide on seq', { skip: !localData
   const bp = Blueprint.parse(JSON.parse(readFileSync('processes/expense-approval.blueprint.json', 'utf8')));
   const submit = bp.tests[0]!.steps.find((step) => step.step === 'submit')!;
   if (submit.step !== 'submit') throw new Error('expected a submit step');
-  const pool = createPool();
+  const pool = createPool(3);
   try {
     const engine = new Engine(pool);
     const tenantId = await engine.createTenant(`seq-${stamp()}`, { scenario: true });

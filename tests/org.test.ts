@@ -23,7 +23,7 @@ async function workspace(engine: Engine, label: string) {
 }
 
 test('units nest, refuse loops, and stay inside their workspace', { skip: !localDatabase }, async () => {
-  const pool = createPool();
+  const pool = createPool(3);
   try {
     await applyUpgrades(pool);
     const engine = new Engine(pool);
@@ -62,7 +62,7 @@ test('units nest, refuse loops, and stay inside their workspace', { skip: !local
 });
 
 test('a manager is a dated line: replacing closes the old one, loops are refused', { skip: !localDatabase }, async () => {
-  const pool = createPool();
+  const pool = createPool(3);
   try {
     await applyUpgrades(pool);
     const engine = new Engine(pool);
@@ -138,7 +138,7 @@ test('an approval addressed to the submitter\'s manager routes by the directory,
   assert.equal(warned.errors.length, 0);
   assert.ok(warned.warnings.some((w) => w.code === 'OPS012'), JSON.stringify(warned.warnings));
 
-  const pool = createPool();
+  const pool = createPool(3);
   try {
     await applyUpgrades(pool);
     const engine = new Engine(pool);
@@ -159,11 +159,18 @@ test('an approval addressed to the submitter\'s manager routes by the directory,
       answers: { ...submit.answers, expense_date: `2026-09-0${++claim}` },
       now, principal: { kind: 'actor', tenantId, actorId: staff },
     });
+    // The outbox is one queue for every tenant, and the suite runs test files
+    // in parallel, so another process may hold our row for a moment: ask a
+    // few times before concluding nothing was routed.
     const requestFor = async (instanceId: string) => {
-      await engine.drain(now, 'test', tenantId);
-      const { rows } = await pool.query<{ approvers: string[] }>(
-        "select approvers from approval_request where instance_id = $1 and approval_key = 'manager_approval'", [instanceId]);
-      return rows[0]?.approvers ?? null;
+      for (let attempt = 0; attempt < 40; attempt++) {
+        await engine.drain(now, 'test', tenantId);
+        const { rows } = await pool.query<{ approvers: string[] }>(
+          "select approvers from approval_request where instance_id = $1 and approval_key = 'manager_approval'", [instanceId]);
+        if (rows[0]) return rows[0].approvers;
+        await new Promise((r) => setTimeout(r, 250));
+      }
+      return null;
     };
     const eventsFor = async (instanceId: string) => (await engine.events(instanceId)).map((e) => e.type);
 

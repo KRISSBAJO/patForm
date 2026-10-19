@@ -93,6 +93,27 @@ export const Approval = z
     /** Fields the approver needs to decide; drives the approval queue summary. */
     contextFields: z.array(Key).optional(),
     dueInHours: z.number().positive().optional(),
+    /**
+     * Monetary authority (PRD ORG-05). When set, an approver must hold an
+     * authority grant — their own, or one delegated to them — whose limit
+     * covers the amount in `amountField`, for this `decisionType` (the
+     * process key unless named) and the record's legal entity. A title or a
+     * role is never enough on its own.
+     *
+     * At routing time, when nobody named could cover the amount, the request
+     * goes to `escalateTo` instead and the record says so. Without an
+     * escalation route it waits, named to people who cannot decide it,
+     * which an administrator will see in the queue.
+     */
+    authority: z
+      .object({
+        amountField: Key,
+        decisionType: Key.optional(),
+        currency: z.string().regex(/^[A-Z]{3}$/).optional(),
+        escalateTo: Party.optional(),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 export type Approval = z.infer<typeof Approval>;

@@ -13,6 +13,7 @@
 import { inTransaction, type Client, type Pool } from './db.js';
 import { InvalidInput } from './errors.js';
 import { requireWorkspaceCapability, type Principal } from './policy.js';
+import { recordWorkspaceAudit } from './authority.js';
 
 export interface LegalEntityRow { id: string; name: string; code: string | null; created_at: Date }
 export interface OrgUnitRow {
@@ -323,6 +324,10 @@ export async function setManager(pool: Pool, principal: Principal, actorId: stri
          values ($1, $2, $3, 'primary', $4, $5)`,
         [tenantId, actorId, managerId, effectiveFrom, by]);
     }
+    await recordWorkspaceAudit(client, {
+      tenantId, actorId: by, action: 'member.manager_changed', targetId: actorId,
+      detail: { from: previous?.manager_id ?? null, to: managerId, effectiveFrom },
+    });
     return { actorId, managerId, changed: true, previousManagerId: previous?.manager_id ?? null };
   });
 }

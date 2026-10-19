@@ -25,6 +25,7 @@ import {
 } from '../runtime/auth.js';
 import { runRetention } from '../runtime/retention.js';
 import { createLegalEntity, createOrgUnit, orgChart, reportingHistory, setManager, setMemberPlacement, updateOrgUnit } from '../runtime/org.js';
+import { createDelegation, createGrant, listAuthority, revokeDelegation, revokeGrant as revokeAuthorityGrant, workspaceAudit } from '../runtime/authority.js';
 import { logIfEnabled, requestIdFrom, withTrace } from '../runtime/trace.js';
 import { callerFor, limitFor, processKeyFrom, takeIntakeToken } from './intake-limits.js';
 import { traceByRequest, traceForInstance } from '../runtime/support.js';
@@ -852,6 +853,25 @@ route('POST', /^\/api\/members\/([0-9a-f-]{36})\/manager$/, async ({ pool, princ
 );
 route('POST', /^\/api\/members\/([0-9a-f-]{36})\/placement$/, async ({ pool, principal, url }, body) =>
   setMemberPlacement(pool, principal, url.pathname.split('/')[3]!, (body ?? {}) as Record<string, unknown>),
+);
+
+// ---- approval authority (PRD ORG-05 to ORG-07). Grants and delegations;
+// creating either needs a fresh sign-in (see runtime/step-up.ts).
+route('GET', /^\/api\/authority$/, async ({ pool, principal }) => listAuthority(pool, principal));
+route('POST', /^\/api\/authority\/grants$/, async ({ pool, principal }, body) =>
+  createGrant(pool, principal, (body ?? {}) as Record<string, unknown>),
+);
+route('POST', /^\/api\/authority\/grants\/([0-9a-f-]{36})\/revoke$/, async ({ pool, principal, url }, body) =>
+  revokeAuthorityGrant(pool, principal, url.pathname.split('/')[4]!, (body as { reason?: unknown } | null)?.reason),
+);
+route('POST', /^\/api\/authority\/delegations$/, async ({ pool, principal }, body) =>
+  createDelegation(pool, principal, (body ?? {}) as Record<string, unknown>),
+);
+route('POST', /^\/api\/authority\/delegations\/([0-9a-f-]{36})\/revoke$/, async ({ pool, principal, url }) =>
+  revokeDelegation(pool, principal, url.pathname.split('/')[4]!),
+);
+route('GET', /^\/api\/audit$/, async ({ pool, principal, url }) =>
+  workspaceAudit(pool, principal, Number(url.searchParams.get('limit') ?? 200)),
 );
 
 route('POST', /^\/api\/members\/([0-9a-f-]{36})\/deactivate$/, async ({ pool, principal, url }) =>

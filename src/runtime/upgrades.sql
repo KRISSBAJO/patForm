@@ -286,3 +286,79 @@ alter table actor add column if not exists position_title text;
 alter table reporting_line drop constraint if exists reporting_line_check1;
 alter table reporting_line drop constraint if exists reporting_line_dates;
 alter table reporting_line add constraint reporting_line_dates check (effective_to is null or effective_to >= effective_from);
+
+-- --------------------------------------------------------------- authority
+--
+-- PRD Module 1, ORG-05 to ORG-07. Who may approve what, up to how much, and
+-- who may act for whom. A role says somebody *can* approve; a grant says how
+-- far. "A job title alone shall not imply authority": an approval that
+-- declares an amount refuses anyone without a grant that covers it.
+
+create table if not exists authority_grant (
+  id              uuid primary key default gen_random_uuid(),
+  tenant_id       uuid not null references tenant(id),
+  actor_id        uuid not null references actor(id),
+  -- A process key, or '*' for every process that checks authority.
+  decision_type   text not null default '*',
+  -- Null is unlimited. Compared in the currency below.
+  amount_limit    numeric(18, 2),
+  currency        text not null default 'GBP',
+  legal_entity_id uuid references legal_entity(id),
+  valid_from      timestamptz not null default now(),
+  valid_to        timestamptz,
+  granted_by      uuid references actor(id),
+  created_at      timestamptz not null default now(),
+  revoked_at      timestamptz,
+  revoked_by      uuid references actor(id),
+  check (amount_limit is null or amount_limit >= 0),
+  check (valid_to is null or valid_to > valid_from)
+);
+create index if not exists authority_grant_actor on authority_grant (tenant_id, actor_id) where revoked_at is null;
+
+-- ORG-06: a delegation names the holder, the delegate, the scope and the
+-- dates. The delegate never exceeds the holder's own limit, and may be
+-- capped lower. Delegations do not chain: only the holder's own grants
+-- count, never grants the holder was in turn delegated.
+create table if not exists delegation (
+  id             uuid primary key default gen_random_uuid(),
+  tenant_id      uuid not null references tenant(id),
+  from_actor_id  uuid not null references actor(id),
+  to_actor_id    uuid not null references actor(id),
+  -- A process key, or '*'.
+  scope          text not null default '*',
+  amount_limit   numeric(18, 2),
+  valid_from     timestamptz not null default now(),
+  valid_to       timestamptz,
+  reason         text,
+  created_by     uuid references actor(id),
+  created_at     timestamptz not null default now(),
+  revoked_at     timestamptz,
+  revoked_by     uuid references actor(id),
+  check (from_actor_id <> to_actor_id),
+  check (amount_limit is null or amount_limit >= 0),
+  check (valid_to is null or valid_to > valid_from)
+);
+create index if not exists delegation_to on delegation (tenant_id, to_actor_id) where revoked_at is null;
+
+-- Workspace-level administrative changes, append-only, like the platform
+-- audit but for one tenant's own administrators: roles, access, managers,
+-- grants, delegations. The record trail covers records; this covers people.
+create table if not exists workspace_admin_audit (
+  id          bigserial primary key,
+  tenant_id   uuid not null references tenant(id),
+  actor_id    uuid references actor(id),
+  action      text not null,
+  target_id   text,
+  detail      jsonb not null default '{}'::jsonb,
+  request_id  text,
+  occurred_at timestamptz not null default now()
+);
+create index if not exists workspace_admin_audit_recent on workspace_admin_audit (tenant_id, occurred_at desc, id desc);
+create or replace function workspace_admin_audit_is_append_only() returns trigger as $$
+begin
+  raise exception 'workspace admin audit is append-only';
+end;
+$$ language plpgsql;
+drop trigger if exists workspace_admin_audit_no_change on workspace_admin_audit;
+create trigger workspace_admin_audit_no_change before update or delete on workspace_admin_audit
+  for each row execute function workspace_admin_audit_is_append_only();

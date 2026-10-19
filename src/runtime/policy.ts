@@ -112,6 +112,19 @@ export interface AuthorizeArgs {
  * Deny by default. Every return path below states a reason, and the caller
  * records the refusals.
  */
+/** The people this person may currently act for in a process, by email (ORG-06). */
+export async function delegatorsOf(client: Client | Pool, args: {
+  tenantId: string; actorId: string; processKey: string; at: Date;
+}): Promise<string[]> {
+  const { rows } = await client.query<{ email: string }>(
+    `select f.email from delegation d join actor f on f.id = d.from_actor_id
+      where d.tenant_id = $1 and d.to_actor_id = $2 and d.revoked_at is null and f.active
+        and d.scope in ('*', $3) and d.valid_from <= $4 and (d.valid_to is null or d.valid_to > $4)`,
+    [args.tenantId, args.actorId, args.processKey, args.at],
+  );
+  return rows.map((r) => r.email);
+}
+
 export async function authorize(client: Client, args: AuthorizeArgs): Promise<Decision> {
   const { principal, action, tenantId, processKey, blueprint } = args;
 
@@ -232,7 +245,24 @@ export async function authorize(client: Client, args: AuthorizeArgs): Promise<De
     }
     if (args.namedApprovers) {
       const addresses = new Set(args.namedApprovers);
-      const isNamed = addresses.has(actor.email) || roleKeys.some((k) => addresses.has(`role:${k}`));
+      let isNamed = addresses.has(actor.email) || roleKeys.some((k) => addresses.has(`role:${k}`));
+      // ORG-06: a delegate stands in for a named holder. The holder's own
+      // name on the request is what admits them; the limit they act under is
+      // checked by the engine, capped at the holder's.
+      if (!isNamed) {
+        const delegators = await delegatorsOf(client, {
+          tenantId, actorId: principal.actorId, processKey, at: new Date(),
+        });
+        const holder = delegators.find((email) => addresses.has(email));
+        if (holder) {
+          return {
+            allowed: true,
+            reason: `named approver by delegation from ${holder}`,
+            roles: roleKeys,
+            workspaceRole,
+          };
+        }
+      }
       if (!isNamed) {
         return {
           allowed: false,

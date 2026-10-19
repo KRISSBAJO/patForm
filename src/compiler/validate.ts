@@ -768,6 +768,22 @@ export function validate(bp: Blueprint, requestedDescription?: string): Diagnost
           checkApprover(party, at, approval.key);
         });
         for (const key of approval.contextFields ?? []) requireField(key, at, `Approval "${approval.key}" context`);
+        if (approval.authority) {
+          const amount = requireField(approval.authority.amountField, at, `Approval "${approval.key}" amount`);
+          if (amount && !['number', 'currency', 'calculated'].includes(amount.type)) {
+            d.error('TYPE010', at,
+              `Approval "${approval.key}" checks authority against "${amount.key}", which is a ${amount.type}, not an amount.`,
+              'Point it at a currency, number or calculated field.');
+          }
+          if (approval.authority.escalateTo) {
+            checkParty(approval.authority.escalateTo, at, `Approval "${approval.key}" escalation`);
+            checkApprover(approval.authority.escalateTo, at, approval.key);
+          } else {
+            d.warn('OPS013', at,
+              `Approval "${approval.key}" checks approval limits but has no escalation route.`,
+              'Add escalateTo so a claim above everyone\'s limit goes somewhere, rather than waiting on people who cannot approve it.');
+          }
+        }
         if (approval.mode === 'sequential' && approval.approvers.length < 2) {
           d.warn('OPS003', at, `Approval "${approval.key}" is sequential but has only one approver.`);
         }

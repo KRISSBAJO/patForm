@@ -12,7 +12,7 @@ import {
   type Attachment,
   type EmailProvider,
 } from './email.js';
-import { flattenFields, placeholdersIn, type Blueprint, type Action, type Party, type Transition } from '../blueprint/index.js';
+import { flattenFields, placeholdersIn, type Approval, type Blueprint, type Action, type Party, type Transition } from '../blueprint/index.js';
 import { checkField, missingRequiredFields, validateAnswers } from '../blueprint/answers.js';
 import { collectTaskAnswers } from './task-answers.js';
 import { checkTaskFileReferences } from './receipt-files.js';
@@ -21,6 +21,7 @@ import { evaluate, render, withCalculatedFields, type Answers } from './expr.js'
 import { inTransaction, isUniqueViolation, type Client, type Pool } from './db.js';
 import { InvalidInput } from './errors.js';
 import { managerOf } from './org.js';
+import { authorityOf, covers } from './authority.js';
 import { ensurePublicForm } from './form-links.js';
 import { requireIntakeOpen } from './intake-control.js';
 import {
@@ -376,6 +377,39 @@ export class Engine {
         barredApprover: declared?.notTheSubmitter ? submitterOf(bp, instance) : null,
       }, this.pool);
 
+      /*
+       * ORG-05: being named is not the same as being allowed this amount.
+       * Checked after the naming check so the refusal says the useful thing
+       * — "your limit is £5,000; this is £8,200" — and recorded like every
+       * other refusal. Approving is what needs authority; sending something
+       * back or rejecting it never spends anything.
+       */
+      let authorityNote: unknown = null;
+      if (declared?.authority && args.decision === 'approved' && args.principal.kind === 'actor') {
+        const amount = amountOf(instance, declared.authority.amountField);
+        const authority = await authorityOf(client, {
+          tenantId: instance.tenant_id,
+          actorId: args.principal.actorId,
+          decisionType: declared.authority.decisionType ?? instance.process_key,
+          legalEntityId: await recordEntityOf(client, bp, instance),
+          at: args.now,
+          actingFor: named,
+        });
+        if (!covers(authority, amount)) {
+          const reason = authority.none
+            ? `no approval authority on file for ${declared.authority.decisionType ?? instance.process_key}`
+            : `approval limit ${authority.currency ?? ''} ${authority.limit} is below the amount ${amount}`;
+          await recordDenial(client, {
+            principal: args.principal, action: 'approve', tenantId: instance.tenant_id,
+            processKey: instance.process_key, blueprint: bp, instanceId: instance.id,
+          }, reason);
+          throw new AuthorizationError('approve', authority.none
+            ? 'you have no approval authority on file for this — an administrator must grant it'
+            : `this is above your approval limit (${authority.limit} ${authority.currency ?? ''}); it needs someone with a higher limit`);
+        }
+        authorityNote = { amount, limit: authority.limit, currency: authority.currency, via: authority.via };
+      }
+
       // A vote is yes or no. "Send it back for changes" from one voter would
       // settle what the others were still deciding.
       if (request.mode === 'majority' && args.decision === 'changes_requested') {
@@ -430,7 +464,7 @@ export class Engine {
           tenantId: instance.tenant_id,
           instanceId: instance.id,
           type: 'approval_vote',
-          payload: { approval: args.approvalKey, decision: args.decision, have, need, against, reason: args.reason ?? null },
+          payload: { approval: args.approvalKey, decision: args.decision, have, need, against, reason: args.reason ?? null, authority: authorityNote },
           actor,
           now: args.now,
         });
@@ -442,7 +476,7 @@ export class Engine {
           tenantId: instance.tenant_id,
           instanceId: instance.id,
           type: 'approval_vote',
-          payload: { approval: args.approvalKey, decision: args.decision, have, need, reason: args.reason ?? null },
+          payload: { approval: args.approvalKey, decision: args.decision, have, need, reason: args.reason ?? null, authority: authorityNote },
           actor,
           now: args.now,
         });
@@ -479,6 +513,7 @@ export class Engine {
           approval: args.approvalKey,
           decision: args.decision,
           reason: args.reason ?? null,
+          authority: authorityNote,
           // Everybody whose decision settled it, not only the last.
           by: [...votes.map((v) => v.actor), actor],
         },
@@ -1740,6 +1775,14 @@ async function performEffect(
         routing.push({ party: p, resolved });
         for (const who of resolved) if (!approvers.includes(who)) approvers.push(who);
       }
+      const escalation = await escalateIfNeeded(client, { bp, instance, approval, approvers, now });
+      if (escalation.escalated) {
+        approvers.splice(0, approvers.length, ...escalation.approvers);
+        await appendEvent(client, {
+          tenantId: instance.tenant_id, instanceId: instance.id, type: 'approval_escalated',
+          payload: { approval: approval.key, ...escalation.escalated }, actor: 'system:router', now,
+        });
+      }
       // ORG-12: the routing explanation lives on the record, so a later
       // reassignment or a question in audit can say why these people.
       const unresolved = routing.filter((r) => !r.resolved.length);
@@ -1751,6 +1794,7 @@ async function performEffect(
           approval: approval.key,
           approvers,
           via: routing,
+          escalated: escalation.escalated !== null,
           ...(unresolved.length
             ? { reason: unresolved.map((r) => 'manager' in r.party
                 ? 'the submitter has no manager on file and the approval names no fallback'
@@ -2130,6 +2174,67 @@ async function submitterActor(client: Client, bp: Blueprint, instance: InstanceR
     [instance.tenant_id, email],
   );
   return byEmail[0]?.id ?? null;
+}
+
+/** The amount an approval's authority is measured against; a missing or malformed value is zero. */
+function amountOf(instance: InstanceRow, field: string): number {
+  const raw = instance.data[field];
+  const n = typeof raw === 'number' ? raw : Number(String(raw ?? '').replace(/[, ]/g, ''));
+  return Number.isFinite(n) ? Math.max(0, n) : 0;
+}
+
+/** The legal entity a record belongs to: its submitter's, when the submitter is a member placed in one. */
+async function recordEntityOf(client: Client, bp: Blueprint, instance: InstanceRow): Promise<string | null> {
+  const submitter = await submitterActor(client, bp, instance);
+  if (!submitter) return null;
+  const { rows } = await client.query<{ legal_entity_id: string | null }>(
+    'select legal_entity_id from actor where id = $1', [submitter]);
+  return rows[0]?.legal_entity_id ?? null;
+}
+
+/**
+ * ORG-05 at routing time: when nobody named could cover the amount, the
+ * request follows the escalation route instead of waiting on people who
+ * cannot decide it. Role entries count as covered when any current holder
+ * of the role could.
+ */
+async function escalateIfNeeded(client: Client, args: {
+  bp: Blueprint; instance: InstanceRow; approval: Approval; approvers: string[]; now: Date;
+}): Promise<{ approvers: string[]; escalated: null | { from: string[]; to: string[]; amount: number; reason: string } }> {
+  const { approval, instance, bp } = args;
+  if (!approval.authority) return { approvers: args.approvers, escalated: null };
+  const amount = amountOf(instance, approval.authority.amountField);
+  const decisionType = approval.authority.decisionType ?? instance.process_key;
+  const legalEntityId = await recordEntityOf(client, bp, instance);
+  const candidates: string[] = [];
+  for (const who of args.approvers) {
+    if (who.startsWith('role:')) {
+      const { rows } = await client.query<{ id: string }>(
+        `select a.id from membership m join actor a on a.id = m.actor_id
+          where m.tenant_id = $1 and m.process_key = $2 and m.role_key = $3 and a.active`,
+        [instance.tenant_id, instance.process_key, who.slice(5)]);
+      candidates.push(...rows.map((r) => r.id));
+    } else {
+      const { rows } = await client.query<{ id: string }>(
+        'select id from actor where tenant_id = $1 and lower(email) = lower($2) and active', [instance.tenant_id, who]);
+      candidates.push(...rows.map((r) => r.id));
+    }
+  }
+  for (const actorId of candidates) {
+    const authority = await authorityOf(client, { tenantId: instance.tenant_id, actorId, decisionType, legalEntityId, at: args.now });
+    if (covers(authority, amount)) return { approvers: args.approvers, escalated: null };
+  }
+  if (!approval.authority.escalateTo) return { approvers: args.approvers, escalated: null };
+  const to = await resolveParty(client, approval.authority.escalateTo, instance, bp, args.now);
+  return {
+    approvers: to,
+    escalated: {
+      from: [...args.approvers], to, amount,
+      reason: candidates.length
+        ? `nobody named holds approval authority covering ${amount} for ${decisionType}`
+        : `nobody named is a member who could hold approval authority`,
+    },
+  };
 }
 
 /**
