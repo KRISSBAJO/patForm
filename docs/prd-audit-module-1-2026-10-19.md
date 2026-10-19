@@ -355,3 +355,59 @@ console. No AI scores, ranks or decides anything (APR-12).
 Not built: continuous feedback notes between cycles, 360 reviewers chosen
 by rule, and bulk reminders for overdue reviews.
 
+## Module 9, Assets, IT and service operations (19 Oct 2026)
+
+Built in `src/runtime/ops.ts`, with the Assets & IT page in the console.
+IT and Facilities are the same teams the HR module uses for its tasks.
+
+- Asset register: tag, category (from settings), serial, owner, location,
+  purchase reference, warranty, condition and status, with an append-only
+  history (OPS-01). Depreciation stays in the finance system.
+- An asset bought through Procurement is registered only against an
+  accepted goods receipt, one per unit received; receiving alone creates
+  nothing (acceptance 1). Items bought elsewhere need a purchase reference.
+- Hand-outs record condition, accessories and a handover reference; an
+  admin approves first when the workspace says so; the holder confirms
+  receipt. One holder at a time unless the asset is marked shared (OPS-02).
+- Returns record condition and missing accessories and end the assignment
+  without deleting it. During offboarding the return links to the HR case,
+  and the HR "Recover laptop and phone" task cannot be marked done while
+  the person still holds anything (acceptance 3).
+- Service catalogue: team, questions (required or not), manager approval,
+  roles allowed, response and resolution targets, evidence of completion
+  (OPS-03).
+- Access requests: system, role, business reason and expiry (required,
+  with a maximum, where the system says so). The system owner approves,
+  never the requester or holder. Approved is not access: it becomes access
+  only when the system's connector account confirms, or someone in IT who
+  is not the holder records evidence (OPS-04, acceptance 2).
+- Revocation: when HR revokes access, every system access the person holds
+  goes to "being removed". Deactivated holders and expired access are
+  caught too. A failed removal is a critical exception on the overview and
+  stays there until removal is confirmed, whatever happens to the HR case.
+  System owners review access: keep with a reason, or remove (OPS-05).
+- Tickets: requests and incidents, impact and urgency give the priority,
+  assignment, private work notes, updates to the requester, escalation,
+  resolution, reopening within the allowed days. The target clock pauses
+  while waiting on the requester and the time moves the target. Missed
+  targets are flagged and escalated once (OPS-06).
+- Maintenance plans with checklists. The scheduler creates one job per plan
+  and date even when run twice at once or retried (acceptance 4). A failed
+  check needs findings, restricts the asset and opens corrective work; the
+  restriction lifts only once that work is resolved (OPS-07).
+- Change requests with impact, risk, preconditions, rollback plan and an
+  execution window. A normal change starts only once approved by someone
+  else, inside its window, with every precondition ticked. An emergency
+  change can start at once and must be reviewed afterwards by an admin who
+  neither asked for nor ran it (OPS-08).
+- Field work: maintenance drafts carry a version so an old copy cannot
+  overwrite newer work; location is accepted only when switched on in
+  settings. Final approval and access changes are not offline (OPS-09).
+- Overview: open tickets by age, missed targets, access problems, assets
+  to recover, maintenance due, restricted assets and emergency changes
+  waiting for review (OPS-10).
+
+Not built: photo upload (photos are references), real connectors to named
+systems (a connector is a service account that calls the API), and offline
+storage on the phone.
+

@@ -30,6 +30,7 @@ import { addRate, advanceMovements, disburseAdvance, expenseSummary, exportPaid,
 import { addQuote, approveOrder, cancelOrder, createAgreement, createOrder, createVendor, enterInvoice, exportInvoices, listAgreements, listInvoices, listOrders, listQuotes, listRequisitions, listVendors, openQuotes, orderDetail, payInvoice, procurementSummary, readProcurementSettings, receiveGoods, returnGoods, revealVendorBank, reviewInvoice, reviseOrder, saveVendorBank, selectQuote, setQuoteDeadline, setVendorStatus, updateProcurementSettings, updateVendor, vendorHistory, verifyVendorBank } from '../runtime/procurement.js';
 import { acknowledgeDocument, addCaseNote, addCertification, cancelLeave, completeTask, createDocument, decideLeave, decideProbation, exceptTask, hrSummary, leaveToApprove, listCaseNotes, listCases, listCompensation, listDocuments, listEmployees, listHiring, listHolidays, listLeaveTypes, listReconciliations, listTeams, listTemplates, myDocuments, myLeave, myTasks, readHrSettings, requestLeave, resolveReconciliation, saveHoliday, saveLeaveType, saveTemplate, sendDocument, setCompensation, setEntitlement, setTeamMember, startOffboarding, startOnboarding, startProbationReview, startTransfer, updateEmployee, updateHrSettings, upcoming, urgentTermination } from '../runtime/hr.js';
 import * as apr from '../runtime/appraisals.js';
+import * as ops from '../runtime/ops.js';
 import { enabledModules, listModules, setModule, updateWorkspaceSettings, workspaceSettings } from '../runtime/modules.js';
 import { createDelegation, createGrant, listAuthority, revokeDelegation, revokeGrant as revokeAuthorityGrant, workspaceAudit } from '../runtime/authority.js';
 import { logIfEnabled, requestIdFrom, withTrace } from '../runtime/trace.js';
@@ -1058,6 +1059,56 @@ route('POST', ar('goals/revisions/(\d+)/decide'), async ({ pool, principal, url 
 route('GET', ar('development'), async ({ pool, principal, url }) => apr.listDevelopment(pool, principal, { employeeId: url.searchParams.get('employee') ?? undefined }));
 route('POST', ar('development'), async ({ pool, principal }, b) => apr.addDevelopmentItem(pool, principal, hb(b)));
 route('POST', ar(`development/${A}/close`), async ({ pool, principal, url }, b) => apr.completeDevelopmentItem(pool, principal, hid(url, 4), hb(b)));
+
+// ---- Assets, IT and service operations (PRD Module 9). Who may see and do
+// what is decided in runtime/ops.ts.
+const or = (re: string) => new RegExp(`^/api/ops/${re}$`);
+route('GET', or('summary'), async ({ pool, principal }) => ops.opsSummary(pool, principal));
+route('GET', or('dashboard'), async ({ pool, principal }) => ops.opsDashboard(pool, principal));
+route('GET', or('settings'), async ({ pool, principal }) => ops.readOpsSettings(pool, principal));
+route('POST', or('settings'), async ({ pool, principal }, b) => ops.updateOpsSettings(pool, principal, hb(b)));
+route('POST', or('teams'), async ({ pool, principal }, b) => ops.setOpsTeamMember(pool, principal, hb(b)));
+route('GET', or('assets'), async ({ pool, principal, url }) => ops.listAssets(pool, principal, { status: url.searchParams.get('status') ?? undefined, q: url.searchParams.get('q') ?? undefined }));
+route('POST', or('assets'), async ({ pool, principal }, b) => ops.registerAsset(pool, principal, hb(b)));
+route('GET', or('assets/awaiting-registration'), async ({ pool, principal }) => ops.awaitingRegistration(pool, principal));
+route('GET', or('assets/awaiting-recovery'), async ({ pool, principal }) => ops.awaitingRecovery(pool, principal));
+route('GET', or('assets/mine'), async ({ pool, principal }) => ops.myAssets(pool, principal));
+route('GET', or(`assets/${A}`), async ({ pool, principal, url }) => ops.assetDetail(pool, principal, hid(url, 4)));
+route('POST', or(`assets/${A}`), async ({ pool, principal, url }, b) => ops.updateAsset(pool, principal, hid(url, 4), hb(b)));
+route('POST', or(`assets/${A}/assign`), async ({ pool, principal, url }, b) => ops.assignAsset(pool, principal, hid(url, 4), hb(b)));
+route('POST', or(`assets/${A}/lift-restriction`), async ({ pool, principal, url }, b) => ops.liftRestriction(pool, principal, hid(url, 4), hb(b)));
+route('POST', or(`assignments/${A}/approve`), async ({ pool, principal, url }) => ops.approveAssignment(pool, principal, hid(url, 4)));
+route('POST', or(`assignments/${A}/acknowledge`), async ({ pool, principal, url }) => ops.acknowledgeAssignment(pool, principal, hid(url, 4)));
+route('POST', or(`assignments/${A}/return`), async ({ pool, principal, url }, b) => ops.returnAsset(pool, principal, hid(url, 4), hb(b)));
+route('GET', or('systems'), async ({ pool, principal }) => ops.listSystems(pool, principal));
+route('POST', or('systems'), async ({ pool, principal }, b) => ops.saveSystem(pool, principal, hb(b)));
+route('GET', or('access'), async ({ pool, principal }) => ops.listAccess(pool, principal));
+route('POST', or('access'), async ({ pool, principal }, b) => ops.requestAccess(pool, principal, hb(b)));
+route('POST', or(`access/${A}/decide`), async ({ pool, principal, url }, b) => ops.decideAccess(pool, principal, hid(url, 4), hb(b)));
+route('POST', or(`access/${A}/provisioned`), async ({ pool, principal, url }, b) => ops.confirmProvisioning(pool, principal, hid(url, 4), hb(b)));
+route('POST', or(`access/${A}/failed`), async ({ pool, principal, url }, b) => ops.failProvisioning(pool, principal, hid(url, 4), hb(b)));
+route('POST', or(`grants/${A}/revoked`), async ({ pool, principal, url }, b) => ops.confirmRevocation(pool, principal, hid(url, 4), hb(b)));
+route('POST', or(`grants/${A}/revoke-failed`), async ({ pool, principal, url }, b) => ops.failRevocation(pool, principal, hid(url, 4), hb(b)));
+route('POST', or(`grants/${A}/review`), async ({ pool, principal, url }, b) => ops.reviewGrant(pool, principal, hid(url, 4), hb(b)));
+route('GET', or('services'), async ({ pool, principal }) => ops.listServiceTypes(pool, principal));
+route('POST', or('services'), async ({ pool, principal }, b) => ops.saveServiceType(pool, principal, hb(b)));
+route('GET', or('tickets'), async ({ pool, principal, url }) => ops.listTickets(pool, principal, { scope: url.searchParams.get('scope') ?? undefined }));
+route('POST', or('tickets'), async ({ pool, principal }, b) => ops.openTicket(pool, principal, hb(b)));
+route('GET', or(`tickets/${A}`), async ({ pool, principal, url }) => ops.ticketDetail(pool, principal, hid(url, 4)));
+route('POST', or(`tickets/${A}/decide`), async ({ pool, principal, url }, b) => ops.decideTicket(pool, principal, hid(url, 4), hb(b)));
+route('POST', or(`tickets/${A}/work`), async ({ pool, principal, url }, b) => ops.workTicket(pool, principal, hid(url, 4), hb(b)));
+route('POST', or(`tickets/${A}/requester`), async ({ pool, principal, url }, b) => ops.requesterTicket(pool, principal, hid(url, 4), hb(b)));
+route('GET', or('maintenance'), async ({ pool, principal }) => ops.listMaintenance(pool, principal));
+route('POST', or('maintenance/plans'), async ({ pool, principal }, b) => ops.createPlan(pool, principal, hb(b)));
+route('POST', or(`maintenance/jobs/${A}/draft`), async ({ pool, principal, url }, b) => ops.saveJobDraft(pool, principal, hid(url, 5), hb(b)));
+route('POST', or(`maintenance/jobs/${A}/complete`), async ({ pool, principal, url }, b) => ops.completeJob(pool, principal, hid(url, 5), hb(b)));
+route('GET', or('changes'), async ({ pool, principal }) => ops.listChanges(pool, principal));
+route('POST', or('changes'), async ({ pool, principal }, b) => ops.createChange(pool, principal, hb(b)));
+route('POST', or(`changes/${A}/decide`), async ({ pool, principal, url }, b) => ops.decideChange(pool, principal, hid(url, 4), hb(b)));
+route('POST', or(`changes/${A}/precondition`), async ({ pool, principal, url }, b) => ops.checkPrecondition(pool, principal, hid(url, 4), hb(b)));
+route('POST', or(`changes/${A}/start`), async ({ pool, principal, url }) => ops.startChange(pool, principal, hid(url, 4)));
+route('POST', or(`changes/${A}/finish`), async ({ pool, principal, url }, b) => ops.finishChange(pool, principal, hid(url, 4), hb(b)));
+route('POST', or(`changes/${A}/review`), async ({ pool, principal, url }, b) => ops.reviewEmergencyChange(pool, principal, hid(url, 4), hb(b)));
 
 // ---- modules and workspace settings (PRD ORG-01): which shelves are on.
 route('GET', /^\/api\/modules$/, async ({ pool, principal }) => listModules(pool, principal));

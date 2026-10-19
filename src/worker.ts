@@ -4,6 +4,7 @@ import { Engine, newWorkerId } from './runtime/engine.js';
 import { sweepExpiredTokens } from './runtime/retention.js';
 import { sweepHeld } from './runtime/held.js';
 import { applyDueChanges } from './runtime/hr.js';
+import { generateMaintenance, reconcileAccess, sweepTickets } from './runtime/ops.js';
 import { checkSendingHealth } from './runtime/delivery-health.js';
 import { runDueReports } from './runtime/saved-views.js';
 import { notifyWaitingWork } from './runtime/push.js';
@@ -107,6 +108,13 @@ async function main(): Promise<void> {
         // HR transfers whose effective date has come: unit, title, entity.
         const transfers = await applyDueChanges(pool);
         if (transfers) console.log(`  ${now.toISOString()}  applied ${transfers} transfer(s)`);
+        // Assets and IT: due maintenance (once per date), missed service targets,
+        // and access held by people who are no longer active.
+        const jobs = await generateMaintenance(pool);
+        if (jobs) console.log(`  ${now.toISOString()}  created ${jobs} maintenance job(s)`);
+        const breached = await sweepTickets(pool);
+        if (breached) console.log(`  ${now.toISOString()}  escalated ${breached} ticket(s)`);
+        await reconcileAccess(pool);
         const swept = await sweepExpiredTokens(pool);
         const held = await sweepHeld(pool);
         await cleanupExpiredReceipts(pool);

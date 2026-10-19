@@ -67,9 +67,9 @@ export const MODULES: readonly ModuleDefinition[] = [
   {
     key: 'assets',
     name: 'Assets, IT and service operations',
-    summary: 'Service requests, access and equipment, and the asset lifecycle.',
+    summary: 'Asset register, hand-outs and returns, access requests and revocation, service tickets with targets, maintenance and change requests.',
     categories: ['IT', 'Facilities'],
-    status: 'templates_only',
+    status: 'available',
   },
   {
     key: 'contracts',

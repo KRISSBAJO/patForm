@@ -26,6 +26,7 @@ import { recordWorkspaceAudit } from './authority.js';
 import { enabledModules } from './modules.js';
 import { managerOf } from './org.js';
 import { invite } from './workspace.js';
+import { openCustody, queueRevocations } from './ops.js';
 
 const UUID = /^[0-9a-f-]{36}$/;
 const TEAMS = ['hr', 'it', 'facilities', 'finance'] as const;
@@ -138,7 +139,7 @@ export async function setTeamMember(pool: Pool, principal: Principal, body: { te
 
 // --------------------------------------------------------------- templates
 
-export interface TemplateTask { key: string; title: string; team: Team; critical?: boolean; after?: string[]; waitFor?: 'start' | 'end' | 'effective'; action?: 'activate_access' | 'revoke_access' | 'finance_clearance' }
+export interface TemplateTask { key: string; title: string; team: Team; critical?: boolean; after?: string[]; waitFor?: 'start' | 'end' | 'effective'; action?: 'activate_access' | 'revoke_access' | 'finance_clearance' | 'recover_assets' }
 
 const DEFAULT_TEMPLATES: { kind: string; name: string; tasks: TemplateTask[] }[] = [
   { kind: 'onboarding', name: 'Standard onboarding', tasks: [
@@ -153,7 +154,7 @@ const DEFAULT_TEMPLATES: { kind: string; name: string; tasks: TemplateTask[] }[]
   ] },
   { kind: 'offboarding', name: 'Standard offboarding', tasks: [
     { key: 'revoke', title: 'Revoke all access', team: 'it', critical: true, waitFor: 'end', action: 'revoke_access' },
-    { key: 'equipment', title: 'Recover laptop and phone', team: 'it' },
+    { key: 'equipment', title: 'Recover laptop and phone', team: 'it', action: 'recover_assets' },
     { key: 'pass', title: 'Recover building pass and keys', team: 'facilities' },
     { key: 'handover', title: 'Hand over work and accounts', team: 'manager' },
     { key: 'clearance', title: 'Clear advances, claims and final pay', team: 'finance', action: 'finance_clearance' },
@@ -185,7 +186,7 @@ function checkTemplate(kind: string, tasks: unknown): TemplateTask[] {
     const waitFor = t.waitFor ? text(t.waitFor, 12) : undefined;
     if (waitFor && !['start', 'end', 'effective'].includes(waitFor)) throw new InvalidInput(`task ${i + 1}: waitFor must be start, end or effective`);
     const action = t.action ? text(t.action, 30) : undefined;
-    const allowed: Record<string, string> = { activate_access: 'onboarding', revoke_access: 'offboarding', finance_clearance: 'offboarding' };
+    const allowed: Record<string, string> = { activate_access: 'onboarding', revoke_access: 'offboarding', finance_clearance: 'offboarding', recover_assets: 'offboarding' };
     if (action && allowed[action] !== kind) throw new InvalidInput(`task ${i + 1}: ${action} belongs in an ${allowed[action] ?? 'unknown'} template`);
     const after = Array.isArray(t.after) ? t.after.map((x) => text(x, 40)).filter(Boolean) : [];
     return { key, title, team, critical: t.critical === true, after, ...(waitFor ? { waitFor: waitFor as TemplateTask['waitFor'] } : {}), ...(action ? { action: action as TemplateTask['action'] } : {}) };
@@ -702,6 +703,8 @@ async function revokeAccess(client: Client, w: Who, actorId: string) {
   await client.query('update session set revoked_at = now() where actor_id = $1 and revoked_at is null', [actorId]);
   await client.query('update api_key set revoked_at = now() where actor_id = $1 and revoked_at is null', [actorId]);
   await recordWorkspaceAudit(client, { tenantId: w.tenantId, actorId: w.actorId, action: 'member.deactivated', targetId: actorId, detail: { via: 'hr' } });
+  // Access in other systems goes to revocation, tracked apart from this case (PRD OPS-05).
+  await queueRevocations(client, w.tenantId, actorId, 'access revoked by HR');
 }
 
 /** Open cash advances and unpaid claims for a person; empty when Expenses is not used. */
@@ -738,6 +741,10 @@ export async function completeTask(pool: Pool, principal: Principal, taskId: str
     if (t.action === 'finance_clearance') {
       const owed = await financeOutstanding(client, w.tenantId, t.employee_email);
       if (owed.length) throw new InvalidInput(`not cleared: ${owed.join('; ')}. Settle them on the Expenses page, or HR can record an exception`);
+    }
+    if (t.action === 'recover_assets' && t.employee_actor && (await enabledModules(client as unknown as Pool, w.tenantId)).has('assets')) {
+      const held = await openCustody(client, w.tenantId, t.employee_actor);
+      if (held.length) throw new InvalidInput(`still held: ${held.join(', ')}. Record each return on the Assets page first`);
     }
     if (t.action === 'activate_access' && t.employee_actor) {
       const { activationRole } = await hrSettings(client, w.tenantId);

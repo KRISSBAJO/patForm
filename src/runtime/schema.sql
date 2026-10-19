@@ -2043,7 +2043,7 @@ create table if not exists lifecycle_task (
   critical      boolean not null default false,
   prerequisites jsonb not null default '[]'::jsonb,
   wait_until    date,
-  action        text check (action in ('activate_access', 'revoke_access', 'finance_clearance')),
+  action        text check (action in ('activate_access', 'revoke_access', 'finance_clearance', 'recover_assets')),
   status        text not null default 'open' check (status in ('open', 'done', 'excepted')),
   note          text,
   evidence_ref  text,
@@ -2359,4 +2359,269 @@ create table if not exists development_item (
   created_by     uuid references actor(id),
   created_at     timestamptz not null default now(),
   completed_at   timestamptz
+);
+
+-- ------------------------------------------------------ assets and service
+--
+-- PRD Module 9. An asset is registered against what was received, never
+-- straight from an order. Custody is a history of assignments; returning
+-- ends one, it never deletes it. Access is pending until the target system
+-- confirms or an authorised person records evidence, and a failed
+-- revocation stays on its own list whatever happens to the HR case.
+
+create table if not exists ops_settings (
+  tenant_id  uuid primary key references tenant(id),
+  settings   jsonb not null default '{}'::jsonb,
+  updated_by uuid references actor(id),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists asset (
+  id              uuid primary key default gen_random_uuid(),
+  tenant_id       uuid not null references tenant(id),
+  tag             text not null,
+  category        text not null,
+  name            text not null,
+  serial          text,
+  owner_entity    text,
+  location        text,
+  acquisition_ref text,
+  order_line_id   uuid references purchase_order_line(id),
+  warranty_until  date,
+  condition       text not null default 'good' check (condition in ('new', 'good', 'fair', 'poor', 'broken')),
+  status          text not null default 'in_stock' check (status in ('in_stock', 'assigned', 'in_repair', 'restricted', 'lost', 'retired', 'disposed')),
+  shared          boolean not null default false,
+  restricted_reason text,
+  created_by      uuid references actor(id),
+  created_at      timestamptz not null default now(),
+  updated_at      timestamptz not null default now(),
+  unique (tenant_id, tag)
+);
+
+create table if not exists asset_event (
+  id         bigserial primary key,
+  asset_id   uuid not null references asset(id),
+  kind       text not null,
+  detail     jsonb not null default '{}'::jsonb,
+  actor_id   uuid references actor(id),
+  occurred_at timestamptz not null default now()
+);
+create or replace function asset_event_is_append_only() returns trigger as $$
+begin
+  raise exception 'asset history is append-only';
+end;
+$$ language plpgsql;
+drop trigger if exists asset_event_no_change on asset_event;
+create trigger asset_event_no_change before update or delete on asset_event
+  for each row execute function asset_event_is_append_only();
+
+create table if not exists asset_assignment (
+  id             uuid primary key default gen_random_uuid(),
+  asset_id       uuid not null references asset(id),
+  custodian_id   uuid not null references actor(id),
+  status         text not null default 'pending_ack' check (status in ('pending_approval', 'pending_ack', 'active', 'returned', 'cancelled')),
+  approved_by    uuid references actor(id),
+  assigned_by    uuid references actor(id),
+  condition_out  text not null,
+  accessories    jsonb not null default '[]'::jsonb,
+  handover_ref   text,
+  acknowledged_at timestamptz,
+  acknowledgement text,
+  returned_at    timestamptz,
+  condition_in   text,
+  accessories_in jsonb,
+  return_ref     text,
+  returned_by    uuid references actor(id),
+  case_id        uuid references lifecycle_case(id),
+  created_at     timestamptz not null default now()
+);
+create index if not exists asset_assignment_open on asset_assignment (asset_id) where status in ('pending_approval', 'pending_ack', 'active');
+
+create table if not exists access_system (
+  id         uuid primary key default gen_random_uuid(),
+  tenant_id  uuid not null references tenant(id),
+  name       text not null,
+  owner_id   uuid not null references actor(id),
+  connector_actor_id uuid references actor(id),
+  roles      jsonb not null default '[]'::jsonb,
+  max_days   int,
+  active     boolean not null default true,
+  created_at timestamptz not null default now(),
+  unique (tenant_id, name)
+);
+
+create table if not exists access_request (
+  id            uuid primary key default gen_random_uuid(),
+  tenant_id     uuid not null references tenant(id),
+  number        int not null,
+  system_id     uuid not null references access_system(id),
+  role          text not null,
+  holder_id     uuid not null references actor(id),
+  requested_by  uuid not null references actor(id),
+  justification text not null,
+  expires_on    date,
+  status        text not null default 'requested' check (status in ('requested', 'approved', 'rejected', 'provisioned', 'failed', 'cancelled')),
+  decided_by    uuid references actor(id),
+  decided_at    timestamptz,
+  decision_note text,
+  provisioned_via text check (provisioned_via in ('connector', 'manual')),
+  evidence_ref  text,
+  provisioned_by uuid references actor(id),
+  provisioned_at timestamptz,
+  failure_note  text,
+  created_at    timestamptz not null default now(),
+  unique (tenant_id, number)
+);
+
+create table if not exists access_grant (
+  id           uuid primary key default gen_random_uuid(),
+  tenant_id    uuid not null references tenant(id),
+  system_id    uuid not null references access_system(id),
+  role         text not null,
+  holder_id    uuid not null references actor(id),
+  request_id   uuid references access_request(id),
+  status       text not null default 'active' check (status in ('active', 'revoking', 'revoked', 'revoke_failed')),
+  granted_at   timestamptz not null default now(),
+  expires_on   date,
+  revoke_requested_at timestamptz,
+  revoke_reason text,
+  revoked_via  text,
+  revoke_evidence text,
+  revoked_by   uuid references actor(id),
+  revoked_at   timestamptz,
+  failure_note text,
+  failed_at    timestamptz,
+  reviewed_at  timestamptz,
+  reviewed_by  uuid references actor(id),
+  review_note  text
+);
+
+create table if not exists service_type (
+  id          uuid primary key default gen_random_uuid(),
+  tenant_id   uuid not null references tenant(id),
+  key         text not null,
+  name        text not null,
+  description text,
+  team        text not null check (team in ('it', 'facilities')),
+  approval    text not null default 'none' check (approval in ('none', 'manager')),
+  fields      jsonb not null default '[]'::jsonb,
+  roles       jsonb,
+  respond_hours numeric(8, 2) not null default 8,
+  resolve_hours numeric(8, 2) not null default 40,
+  evidence_required boolean not null default false,
+  active      boolean not null default true,
+  unique (tenant_id, key)
+);
+
+create table if not exists ticket (
+  id            uuid primary key default gen_random_uuid(),
+  tenant_id     uuid not null references tenant(id),
+  number        int not null,
+  type_id       uuid references service_type(id),
+  kind          text not null default 'request' check (kind in ('request', 'incident', 'corrective')),
+  title         text not null,
+  description   text,
+  details       jsonb not null default '{}'::jsonb,
+  requester_id  uuid not null references actor(id),
+  team          text not null,
+  assignee_id   uuid references actor(id),
+  impact        int not null default 3 check (impact between 1 and 3),
+  urgency       int not null default 3 check (urgency between 1 and 3),
+  priority      int not null default 4 check (priority between 1 and 4),
+  status        text not null default 'new' check (status in ('awaiting_approval', 'new', 'in_progress', 'waiting_on_user', 'resolved', 'closed', 'cancelled', 'rejected')),
+  approver_id   uuid references actor(id),
+  approved_by   uuid references actor(id),
+  approved_at   timestamptz,
+  respond_due   timestamptz,
+  resolve_due   timestamptz,
+  responded_at  timestamptz,
+  paused_since  timestamptz,
+  paused_seconds int not null default 0,
+  breached_at   timestamptz,
+  escalated_at  timestamptz,
+  resolution    text,
+  resolution_evidence text,
+  resolved_at   timestamptz,
+  closed_at     timestamptz,
+  reopened      int not null default 0,
+  asset_id      uuid references asset(id),
+  created_at    timestamptz not null default now(),
+  updated_at    timestamptz not null default now(),
+  unique (tenant_id, number)
+);
+
+create table if not exists ticket_note (
+  id         bigserial primary key,
+  ticket_id  uuid not null references ticket(id),
+  kind       text not null check (kind in ('work_note', 'update', 'system')),
+  body       text not null,
+  author_id  uuid references actor(id),
+  occurred_at timestamptz not null default now()
+);
+
+create table if not exists maintenance_plan (
+  id          uuid primary key default gen_random_uuid(),
+  tenant_id   uuid not null references tenant(id),
+  asset_id    uuid not null references asset(id),
+  title       text not null,
+  every_days  int not null check (every_days between 1 and 3660),
+  checklist   jsonb not null,
+  team        text not null check (team in ('it', 'facilities')),
+  next_due    date not null,
+  active      boolean not null default true,
+  created_by  uuid references actor(id),
+  created_at  timestamptz not null default now()
+);
+
+-- Acceptance 4: one job per plan and date, however often the scheduler runs.
+create table if not exists maintenance_job (
+  id          uuid primary key default gen_random_uuid(),
+  tenant_id   uuid not null references tenant(id),
+  plan_id     uuid not null references maintenance_plan(id),
+  asset_id    uuid not null references asset(id),
+  due_on      date not null,
+  status      text not null default 'open' check (status in ('open', 'done')),
+  draft       jsonb,
+  version     int not null default 0,
+  results     jsonb,
+  findings    text,
+  photos      jsonb not null default '[]'::jsonb,
+  location    jsonb,
+  outcome     text check (outcome in ('pass', 'fail')),
+  follow_up_ticket uuid references ticket(id),
+  completed_by uuid references actor(id),
+  completed_at timestamptz,
+  created_at  timestamptz not null default now(),
+  unique (plan_id, due_on)
+);
+
+create table if not exists change_request (
+  id            uuid primary key default gen_random_uuid(),
+  tenant_id     uuid not null references tenant(id),
+  number        int not null,
+  title         text not null,
+  kind          text not null default 'normal' check (kind in ('normal', 'emergency')),
+  description   text,
+  impact        text not null,
+  risk          text not null check (risk in ('low', 'medium', 'high')),
+  system_id     uuid references access_system(id),
+  asset_id      uuid references asset(id),
+  preconditions jsonb not null default '[]'::jsonb,
+  rollback_plan text not null,
+  window_start  timestamptz,
+  window_end    timestamptz,
+  status        text not null default 'submitted' check (status in ('submitted', 'approved', 'rejected', 'in_progress', 'completed', 'failed', 'rolled_back')),
+  requested_by  uuid not null references actor(id),
+  approved_by   uuid references actor(id),
+  approved_at   timestamptz,
+  decision_note text,
+  started_by    uuid references actor(id),
+  started_at    timestamptz,
+  finished_at   timestamptz,
+  verification  text,
+  retrospective text,
+  retrospective_by uuid references actor(id),
+  retrospective_at timestamptz,
+  created_at    timestamptz not null default now(),
+  unique (tenant_id, number)
 );
