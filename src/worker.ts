@@ -1,7 +1,8 @@
 import { applyUpgrades, createPool, describeTarget } from './runtime/db.js';
 import { deliverBatch } from './runtime/webhooks.js';
 import { Engine, newWorkerId } from './runtime/engine.js';
-import { sweepExpiredTokens } from './runtime/retention.js';
+import { runScheduledRetention, sweepExpiredTokens } from './runtime/retention.js';
+import { sweepGov } from './runtime/gov.js';
 import { sweepHeld } from './runtime/held.js';
 import { applyDueChanges } from './runtime/hr.js';
 import { deliverConnectors, generateMaintenance, reconcileAccess, sweepTickets } from './runtime/ops.js';
@@ -117,6 +118,12 @@ async function main(): Promise<void> {
         const breached = await sweepTickets(pool);
         if (breached) console.log(`  ${now.toISOString()}  escalated ${breached} ticket(s)`);
         await reconcileAccess(pool);
+        // Contracts and compliance: renewal and obligation tasks, escalation;
+        // then scheduled retention, which legal holds can stop.
+        const gov = await sweepGov(pool);
+        if (gov.renewals || gov.tasks) console.log(`  ${now.toISOString()}  created ${gov.renewals} renewal and ${gov.tasks} obligation task(s)`);
+        const purged = await runScheduledRetention(pool, now);
+        for (const r of purged) if (r.instances || r.held) console.log(`  ${now.toISOString()}  retention ${r.processKey}: removed ${r.instances}, held back ${r.held ?? 0}`);
         const swept = await sweepExpiredTokens(pool);
         const held = await sweepHeld(pool);
         await cleanupExpiredReceipts(pool);

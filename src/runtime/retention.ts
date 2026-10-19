@@ -36,6 +36,8 @@ export interface RetentionResult {
   oldest: string | null;
   newest: string | null;
   preview: boolean;
+  /** Records a legal hold kept back from this run. */
+  held?: number;
 }
 
 class Rollback extends Error {}
@@ -78,7 +80,7 @@ export async function runRetention(
 
       // Only finished records. A record still running is not old, however long
       // ago it started.
-      const { rows: doomed } = await client.query<{ id: string; completed_at: Date }>(
+      const { rows: due } = await client.query<{ id: string; completed_at: Date }>(
         `select id, completed_at from instance
           where tenant_id = $1 and process_key = $2
             and completed_at is not null
@@ -86,6 +88,26 @@ export async function runRetention(
           order by completed_at`,
         [args.tenantId, args.processKey, now, retentionDays],
       );
+
+      // PRD GOV-09, acceptance 4. A legal hold, active or released but not yet
+      // reviewed, takes its records out of the purge, and the purge it
+      // stopped is written down for the people who manage holds.
+      const { rows: holds } = await client.query<{ id: string; scope: { processKeys?: string[]; instanceIds?: string[] } }>(
+        `select id, scope from legal_hold where tenant_id = $1 and status in ('active', 'released')`, [args.tenantId]);
+      const held = new Map<string, string[]>();
+      for (const h of holds) {
+        const ids = due.filter((d) => (h.scope.processKeys ?? []).includes(args.processKey) || (h.scope.instanceIds ?? []).includes(d.id)).map((d) => d.id);
+        if (ids.length) held.set(h.id, ids);
+      }
+      const heldIds = new Set([...held.values()].flat());
+      const doomed = due.filter((d) => !heldIds.has(d.id));
+      if (!preview) {
+        for (const [holdId, ids] of held) {
+          await client.query(
+            `insert into retention_block (tenant_id, process_key, hold_id, held_records, record_ids, run_by) values ($1, $2, $3, $4, $5, $6)`,
+            [args.tenantId, args.processKey, holdId, ids.length, JSON.stringify(ids.slice(0, 200)), describe(args.principal)]);
+        }
+      }
 
       const ids = doomed.map((d) => d.id);
       const result: RetentionResult = {
@@ -98,6 +120,7 @@ export async function runRetention(
         preview,
       };
 
+      result.held = heldIds.size;
       if (!ids.length) {
         if (preview) throw new Rollback();
         return result;
@@ -181,9 +204,11 @@ async function previewCounts(
     newest: Date | null;
   }>(
     `with doomed as (
-       select id, completed_at from instance
+       select id, completed_at from instance i
         where tenant_id = $1 and process_key = $2 and completed_at is not null
           and completed_at < $3::timestamptz - make_interval(days => $4)
+          and not exists (select 1 from legal_hold h where h.tenant_id = i.tenant_id and h.status in ('active', 'released')
+                           and (h.scope->'processKeys' ? i.process_key or h.scope->'instanceIds' ? i.id::text))
      )
      select (select count(*)::int from doomed) as instances,
             (select count(*)::int from event where instance_id in (select id from doomed)) as events,
@@ -211,4 +236,25 @@ export async function sweepExpiredTokens(pool: Pool): Promise<number> {
 
 function describe(principal: Principal): string {
   return principal.kind === 'actor' ? `actor:${principal.actorId}` : `${principal.kind}`;
+}
+
+/**
+ * Scheduled retention (PRD 17.3): once a day, for each process a workspace
+ * has put on a schedule. Runs as the system, through the same door as a
+ * manual run, so holds and the run record apply exactly the same way.
+ */
+export async function runScheduledRetention(pool: Pool, now = new Date()): Promise<RetentionResult[]> {
+  const { rows } = await pool.query<{ tenant_id: string; process_key: string }>(
+    `select tenant_id, process_key from retention_schedule
+      where enabled and (last_run_at is null or last_run_at < $1::timestamptz - interval '1 day')`, [now]);
+  const out: RetentionResult[] = [];
+  for (const r of rows) {
+    await pool.query('update retention_schedule set last_run_at = $3 where tenant_id = $1 and process_key = $2', [r.tenant_id, r.process_key, now]);
+    try {
+      out.push(await runRetention(pool, { principal: { kind: 'system', reason: 'worker' }, tenantId: r.tenant_id, processKey: r.process_key, now }));
+    } catch (err) {
+      console.error(`scheduled retention for ${r.process_key} failed:`, err instanceof Error ? err.message : err);
+    }
+  }
+  return out;
 }

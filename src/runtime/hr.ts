@@ -62,6 +62,7 @@ async function who(pool: Pool | Client, principal: Principal): Promise<Who> {
   const { rows } = await pool.query<{ email: string; workspace_role: WorkspaceRole; active: boolean }>(
     'select email, workspace_role, active from actor where id = $1 and tenant_id = $2', [principal.actorId, principal.tenantId]);
   if (!rows[0]?.active) throw new InvalidInput('signed-in members only');
+  if (rows[0].workspace_role === 'auditor') throw new InvalidInput('auditors see only their engagement');
   const { rows: t } = await pool.query<{ team: string }>('select team from hr_team_member where tenant_id = $1 and actor_id = $2', [principal.tenantId, principal.actorId]);
   const teams = new Set(t.map((x) => x.team));
   const admin = ['owner', 'admin'].includes(rows[0].workspace_role);

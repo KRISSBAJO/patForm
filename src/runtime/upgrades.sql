@@ -869,10 +869,10 @@ alter table procurement_settings add column if not exists manager_limit numeric(
 -- else, until the activation task gives them their real role (acceptance 1).
 alter table actor drop constraint if exists actor_workspace_role_check;
 alter table actor add constraint actor_workspace_role_check
-  check (workspace_role in ('owner','admin','builder','operator','approver','analyst','read_only','pre_hire'));
+  check (workspace_role in ('owner','admin','builder','operator','approver','analyst','read_only','pre_hire','auditor'));
 alter table invitation drop constraint if exists invitation_workspace_role_check;
 alter table invitation add constraint invitation_workspace_role_check
-  check (workspace_role in ('owner','admin','builder','operator','approver','analyst','read_only','pre_hire'));
+  check (workspace_role in ('owner','admin','builder','operator','approver','analyst','read_only','pre_hire','auditor'));
 
 create table if not exists hr_settings (
   tenant_id          uuid primary key references tenant(id),
@@ -1616,3 +1616,363 @@ create unique index if not exists ops_connector_delivery_grant on ops_connector_
 -- environment, the customer's directory is chosen here.
 alter table access_system add column if not exists connector_kind text check (connector_kind in ('webhook', 'microsoft365', 'google_workspace'));
 alter table access_system add column if not exists connector_config jsonb;
+
+-- ------------------------------------------- contracts, compliance, audit
+--
+-- PRD Module 10. Contracts carry versions, and approvals belong to a
+-- version: a material revision invalidates them. Obligations and renewal
+-- reminders become dated tasks, created once each. Policies, controls,
+-- audit engagements and findings keep their history. Auditors get scoped,
+-- time-limited, read-only access, and everything they open is logged.
+-- Legal holds stop deletion and are visible only to the people who manage
+-- them. Storing controls here is not a certification.
+
+-- A new workspace role: an external auditor holds no capability at all and
+-- sees only what an engagement grants, until it expires.
+alter table actor drop constraint if exists actor_workspace_role_check;
+alter table actor add constraint actor_workspace_role_check
+  check (workspace_role in ('owner','admin','builder','operator','approver','analyst','read_only','pre_hire','auditor'));
+alter table invitation drop constraint if exists invitation_workspace_role_check;
+alter table invitation add constraint invitation_workspace_role_check
+  check (workspace_role in ('owner','admin','builder','operator','approver','analyst','read_only','pre_hire','auditor'));
+
+create table if not exists gov_member (
+  tenant_id  uuid not null references tenant(id),
+  team       text not null check (team in ('legal', 'compliance', 'security', 'finance')),
+  actor_id   uuid not null references actor(id),
+  added_at   timestamptz not null default now(),
+  primary key (tenant_id, team, actor_id)
+);
+
+create table if not exists gov_settings (
+  tenant_id  uuid primary key references tenant(id),
+  settings   jsonb not null default '{}'::jsonb,
+  updated_by uuid references actor(id),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists contract (
+  id              uuid primary key default gen_random_uuid(),
+  tenant_id       uuid not null references tenant(id),
+  number          int not null,
+  title           text not null,
+  counterparty    text not null,
+  vendor_id       uuid references vendor(id),
+  entity          text,
+  project         text,
+  owner_id        uuid not null references actor(id),
+  value           numeric(18, 2),
+  currency        text,
+  start_date      date,
+  end_date        date,
+  auto_renews     boolean not null default false,
+  notice_days     int check (notice_days between 0 and 3650),
+  notice_calendar text not null default 'calendar' check (notice_calendar in ('calendar', 'business')),
+  personal_data   boolean not null default false,
+  status          text not null default 'draft' check (status in ('draft', 'in_review', 'approved', 'out_for_signature', 'signed', 'expired', 'terminated')),
+  current_version int not null default 1,
+  created_by      uuid references actor(id),
+  created_at      timestamptz not null default now(),
+  updated_at      timestamptz not null default now(),
+  unique (tenant_id, number)
+);
+
+create table if not exists contract_version (
+  id           uuid primary key default gen_random_uuid(),
+  contract_id  uuid not null references contract(id),
+  version      int not null,
+  document_ref text,
+  changes      text,
+  material     boolean not null default true,
+  terms        jsonb not null,
+  created_by   uuid references actor(id),
+  created_at   timestamptz not null default now(),
+  unique (contract_id, version)
+);
+
+create table if not exists contract_review (
+  id           uuid primary key default gen_random_uuid(),
+  contract_id  uuid not null references contract(id),
+  version      int not null,
+  discipline   text not null check (discipline in ('business', 'legal', 'security', 'finance')),
+  reviewer_id  uuid not null references actor(id),
+  decision     text not null check (decision in ('approved', 'changes_requested')),
+  note         text,
+  decided_at   timestamptz not null default now(),
+  invalidated_at timestamptz,
+  invalidated_reason text
+);
+
+create table if not exists contract_envelope (
+  id            uuid primary key default gen_random_uuid(),
+  contract_id   uuid not null references contract(id),
+  version       int not null,
+  provider      text not null,
+  envelope_ref  text not null,
+  status        text not null default 'sent' check (status in ('sent', 'delivered', 'completed', 'declined', 'voided')),
+  signed_artifact_ref text,
+  history       jsonb not null default '[]'::jsonb,
+  created_by    uuid references actor(id),
+  created_at    timestamptz not null default now(),
+  updated_at    timestamptz not null default now()
+);
+
+create table if not exists obligation (
+  id            uuid primary key default gen_random_uuid(),
+  tenant_id     uuid not null references tenant(id),
+  contract_id   uuid references contract(id),
+  title         text not null,
+  owner_id      uuid not null references actor(id),
+  kind          text not null check (kind in ('recurring', 'one_off', 'event')),
+  every_months  int check (every_months between 1 and 120),
+  next_due      date,
+  evidence_required boolean not null default true,
+  escalate_after_days int not null default 7,
+  escalate_to   uuid references actor(id),
+  active        boolean not null default true,
+  created_by    uuid references actor(id),
+  created_at    timestamptz not null default now()
+);
+
+-- Acceptance 2 and GOV-04: one task per obligation and date, and one renewal
+-- task per contract and notice deadline, however often the scheduler runs.
+create table if not exists obligation_task (
+  id            uuid primary key default gen_random_uuid(),
+  tenant_id     uuid not null references tenant(id),
+  obligation_id uuid references obligation(id),
+  contract_id   uuid references contract(id),
+  kind          text not null check (kind in ('obligation', 'renewal')),
+  title         text not null,
+  due_on        date not null,
+  notice_deadline date,
+  owner_id      uuid not null references actor(id),
+  status        text not null default 'open' check (status in ('open', 'done', 'waived')),
+  evidence      text,
+  note          text,
+  completed_by  uuid references actor(id),
+  completed_at  timestamptz,
+  escalated_at  timestamptz,
+  created_at    timestamptz not null default now()
+);
+create unique index if not exists obligation_task_once on obligation_task (obligation_id, due_on) where kind = 'obligation';
+create unique index if not exists renewal_task_once on obligation_task (contract_id, notice_deadline) where kind = 'renewal';
+
+create table if not exists policy (
+  id         uuid primary key default gen_random_uuid(),
+  tenant_id  uuid not null references tenant(id),
+  title      text not null,
+  owner_id   uuid not null references actor(id),
+  created_at timestamptz not null default now()
+);
+create table if not exists policy_version (
+  id            uuid primary key default gen_random_uuid(),
+  policy_id     uuid not null references policy(id),
+  version       int not null,
+  summary       text not null,
+  document_ref  text,
+  status        text not null default 'draft' check (status in ('draft', 'approved', 'published', 'superseded')),
+  effective_from date,
+  created_by    uuid references actor(id),
+  approved_by   uuid references actor(id),
+  approved_at   timestamptz,
+  published_at  timestamptz,
+  created_at    timestamptz not null default now(),
+  unique (policy_id, version)
+);
+create table if not exists policy_campaign (
+  id                uuid primary key default gen_random_uuid(),
+  tenant_id         uuid not null references tenant(id),
+  policy_version_id uuid not null references policy_version(id),
+  audience          jsonb not null default '{}'::jsonb,
+  due_on            date not null,
+  created_by        uuid references actor(id),
+  created_at        timestamptz not null default now()
+);
+create table if not exists policy_ack (
+  campaign_id     uuid not null references policy_campaign(id),
+  actor_id        uuid not null references actor(id),
+  acknowledged_at timestamptz not null default now(),
+  statement       text not null,
+  primary key (campaign_id, actor_id)
+);
+
+create table if not exists gov_control (
+  id             uuid primary key default gen_random_uuid(),
+  tenant_id      uuid not null references tenant(id),
+  ref            text not null,
+  title          text not null,
+  owner_id       uuid not null references actor(id),
+  framework      text,
+  evidence_type  text not null,
+  frequency_days int not null check (frequency_days between 1 and 3660),
+  next_test_due  date not null,
+  status         text not null default 'not_tested' check (status in ('not_tested', 'effective', 'ineffective')),
+  created_at     timestamptz not null default now(),
+  unique (tenant_id, ref)
+);
+create table if not exists control_test (
+  id           uuid primary key default gen_random_uuid(),
+  control_id   uuid not null references gov_control(id),
+  result       text not null check (result in ('pass', 'fail')),
+  evidence_ref text not null,
+  notes        text,
+  tested_by    uuid references actor(id),
+  tested_at    timestamptz not null default now()
+);
+
+create table if not exists gov_exception (
+  id           uuid primary key default gen_random_uuid(),
+  tenant_id    uuid not null references tenant(id),
+  kind         text not null check (kind in ('policy', 'control')),
+  target_id    uuid not null,
+  subject      text not null,
+  reason       text not null,
+  requested_by uuid references actor(id),
+  decided_by   uuid references actor(id),
+  decision_note text,
+  status       text not null default 'requested' check (status in ('requested', 'approved', 'rejected')),
+  expires_on   date,
+  created_at   timestamptz not null default now()
+);
+
+create table if not exists engagement (
+  id             uuid primary key default gen_random_uuid(),
+  tenant_id      uuid not null references tenant(id),
+  title          text not null,
+  scope          jsonb not null,
+  period_from    date not null,
+  period_to      date not null,
+  lead_id        uuid not null references actor(id),
+  status         text not null default 'planning' check (status in ('planning', 'fieldwork', 'reporting', 'closed')),
+  sampling_notes text,
+  created_by     uuid references actor(id),
+  created_at     timestamptz not null default now()
+);
+create table if not exists engagement_auditor (
+  engagement_id uuid not null references engagement(id),
+  actor_id      uuid not null references actor(id),
+  expires_at    timestamptz not null,
+  can_export    boolean not null default false,
+  granted_by    uuid references actor(id),
+  granted_at    timestamptz not null default now(),
+  revoked_at    timestamptz,
+  primary key (engagement_id, actor_id)
+);
+create table if not exists evidence_request (
+  id            uuid primary key default gen_random_uuid(),
+  engagement_id uuid not null references engagement(id),
+  title         text not null,
+  detail        text,
+  owner_id      uuid not null references actor(id),
+  due_on        date,
+  status        text not null default 'open' check (status in ('open', 'submitted', 'accepted', 'rejected')),
+  evidence      jsonb not null default '[]'::jsonb,
+  decided_by    uuid references actor(id),
+  decision_note text,
+  created_by    uuid references actor(id),
+  created_at    timestamptz not null default now()
+);
+create table if not exists finding (
+  id            uuid primary key default gen_random_uuid(),
+  tenant_id     uuid not null references tenant(id),
+  engagement_id uuid not null references engagement(id),
+  number        int not null,
+  title         text not null,
+  detail        text not null,
+  severity      text not null check (severity in ('low', 'medium', 'high', 'critical')),
+  owner_id      uuid not null references actor(id),
+  management_response text,
+  target_date   date,
+  status        text not null default 'open' check (status in ('open', 'remediating', 'awaiting_validation', 'closed')),
+  reopened      int not null default 0,
+  validated_by  uuid references actor(id),
+  validated_at  timestamptz,
+  escalated_at  timestamptz,
+  created_by    uuid references actor(id),
+  created_at    timestamptz not null default now(),
+  unique (engagement_id, number)
+);
+create table if not exists finding_action (
+  id          bigserial primary key,
+  finding_id  uuid not null references finding(id),
+  kind        text not null check (kind in ('response', 'evidence', 'validated', 'reopened', 'escalated', 'note')),
+  body        text not null,
+  evidence_ref text,
+  actor_id    uuid references actor(id),
+  occurred_at timestamptz not null default now()
+);
+
+-- GOV-10: every look and every export by an auditor, and every refusal.
+create table if not exists auditor_access_log (
+  id            bigserial primary key,
+  tenant_id     uuid not null references tenant(id),
+  engagement_id uuid references engagement(id),
+  actor_id      uuid not null references actor(id),
+  action        text not null check (action in ('view', 'export', 'denied')),
+  target_kind   text not null,
+  target_id     text,
+  occurred_at   timestamptz not null default now()
+);
+
+create table if not exists evidence_pack (
+  id            uuid primary key default gen_random_uuid(),
+  tenant_id     uuid not null references tenant(id),
+  engagement_id uuid not null references engagement(id),
+  manifest      jsonb not null,
+  content       jsonb not null,
+  sha256        text not null,
+  created_by    uuid references actor(id),
+  created_at    timestamptz not null default now()
+);
+
+create table if not exists legal_hold (
+  id             uuid primary key default gen_random_uuid(),
+  tenant_id      uuid not null references tenant(id),
+  title          text not null,
+  reason         text not null,
+  scope          jsonb not null,
+  status         text not null default 'active' check (status in ('active', 'released', 'cleared')),
+  created_by     uuid references actor(id),
+  created_at     timestamptz not null default now(),
+  released_by    uuid references actor(id),
+  released_at    timestamptz,
+  release_reason text,
+  cleared_by     uuid references actor(id),
+  cleared_at     timestamptz,
+  clear_note     text
+);
+
+create table if not exists retention_schedule (
+  tenant_id   uuid not null references tenant(id),
+  process_key text not null,
+  enabled     boolean not null default true,
+  last_run_at timestamptz,
+  set_by      uuid references actor(id),
+  primary key (tenant_id, process_key)
+);
+
+-- Acceptance 4: a purge that a hold stopped, kept for review.
+create table if not exists retention_block (
+  id           bigserial primary key,
+  tenant_id    uuid not null references tenant(id),
+  process_key  text not null,
+  hold_id      uuid not null references legal_hold(id),
+  held_records int not null,
+  record_ids   jsonb not null,
+  run_by       text not null,
+  occurred_at  timestamptz not null default now()
+);
+
+create or replace function gov_is_append_only() returns trigger as $$
+begin
+  raise exception '% is append-only', tg_table_name;
+end;
+$$ language plpgsql;
+drop trigger if exists auditor_access_log_no_change on auditor_access_log;
+create trigger auditor_access_log_no_change before update or delete on auditor_access_log for each row execute function gov_is_append_only();
+drop trigger if exists retention_block_no_change on retention_block;
+create trigger retention_block_no_change before update or delete on retention_block for each row execute function gov_is_append_only();
+drop trigger if exists finding_action_no_change on finding_action;
+create trigger finding_action_no_change before update or delete on finding_action for each row execute function gov_is_append_only();
+drop trigger if exists control_test_no_change on control_test;
+create trigger control_test_no_change before update or delete on control_test for each row execute function gov_is_append_only();

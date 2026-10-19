@@ -51,6 +51,12 @@ export const WORKSPACE_GRANTS = {
    * the activation task gives them their real role.
    */
   pre_hire: [],
+  /**
+   * PRD GOV-10, acceptance 3: an external auditor. No capability anywhere;
+   * what they may read is granted per engagement, read-only and until a
+   * date, through the Contracts and compliance module.
+   */
+  auditor: [],
 } as const satisfies Record<string, readonly Capability[]>;
 
 export type WorkspaceRole = keyof typeof WORKSPACE_GRANTS;

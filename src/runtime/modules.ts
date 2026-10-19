@@ -74,9 +74,9 @@ export const MODULES: readonly ModuleDefinition[] = [
   {
     key: 'contracts',
     name: 'Contracts, compliance and audit',
-    summary: 'Obligations, controls, reviews and corrective actions.',
+    summary: 'Contracts with versioned reviews and renewals by notice date, obligations, policies and acknowledgements, controls, audit engagements with scoped auditor access, findings and legal holds.',
     categories: ['Legal', 'Compliance'],
-    status: 'templates_only',
+    status: 'available',
   },
 ];
 

@@ -58,6 +58,7 @@ export async function orgChart(pool: Pool, principal: Principal) {
   const tenantId = principal.tenantId;
   const { rows: me } = await pool.query<{ workspace_role: string }>('select workspace_role from actor where id = $1', [principal.actorId]);
   if (me[0]?.workspace_role === 'pre_hire') throw new InvalidInput('your access to the workspace starts on your first day');
+  if (me[0]?.workspace_role === 'auditor') throw new InvalidInput('auditors see only their engagement');
   const [entities, units, lines] = await Promise.all([
     pool.query<LegalEntityRow>(
       'select id, name, code, created_at from legal_entity where tenant_id = $1 order by name', [tenantId]),

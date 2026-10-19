@@ -63,6 +63,7 @@ async function who(pool: Pool | Client, principal: Principal): Promise<Who> {
   }
   const { rows } = await pool.query<{ workspace_role: string; active: boolean }>('select workspace_role, active from actor where id = $1 and tenant_id = $2', [principal.actorId, principal.tenantId]);
   if (!rows[0]?.active || rows[0].workspace_role === 'pre_hire') throw new InvalidInput('this opens after your first day');
+  if (rows[0].workspace_role === 'auditor') throw new InvalidInput('auditors see only their engagement');
   const admin = ['owner', 'admin'].includes(rows[0].workspace_role);
   const { rows: t } = await pool.query<{ team: Team }>("select team from hr_team_member where tenant_id = $1 and actor_id = $2 and team in ('it', 'facilities')", [principal.tenantId, principal.actorId]);
   const teams = t.map((r) => r.team);

@@ -31,6 +31,7 @@ import { addQuote, approveOrder, cancelOrder, createAgreement, createOrder, crea
 import { acknowledgeDocument, addCaseNote, addCertification, cancelLeave, completeTask, createDocument, decideLeave, decideProbation, exceptTask, hrSummary, leaveToApprove, listCaseNotes, listCases, listCompensation, listDocuments, listEmployees, listHiring, listHolidays, listLeaveTypes, listReconciliations, listTeams, listTemplates, myDocuments, myLeave, myTasks, readHrSettings, requestLeave, resolveReconciliation, saveHoliday, saveLeaveType, saveTemplate, sendDocument, setCompensation, setEntitlement, setTeamMember, startOffboarding, startOnboarding, startProbationReview, startTransfer, updateEmployee, updateHrSettings, upcoming, urgentTermination } from '../runtime/hr.js';
 import * as apr from '../runtime/appraisals.js';
 import * as ops from '../runtime/ops.js';
+import * as gov from '../runtime/gov.js';
 import { opsPhotoLink, uploadOpsPhoto } from '../runtime/ops-files.js';
 import { enabledModules, listModules, setModule, updateWorkspaceSettings, workspaceSettings } from '../runtime/modules.js';
 import { createDelegation, createGrant, listAuthority, revokeDelegation, revokeGrant as revokeAuthorityGrant, workspaceAudit } from '../runtime/authority.js';
@@ -1113,6 +1114,60 @@ route('POST', or(`changes/${A}/precondition`), async ({ pool, principal, url }, 
 route('POST', or(`changes/${A}/start`), async ({ pool, principal, url }) => ops.startChange(pool, principal, hid(url, 4)));
 route('POST', or(`changes/${A}/finish`), async ({ pool, principal, url }, b) => ops.finishChange(pool, principal, hid(url, 4), hb(b)));
 route('POST', or(`changes/${A}/review`), async ({ pool, principal, url }, b) => ops.reviewEmergencyChange(pool, principal, hid(url, 4), hb(b)));
+
+// ---- Contracts, compliance and audit (PRD Module 10). Who may see and do
+// what is decided in runtime/gov.ts; auditors reach only the engagement reads.
+const gr = (re: string) => new RegExp(`^/api/gov/${re}$`);
+route('GET', gr('dashboard'), async ({ pool, principal }) => gov.govDashboard(pool, principal));
+route('GET', gr('settings'), async ({ pool, principal }) => gov.readGovSettings(pool, principal));
+route('POST', gr('settings'), async ({ pool, principal }, b) => gov.updateGovSettings(pool, principal, hb(b)));
+route('POST', gr('teams'), async ({ pool, principal }, b) => gov.setGovTeamMember(pool, principal, hb(b)));
+route('GET', gr('contracts'), async ({ pool, principal }) => gov.listContracts(pool, principal));
+route('POST', gr('contracts'), async ({ pool, principal }, b) => gov.createContract(pool, principal, hb(b)));
+route('GET', gr(`contracts/${A}`), async ({ pool, principal, url }) => gov.contractDetail(pool, principal, hid(url, 4)));
+route('POST', gr(`contracts/${A}/revise`), async ({ pool, principal, url }, b) => gov.reviseContract(pool, principal, hid(url, 4), hb(b)));
+route('POST', gr(`contracts/${A}/submit`), async ({ pool, principal, url }) => gov.submitContract(pool, principal, hid(url, 4)));
+route('POST', gr(`contracts/${A}/review`), async ({ pool, principal, url }, b) => gov.reviewContract(pool, principal, hid(url, 4), hb(b)));
+route('POST', gr(`contracts/${A}/signature`), async ({ pool, principal, url }, b) => gov.sendForSignature(pool, principal, hid(url, 4), hb(b)));
+route('POST', gr(`envelopes/${A}`), async ({ pool, principal, url }, b) => gov.updateEnvelope(pool, principal, hid(url, 4), hb(b)));
+route('POST', gr('obligations'), async ({ pool, principal }, b) => gov.createObligation(pool, principal, hb(b)));
+route('POST', gr(`obligations/${A}/trigger`), async ({ pool, principal, url }, b) => gov.triggerObligation(pool, principal, hid(url, 4), hb(b)));
+route('GET', gr('tasks'), async ({ pool, principal, url }) => gov.listTasks(pool, principal, { scope: url.searchParams.get('scope') ?? undefined }));
+route('POST', gr(`tasks/${A}/complete`), async ({ pool, principal, url }, b) => gov.completeGovTask(pool, principal, hid(url, 4), hb(b)));
+route('GET', gr('policies'), async ({ pool, principal }) => gov.listPolicies(pool, principal));
+route('POST', gr('policies'), async ({ pool, principal }, b) => gov.createPolicy(pool, principal, hb(b)));
+route('POST', gr(`policies/${A}/versions`), async ({ pool, principal, url }, b) => gov.newPolicyVersion(pool, principal, hid(url, 4), hb(b)));
+route('POST', gr(`policy-versions/${A}/approve`), async ({ pool, principal, url }) => gov.approvePolicyVersion(pool, principal, hid(url, 4)));
+route('POST', gr(`policy-versions/${A}/publish`), async ({ pool, principal, url }, b) => gov.publishPolicyVersion(pool, principal, hid(url, 4), hb(b)));
+route('POST', gr(`policy-versions/${A}/campaign`), async ({ pool, principal, url }, b) => gov.startCampaign(pool, principal, hid(url, 4), hb(b)));
+route('GET', gr('acknowledgements/mine'), async ({ pool, principal }) => gov.myAcknowledgements(pool, principal));
+route('POST', gr(`campaigns/${A}/acknowledge`), async ({ pool, principal, url }) => gov.acknowledgePolicy(pool, principal, hid(url, 4)));
+route('GET', gr('controls'), async ({ pool, principal }) => gov.listControls(pool, principal));
+route('POST', gr('controls'), async ({ pool, principal }, b) => gov.saveControl(pool, principal, hb(b)));
+route('POST', gr(`controls/${A}/test`), async ({ pool, principal, url }, b) => gov.recordControlTest(pool, principal, hid(url, 4), hb(b)));
+route('GET', gr('exceptions'), async ({ pool, principal }) => gov.listExceptions(pool, principal));
+route('POST', gr('exceptions'), async ({ pool, principal }, b) => gov.requestException(pool, principal, hb(b)));
+route('POST', gr(`exceptions/${A}/decide`), async ({ pool, principal, url }, b) => gov.decideException(pool, principal, hid(url, 4), hb(b)));
+route('GET', gr('engagements'), async ({ pool, principal }) => gov.listEngagements(pool, principal));
+route('POST', gr('engagements'), async ({ pool, principal }, b) => gov.createEngagement(pool, principal, hb(b)));
+route('GET', gr(`engagements/${A}`), async ({ pool, principal, url }) => gov.engagementView(pool, principal, hid(url, 4)));
+route('POST', gr(`engagements/${A}`), async ({ pool, principal, url }, b) => gov.updateEngagement(pool, principal, hid(url, 4), hb(b)));
+route('GET', gr(`engagements/${A}/records/${A}`), async ({ pool, principal, url }) => gov.engagementRecord(pool, principal, hid(url, 4), hid(url, 6)));
+route('POST', gr(`engagements/${A}/auditors`), async ({ pool, principal, url }, b) => gov.grantAuditor(pool, principal, hid(url, 4), hb(b)));
+route('POST', gr(`engagements/${A}/auditors/revoke`), async ({ pool, principal, url }, b) => gov.revokeAuditor(pool, principal, hid(url, 4), hb(b)));
+route('GET', gr(`engagements/${A}/access-log`), async ({ pool, principal, url }) => gov.auditorLog(pool, principal, hid(url, 4)));
+route('POST', gr(`engagements/${A}/requests`), async ({ pool, principal, url }, b) => gov.addEvidenceRequest(pool, principal, hid(url, 4), hb(b)));
+route('POST', gr(`engagements/${A}/findings`), async ({ pool, principal, url }, b) => gov.raiseFinding(pool, principal, hid(url, 4), hb(b)));
+route('POST', gr(`engagements/${A}/pack`), async ({ pool, principal, url }) => gov.buildEvidencePack(pool, principal, hid(url, 4)));
+route('POST', gr(`requests/${A}/evidence`), async ({ pool, principal, url }, b) => gov.submitEvidence(pool, principal, hid(url, 4), hb(b)));
+route('POST', gr(`requests/${A}/decide`), async ({ pool, principal, url }, b) => gov.decideEvidence(pool, principal, hid(url, 4), hb(b)));
+route('GET', gr('findings/mine'), async ({ pool, principal }) => gov.myFindings(pool, principal));
+route('POST', gr(`findings/${A}`), async ({ pool, principal, url }, b) => gov.workFinding(pool, principal, hid(url, 4), hb(b)));
+route('GET', gr('holds'), async ({ pool, principal }) => gov.listHolds(pool, principal));
+route('POST', gr('holds'), async ({ pool, principal }, b) => gov.createHold(pool, principal, hb(b)));
+route('POST', gr(`holds/${A}/release`), async ({ pool, principal, url }, b) => gov.releaseHold(pool, principal, hid(url, 4), hb(b)));
+route('POST', gr(`holds/${A}/clear`), async ({ pool, principal, url }, b) => gov.clearHold(pool, principal, hid(url, 4), hb(b)));
+route('POST', gr('retention-schedules'), async ({ pool, principal }, b) => gov.setRetentionSchedule(pool, principal, hb(b)));
 
 // ---- modules and workspace settings (PRD ORG-01): which shelves are on.
 route('GET', /^\/api\/modules$/, async ({ pool, principal }) => listModules(pool, principal));

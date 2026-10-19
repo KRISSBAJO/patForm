@@ -456,3 +456,72 @@ in the Render environment for staging:
   Admin SDK API, enable domain-wide delegation, create a JSON key, and copy
   its client_email, client_id and private_key.
 
+## Module 10, Contracts, compliance and audit (19 Oct 2026)
+
+Built in `src/runtime/gov.ts`, with the Compliance page in the console, and
+legal holds wired into `src/runtime/retention.ts`. Teams: Legal,
+Compliance, Security and Finance (Setup).
+
+- Contracts: parties, linked supplier, entity, project, owner, value,
+  dates, notice period (calendar or working days), automatic renewal,
+  personal data flag, versions with document references (GOV-01).
+- Reviews belong to a version. Business (the owner's manager or an
+  admin), Legal, Security for personal data and Finance above a value are
+  required as the rules say. The author of a version cannot review it. A
+  material revision — flagged, or any change to value, currency, dates,
+  notice or renewal, or the other party — cancels the approvals the policy
+  names and sends the contract back for review; a non-material one carries
+  them over and says so (GOV-02, acceptance 1).
+- Signature: only an approved current version goes out; envelope status
+  and the signed copy are tracked apart from approval; a revision voids an
+  open envelope; "completed" needs the signed document (GOV-03). Validity
+  and jurisdiction are for the chosen provider and the customer.
+- Obligations: recurring (every N months), one-off or event-driven, with
+  owner, evidence and escalation. Renewal tasks are dated from the notice
+  deadline: end date less the notice period, in working days skipping
+  weekends and the workspace's public holidays, moved earlier off
+  non-working days. Created once each however often the sweep runs
+  (GOV-04, acceptance 2). Renewal tasks record a decision; giving notice
+  needs the notice as evidence.
+- Policies: draft, approval by someone other than the author, publication
+  with an effective date superseding the previous version, acknowledgement
+  campaigns by role with the exact statement recorded, exceptions decided
+  by Compliance (GOV-05).
+- Controls: owner, evidence, test frequency, internal framework, tests
+  (append-only) and exceptions; the page says plainly this is not a
+  certification (GOV-06).
+- Audit engagements: scope (processes, controls, contracts), period, lead,
+  status, sampling notes, evidence requests submitted by their owner and
+  accepted or rejected by someone else, findings with severity, management
+  response, target date, remediation evidence, validation by someone other
+  than the owner, reopening when the evidence is not enough, and escalation
+  past the target date (GOV-07, GOV-08).
+- Auditors: a new workspace role with no capability. Access is per
+  engagement, until a date (at most 180 days), read-only; records are shown
+  only if in the engagement's processes and period; every view, export and
+  refusal is logged (append-only); export is granted separately. Auditors
+  are refused by HR, Appraisals, Assets, the member list, the org chart and
+  every capability-checked route (GOV-10, acceptance 3).
+- Evidence packs: originals (contract versions, review history, control
+  tests, submitted evidence, findings, record histories) and a derived
+  summary marked as such, with a manifest of sources, versions, times and a
+  SHA-256 per item and for the pack (GOV-11).
+- Legal holds: placed, released and cleared only by owners and Legal, and
+  invisible to everyone else. Retention — manual or the new daily schedule
+  — skips held records and records the blocked run for review. A released
+  hold keeps blocking until someone other than the releaser reviews and
+  clears it, so a release never triggers unreviewed deletion (GOV-09,
+  acceptance 4).
+- Dashboard: obligations due and overdue, overdue remediation, contracts
+  ending with their notice deadlines, policy acknowledgement, open
+  exceptions, control tests overdue; holds only for those allowed (GOV-12).
+
+Fixed during the browser check: an older copy of the workspace-role rule
+in the startup upgrades did not include the new auditor role, so the
+server would not start once an auditor existed. Every copy now includes
+it.
+
+Not built: a live signature provider connection (envelopes are recorded by
+hand or through the API), document upload for contracts and policies
+(references for now), and tenant export/closure (PRD 17.3).
+
