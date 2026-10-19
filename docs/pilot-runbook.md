@@ -92,3 +92,40 @@ the real company.
 
 Procurement (PRD Module 6) is next. It reuses the approvals, limits,
 budgets and payments the pilot will have tested.
+
+## Rehearsal script (option A)
+
+Use [pilot-rehearsal-staff.csv](pilot-rehearsal-staff.csv) in step 3. Its
+addresses are `+` versions of one Gmail address, so every invitation
+arrives in one inbox and you can sign in as each person. Use a separate
+private browser window per person: a window holds one sign-in.
+
+Settings for the rehearsal (step 7), in NGN: approve automatically up to
+**20,000**; manager alone up to **200,000**; any single item over
+**100,000** goes to Finance; receipt needed over **5,000**; add a rate
+**1 USD = 1,500 NGN**. Budgets: cost centre **ops**, this month,
+**300,000**, *Refuse claims it cannot cover*.
+
+Who is who: Chioma (admin, top), Fola (Finance, operator), Ola (head of
+operations), Lara (Lagos lead, reports to Ola), Dayo (reports to Lara),
+Sam (reports to Ola). In step 6 give Lara and Ola *Line manager*, and
+Fola *Finance approver* and *Finance operations*, on both processes.
+
+| # | Do this | You should see |
+|---|---|---|
+| 1 | Dayo claims a 12,000 taxi, cost centre ops | Approved at once. Fola's Expenses page: *Approved, not paid yet*. |
+| 2 | Dayo claims a 60,000 hotel and a 15,000 dinner | Goes to **Lara**, not anyone else. Lara approves; it is owed. |
+| 3 | Sam claims one 150,000 item | Goes to **Ola**, then to **Fola** because the item is over 100,000. |
+| 4 | Dayo claims 60, currency USD | Shown as 90,000 NGN at 1,500. Change the rate to 1,600 afterwards: the claim stays at 1,500. |
+| 5 | Dayo claims 80,000 (ops budget is nearly used) | Refused: *the ops budget has … left*. |
+| 6 | Fola reviews Dayo's hotel claim, cuts the dinner to 10,000 with a reason | *To pay* drops by 5,000; the claim as submitted is unchanged. |
+| 7 | Dayo adds bank details; Fola *Check bank details* → *Show full details* → *These details are correct* → *Record payment* | Paid. Try paying before checking: refused. |
+| 8 | Dayo changes his bank details while another claim is unpaid | That claim says *changed — check again*; payment refused until Fola checks. |
+| 9 | Sam requests a 100,000 advance; Ola approves; Fola *Record pay-out* | *Paid out, to be retired*, retire-by date shown. |
+| 10 | Sam claims 70,000 quoting the advance reference (ADV-…) | Nothing to pay; advance shows 30,000 *still held*. Fola records 30,000 *Money returned*: *Retired*. |
+| 11 | Fola, Exports → *Export CSV* | A CSV of paid claims with account codes and no bank numbers; the batch is listed. |
+| 12 | Lara submits a claim, then tries to approve it herself | Refused: the submitter may not approve. |
+| 13 | Import the same CSV again | *Everything checks out: 0 to add … unchanged*. Nothing duplicated. |
+
+Write down anything confusing, slow or wrong, with the row number. That
+list is what we fix before a real company sees it.

@@ -1,0 +1,7 @@
+email,name,unit,manager,title,role,entity
+krissbajo+chioma@gmail.com,Chioma Eze (TEST),Head office,,Managing director,admin,Rehearsal Ltd
+krissbajo+fola@gmail.com,Fola Adebayo (TEST),Finance,krissbajo+chioma@gmail.com,Finance lead,operator,Rehearsal Ltd
+krissbajo+ola@gmail.com,Ola Bello (TEST),Operations,krissbajo+chioma@gmail.com,Head of operations,,Rehearsal Ltd
+krissbajo+lara@gmail.com,Lara Musa (TEST),Operations > Lagos,krissbajo+ola@gmail.com,Branch lead,,Rehearsal Ltd
+krissbajo+dayo@gmail.com,Dayo Ade (TEST),Operations > Lagos,krissbajo+lara@gmail.com,Field officer,,Rehearsal Ltd
+krissbajo+sam@gmail.com,Sam Okon (TEST),Operations > Abuja,krissbajo+ola@gmail.com,Field officer,,Rehearsal Ltd
