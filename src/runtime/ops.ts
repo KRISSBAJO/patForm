@@ -27,6 +27,9 @@ import { type Principal } from './policy.js';
 import { recordWorkspaceAudit } from './authority.js';
 import { enabledModules } from './modules.js';
 import { managerOf } from './org.js';
+import { seal, open as unseal } from './secret-box.js';
+import { sign, verify } from './webhooks.js';
+import { randomBytes } from 'node:crypto';
 
 const UUID = /^[0-9a-f-]{36}$/;
 const text = (v: unknown, max: number) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
@@ -68,6 +71,8 @@ const requireStaff = (w: Who) => { if (!w.staff) throw new InvalidInput('only th
 const requireAdmin = (w: Who) => { if (!w.admin) throw new InvalidInput('only an owner or admin can do this'); };
 const inTeam = (w: Who, team: string) => w.admin || w.teams.includes(team as Team);
 const requireIt = (w: Who) => { if (!inTeam(w, 'it')) throw new InvalidInput('only the IT team can do this'); };
+export const opsWho = who;
+export const opsInTeam = inTeam;
 
 async function nextNumber(client: Client, table: 'ticket' | 'access_request' | 'change_request', tenantId: string): Promise<number> {
   await client.query('select pg_advisory_xact_lock(hashtext($1 || $2))', [table, tenantId]);
@@ -137,6 +142,34 @@ export async function setOpsTeamMember(pool: Pool, principal: Principal, body: R
   else await pool.query('insert into hr_team_member (tenant_id, team, actor_id) values ($1, $2, $3) on conflict do nothing', [w.tenantId, team, actorId]);
   await recordWorkspaceAudit(pool, { tenantId: w.tenantId, actorId: w.actorId, action: body.remove === true ? 'ops.team_removed' : 'ops.team_added', targetId: actorId, detail: { team } });
   return { team, actorId, member: body.remove !== true };
+}
+
+// ------------------------------------------------------------------ photos
+
+const PHOTO = /^ops-photo:([0-9a-f-]{36})$/;
+/** Photo references must be uploads to this workspace, for this thing, that did not fail the malware check. */
+async function checkPhotos(client: Client | Pool, tenantId: string, refs: string[], where: { jobId?: string; assetId?: string }): Promise<string[]> {
+  const ids: string[] = [];
+  for (const r of refs) {
+    const m = PHOTO.exec(r);
+    if (!m) throw new InvalidInput('photos must be uploaded, not typed in');
+    ids.push(m[1]!);
+  }
+  if (!ids.length) return [];
+  const { rows } = await client.query<{ id: string; job_id: string | null; asset_id: string | null; scan_status: string }>(
+    'select id, job_id, asset_id, scan_status from ops_photo where tenant_id = $1 and id = any($2::uuid[])', [tenantId, ids]);
+  for (const id of ids) {
+    const p = rows.find((x) => x.id === id);
+    if (!p || (where.jobId && p.job_id !== where.jobId) || (where.assetId && p.asset_id !== where.assetId)) throw new InvalidInput('one of the photos does not belong here; upload it again');
+    if (p.scan_status === 'quarantined') throw new InvalidInput('one of the photos failed its malware check; remove it');
+  }
+  return ids;
+}
+async function photosFor(client: Client | Pool, column: 'asset_id' | 'ticket_id', id: string) {
+  const { rows } = await client.query(
+    `select p.id, p.filename, p.scan_status, p.job_id, p.assignment_id, p.ticket_id, p.created_at, a.display_name as uploaded_by
+       from ops_photo p left join actor a on a.id = p.uploaded_by where p.${column} = $1 order by p.created_at desc limit 100`, [id]);
+  return rows;
 }
 
 // ------------------------------------------------------------------ assets
@@ -224,7 +257,7 @@ export async function assetDetail(pool: Pool, principal: Principal, assetId: str
   const { rows: history } = await pool.query(`select e.kind, e.detail, e.occurred_at, a.display_name as actor from asset_event e left join actor a on a.id = e.actor_id where e.asset_id = $1 order by e.id desc`, [assetId]);
   const { rows: jobs } = await pool.query(`select j.id, p.title, j.due_on::text, j.status, j.outcome, j.findings, j.completed_at from maintenance_job j join maintenance_plan p on p.id = j.plan_id where j.asset_id = $1 order by j.due_on desc limit 50`, [assetId]);
   const { rows: tickets } = await pool.query(`select id, number, title, status, kind, created_at from ticket where asset_id = $1 order by created_at desc limit 50`, [assetId]);
-  return { asset: rows[0], assignments, history, maintenance: jobs, tickets };
+  return { asset: rows[0], assignments, history, maintenance: jobs, tickets, photos: await photosFor(pool, 'asset_id', assetId) };
 }
 
 export async function updateAsset(pool: Pool, principal: Principal, assetId: string, body: Record<string, unknown>) {
@@ -278,7 +311,9 @@ export async function assignAsset(pool: Pool, principal: Principal, assetId: str
     const { rows: made } = await client.query<{ id: string }>(
       `insert into asset_assignment (asset_id, custodian_id, status, approved_by, assigned_by, condition_out, accessories, handover_ref) values ($1, $2, $3, $4, $5, $6, $7, $8) returning id`,
       [assetId, custodianId, status, status === 'pending_ack' ? w.actorId : null, w.actorId, condition, JSON.stringify(list(body.accessories)), text(body.handoverRef, 300) || null]);
-    await event(client, assetId, 'assigned', w.actorId, { custodianId, status, accessories: list(body.accessories) });
+    const photos = await checkPhotos(client, w.tenantId, list(body.photos, 10), { assetId });
+    if (photos.length) await client.query('update ops_photo set assignment_id = $2 where id = any($1::uuid[]) and assignment_id is null', [photos, made[0]!.id]);
+    await event(client, assetId, 'assigned', w.actorId, { custodianId, status, accessories: list(body.accessories), photos: photos.length });
     return { id: made[0]!.id, status };
   });
 }
@@ -340,7 +375,9 @@ export async function returnAsset(pool: Pool, principal: Principal, assignmentId
       [assignmentId, s.status === 'active' ? 'returned' : 'cancelled', condition, JSON.stringify(back), text(body.returnRef, 300) || null, w.actorId, caseId]);
     const { rows: still } = await client.query("select 1 from asset_assignment where asset_id = $1 and status in ('pending_approval', 'pending_ack', 'active')", [s.asset_id]);
     await client.query(`update asset set condition = $2, status = case when status = 'assigned' and $3 then 'in_stock' else status end, updated_at = now() where id = $1`, [s.asset_id, condition, !still[0]]);
-    await event(client, s.asset_id, 'returned', w.actorId, { assignmentId, condition, missing, caseId });
+    const photos = await checkPhotos(client, w.tenantId, list(body.photos, 10), { assetId: s.asset_id });
+    if (photos.length) await client.query('update ops_photo set assignment_id = $2 where id = any($1::uuid[]) and assignment_id is null', [photos, assignmentId]);
+    await event(client, s.asset_id, 'returned', w.actorId, { assignmentId, condition, missing, caseId, photos: photos.length });
     return { id: assignmentId, missing, caseId };
   });
 }
@@ -382,7 +419,7 @@ export async function awaitingRecovery(pool: Pool, principal: Principal) {
 export async function listSystems(pool: Pool, principal: Principal) {
   const w = await who(pool, principal);
   const { rows } = await pool.query(
-    `select s.id, s.name, s.roles, s.max_days, s.active, s.owner_id, o.display_name as owner, s.connector_actor_id, c.display_name as connector
+    `select s.id, s.name, s.roles, s.max_days, s.active, s.owner_id, o.display_name as owner, s.connector_actor_id, c.display_name as connector, s.connector_url, (s.connector_secret is not null) as has_secret
        from access_system s join actor o on o.id = s.owner_id left join actor c on c.id = s.connector_actor_id where s.tenant_id = $1 order by s.name`, [w.tenantId]);
   return rows;
 }
@@ -401,18 +438,37 @@ export async function saveSystem(pool: Pool, principal: Principal, body: Record<
     const { rows } = await pool.query('select 1 from actor where id = $1 and tenant_id = $2 and active', [a, w.tenantId]);
     if (!rows[0]) throw new InvalidInput('no such member');
   }
-  if (body.id) {
-    const sid = id(body.id, 'id');
-    const { rowCount } = await pool.query(`update access_system set name = $3, owner_id = $4, roles = $5, max_days = $6, connector_actor_id = $7, active = $8 where id = $1 and tenant_id = $2`,
-      [sid, w.tenantId, name, ownerId, JSON.stringify(roles), maxDays, connector, body.active !== false]);
-    if (!rowCount) throw new InvalidInput('no such system');
-    await recordWorkspaceAudit(pool, { tenantId: w.tenantId, actorId: w.actorId, action: 'ops.system_changed', targetId: sid, detail: { name, ownerId, roles, maxDays, connector } });
-    return { id: sid };
+  const url = text(body.connectorUrl, 500) || null;
+  if (url) {
+    let parsed: URL;
+    try { parsed = new URL(url); } catch { throw new InvalidInput('the connector address must be a web address'); }
+    // A signed request over plain HTTP is one anybody on the path can read.
+    if (parsed.protocol !== 'https:' && !/^(localhost|127\.0\.0\.1)$/.test(parsed.hostname)) throw new InvalidInput('the connector address must be https');
   }
-  const { rows } = await pool.query<{ id: string }>(`insert into access_system (tenant_id, name, owner_id, roles, max_days, connector_actor_id) values ($1, $2, $3, $4, $5, $6) returning id`,
-    [w.tenantId, name, ownerId, JSON.stringify(roles), maxDays, connector]);
-  await recordWorkspaceAudit(pool, { tenantId: w.tenantId, actorId: w.actorId, action: 'ops.system_added', targetId: rows[0]!.id, detail: { name, ownerId, roles, maxDays, connector } });
-  return { id: rows[0]!.id };
+  let sid: string;
+  if (body.id) {
+    sid = id(body.id, 'id');
+    const { rowCount } = await pool.query(`update access_system set name = $3, owner_id = $4, roles = $5, max_days = $6, connector_actor_id = $7, active = $8, connector_url = $9 where id = $1 and tenant_id = $2`,
+      [sid, w.tenantId, name, ownerId, JSON.stringify(roles), maxDays, connector, body.active !== false, url]);
+    if (!rowCount) throw new InvalidInput('no such system');
+    await recordWorkspaceAudit(pool, { tenantId: w.tenantId, actorId: w.actorId, action: 'ops.system_changed', targetId: sid, detail: { name, ownerId, roles, maxDays, connector, url } });
+  } else {
+    const { rows } = await pool.query<{ id: string }>(`insert into access_system (tenant_id, name, owner_id, roles, max_days, connector_actor_id, connector_url) values ($1, $2, $3, $4, $5, $6, $7) returning id`,
+      [w.tenantId, name, ownerId, JSON.stringify(roles), maxDays, connector, url]);
+    sid = rows[0]!.id;
+    await recordWorkspaceAudit(pool, { tenantId: w.tenantId, actorId: w.actorId, action: 'ops.system_added', targetId: sid, detail: { name, ownerId, roles, maxDays, connector, url } });
+  }
+  // The signing secret is shown once, when first needed or when asked for a new one.
+  let secret: string | null = null;
+  if (url) {
+    const { rows } = await pool.query<{ connector_secret: string | null }>('select connector_secret from access_system where id = $1', [sid]);
+    if (!rows[0]!.connector_secret || body.newSecret === true) {
+      secret = `pcs_${randomBytes(24).toString('base64url')}`;
+      await pool.query('update access_system set connector_secret = $2 where id = $1', [sid, seal(secret, `access_system:${sid}`)]);
+      await recordWorkspaceAudit(pool, { tenantId: w.tenantId, actorId: w.actorId, action: 'ops.connector_secret_issued', targetId: sid });
+    }
+  }
+  return { id: sid, secret };
 }
 
 /** OPS-04: system, role, justification and expiry. */
@@ -466,6 +522,7 @@ export async function decideAccess(pool: Pool, principal: Principal, requestId: 
     if (w.actorId === r.holder_id || w.actorId === r.requested_by) throw new InvalidInput('someone other than the person asking, or getting the access, decides');
     await client.query(`update access_request set status = $2, decided_by = $3, decided_at = now(), decision_note = $4 where id = $1`, [requestId, approve ? 'approved' : 'rejected', w.actorId, note || null]);
     await recordWorkspaceAudit(client, { tenantId: w.tenantId, actorId: w.actorId, action: approve ? 'ops.access_approved' : 'ops.access_rejected', targetId: requestId, detail: { note } });
+    if (approve) await queueProvisioning(client, requestId);
     return { id: requestId, status: approve ? 'approved' : 'rejected', next: approve ? 'Waiting for the system to confirm, or for IT to record evidence.' : null };
   });
 }
@@ -540,6 +597,7 @@ export async function listAccess(pool: Pool, principal: Principal) {
 export async function queueRevocations(client: Client | Pool, tenantId: string, actorId: string, reason: string): Promise<number> {
   const { rowCount } = await client.query(
     `update access_grant set status = 'revoking', revoke_requested_at = now(), revoke_reason = $3 where tenant_id = $1 and holder_id = $2 and status = 'active'`, [tenantId, actorId, reason]);
+  await queueRevokeDeliveries(client, tenantId);
   return rowCount ?? 0;
 }
 
@@ -551,6 +609,7 @@ export async function reconcileAccess(client: Client | Pool, tenantId?: string):
   const b = await client.query(
     `update access_grant set status = 'revoking', revoke_requested_at = now(), revoke_reason = 'expired'
       where status = 'active' and expires_on is not null and expires_on <= current_date and ($1::uuid is null or tenant_id = $1)`, [tenantId ?? null]);
+  await queueRevokeDeliveries(client, tenantId);
   return (a.rowCount ?? 0) + (b.rowCount ?? 0);
 }
 
@@ -607,8 +666,157 @@ export async function reviewGrant(pool: Pool, principal: Principal, grantId: str
     if (g.holder_id === w.actorId) throw new InvalidInput('nobody reviews their own access');
     if (g.status !== 'active') throw new InvalidInput('only active access is reviewed');
     if (keep) await client.query(`update access_grant set reviewed_at = now(), reviewed_by = $2, review_note = $3 where id = $1`, [grantId, w.actorId, note]);
-    else await client.query(`update access_grant set status = 'revoking', revoke_requested_at = now(), revoke_reason = $3, reviewed_at = now(), reviewed_by = $2, review_note = $3 where id = $1`, [grantId, w.actorId, `access review: ${note}`]);
+    else { await client.query(`update access_grant set status = 'revoking', revoke_requested_at = now(), revoke_reason = $3, reviewed_at = now(), reviewed_by = $2, review_note = $3 where id = $1`, [grantId, w.actorId, `access review: ${note}`]); await queueRevokeDeliveries(client, w.tenantId); }
     return { id: grantId, status: keep ? 'active' : 'revoking' };
+  });
+}
+
+// --------------------------------------------------------------- connector
+//
+// A system with a connector address gets a signed POST when access to it is
+// approved or must be removed. Its reply, or a signed call back later, is
+// what confirms the change; Patform never assumes it happened.
+//
+//   reply {"status": "done", "reference": "..."}   confirmed now
+//   reply {"status": "failed", "error": "..."}     a failure, shown to IT
+//   any other 2xx                                  accepted; call back later
+//   non-2xx or no answer                           retried, then a failure
+
+const MAX_ATTEMPTS = 8;
+
+async function queueProvisioning(client: Client | Pool, requestId: string) {
+  await client.query(
+    `insert into ops_connector_delivery (tenant_id, system_id, kind, request_id, payload)
+     select r.tenant_id, s.id, 'provision', r.id,
+            jsonb_build_object('event', 'access.provision', 'system', s.name, 'request', jsonb_build_object('id', r.id, 'number', r.number),
+              'holder', jsonb_build_object('id', h.id, 'email', h.email, 'name', h.display_name), 'role', r.role, 'expiresOn', r.expires_on)
+       from access_request r join access_system s on s.id = r.system_id join actor h on h.id = r.holder_id
+      where r.id = $1 and s.connector_url is not null
+     on conflict do nothing`, [requestId]);
+}
+
+async function queueRevokeDeliveries(client: Client | Pool, tenantId?: string) {
+  await client.query(
+    `insert into ops_connector_delivery (tenant_id, system_id, kind, grant_id, payload)
+     select g.tenant_id, s.id, 'revoke', g.id,
+            jsonb_build_object('event', 'access.revoke', 'system', s.name, 'grant', jsonb_build_object('id', g.id),
+              'holder', jsonb_build_object('id', h.id, 'email', h.email, 'name', h.display_name), 'role', g.role, 'reason', g.revoke_reason)
+       from access_grant g join access_system s on s.id = g.system_id join actor h on h.id = g.holder_id
+      where g.status = 'revoking' and s.connector_url is not null and ($1::uuid is null or g.tenant_id = $1)
+     on conflict do nothing`, [tenantId ?? null]);
+}
+
+type Outcome = { status: 'done'; reference?: string } | { status: 'failed'; error: string } | { status: 'accepted' };
+
+async function applyOutcome(client: Client, d: { id: number; tenant_id: string; system_id: string; kind: string; request_id: string | null; grant_id: string | null }, outcome: Outcome) {
+  if (outcome.status === 'accepted') {
+    await client.query(`update ops_connector_delivery set status = 'accepted' where id = $1 and status = 'pending'`, [d.id]);
+    return;
+  }
+  const { rows: sys } = await client.query<{ connector_actor_id: string | null; name: string }>('select connector_actor_id, name from access_system where id = $1', [d.system_id]);
+  const by = sys[0]?.connector_actor_id ?? null;
+  if (d.kind === 'provision' && d.request_id) {
+    const { rows } = await client.query<{ status: string; system_id: string; role: string; holder_id: string; expires_on: string | null }>(
+      'select status, system_id, role, holder_id, expires_on::text from access_request where id = $1 for update', [d.request_id]);
+    const r = rows[0];
+    if (r && ['approved', 'failed'].includes(r.status)) {
+      if (outcome.status === 'done') {
+        await client.query(`update access_request set status = 'provisioned', provisioned_via = 'connector', evidence_ref = $2, provisioned_by = $3, provisioned_at = now(), failure_note = null where id = $1`,
+          [d.request_id, outcome.reference ?? `connector delivery ${d.id}`, by]);
+        await client.query(`insert into access_grant (tenant_id, system_id, role, holder_id, request_id, expires_on) values ($1, $2, $3, $4, $5, $6)`, [d.tenant_id, r.system_id, r.role, r.holder_id, d.request_id, r.expires_on]);
+      } else if (r.status === 'approved') {
+        await client.query(`update access_request set status = 'failed', failure_note = $2 where id = $1`, [d.request_id, `${sys[0]?.name ?? 'connector'}: ${outcome.error}`]);
+      }
+      await recordWorkspaceAudit(client, { tenantId: d.tenant_id, actorId: by, action: outcome.status === 'done' ? 'ops.access_provisioned' : 'ops.provisioning_failed', targetId: d.request_id, detail: { via: 'connector', delivery: d.id, ...outcome } });
+    }
+  }
+  if (d.kind === 'revoke' && d.grant_id) {
+    const { rows } = await client.query<{ status: string }>('select status from access_grant where id = $1 for update', [d.grant_id]);
+    if (rows[0] && ['revoking', 'revoke_failed'].includes(rows[0].status)) {
+      if (outcome.status === 'done') {
+        await client.query(`update access_grant set status = 'revoked', revoked_via = 'connector', revoke_evidence = $2, revoked_by = $3, revoked_at = now() where id = $1`, [d.grant_id, outcome.reference ?? `connector delivery ${d.id}`, by]);
+      } else if (rows[0].status === 'revoking') {
+        await client.query(`update access_grant set status = 'revoke_failed', failure_note = $2, failed_at = now() where id = $1`, [d.grant_id, `${sys[0]?.name ?? 'connector'}: ${outcome.error}`]);
+      }
+      await recordWorkspaceAudit(client, { tenantId: d.tenant_id, actorId: by, action: outcome.status === 'done' ? 'ops.access_revoked' : 'ops.revocation_failed', targetId: d.grant_id, detail: { via: 'connector', delivery: d.id, ...outcome } });
+    }
+  }
+  await client.query(`update ops_connector_delivery set status = $2, finished_at = now(), last_error = $3 where id = $1`, [d.id, outcome.status, outcome.status === 'failed' ? outcome.error : null]);
+}
+
+function readOutcome(status: number, raw: string): Outcome {
+  let body: { status?: unknown; reference?: unknown; error?: unknown } = {};
+  try { body = JSON.parse(raw); } catch { /* a 2xx without JSON is an acceptance */ }
+  if (body.status === 'done') return { status: 'done', reference: typeof body.reference === 'string' ? body.reference.slice(0, 300) : undefined };
+  if (body.status === 'failed') return { status: 'failed', error: typeof body.error === 'string' && body.error ? body.error.slice(0, 500) : 'the system reported a failure' };
+  void status;
+  return { status: 'accepted' };
+}
+
+/** The worker's half: send what is due, apply the answers, back off on errors. */
+export async function deliverConnectors(pool: Pool, args: { workerId: string; now?: Date; fetchImpl?: typeof fetch; batch?: number } = { workerId: 'worker' }) {
+  const now = args.now ?? new Date();
+  const doFetch = args.fetchImpl ?? fetch;
+  const { rows } = await pool.query<{ id: number; tenant_id: string; system_id: string; kind: string; request_id: string | null; grant_id: string | null; payload: Record<string, unknown>; attempts: number; connector_url: string | null; connector_secret: string | null }>(
+    `update ops_connector_delivery d set claimed_by = $1, attempts = d.attempts + 1, available_at = $2 + interval '60 seconds'
+       from access_system s
+      where s.id = d.system_id and d.id in (select id from ops_connector_delivery where status = 'pending' and available_at <= $2 order by id for update skip locked limit $3)
+      returning d.id, d.tenant_id, d.system_id, d.kind, d.request_id, d.grant_id, d.payload, d.attempts, s.connector_url, s.connector_secret`,
+    [args.workerId, now, args.batch ?? 20]);
+  let sent = 0;
+  for (const d of rows) {
+    const fail = async (error: string, status: number | null) => {
+      if (d.attempts >= MAX_ATTEMPTS || !d.connector_url || !d.connector_secret) {
+        await inTransaction(pool, (c) => applyOutcome(c, d, { status: 'failed', error: `connector unreachable after ${d.attempts} attempt(s): ${error}` }));
+      } else {
+        const wait = Math.min(2 ** d.attempts, 360);
+        await pool.query(`update ops_connector_delivery set last_error = $2, response_status = $3, available_at = $4::timestamptz + make_interval(mins => $5) where id = $1`, [d.id, error, status, now, wait]);
+      }
+    };
+    if (!d.connector_url || !d.connector_secret) { await fail('the connector address or secret was removed', null); continue; }
+    const body = JSON.stringify({ ...d.payload, delivery: d.id });
+    const secret = unseal(d.connector_secret, `access_system:${d.system_id}`).plaintext;
+    try {
+      const res = await doFetch(d.connector_url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'patform-signature': sign(body, [secret]), 'patform-event': String(d.payload.event), 'patform-delivery': String(d.id) },
+        body, signal: AbortSignal.timeout(10_000),
+      });
+      const raw = await res.text().catch(() => '');
+      if (!res.ok) { await fail(`HTTP ${res.status}`, res.status); continue; }
+      await pool.query('update ops_connector_delivery set response_status = $2 where id = $1', [d.id, res.status]);
+      await inTransaction(pool, (c) => applyOutcome(c, d, readOutcome(res.status, raw)));
+      sent++;
+    } catch (err) {
+      await fail(err instanceof Error ? err.message : String(err), null);
+    }
+  }
+  return { claimed: rows.length, sent };
+}
+
+/**
+ * The system's call back, for work it accepted and finished later. Signed
+ * with the same secret, over the exact bytes; no session.
+ */
+export async function connectorCallback(pool: Pool, systemId: string, raw: string, signature: string) {
+  if (!UUID.test(systemId)) return { ok: false as const, status: 401 };
+  const { rows: sys } = await pool.query<{ connector_secret: string | null }>('select connector_secret from access_system where id = $1', [systemId]);
+  if (!sys[0]?.connector_secret) return { ok: false as const, status: 401 };
+  const secret = unseal(sys[0].connector_secret, `access_system:${systemId}`).plaintext;
+  if (!verify(signature, raw, secret).ok) return { ok: false as const, status: 401 };
+  let body: { delivery?: unknown; status?: unknown; reference?: unknown; error?: unknown };
+  try { body = JSON.parse(raw); } catch { return { ok: false as const, status: 400, error: 'body is not valid JSON' }; }
+  const deliveryId = Number(body.delivery);
+  if (!Number.isInteger(deliveryId)) return { ok: false as const, status: 400, error: 'delivery is required' };
+  if (body.status !== 'done' && body.status !== 'failed') return { ok: false as const, status: 400, error: 'status must be done or failed' };
+  return inTransaction(pool, async (client) => {
+    const { rows } = await client.query<{ id: number; tenant_id: string; system_id: string; kind: string; request_id: string | null; grant_id: string | null; status: string }>(
+      'select id, tenant_id, system_id, kind, request_id, grant_id, status from ops_connector_delivery where id = $1 and system_id = $2 for update', [deliveryId, systemId]);
+    const d = rows[0];
+    if (!d) return { ok: false as const, status: 404, error: 'no such delivery for this system' };
+    if (d.status === 'done' || d.status === 'failed') return { ok: true as const, status: 200, already: d.status };
+    await applyOutcome(client, d, readOutcome(200, raw));
+    return { ok: true as const, status: 200 };
   });
 }
 
@@ -743,7 +951,7 @@ export async function ticketDetail(pool: Pool, principal: Principal, ticketId: s
   // Work notes stay with the team; the requester sees updates.
   const { rows: notes } = await pool.query(
     `select n.kind, n.body, n.occurred_at, a.display_name as author from ticket_note n left join actor a on a.id = n.author_id where n.ticket_id = $1 and (n.kind <> 'work_note' or $2) order by n.id`, [ticketId, t.canWork]);
-  return { ticket: rows[0], notes, canWork: t.canWork };
+  return { ticket: rows[0], notes, canWork: t.canWork, photos: await photosFor(pool, 'ticket_id', ticketId) };
 }
 
 export async function decideTicket(pool: Pool, principal: Principal, ticketId: string, body: Record<string, unknown>) {
@@ -938,7 +1146,7 @@ export async function listMaintenance(pool: Pool, principal: Principal) {
 type Result = 'pass' | 'fail' | 'na';
 function readJobBody(body: Record<string, unknown>, captureLocation: boolean) {
   const results = (body.results && typeof body.results === 'object' ? body.results : {}) as Record<string, Result>;
-  const photos = list(body.photos, 20);
+  const photos = list(body.photos, 20).filter((r) => PHOTO.test(r) || (() => { throw new InvalidInput('photos must be uploaded, not typed in'); })());
   let location: { lat: number; lng: number } | null = null;
   if (body.location) {
     if (!captureLocation) throw new InvalidInput('location capture is switched off for this workspace');
@@ -956,6 +1164,7 @@ export async function saveJobDraft(pool: Pool, principal: Principal, jobId: stri
   const settings = await opsSettings(pool, w.tenantId);
   const d = readJobBody(body, settings.captureLocation);
   const version = Math.trunc(num(body.version));
+  await checkPhotos(pool, w.tenantId, d.photos, { jobId });
   const { rows } = await pool.query<{ version: number }>(
     `update maintenance_job j set draft = $3, version = version + 1 from maintenance_plan p
       where j.id = $1 and j.tenant_id = $2 and p.id = j.plan_id and j.status = 'open' and j.version = $4 and p.team = any($5::text[]) returning j.version`,
@@ -983,6 +1192,7 @@ export async function completeJob(pool: Pool, principal: Principal, jobId: strin
     if (!inTeam(w, j.team)) throw new InvalidInput(`this is a job for the ${j.team.toUpperCase()} team`);
     if (j.status !== 'open') throw new InvalidInput('this job is already done');
     if (body.version !== undefined && Math.trunc(num(body.version)) !== j.version) throw new InvalidInput('saved elsewhere since you opened it; reload before finishing');
+    await checkPhotos(client, w.tenantId, d.photos, { jobId });
     const unanswered = j.checklist.filter((c) => !['pass', 'fail', 'na'].includes(d.results[c] as string));
     if (unanswered.length) throw new InvalidInput(`answer every check: ${unanswered.join(', ')}`);
     const failed = j.checklist.filter((c) => d.results[c] === 'fail');

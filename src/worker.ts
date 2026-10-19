@@ -4,7 +4,7 @@ import { Engine, newWorkerId } from './runtime/engine.js';
 import { sweepExpiredTokens } from './runtime/retention.js';
 import { sweepHeld } from './runtime/held.js';
 import { applyDueChanges } from './runtime/hr.js';
-import { generateMaintenance, reconcileAccess, sweepTickets } from './runtime/ops.js';
+import { deliverConnectors, generateMaintenance, reconcileAccess, sweepTickets } from './runtime/ops.js';
 import { checkSendingHealth } from './runtime/delivery-health.js';
 import { runDueReports } from './runtime/saved-views.js';
 import { notifyWaitingWork } from './runtime/push.js';
@@ -84,6 +84,8 @@ async function main(): Promise<void> {
       // process: a webhook that only leaves when somebody opens a page is the
       // fault the worker was built to fix, one layer along.
       const hooks = await deliverBatch(pool, { workerId: id, batch: BATCH, now });
+      // Access connectors: signed requests to the systems people get access to.
+      await deliverConnectors(pool, { workerId: id, now });
       totals.webhooks += hooks.delivered;
       did += hooks.claimed;
       if (hooks.deadLettered) {

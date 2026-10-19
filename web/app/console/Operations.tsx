@@ -17,17 +17,18 @@ type Summary = { mine: number; assets_to_ack: number; approvals: number; access_
 type Field = { key: string; label: string; required: boolean };
 type Service = { id: string; key: string; name: string; description: string | null; team: string; approval: string; fields: Field[]; respond_hours: string; resolve_hours: string; evidence_required: boolean; active: boolean };
 type Ticket = { id: string; number: number; kind: string; title: string; status: string; priority: number; team: string; created_at: string; resolve_due: string | null; breached_at: string | null; escalated_at: string | null; paused_since: string | null; requester: string; assignee: string | null; service: string | null; asset_tag: string | null };
-type TicketDetail = { ticket: Ticket & { description: string | null; details: Record<string, string>; resolution: string | null; fields: Field[] | null }; notes: { kind: string; body: string; occurred_at: string; author: string | null }[]; canWork: boolean };
+type TicketDetail = { ticket: Ticket & { description: string | null; details: Record<string, string>; resolution: string | null; fields: Field[] | null }; notes: { kind: string; body: string; occurred_at: string; author: string | null }[]; canWork: boolean; photos: Photo[] };
 type MyAsset = { assignment_id: string; status: string; condition_out: string; accessories: string[]; acknowledgement: string | null; id: string; tag: string; name: string; category: string; serial: string | null };
 type Asset = { id: string; tag: string; category: string; name: string; serial: string | null; location: string | null; condition: string; status: string; shared: boolean; warranty_until: string | null; acquisition_ref: string | null; restricted_reason: string | null; holders: { id: string; name: string; status: string }[] | null; maintenance_due: string | null };
-type AssetDetail = { asset: Asset; assignments: { id: string; status: string; holder: string; condition_out: string; condition_in: string | null; accessories: string[]; accessories_in: string[] | null; created_at: string; returned_at: string | null; assigned_by: string | null; approved_by: string | null; returned_by: string | null }[]; history: { kind: string; occurred_at: string; actor: string | null; detail: Record<string, unknown> }[]; maintenance: { title: string; due_on: string; status: string; outcome: string | null }[]; tickets: { number: number; title: string; status: string }[] };
-type System = { id: string; name: string; roles: string[]; max_days: number | null; owner: string; owner_id: string; connector: string | null; connector_actor_id: string | null; active: boolean };
+type AssetDetail = { asset: Asset; assignments: { id: string; status: string; holder: string; condition_out: string; condition_in: string | null; accessories: string[]; accessories_in: string[] | null; created_at: string; returned_at: string | null; assigned_by: string | null; approved_by: string | null; returned_by: string | null }[]; history: { kind: string; occurred_at: string; actor: string | null; detail: Record<string, unknown> }[]; maintenance: { title: string; due_on: string; status: string; outcome: string | null }[]; tickets: { number: number; title: string; status: string }[]; photos: Photo[] };
+type System = { id: string; name: string; roles: string[]; max_days: number | null; owner: string; owner_id: string; connector: string | null; connector_actor_id: string | null; connector_url: string | null; active: boolean };
 type AccessReq = { id: string; number: number; role: string; status: string; justification: string; expires_on: string | null; decision_note: string | null; failure_note: string | null; provisioned_via: string | null; system: string; holder: string; holder_id: string; requested_by: string; requested_by_id: string; i_own: boolean };
 type Grant = { id: string; role: string; status: string; expires_on: string | null; revoke_reason: string | null; failure_note: string | null; system: string; holder: string; holder_active: boolean; i_own: boolean; reviewed_at: string | null };
 type Job = { id: string; due_on: string; status: string; outcome: string | null; version: number; draft: { results?: Record<string, string>; findings?: string | null } | null; title: string; checklist: string[]; team: string; tag: string; asset: string };
 type Change = { id: string; number: number; title: string; kind: string; risk: string; status: string; impact: string; rollback_plan: string; preconditions: { text: string; done: boolean }[]; window_start: string | null; window_end: string | null; decision_note: string | null; verification: string | null; retrospective: string | null; finished_at: string | null; requested_by: string; approved_by: string | null; started_by: string | null; system: string | null; asset: string | null };
 type Dashboard = { backlog: { team: string; status: string; n: number }[]; aging: { bucket: string; n: number }[]; breached: { id: string; number: number; title: string; team: string }[]; recovery: { assignment_id: string; tag: string; name: string; holder: string; holder_active: boolean; end_date: string | null }[]; maintenance: { id: string; due_on: string; title: string; tag: string; overdue: boolean }[]; failedAccess: { kind: string; id: string; system: string; role: string; holder: string; status: string; note: string | null }[]; pendingRevocations: number; retrospectivesDue: { id: string; number: number; title: string }[]; restricted: { id: string; tag: string; name: string; restricted_reason: string }[] };
 type Member = { id: string; display_name: string; active: boolean };
+type Photo = { id: string; filename: string; scan_status: string; job_id: string | null; assignment_id: string | null; ticket_id: string | null; created_at: string; uploaded_by: string | null };
 type Settings = { settings: { categories: string[]; allocationNeedsApproval: boolean; captureLocation: boolean; pauseWhileWaiting: boolean; reopenDays: number }; teams: { team: string; actor_id: string; display_name: string }[] };
 
 async function get<T>(path: string): Promise<T> {
@@ -57,6 +58,23 @@ const TEAM: Record<string, string> = { it: 'IT', facilities: 'Facilities' };
 
 function Field({ id, label, children }: { id: string; label: string; children: React.ReactNode }) {
   return <div><label className="cs__label" htmlFor={id}>{label}</label>{children}</div>;
+}
+/** Phone photos are large: send at most 1600 px as JPEG, which also drops the location the camera stored. */
+async function shrink(file: File): Promise<string> {
+  const bmp = await createImageBitmap(file);
+  const scale = Math.min(1, 1600 / Math.max(bmp.width, bmp.height));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(bmp.width * scale); canvas.height = Math.round(bmp.height * scale);
+  canvas.getContext('2d')!.drawImage(bmp, 0, 0, canvas.width, canvas.height);
+  const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('That photo could not be read.'))), 'image/jpeg', 0.8));
+  return await new Promise<string>((resolve, reject) => { const r = new FileReader(); r.onload = () => resolve(String(r.result).split(',')[1] ?? ''); r.onerror = () => reject(r.error); r.readAsDataURL(blob); });
+}
+async function uploadPhotos(target: Record<string, string>, files: FileList | null): Promise<{ reference: string; filename: string }[]> {
+  const out = [];
+  for (const file of Array.from(files ?? [])) {
+    out.push(await postJson<{ reference: string; filename: string }>('/api/ops/photos', { ...target, filename: `${file.name.replace(/\.[^.]+$/, '') || 'photo'}.jpg`, base64: await shrink(file) }));
+  }
+  return out;
 }
 const empty = (text: string) => <li className="ig__row"><div className="ig__rowMain"><p>{text}</p></div></li>;
 
@@ -89,6 +107,8 @@ export function OperationsView() {
   const [openJob, setOpenJob] = useState<Job | null>(null);
   const [results, setResults] = useState<Record<string, string>>({});
   const [starting, setStarting] = useState<string | null>(null);
+  const [jobPhotos, setJobPhotos] = useState<{ reference: string; filename: string }[]>([]);
+  const [assetPhotos, setAssetPhotos] = useState<{ reference: string; filename: string }[]>([]);
   const f = (k: string) => form[k] ?? '';
   const setF = (k: string, v: string) => setForm((x) => ({ ...x, [k]: v }));
 
@@ -99,6 +119,8 @@ export function OperationsView() {
   };
   const showTicket = async (ticketId: string) => { try { setOpenTicket(await get<TicketDetail>(`/api/ops/tickets/${ticketId}`)); } catch (err) { setNote(err instanceof Error ? err.message : String(err)); } };
   const showAsset = async (assetId: string) => { try { setOpenAsset(await get<AssetDetail>(`/api/ops/assets/${assetId}`)); } catch (err) { setNote(err instanceof Error ? err.message : String(err)); } };
+  const viewPhoto = async (photoId: string) => { try { const r = await get<{ url: string }>(`/api/ops/photos/${photoId}`); window.open(r.url, '_blank', 'noopener'); } catch (err) { setNote(err instanceof Error ? err.message : String(err)); } };
+  const photoList = (photos: Photo[]) => photos.length > 0 && <p><small><strong>Photos:</strong> {photos.map((ph) => <span key={ph.id} style={{ marginRight: 10 }}>{ph.filename}{ph.scan_status === 'quarantined' ? ' (failed malware check)' : ''} <button type="button" className="cs__btn" disabled={ph.scan_status === 'quarantined'} onClick={() => void viewPhoto(ph.id)}>View</button></span>)}</small></p>;
   const refreshOpen = async () => { if (openTicket) await showTicket(openTicket.ticket.id); if (openAsset) await showAsset(openAsset.asset.id); };
 
   if (summary.error) return <div className="ig__workspace"><p className="ig__error" role="alert">{summary.error}</p></div>;
@@ -135,6 +157,8 @@ export function OperationsView() {
       {t.description && <p>{t.description}</p>}
       {Object.keys(t.details ?? {}).length > 0 && <p><small>{Object.entries(t.details).map(([k, v]) => `${(t.fields ?? []).find((x) => x.key === k)?.label ?? k}: ${v}`).join(' · ')}</small></p>}
       {t.resolution && <p><strong>Resolution:</strong> {t.resolution}</p>}
+      {photoList(openTicket.photos)}
+      {!['closed', 'cancelled', 'rejected'].includes(t.status) && <div><label className="cs__label" htmlFor="tk-photo">Add a photo</label><input id="tk-photo" type="file" accept="image/*" multiple onChange={(e) => { const files = e.target.files; void act('photo', async () => { const up = await uploadPhotos({ ticketId: t.id }, files); await refreshOpen(); return `${up.length} photo(s) added. They can be viewed once the malware check passes.`; }); }} /></div>}
       <ul style={list}>{openTicket.notes.map((n, i) => <li key={i}><small><strong>{n.kind === 'work_note' ? 'Work note' : n.kind === 'system' ? 'System' : 'Update'}</strong> · {n.author ?? 'Patform'} · {time(n.occurred_at)}: {n.body}</small></li>)}</ul>
       <div className="pp2__roleEdit">
         {can && !['closed', 'cancelled', 'rejected', 'awaiting_approval'].includes(t.status) && <>
@@ -285,18 +309,20 @@ export function OperationsView() {
           {openAsset ? <div className="ig__form" style={{ gridTemplateColumns: '1fr' }}>
             <div className="ig__formTitle"><strong>{openAsset.asset.tag} · {openAsset.asset.name}</strong><p>{st(openAsset.asset.status)} · {openAsset.asset.condition} · {openAsset.asset.category}{openAsset.asset.serial ? ` · serial ${openAsset.asset.serial}` : ''}{openAsset.asset.location ? ` · ${openAsset.asset.location}` : ''}{openAsset.asset.acquisition_ref ? ` · ${openAsset.asset.acquisition_ref}` : ''}{openAsset.asset.warranty_until ? ` · warranty to ${day(openAsset.asset.warranty_until)}` : ''}{openAsset.asset.shared ? ' · shared' : ''}</p></div>
             {openAsset.asset.restricted_reason && <p className="ig__rowError">Restricted: {openAsset.asset.restricted_reason}</p>}
+            {photoList(openAsset.photos)}
+            <div><label className="cs__label" htmlFor="as-photo">Photos for the next hand-out or return{assetPhotos.length ? ` (${assetPhotos.length} ready: ${assetPhotos.map((x) => x.filename).join(', ')})` : ''}</label><input id="as-photo" type="file" accept="image/*" capture="environment" multiple onChange={(e) => { const files = e.target.files; void act('photo', async () => { const up = await uploadPhotos({ assetId: openAsset.asset.id }, files); setAssetPhotos((x) => [...x, ...up]); await refreshOpen(); return `${up.length} photo(s) uploaded; they are attached to the next hand-out or return you record.`; }); }} /></div>
             <div className="pp2__roleEdit">
               {['in_stock', 'assigned'].includes(openAsset.asset.status) && <>
                 <Field id="as-who" label="Hand out to"><select id="as-who" className="cs__input" value={f('who')} onChange={(e) => setF('who', e.target.value)}><option value="">Choose…</option>{people.map((m) => <option key={m.id} value={m.id}>{m.display_name}</option>)}</select></Field>
                 <Field id="as-acc" label="Accessories (comma separated)"><input id="as-acc" className="cs__input" value={f('acc')} onChange={(e) => setF('acc', e.target.value)} /></Field>
                 <Field id="as-ref" label="Handover form or reference"><input id="as-ref" className="cs__input" value={f('ref')} onChange={(e) => setF('ref', e.target.value)} /></Field>
-                <button type="button" className="cs__btn cs__btn--primary" disabled={!f('who')} onClick={() => void act('assign', async () => { const r = await postJson<{ status: string }>(`/api/ops/assets/${openAsset.asset.id}/assign`, { custodianId: f('who'), accessories: f('acc').split(',').map((x) => x.trim()).filter(Boolean), handoverRef: f('ref') }); setForm({}); await refreshOpen(); return r.status === 'pending_approval' ? 'Handed out, waiting for approval.' : 'Handed out. They confirm receipt on their equipment tab.'; })}>Hand out</button>
+                <button type="button" className="cs__btn cs__btn--primary" disabled={!f('who')} onClick={() => void act('assign', async () => { const r = await postJson<{ status: string }>(`/api/ops/assets/${openAsset.asset.id}/assign`, { custodianId: f('who'), accessories: f('acc').split(',').map((x) => x.trim()).filter(Boolean), handoverRef: f('ref'), photos: assetPhotos.map((x) => x.reference) }); setForm({}); setAssetPhotos([]); await refreshOpen(); return r.status === 'pending_approval' ? 'Handed out, waiting for approval.' : 'Handed out. They confirm receipt on their equipment tab.'; })}>Hand out</button>
               </>}
               {openAsset.asset.status === 'restricted' && <button type="button" className="cs__btn" onClick={() => setAsking({ id: openAsset.asset.id, label: 'What was done to fix it?', run: async (n) => { await postJson(`/api/ops/assets/${openAsset.asset.id}/lift-restriction`, { note: n }); await refreshOpen(); return 'Restriction lifted.'; } })}>Lift restriction</button>}
               <button type="button" className="cs__btn" onClick={() => setAsking({ id: openAsset.asset.id, label: 'New location', run: async (n) => { await postJson(`/api/ops/assets/${openAsset.asset.id}`, { location: n }); await refreshOpen(); return 'Location updated.'; } })}>Move</button>
               <button type="button" className="cs__btn" onClick={() => setAsking({ id: openAsset.asset.id, label: 'New status (in_stock, in_repair, lost, retired or disposed), then " | " and why', run: async (n) => { const [status, reason] = n.split('|').map((x) => x.trim()); await postJson(`/api/ops/assets/${openAsset.asset.id}`, { status, reason }); await refreshOpen(); return 'Status changed.'; } })}>Change status</button>
               <button type="button" className="cs__btn" onClick={() => setAsking({ id: openAsset.asset.id, label: 'Maintenance: title | every N days | first due YYYY-MM-DD | team (it or facilities) | checks separated by ;', run: async (n) => { const [title, every, first, team, checks] = n.split('|').map((x) => x.trim()); await postJson('/api/ops/maintenance/plans', { assetId: openAsset.asset.id, title, everyDays: Number(every), firstDue: first, team, checklist: (checks ?? '').split(';').map((x) => x.trim()).filter(Boolean) }); await refreshOpen(); return 'Maintenance planned.'; } })}>Plan maintenance</button>
-              <button type="button" className="cs__btn" onClick={() => { setOpenAsset(null); setForm({}); }}>Close</button>
+              <button type="button" className="cs__btn" onClick={() => { setOpenAsset(null); setForm({}); setAssetPhotos([]); }}>Close</button>
             </div>
             <table className="ex__table"><thead><tr><th scope="col">Holder</th><th scope="col">Out</th><th scope="col">Back</th><th scope="col"><span className="ex__sr">Action</span></th></tr></thead>
               <tbody>{openAsset.assignments.map((x) => <tr key={x.id}>
@@ -305,7 +331,7 @@ export function OperationsView() {
                 <td>{x.returned_at ? `${day(x.returned_at)} · ${x.condition_in}${x.returned_by ? ` · by ${x.returned_by}` : ''}` : '—'}</td>
                 <td>{['pending_approval', 'pending_ack', 'active'].includes(x.status) && <div className="pp2__roleEdit">
                   {x.status === 'pending_approval' && s.admin && <button type="button" className="cs__btn" onClick={() => void act(x.id, async () => { await postJson(`/api/ops/assignments/${x.id}/approve`, {}); await refreshOpen(); return 'Approved.'; })}>Approve</button>}
-                  <button type="button" className="cs__btn" onClick={() => setAsking({ id: x.id, label: `Condition back (new, good, fair, poor, broken) | accessories returned, comma separated | reference`, run: async (n) => { const [condition, acc, ref] = n.split('|').map((y) => y.trim()); const r = await postJson<{ missing: string[] }>(`/api/ops/assignments/${x.id}/return`, { condition, accessories: (acc ?? '').split(',').map((y) => y.trim()).filter(Boolean), returnRef: ref }); await refreshOpen(); return `Returned.${r.missing.length ? ` Missing: ${r.missing.join(', ')}.` : ''}`; } })}>Record return</button>
+                  <button type="button" className="cs__btn" onClick={() => setAsking({ id: x.id, label: `Condition back (new, good, fair, poor, broken) | accessories returned, comma separated | reference`, run: async (n) => { const [condition, acc, ref] = n.split('|').map((y) => y.trim()); const r = await postJson<{ missing: string[] }>(`/api/ops/assignments/${x.id}/return`, { condition, accessories: (acc ?? '').split(',').map((y) => y.trim()).filter(Boolean), returnRef: ref, photos: assetPhotos.map((y) => y.reference) }); setAssetPhotos([]); await refreshOpen(); return `Returned.${r.missing.length ? ` Missing: ${r.missing.join(', ')}.` : ''}`; } })}>Record return</button>
                 </div>}</td>
               </tr>)}{!openAsset.assignments.length && <tr><td colSpan={4}>Never handed out.</td></tr>}</tbody></table>
             <p><small><strong>History:</strong> {openAsset.history.map((h) => `${day(h.occurred_at)} ${h.kind.replace(/_/g, ' ')}${h.actor ? ` (${h.actor})` : ''}`).join(' · ')}</small></p>
@@ -344,17 +370,18 @@ export function OperationsView() {
               {(['pass', 'fail', 'na'] as const).map((r) => <label key={r} className="pp2__inlineLabel"><input type="radio" name={`chk-${c}`} checked={results[c] === r} onChange={() => setResults((x) => ({ ...x, [c]: r }))} /> {r === 'na' ? 'N/A' : r === 'pass' ? 'Pass' : 'Fail'}</label>)}
             </div>)}
             <Field id="j-find" label="Findings"><input id="j-find" className="cs__input" value={f('find')} onChange={(e) => setF('find', e.target.value)} /></Field>
-            <Field id="j-photo" label="Photo references (comma separated)"><input id="j-photo" className="cs__input" value={f('photos')} onChange={(e) => setF('photos', e.target.value)} /></Field>
+            <div><label className="cs__label" htmlFor="j-photo">Photos{jobPhotos.length ? ` (${jobPhotos.map((x) => x.filename).join(', ')})` : ''}</label><input id="j-photo" type="file" accept="image/*" capture="environment" multiple onChange={(e) => { const files = e.target.files; void act('photo', async () => { const up = await uploadPhotos({ jobId: openJob.id }, files); setJobPhotos((x) => [...x, ...up]); return `${up.length} photo(s) uploaded.`; }); }} /></div>
             <div className="pp2__roleEdit">
-              <button type="button" className="cs__btn" onClick={() => void act('job', async () => { const r = await postJson<{ version: number }>(`/api/ops/maintenance/jobs/${openJob.id}/draft`, { version: openJob.version, results, findings: f('find'), photos: f('photos').split(',').map((x) => x.trim()).filter(Boolean) }); setOpenJob({ ...openJob, version: r.version }); return 'Draft saved.'; })}>Save draft</button>
-              <button type="button" className="cs__btn cs__btn--primary" onClick={() => void act('job', async () => { const r = await postJson<{ outcome: string }>(`/api/ops/maintenance/jobs/${openJob.id}/complete`, { version: openJob.version, results, findings: f('find'), photos: f('photos').split(',').map((x) => x.trim()).filter(Boolean) }); setOpenJob(null); setResults({}); setForm({}); return r.outcome === 'fail' ? 'Done: failed. The asset is restricted and corrective work is open.' : 'Done: passed.'; })}>Finish</button>
-              <button type="button" className="cs__btn" onClick={() => { setOpenJob(null); setResults({}); }}>Close</button>
+              <button type="button" className="cs__btn" onClick={() => void act('job', async () => { const r = await postJson<{ version: number }>(`/api/ops/maintenance/jobs/${openJob.id}/draft`, { version: openJob.version, results, findings: f('find'), photos: jobPhotos.map((x) => x.reference) }); setOpenJob({ ...openJob, version: r.version }); return 'Draft saved.'; })}>Save draft</button>
+              <button type="button" className="cs__btn cs__btn--primary" onClick={() => void act('job', async () => { const r = await postJson<{ outcome: string }>(`/api/ops/maintenance/jobs/${openJob.id}/complete`, { version: openJob.version, results, findings: f('find'), photos: jobPhotos.map((x) => x.reference) }); setOpenJob(null); setResults({}); setForm({}); setJobPhotos([]); return r.outcome === 'fail' ? 'Done: failed. The asset is restricted and corrective work is open.' : 'Done: passed.'; })}>Finish</button>
+              <button type="button" className="cs__btn" onClick={() => { setOpenJob(null); setResults({}); setJobPhotos([]); }}>Close</button>
             </div>
           </form>}
+          {!openJob && <p className="ig__notice">On a phone in the field? <a href="/field.html" target="_blank" rel="noopener">Open the field checklists</a> — they work without signal and send when you are back online.</p>}
           {!openJob && <ul style={list}>{maint.data.jobs.map((j) => <li key={j.id} className="ig__row"><div className="ig__rowMain">
             <strong>{j.title} · {j.tag}</strong><span className={`ig__status ${j.status === 'done' && j.outcome === 'pass' ? '' : 'ig__status--off'}`}>{j.status === 'done' ? (j.outcome === 'pass' ? 'Passed' : 'Failed') : j.due_on < new Date().toISOString().slice(0, 10) ? 'Overdue' : 'Due'}</span>
             <p>{day(j.due_on)} · {TEAM[j.team]} · {j.asset}{j.draft ? ' · draft saved' : ''}</p></div>
-            {j.status === 'open' && <button type="button" className="cs__btn cs__btn--primary" onClick={() => { setOpenJob(j); setResults(j.draft?.results ?? {}); setForm({ find: j.draft?.findings ?? '' }); }}>Do it</button>}
+            {j.status === 'open' && <button type="button" className="cs__btn cs__btn--primary" onClick={() => { setOpenJob(j); setResults(j.draft?.results ?? {}); setForm({ find: j.draft?.findings ?? '' }); setJobPhotos([]); }}>Do it</button>}
           </li>)}{!maint.data.jobs.length && empty('No maintenance due. Plan it from an asset.')}</ul>}
         </>}
 
@@ -409,13 +436,14 @@ export function OperationsView() {
             <Field id="tm-who" label="Person"><select id="tm-who" className="cs__input" required value={f('tactor')} onChange={(e) => setF('tactor', e.target.value)}><option value="">Choose…</option>{people.map((m) => <option key={m.id} value={m.id}>{m.display_name}</option>)}</select></Field>
             <button type="submit" className="cs__btn cs__btn--primary" disabled={busy === 'team'}>Add</button>
           </form>
-          <form className="ig__form" onSubmit={(e) => { e.preventDefault(); void act('sys', async () => { await postJson('/api/ops/systems', { name: f('sname'), ownerId: f('sowner'), roles: f('sroles').split(',').map((x) => x.trim()).filter(Boolean), maxDays: f('smax') || undefined, connectorActorId: f('sconn') || undefined }); setForm({}); return 'System saved.'; }); }}>
-            <div className="ig__formTitle"><strong>Systems people can ask access to</strong><p>{(systems.data ?? []).map((x) => `${x.name} (owner ${x.owner}${x.connector ? `, connector ${x.connector}` : ''})`).join(' · ') || 'None yet.'}</p></div>
+          <form className="ig__form" onSubmit={(e) => { e.preventDefault(); void act('sys', async () => { const r = await postJson<{ secret: string | null }>('/api/ops/systems', { name: f('sname'), ownerId: f('sowner'), roles: f('sroles').split(',').map((x) => x.trim()).filter(Boolean), maxDays: f('smax') || undefined, connectorActorId: f('sconn') || undefined, connectorUrl: f('surl') || undefined }); setForm({}); return r.secret ? `System saved. Connector signing secret (shown once — give it to the system's administrator now): ${r.secret}` : 'System saved.'; }); }}>
+            <div className="ig__formTitle"><strong>Systems people can ask access to</strong><p>{(systems.data ?? []).map((x) => `${x.name} (owner ${x.owner}${x.connector ? `, connector account ${x.connector}` : ''}${x.connector_url ? `, sends to ${x.connector_url}` : ''})`).join(' · ') || 'None yet.'}</p></div>
             <Field id="sy-name" label="System"><input id="sy-name" className="cs__input" required value={f('sname')} onChange={(e) => setF('sname', e.target.value)} /></Field>
             <Field id="sy-owner" label="Owner (approves access)"><select id="sy-owner" className="cs__input" required value={f('sowner')} onChange={(e) => setF('sowner', e.target.value)}><option value="">Choose…</option>{people.map((m) => <option key={m.id} value={m.id}>{m.display_name}</option>)}</select></Field>
             <Field id="sy-roles" label="Roles (comma separated)"><input id="sy-roles" className="cs__input" required value={f('sroles')} onChange={(e) => setF('sroles', e.target.value)} /></Field>
             <Field id="sy-max" label="Longest access in days (optional)"><input id="sy-max" type="number" className="cs__input" value={f('smax')} onChange={(e) => setF('smax', e.target.value)} /></Field>
             <Field id="sy-conn" label="Connector account (optional)"><select id="sy-conn" className="cs__input" value={f('sconn')} onChange={(e) => setF('sconn', e.target.value)}><option value="">None — IT records evidence</option>{people.map((m) => <option key={m.id} value={m.id}>{m.display_name}</option>)}</select></Field>
+            <Field id="sy-url" label="Connector address (optional, https)"><input id="sy-url" type="url" className="cs__input" placeholder="https://system.example.com/patform" value={f('surl')} onChange={(e) => setF('surl', e.target.value)} /></Field>
             <button type="submit" className="cs__btn cs__btn--primary" disabled={busy === 'sys'}>Save system</button>
           </form>
           <form className="ig__form" onSubmit={(e) => { e.preventDefault(); void act('svc', async () => { await postJson('/api/ops/services', { name: f('vname'), description: f('vdesc'), team: f('vteam') || 'it', approval: f('vappr') || 'none', respondHours: Number(f('vresp') || 8), resolveHours: Number(f('vres') || 40), evidenceRequired: f('vev') === 'yes', fields: f('vfields').split(',').map((x) => x.trim()).filter(Boolean).map((x) => ({ label: x.replace(/\*$/, ''), required: x.endsWith('*') })) }); setForm({}); return 'Service saved.'; }); }}>

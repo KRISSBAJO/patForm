@@ -31,6 +31,7 @@ import { addQuote, approveOrder, cancelOrder, createAgreement, createOrder, crea
 import { acknowledgeDocument, addCaseNote, addCertification, cancelLeave, completeTask, createDocument, decideLeave, decideProbation, exceptTask, hrSummary, leaveToApprove, listCaseNotes, listCases, listCompensation, listDocuments, listEmployees, listHiring, listHolidays, listLeaveTypes, listReconciliations, listTeams, listTemplates, myDocuments, myLeave, myTasks, readHrSettings, requestLeave, resolveReconciliation, saveHoliday, saveLeaveType, saveTemplate, sendDocument, setCompensation, setEntitlement, setTeamMember, startOffboarding, startOnboarding, startProbationReview, startTransfer, updateEmployee, updateHrSettings, upcoming, urgentTermination } from '../runtime/hr.js';
 import * as apr from '../runtime/appraisals.js';
 import * as ops from '../runtime/ops.js';
+import { opsPhotoLink, uploadOpsPhoto } from '../runtime/ops-files.js';
 import { enabledModules, listModules, setModule, updateWorkspaceSettings, workspaceSettings } from '../runtime/modules.js';
 import { createDelegation, createGrant, listAuthority, revokeDelegation, revokeGrant as revokeAuthorityGrant, workspaceAudit } from '../runtime/authority.js';
 import { logIfEnabled, requestIdFrom, withTrace } from '../runtime/trace.js';
@@ -1099,6 +1100,8 @@ route('POST', or(`tickets/${A}/decide`), async ({ pool, principal, url }, b) => 
 route('POST', or(`tickets/${A}/work`), async ({ pool, principal, url }, b) => ops.workTicket(pool, principal, hid(url, 4), hb(b)));
 route('POST', or(`tickets/${A}/requester`), async ({ pool, principal, url }, b) => ops.requesterTicket(pool, principal, hid(url, 4), hb(b)));
 route('GET', or('maintenance'), async ({ pool, principal }) => ops.listMaintenance(pool, principal));
+route('POST', or('photos'), async ({ pool, principal }, b) => uploadOpsPhoto(pool, principal, hb(b)));
+route('GET', or(`photos/${A}`), async ({ pool, principal, url }) => opsPhotoLink(pool, principal, hid(url, 4)));
 route('POST', or('maintenance/plans'), async ({ pool, principal }, b) => ops.createPlan(pool, principal, hb(b)));
 route('POST', or(`maintenance/jobs/${A}/draft`), async ({ pool, principal, url }, b) => ops.saveJobDraft(pool, principal, hid(url, 5), hb(b)));
 route('POST', or(`maintenance/jobs/${A}/complete`), async ({ pool, principal, url }, b) => ops.completeJob(pool, principal, hid(url, 5), hb(b)));
@@ -1586,9 +1589,14 @@ class HttpError extends Error {
   }
 }
 
-async function readRaw(req: IncomingMessage): Promise<string> {
+async function readRaw(req: IncomingMessage, maxBytes = Number.MAX_SAFE_INTEGER): Promise<string> {
   const chunks: Buffer[] = [];
-  for await (const chunk of req) chunks.push(chunk as Buffer);
+  let size = 0;
+  for await (const chunk of req) {
+    size += (chunk as Buffer).length;
+    if (size > maxBytes) throw new HttpError(413, 'request is too large');
+    chunks.push(chunk as Buffer);
+  }
   return Buffer.concat(chunks).toString('utf8');
 }
 
@@ -1817,6 +1825,21 @@ async function main(): Promise<void> {
           return send(res, 200, result);
         }
 
+        /*
+         * ---- access connectors calling back (PRD OPS-04, OPS-05)
+         *
+         * The caller is the target system, not a person, so this sits before
+         * the session gate. The signature over the exact bytes, with the
+         * system's own secret, is the credential.
+         */
+        const connectorMatch = /^\/api\/ops\/connectors\/([0-9a-f-]{36})\/callback$/.exec(url.pathname);
+        if (connectorMatch && req.method === 'POST') {
+          const raw = await readRaw(req, 64 * 1024);
+          const result = await ops.connectorCallback(pool, connectorMatch[1]!, raw, String(req.headers['patform-signature'] ?? ''));
+          if (!result.ok && result.status === 401) return send(res, 401, { error: 'signature refused' });
+          return send(res, result.status, result);
+        }
+
         // ---- account recovery: reachable by definition without a session
         if (url.pathname === '/api/auth/verify' && req.method === 'POST') {
           const b = (await readBody(req)) as Record<string, string>;
@@ -2022,7 +2045,7 @@ async function main(): Promise<void> {
         const match = routes.find((r) => r.method === req.method && r.pattern.test(url.pathname));
         if (!match) throw new HttpError(404, `no route for ${req.method} ${url.pathname}`);
 
-        const body = req.method === 'POST' ? await readBody(req, url.pathname.endsWith('/brand-assets') ? 4 * 1024 * 1024 + 1024 : url.pathname.endsWith('/files') ? 7 * 1024 * 1024 : Number.MAX_SAFE_INTEGER) : {};
+        const body = req.method === 'POST' ? await readBody(req, url.pathname.endsWith('/brand-assets') ? 4 * 1024 * 1024 + 1024 : url.pathname.endsWith('/files') || url.pathname === '/api/ops/photos' ? 7 * 1024 * 1024 : Number.MAX_SAFE_INTEGER) : {};
 
         /*
          * Actions that grant access or destroy data ask for a recent sign-in.

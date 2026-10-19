@@ -243,7 +243,7 @@ test('acceptance 4: a recurring maintenance job is created once per occurrence e
     await assert.rejects(saveJobDraft(pool, w.fac.p, job.id, { version: 1, location: { lat: 6.5, lng: 3.4 } }), /location capture is switched off/);
     await assert.rejects(completeJob(pool, w.fac.p, job.id, { results: { 'Oil level': 'pass' } }), /answer every check: Battery, Test run/);
     await assert.rejects(completeJob(pool, w.fac.p, job.id, { results: { 'Oil level': 'pass', Battery: 'fail', 'Test run': 'pass' } }), /describe what failed/);
-    const res = await completeJob(pool, w.fac.p, job.id, { results: { 'Oil level': 'pass', Battery: 'fail', 'Test run': 'pass' }, findings: 'Battery swollen', photos: ['photo-ref-1'] });
+    const res = await completeJob(pool, w.fac.p, job.id, { results: { 'Oil level': 'pass', Battery: 'fail', 'Test run': 'pass' }, findings: 'Battery swollen' });
     assert.equal(res.outcome, 'fail');
     assert.ok(res.ticketId);
 

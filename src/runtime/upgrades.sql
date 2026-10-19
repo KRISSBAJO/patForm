@@ -1564,3 +1564,49 @@ create table if not exists change_request (
 -- Module 9: offboarding's equipment task checks the asset register.
 alter table lifecycle_task drop constraint if exists lifecycle_task_action_check;
 alter table lifecycle_task add constraint lifecycle_task_action_check check (action in ('activate_access', 'revoke_access', 'finance_clearance', 'recover_assets'));
+
+-- Photos for maintenance, hand-outs, returns and tickets. Stored in S3 under
+-- ops/photos/, viewed only through short-lived links once the malware scan
+-- has passed.
+create table if not exists ops_photo (
+  id            uuid primary key,
+  tenant_id     uuid not null references tenant(id),
+  asset_id      uuid references asset(id),
+  job_id        uuid references maintenance_job(id),
+  assignment_id uuid references asset_assignment(id),
+  ticket_id     uuid references ticket(id),
+  filename      text not null,
+  content_type  text not null,
+  byte_size     int not null,
+  checksum      text not null,
+  storage_key   text not null,
+  scan_status   text not null default 'unscanned' check (scan_status in ('unscanned', 'clean', 'quarantined')),
+  uploaded_by   uuid references actor(id),
+  created_at    timestamptz not null default now(),
+  check (num_nonnulls(asset_id, job_id, assignment_id, ticket_id) >= 1)
+);
+
+-- A general connector: Patform posts signed requests to the system's address
+-- when access is approved or removed, and the system answers or calls back.
+alter table access_system add column if not exists connector_url text;
+alter table access_system add column if not exists connector_secret text;
+
+create table if not exists ops_connector_delivery (
+  id            bigserial primary key,
+  tenant_id     uuid not null references tenant(id),
+  system_id     uuid not null references access_system(id),
+  kind          text not null check (kind in ('provision', 'revoke')),
+  request_id    uuid references access_request(id),
+  grant_id      uuid references access_grant(id),
+  payload       jsonb not null,
+  status        text not null default 'pending' check (status in ('pending', 'accepted', 'done', 'failed')),
+  attempts      int not null default 0,
+  available_at  timestamptz not null default now(),
+  claimed_by    text,
+  response_status int,
+  last_error    text,
+  created_at    timestamptz not null default now(),
+  finished_at   timestamptz
+);
+create unique index if not exists ops_connector_delivery_request on ops_connector_delivery (request_id) where kind = 'provision';
+create unique index if not exists ops_connector_delivery_grant on ops_connector_delivery (grant_id) where kind = 'revoke';

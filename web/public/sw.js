@@ -6,16 +6,22 @@
  * if there is one. It also lets the console be installed: a manifest and a
  * worker are what a browser wants before it offers "Add to Home Screen".
  *
- * It does not cache the application. The console is a live view of records
+ * It does not cache the console. The console is a live view of records
  * and approvals, and a cached page that says "nothing waiting" when
  * something is would be worse than a page that says it is offline. Only the
  * offline page itself is kept, so a tap with no signal says so plainly.
+ *
+ * The one exception is the field checklist page (/field.html), which is
+ * built to work without signal: it keeps its own job list and queue on the
+ * phone and says when the list was last updated. It and its script are
+ * fetched fresh when there is signal and served from the cache when not.
  */
 const OFFLINE = '/offline.html';
-const CACHE = 'patform-shell-v1';
+const FIELD = ['/field.html', '/field.js'];
+const CACHE = 'patform-shell-v2';
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(caches.open(CACHE).then((c) => c.add(OFFLINE)).then(() => self.skipWaiting()));
+  event.waitUntil(caches.open(CACHE).then((c) => c.addAll([OFFLINE, ...FIELD])).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', (event) => {
@@ -25,6 +31,16 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
+  const url = new URL(event.request.url);
+  if (event.request.method === 'GET' && url.origin === self.location.origin && FIELD.includes(url.pathname)) {
+    // Network first, so a new version arrives when there is signal.
+    event.respondWith(
+      fetch(event.request)
+        .then((res) => { if (res.ok) { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(url.pathname, copy)); } return res; })
+        .catch(() => caches.match(url.pathname)),
+    );
+    return;
+  }
   if (event.request.mode !== 'navigate') return;
   event.respondWith(fetch(event.request).catch(() => caches.match(OFFLINE)));
 });

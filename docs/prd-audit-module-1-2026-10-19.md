@@ -407,7 +407,30 @@ IT and Facilities are the same teams the HR module uses for its tasks.
   to recover, maintenance due, restricted assets and emergency changes
   waiting for review (OPS-10).
 
-Not built: photo upload (photos are references), real connectors to named
-systems (a connector is a service account that calls the API), and offline
-storage on the phone.
+Added the same day:
+
+- Photos (`src/runtime/ops-files.ts`): uploaded to the workspace's S3
+  bucket under `ops/photos/`, type decided by the bytes (JPEG, PNG, WebP,
+  5 MB), shrunk on the phone to 1600 px JPEG first, which also drops the
+  camera's location. Shown only through 5-minute links once the bucket's
+  malware scan passes. Attached to maintenance jobs, hand-outs, returns and
+  tickets; a job accepts only its own uploads, and a photo that failed the
+  scan blocks finishing.
+- Offline field checklists (`/field.html`): the one page the service worker
+  keeps on the phone. It holds the job list, saves answers and photos as
+  they are typed, and queues finished work until there is signal. Each item
+  carries the job's version, so an outdated phone gets a conflict to
+  resolve, never a silent overwrite. Approvals and access changes stay
+  online only.
+- General connector: a system can have an https address and a signing
+  secret (shown once, stored sealed). Approving access or starting a
+  removal sends a signed request; the reply "done" confirms it, "failed"
+  puts it on the critical list, anything else waits for a signed call back
+  to `/api/ops/connectors/{system}/callback`. Unreachable systems are
+  retried with backoff for 8 attempts, then shown as failed; IT can still
+  finish by hand with evidence.
+
+Not built: ready-made connectors for named systems (Microsoft 365, Google
+Workspace and so on) — each needs its own work and the customer's admin
+credentials, so they wait until a customer needs one.
 
