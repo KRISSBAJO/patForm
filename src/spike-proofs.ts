@@ -46,7 +46,7 @@ function signStandardWebhook(secret: string, id: string, nowMs: number, body: st
   const mac = createHmac('sha256', secret).update(`${id}.${timestamp}.${body}`).digest('base64');
   return { id, timestamp, signature: `v1,${mac}` };
 }
-import { needsSecondFactor, resolveSession, signIn, startSession } from './runtime/auth.js';
+import { needsSecondFactor, needsWorkspace, resolveSession, signIn, startSession } from './runtime/auth.js';
 import {
   answerChallenge,
   beginEnrolment,
@@ -3077,7 +3077,7 @@ export async function proveIdentity({ pool, record }: ProofCtx): Promise<void> {
   });
   // Narrowed rather than cast: if this account ever grows a second factor,
   // this line fails instead of the proof quietly asserting on the wrong thing.
-  if (!signedIn || needsSecondFactor(signedIn)) throw new Error('expected a session, not a challenge');
+  if (!signedIn || needsSecondFactor(signedIn) || needsWorkspace(signedIn)) throw new Error('expected a session, not a challenge');
   const session = signedIn;
   const liveBefore = await resolveSession(pool, session!.token);
   const deactivated = await setMemberActive(pool, { principal: owner, actorId: joined.actorId, active: false });
@@ -3221,7 +3221,7 @@ export async function proveAccountRecovery({ pool, record }: ProofCtx): Promise<
     email: 'moved@proof-recovery.test',
     password: 'the-first-password',
   });
-  if (!beforeSignIn || needsSecondFactor(beforeSignIn)) throw new Error('expected a session, not a challenge');
+  if (!beforeSignIn || needsSecondFactor(beforeSignIn) || needsWorkspace(beforeSignIn)) throw new Error('expected a session, not a challenge');
   const before = beforeSignIn;
   const liveBefore = await resolveSession(pool, before!.token);
 

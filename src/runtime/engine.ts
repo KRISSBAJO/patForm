@@ -1380,6 +1380,27 @@ export async function appendEvent(
 }
 
 /**
+ * `appendEvent` for callers outside a transaction that already holds the
+ * instance. `seq` is `max(seq) + 1`, which is only safe under the instance row
+ * lock: two writers computing it at once collide on `(instance_id, seq)` and
+ * one gets a 500 for a note or an export that did nothing wrong. This takes
+ * the lock in a transaction of its own, so it never joins the caller's.
+ */
+export async function appendEventLocked(
+  pool: Pool,
+  args: { tenantId: string; instanceId: string; type: string; payload: unknown; actor: string; now: Date },
+): Promise<number> {
+  return inTransaction(pool, async (client) => {
+    const { rows } = await client.query<{ id: string }>(
+      'select id from instance where id = $1 and tenant_id = $2 for update',
+      [args.instanceId, args.tenantId],
+    );
+    if (!rows[0]) throw new Error('no such record');
+    return appendEvent(client, args);
+  });
+}
+
+/**
  * The heart of step 2: the state change, the event, the outbox row, and the
  * timer bookkeeping all commit together or not at all.
  */

@@ -107,8 +107,21 @@ export interface MfaRequired {
   challengeToken: string;
 }
 
-export function needsSecondFactor(result: SignInResult | MfaRequired | null): result is MfaRequired {
+/** The password fits accounts in several workspaces. No session until one is named. */
+export interface ChooseWorkspace {
+  chooseWorkspace: { tenantId: string; name: string }[];
+}
+
+export function needsSecondFactor(
+  result: SignInResult | MfaRequired | ChooseWorkspace | null,
+): result is MfaRequired {
   return result !== null && 'mfaRequired' in result;
+}
+
+export function needsWorkspace(
+  result: SignInResult | MfaRequired | ChooseWorkspace | null,
+): result is ChooseWorkspace {
+  return result !== null && 'chooseWorkspace' in result;
 }
 
 /** Issues the session itself, once whatever had to be proved has been. */
@@ -158,26 +171,37 @@ export async function startSession(
  */
 export async function signIn(
   pool: Pool,
-  args: { email: string; password: string; userAgent?: string },
-): Promise<SignInResult | MfaRequired | null> {
+  args: { email: string; password: string; userAgent?: string; tenantId?: string },
+): Promise<SignInResult | MfaRequired | ChooseWorkspace | null> {
+  /*
+   * Emails are unique per tenant, not across the deployment, so one address
+   * can belong to several workspaces. Every candidate is checked and the
+   * password decides — never `rows[0]`, which would make which workspace you
+   * land in depend on insertion order.
+   */
   const { rows } = await pool.query<{
     id: string;
     tenant_id: string;
+    tenant_name: string;
     display_name: string;
     email: string;
     workspace_role: string;
     active: boolean;
     password_hash: string | null;
   }>(
-    `select a.id, a.tenant_id, a.display_name, a.email, a.workspace_role, a.active, c.password_hash
-       from actor a left join credential c on c.actor_id = a.id
-      where lower(a.email) = lower($1)`,
-    [args.email],
+    `select a.id, a.tenant_id, t.name as tenant_name, a.display_name, a.email, a.workspace_role,
+            a.active, c.password_hash
+       from actor a
+       join tenant t on t.id = a.tenant_id
+       left join credential c on c.actor_id = a.id
+      where lower(a.email) = lower($1) and ($2::uuid is null or a.tenant_id = $2)
+      order by t.name, a.tenant_id`,
+    [args.email, args.tenantId ?? null],
   );
 
-  const actor = rows[0];
+  const candidates = rows.filter((row) => row.password_hash && row.active);
 
-  if (!actor?.password_hash) {
+  if (!candidates.length) {
     // Spend the same time as a real check so the response does not leak
     // whether the account exists.
     dummyHash ??= await hashPassword('not-a-real-password-placeholder');
@@ -185,8 +209,20 @@ export async function signIn(
     return null;
   }
 
-  const ok = await verifyPassword(args.password, actor.password_hash);
-  if (!ok || !actor.active) return null;
+  const matched: typeof candidates = [];
+  for (const row of candidates) {
+    if (await verifyPassword(args.password, row.password_hash!)) matched.push(row);
+  }
+  if (!matched.length) return null;
+
+  // The password opened more than one workspace. Only now, with it proven, is
+  // it safe to say which ones exist — and the caller picks, we do not.
+  if (matched.length > 1) {
+    return {
+      chooseWorkspace: matched.map((row) => ({ tenantId: row.tenant_id, name: row.tenant_name })),
+    };
+  }
+  const actor = matched[0]!;
 
   /*
    * The password was right, and on an account with a second factor that is

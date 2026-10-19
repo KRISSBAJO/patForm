@@ -995,8 +995,9 @@ function SignIn({ onSignedIn: signedIn, signedOut }: { onSignedIn: () => void; s
     if (next) window.location.assign(next);
     else signedIn();
   };
-  const [mode, setMode] = useState<'signin' | 'forgot' | 'sent' | 'code'>('signin');
+  const [mode, setMode] = useState<'signin' | 'forgot' | 'sent' | 'code' | 'workspace'>('signin');
   const [challengeToken, setChallengeToken] = useState('');
+  const [workspaces, setWorkspaces] = useState<{ tenantId: string; name: string }[]>([]);
   const [code, setCode] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -1025,15 +1026,25 @@ function SignIn({ onSignedIn: signedIn, signedOut }: { onSignedIn: () => void; s
     }
   };
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const signInTo = async (workspace?: string) => {
     setBusy(true);
     setError(null);
     try {
-      const result = await call<{ mfaRequired?: boolean; challengeToken?: string }>('/api/auth/login', {
+      const result = await call<{
+        mfaRequired?: boolean;
+        challengeToken?: string;
+        chooseWorkspace?: { tenantId: string; name: string }[];
+      }>('/api/auth/login', {
         method: 'POST',
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify(workspace ? { email, password, workspace } : { email, password }),
       });
+      // The same address and password belong to more than one workspace. The
+      // password has already been checked, so listing them gives nothing away.
+      if (result.chooseWorkspace) {
+        setWorkspaces(result.chooseWorkspace);
+        setMode('workspace');
+        return;
+      }
       // A correct password on an account with a second factor. No cookie was
       // set, so there is nothing to undo if this is abandoned here.
       if (result.mfaRequired && result.challengeToken) {
@@ -1050,6 +1061,11 @@ function SignIn({ onSignedIn: signedIn, signedOut }: { onSignedIn: () => void; s
     } finally {
       setBusy(false);
     }
+  };
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await signInTo();
   };
 
   const answerChallenge = async (e: React.FormEvent) => {
@@ -1174,6 +1190,54 @@ function SignIn({ onSignedIn: signedIn, signedOut }: { onSignedIn: () => void; s
             </button>
           </p>
         </form>
+      </div>
+    );
+  }
+
+  // ---- the same sign-in opens more than one workspace; pick one
+  if (mode === 'workspace') {
+    return (
+      <div className="cs__login">
+        <div className="cs__loginBox">
+          {brand}
+          <h1 className="cs__loginTitle">Which workspace?</h1>
+          <p className="cs__loginNote" style={{ marginTop: 0, marginBottom: 18 }}>
+            {email} belongs to more than one workspace. Choose the one you want to open.
+          </p>
+          <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'grid', gap: 8 }}>
+            {workspaces.map((w) => (
+              <li key={w.tenantId}>
+                <button
+                  type="button"
+                  className="cs__btn cs__btn--primary"
+                  style={{ width: '100%', height: 44 }}
+                  disabled={busy}
+                  onClick={() => void signInTo(w.tenantId)}
+                >
+                  {w.name}
+                </button>
+              </li>
+            ))}
+          </ul>
+          {error && (
+            <p className="cs__loginError" role="alert">
+              {error}
+            </p>
+          )}
+          <p className="cs__loginNote">
+            <button
+              type="button"
+              className="cs__linkBtn cs__linkBtn--onLight"
+              onClick={() => {
+                setMode('signin');
+                setError(null);
+                setPassword('');
+              }}
+            >
+              Back to sign in
+            </button>
+          </p>
+        </div>
       </div>
     );
   }

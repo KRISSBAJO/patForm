@@ -16,6 +16,7 @@ import type { Capability } from '../blueprint/roles.js';
 import {
   devicesFor,
   needsSecondFactor,
+  needsWorkspace,
   resolveSession,
   revokeAllSessions,
   signIn,
@@ -39,6 +40,7 @@ import {
   listMembers,
   readInvitation,
   revokeInvitation,
+  revokeMemberSessions,
   setMemberActive,
   InvalidInput,
 } from '../runtime/workspace.js';
@@ -844,8 +846,8 @@ route('POST', /^\/api\/members\/([0-9a-f-]{36})\/role$/, async ({ pool, principa
 });
 
 route('POST', /^\/api\/members\/([0-9a-f-]{36})\/revoke-sessions$/, async ({ pool, principal, url }) => {
-  await requireWorkspaceCapability(pool, principal, 'administer', 'members');
-  return { revoked: await revokeAllSessions(pool, url.pathname.split('/')[3]!) };
+  const done = await revokeMemberSessions(pool, { principal, actorId: url.pathname.split('/')[3]! });
+  return { revoked: done.revoked };
 });
 
 route('GET', /^\/api\/invitations$/, async ({ pool, principal }) => listInvitations(pool, principal));
@@ -1557,12 +1559,23 @@ async function main(): Promise<void> {
 
         // ---- login and logout are the only routes before authentication
         if (url.pathname === '/api/auth/login' && req.method === 'POST') {
-          const { email, password } = (await readBody(req)) as { email?: string; password?: string };
+          const { email, password, workspace } = (await readBody(req)) as {
+            email?: string; password?: string; workspace?: string;
+          };
           if (!email || !password) throw new HttpError(400, 'email and password are required');
-          const result = await signIn(pool, { email, password, userAgent: req.headers['user-agent'] });
+          if (workspace !== undefined && !/^[0-9a-f-]{36}$/.test(workspace)) {
+            throw new HttpError(400, 'workspace must be an id');
+          }
+          const result = await signIn(pool, {
+            email, password, userAgent: req.headers['user-agent'], tenantId: workspace,
+          });
           // One message for every failure, so the response cannot be used to
           // find out which addresses have accounts.
           if (!result) return send(res, 401, { error: 'those details do not match an account' });
+
+          // The same address and password open several workspaces. Nothing is
+          // issued until the person says which one they meant.
+          if (needsWorkspace(result)) return send(res, 200, result);
 
           /*
            * A correct password on an account with a second factor. No cookie

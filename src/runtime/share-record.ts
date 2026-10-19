@@ -1,5 +1,6 @@
 import { recordDetail } from './console-queries.js';
 import type { Pool } from './db.js';
+import { appendEventLocked } from './engine.js';
 import { appUrl, sendPlatformMail } from './platform-mail.js';
 import { AuthorizationError, type Principal } from './policy.js';
 
@@ -89,11 +90,14 @@ export async function shareRecord(
   });
   const sent = Boolean(result && result.status !== 'failed');
 
-  await pool.query(
-    `insert into event (tenant_id, instance_id, seq, type, payload, actor, occurred_at)
-     values ($1, $2, (select coalesce(max(seq), 0) + 1 from event where instance_id = $2), 'record_shared', $3, $4, $5)`,
-    [tenantId, args.instanceId, JSON.stringify({ to: recipient.email, toName: recipient.display_name, note: note || null, sent }), `actor:${me.actorId}`, now],
-  );
+  await appendEventLocked(pool, {
+    tenantId,
+    instanceId: args.instanceId,
+    type: 'record_shared',
+    payload: { to: recipient.email, toName: recipient.display_name, note: note || null, sent },
+    actor: `actor:${me.actorId}`,
+    now,
+  });
 
   return sent
     ? { to: recipient.email, sent: true }

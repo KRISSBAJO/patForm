@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { isSignature, signatureWords } from '../blueprint/signature.js';
 import type { Blueprint } from '../blueprint/index.js';
 import { inTransaction, type Client, type Pool } from './db.js';
+import { appendEventLocked } from './engine.js';
 import { AuthorizationError, redact, require_, requireWorkspaceCapability, visibleFields, type Principal } from './policy.js';
 import { xlsx, type Cell } from './xlsx.js';
 import { currentRequestId } from './trace.js';
@@ -317,20 +318,17 @@ export async function exportRecord(
     )
     .digest('hex');
 
-  // Appended after the read commits, on its own statement: the export is a
-  // fact about the record whether or not anything else succeeds, and it must
-  // not be able to roll back with a caller's transaction.
-  await pool.query(
-    `insert into event (tenant_id, instance_id, seq, type, payload, actor, occurred_at)
-     values ($1, $2, (select coalesce(max(seq), 0) + 1 from event where instance_id = $2), 'record_exported', $3, $4, $5)`,
-    [
-      bundle.tenantId,
-      bundle.instanceId,
-      JSON.stringify({ checksum, withheld: bundle.body.withheld, events: bundle.body.history.length }),
-      exportedBy,
-      now,
-    ],
-  );
+  // Appended after the read commits, in a short transaction of its own: the
+  // export is a fact about the record whether or not anything else succeeds,
+  // and it must not be able to roll back with a caller's transaction.
+  await appendEventLocked(pool, {
+    tenantId: bundle.tenantId,
+    instanceId: bundle.instanceId,
+    type: 'record_exported',
+    payload: { checksum, withheld: bundle.body.withheld, events: bundle.body.history.length },
+    actor: exportedBy,
+    now,
+  });
 
   return { exportedAt: now.toISOString(), exportedBy, checksum, ...bundle.body };
 }

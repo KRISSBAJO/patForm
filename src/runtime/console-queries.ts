@@ -2,6 +2,7 @@ import type { Blueprint } from '../blueprint/index.js';
 import { answerText } from '../blueprint/display.js';
 import type { Client, Pool } from './db.js';
 import { inTransaction } from './db.js';
+import { appendEventLocked } from './engine.js';
 import { authorize, redact, require_, type Principal } from './policy.js';
 import { earlierEvidence } from './evidence-history.js';
 import { currentRequestId } from './trace.js';
@@ -522,11 +523,14 @@ export async function recordDocument(pool: Pool, principal: Principal, instanceI
     const contentType = /\.pdf$/i.test(doc.filename) ? 'application/pdf' : /\.html?$/i.test(doc.filename) ? 'text/html' : 'application/octet-stream';
     return { tenantId: instance.tenant_id, documentKey: doc.document_key, filename: doc.filename, contentType, checksum: doc.checksum, base64: doc.content.toString('base64') };
   });
-  await pool.query(
-    `insert into event (tenant_id, instance_id, seq, type, payload, actor, occurred_at)
-     values ($1, $2, (select coalesce(max(seq), 0) + 1 from event where instance_id = $2), 'document_downloaded', $3, $4, $5)`,
-    [out.tenantId, instanceId, JSON.stringify({ document: out.documentKey, filename: out.filename, checksum: out.checksum }), principal.kind === 'actor' ? `actor:${principal.actorId}` : 'system', new Date()],
-  );
+  await appendEventLocked(pool, {
+    tenantId: out.tenantId,
+    instanceId,
+    type: 'document_downloaded',
+    payload: { document: out.documentKey, filename: out.filename, checksum: out.checksum },
+    actor: principal.kind === 'actor' ? `actor:${principal.actorId}` : 'system',
+    now: new Date(),
+  });
   const { tenantId: _tenant, ...body } = out;
   return body;
 }

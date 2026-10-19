@@ -112,8 +112,21 @@ export async function createWorkspace(
 
 // ------------------------------------------------------------------ people
 
+/**
+ * Everyone signed in may see who works here. Only those who can `administer`
+ * see how many devices each person is signed in on, when they were last
+ * active, and how their account is provisioned — that is presence and
+ * directory detail, and a read-only analyst has no business with it.
+ */
 export async function listMembers(pool: Pool, principal: Principal) {
   if (principal.kind !== 'actor') throw new Error('signed-in members only');
+  const { rows: me } = await pool.query<{ workspace_role: WorkspaceRole }>(
+    'select workspace_role from actor where id = $1 and tenant_id = $2 and active',
+    [principal.actorId, principal.tenantId],
+  );
+  const administers = me[0]
+    ? (WORKSPACE_GRANTS[me[0].workspace_role] as readonly Capability[]).includes('administer')
+    : false;
   const { rows } = await pool.query(
     `select a.id, a.email, a.display_name, a.workspace_role, a.active, a.provisioned_by,
             a.external_id, a.created_at,
@@ -125,7 +138,45 @@ export async function listMembers(pool: Pool, principal: Principal) {
        from actor a where a.tenant_id = $1 order by a.active desc, a.display_name`,
     [principal.tenantId],
   );
-  return rows;
+  if (administers) return rows;
+  return rows.map(({ sessions: _s, last_seen_at: _l, external_id: _e, identities: _i, ...row }) => ({
+    ...row,
+    sessions: null,
+    last_seen_at: null,
+    external_id: null,
+    identities: null,
+  }));
+}
+
+/**
+ * Signs one member out of every device. Scoped to the caller's workspace in
+ * the query itself, not only in the capability check before it: a tenant's
+ * administrator who knows another tenant's actor id must change nothing there.
+ */
+export async function revokeMemberSessions(
+  pool: Pool,
+  args: { principal: Principal; actorId: string },
+): Promise<{ actorId: string; revoked: number }> {
+  await requireWorkspaceCapability(pool, args.principal, 'administer', 'members');
+  if (args.principal.kind !== 'actor') throw new Error('unreachable');
+  const { rows } = await pool.query<{ id: string }>(
+    'select id from actor where id = $1 and tenant_id = $2',
+    [args.actorId, args.principal.tenantId],
+  );
+  if (!rows[0]) throw new InvalidInput('no such member');
+  const { rowCount } = await pool.query(
+    `update session s set revoked_at = now()
+       from actor a
+      where a.id = s.actor_id and s.actor_id = $1 and a.tenant_id = $2 and s.revoked_at is null`,
+    [args.actorId, args.principal.tenantId],
+  );
+  logIfEnabled('info', 'member.sessions_revoked', {
+    tenantId: args.principal.tenantId,
+    by: args.principal.actorId,
+    target: args.actorId,
+    revoked: rowCount ?? 0,
+  });
+  return { actorId: args.actorId, revoked: rowCount ?? 0 };
 }
 
 export interface InviteRow {
