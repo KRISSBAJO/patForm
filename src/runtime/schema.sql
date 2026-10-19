@@ -1300,3 +1300,60 @@ create index if not exists push_subscription_actor on push_subscription (actor_i
 -- When the people waited on were told by push; null until the worker has.
 alter table approval_request add column if not exists notified_at timestamptz;
 alter table task add column if not exists notified_at timestamptz;
+
+-- ------------------------------------------------------------ organisation
+--
+-- PRD Module 1 (ORG-02): the directory a workflow can route by. Until these
+-- tables, "your manager" was an email the respondent typed, and the only
+-- control on it was barring the submitter from approving their own claim.
+-- A reporting line here is set by an administrator and dated, so a decision
+-- made last March can still say who the manager was last March.
+
+create table if not exists legal_entity (
+  id          uuid primary key default gen_random_uuid(),
+  tenant_id   uuid not null references tenant(id),
+  name        text not null,
+  code        text,
+  created_at  timestamptz not null default now(),
+  unique (tenant_id, name)
+);
+
+-- Nested units: a department inside a division inside an entity. The parent
+-- chain is checked for cycles in code, under the tenant's row lock, because a
+-- check constraint cannot see other rows.
+create table if not exists org_unit (
+  id              uuid primary key default gen_random_uuid(),
+  tenant_id       uuid not null references tenant(id),
+  name            text not null,
+  parent_id       uuid references org_unit(id),
+  legal_entity_id uuid references legal_entity(id),
+  head_actor_id   uuid references actor(id),
+  created_at      timestamptz not null default now(),
+  check (parent_id is distinct from id)
+);
+create unique index if not exists org_unit_name_uq
+  on org_unit (tenant_id, coalesce(parent_id, '00000000-0000-0000-0000-000000000000'::uuid), lower(name));
+
+-- Who reports to whom, and since when. Closing a line (effective_to) rather
+-- than deleting it is what lets the history explain an old approval. One
+-- open primary line per person; dotted lines are extra and do not route.
+create table if not exists reporting_line (
+  id             uuid primary key default gen_random_uuid(),
+  tenant_id      uuid not null references tenant(id),
+  actor_id       uuid not null references actor(id),
+  manager_id     uuid not null references actor(id),
+  kind           text not null default 'primary' check (kind in ('primary', 'dotted')),
+  effective_from timestamptz not null default now(),
+  effective_to   timestamptz,
+  created_by     uuid references actor(id),
+  created_at     timestamptz not null default now(),
+  check (actor_id <> manager_id),
+  constraint reporting_line_dates check (effective_to is null or effective_to >= effective_from)
+);
+create unique index if not exists reporting_line_open_primary_uq
+  on reporting_line (tenant_id, actor_id) where kind = 'primary' and effective_to is null;
+create index if not exists reporting_line_actor on reporting_line (tenant_id, actor_id, effective_from desc);
+
+alter table actor add column if not exists org_unit_id uuid references org_unit(id);
+alter table actor add column if not exists legal_entity_id uuid references legal_entity(id);
+alter table actor add column if not exists position_title text;

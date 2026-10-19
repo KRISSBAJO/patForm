@@ -200,6 +200,23 @@ export function validate(bp: Blueprint, requestedDescription?: string): Diagnost
    * on the role would not save it even if it were granted.
    */
   const checkApprover = (p: Party, at: string, approvalKey: string): void => {
+    if ('manager' in p) {
+      // The manager comes from the directory, so the only thing to check is
+      // the fallback — and that the process has said what happens without one.
+      if (p.fallback) {
+        const fallback = roleByKey.get(p.fallback);
+        if (fallback && (fallback.kind === 'respondent' || !fallback.capabilities.includes('approve'))) {
+          d.error('SEC009', at,
+            `Approval "${approvalKey}" falls back to role "${p.fallback}", which cannot approve.`,
+            'Name an internal role with the "approve" capability.');
+        }
+      } else {
+        d.warn('OPS012', at,
+          `Approval "${approvalKey}" goes to the submitter's manager with no fallback.`,
+          'A record from someone with no manager on file will wait with nobody named. Add a fallback role, or accept that an administrator will route those by hand.');
+      }
+      return;
+    }
     if (!('role' in p)) return;
     const role = roleByKey.get(p.role);
     if (!role) return; // already reported by checkParty
@@ -225,6 +242,9 @@ export function validate(bp: Blueprint, requestedDescription?: string): Diagnost
   const checkParty = (p: Party, at: string, what: string): void => {
     if ('role' in p && !roleByKey.has(p.role)) {
       d.error('REF008', at, `${what} refers to unknown role "${p.role}".`);
+    }
+    if ('manager' in p && p.fallback && !roleByKey.has(p.fallback)) {
+      d.error('REF008', at, `${what} falls back to unknown role "${p.fallback}".`);
     }
     if ('field' in p) {
       const f = requireField(p.field, at, what);

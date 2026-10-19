@@ -20,6 +20,7 @@ import { generatedReferences } from './references.js';
 import { evaluate, render, withCalculatedFields, type Answers } from './expr.js';
 import { inTransaction, isUniqueViolation, type Client, type Pool } from './db.js';
 import { InvalidInput } from './errors.js';
+import { managerOf } from './org.js';
 import { ensurePublicForm } from './form-links.js';
 import { requireIntakeOpen } from './intake-control.js';
 import {
@@ -1721,7 +1722,7 @@ async function performEffect(
           instance.id,
           runId,
           task.key,
-          resolveParty(task.assignee, instance, bp)[0] ?? null,
+          (await resolveParty(client, task.assignee, instance, bp, now))[0] ?? null,
           task.blocking,
           task.dueInHours ? new Date(now.getTime() + task.dueInHours * 3_600_000) : null,
           now,
@@ -1732,7 +1733,33 @@ async function performEffect(
 
     case 'request_approval': {
       const approval = bp.workflow.approvals.find((a) => a.key === action.approval)!;
-      const approvers = approval.approvers.flatMap((p) => resolveParty(p, instance, bp));
+      const approvers: string[] = [];
+      const routing: { party: Party; resolved: string[] }[] = [];
+      for (const p of approval.approvers) {
+        const resolved = await resolveParty(client, p, instance, bp, now);
+        routing.push({ party: p, resolved });
+        for (const who of resolved) if (!approvers.includes(who)) approvers.push(who);
+      }
+      // ORG-12: the routing explanation lives on the record, so a later
+      // reassignment or a question in audit can say why these people.
+      const unresolved = routing.filter((r) => !r.resolved.length);
+      await appendEvent(client, {
+        tenantId: instance.tenant_id,
+        instanceId: instance.id,
+        type: unresolved.length ? 'routing_unresolved' : 'approval_routed',
+        payload: {
+          approval: approval.key,
+          approvers,
+          via: routing,
+          ...(unresolved.length
+            ? { reason: unresolved.map((r) => 'manager' in r.party
+                ? 'the submitter has no manager on file and the approval names no fallback'
+                : `${JSON.stringify(r.party)} resolved to nobody`) }
+            : {}),
+        },
+        actor: 'system:router',
+        now,
+      });
       const electorate =
         approval.mode === 'majority' ? await countElectorate(client, instance, bp, approvers, approval.notTheSubmitter) : null;
       await client.query(
@@ -1828,7 +1855,7 @@ async function performEffect(
     }
 
     case 'assign': {
-      const who = resolveParty(action.to, instance, bp)[0] ?? null;
+      const who = (await resolveParty(client, action.to, instance, bp, now))[0] ?? null;
       await client.query('update instance set assignee = $1 where id = $2', [who, instance.id]);
       instance.assignee = who;
       return;
@@ -2062,7 +2089,7 @@ async function countElectorate(
   return voters.size;
 }
 
-function resolveParty(party: Party, instance: InstanceRow, bp: Blueprint): string[] {
+async function resolveParty(client: Client, party: Party, instance: InstanceRow, bp: Blueprint, now: Date): Promise<string[]> {
   if ('user' in party) return [party.user];
   if ('field' in party) {
     const value = instance.data[party.field];
@@ -2073,7 +2100,36 @@ function resolveParty(party: Party, instance: InstanceRow, bp: Blueprint): strin
     return address ? [address] : [];
   }
   if ('assignee' in party) return instance.assignee ? [instance.assignee] : [];
+  if ('manager' in party) {
+    const submitter = await submitterActor(client, bp, instance);
+    const manager = submitter
+      ? await managerOf(client, { tenantId: instance.tenant_id, actorId: submitter, at: now })
+      : null;
+    if (manager) return [manager.email];
+    return party.fallback ? [`role:${party.fallback}`] : [];
+  }
   return [`role:${party.role}`];
+}
+
+/**
+ * The workspace member who submitted the record: the signed-in principal on
+ * the `submitted` event, or failing that the member whose email is in the
+ * submitter field. Null for a stranger on a public form, who has no manager.
+ */
+async function submitterActor(client: Client, bp: Blueprint, instance: InstanceRow): Promise<string | null> {
+  const { rows } = await client.query<{ actor: string }>(
+    `select actor from event where instance_id = $1 and type = 'submitted' order by seq limit 1`,
+    [instance.id],
+  );
+  const match = rows[0]?.actor.match(/^actor:([0-9a-f-]{36})$/);
+  if (match) return match[1]!;
+  const email = submitterOf(bp, instance);
+  if (!email) return null;
+  const { rows: byEmail } = await client.query<{ id: string }>(
+    'select id from actor where tenant_id = $1 and lower(email) = lower($2) and active',
+    [instance.tenant_id, email],
+  );
+  return byEmail[0]?.id ?? null;
 }
 
 /**
@@ -2100,14 +2156,26 @@ async function resolveRecipients(
   parties: Party[],
   instance: InstanceRow,
   bp: Blueprint,
+  now: Date = new Date(),
 ): Promise<{ addresses: string[]; unreachable: string[] }> {
   const addresses: string[] = [];
   const unreachable: string[] = [];
 
   for (const party of parties) {
     if (!('role' in party)) {
-      for (const who of resolveParty(party, instance, bp)) {
-        if (!addresses.includes(who)) addresses.push(who);
+      const resolved = await resolveParty(client, party, instance, bp, now);
+      if (!resolved.length && 'manager' in party) unreachable.push('manager:submitter');
+      for (const who of resolved) {
+        if (who.startsWith('role:')) {
+          // A manager party fell back to a role; expand it like a role party.
+          const { rows } = await client.query<{ email: string }>(
+            `select a.email from membership m join actor a on a.id = m.actor_id
+              where m.tenant_id = $1 and m.process_key = $2 and m.role_key = $3 and a.active order by a.email`,
+            [instance.tenant_id, instance.process_key, who.slice(5)],
+          );
+          if (!rows.length) unreachable.push(who);
+          for (const row of rows) if (!addresses.includes(row.email)) addresses.push(row.email);
+        } else if (!addresses.includes(who)) addresses.push(who);
       }
       continue;
     }

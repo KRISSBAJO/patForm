@@ -106,6 +106,17 @@ Acceptance scenarios (4.4):
 - Privacy: retention runs, erasure, data map.
 - Email via RelyKit, PDF generation without a browser.
 
+## Progress
+
+- 19 Oct 2026: the four findings above are fixed (commit 311a3be).
+- 19 Oct 2026: step 2, the org chart core, is built: `legal_entity`,
+  `org_unit` (nested, cycle-checked), `reporting_line` (dated primary
+  manager, one open line per person), placement on `actor`, the
+  `{ manager: 'submitter', fallback }` party, `approval_routed` and
+  `routing_unresolved` events, routes under `/api/org` and
+  `/api/members/:id/{manager,placement,reporting}`, and the builder option.
+  No People-page UI for it yet; membership lifecycle enum (ORG-03) not done.
+
 ## What to build first
 
 In this order. Each step is sellable on its own; none is wasted if the

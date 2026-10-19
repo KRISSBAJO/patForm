@@ -75,7 +75,8 @@ type Party =
   | { field: string }
   | { user: string }
   | { assignee: 'current' }
-  | { submitter: true };
+  | { submitter: true }
+  | { manager: 'submitter'; fallback?: string };
 
 interface BpApproval {
   key: string;
@@ -495,6 +496,7 @@ function partyLabel(p: Party | undefined): string {
   if ('field' in p) return `field: ${p.field}`;
   if ('user' in p) return p.user;
   if ('submitter' in p) return 'the submitter';
+  if ('manager' in p) return p.fallback ? `the submitter's manager, else role: ${p.fallback}` : "the submitter's manager";
   return 'current assignee';
 }
 
@@ -3029,7 +3031,7 @@ function PartyPicker({
    */
   label?: string;
 }) {
-  const kind = 'role' in party ? 'role' : 'field' in party ? 'field' : 'user' in party ? 'user' : 'submitter' in party ? 'submitter' : 'assignee';
+  const kind = 'role' in party ? 'role' : 'field' in party ? 'field' : 'user' in party ? 'user' : 'submitter' in party ? 'submitter' : 'manager' in party ? 'manager' : 'assignee';
   const emailFields = fields.filter((f) => f.type === 'email');
 
   return (
@@ -3044,6 +3046,7 @@ function PartyPicker({
           else if (next === 'field') onChange({ field: emailFields[0]?.key ?? fields[0]?.key ?? '' });
           else if (next === 'user') onChange({ user: '' });
           else if (next === 'submitter') onChange({ submitter: true });
+          else if (next === 'manager') onChange({ manager: 'submitter' });
           else onChange({ assignee: 'current' });
         }}
       >
@@ -3051,8 +3054,25 @@ function PartyPicker({
         <option value="field">an address on the record</option>
         <option value="user">a named person</option>
         <option value="submitter">the person who submitted it</option>
+        <option value="manager">the submitter&apos;s manager (from the directory)</option>
         <option value="assignee">the current assignee</option>
       </select>
+
+      {'manager' in party && (
+        <select
+          className="bd__input"
+          aria-label={`${label}: if they have no manager`}
+          value={party.fallback ?? ''}
+          onChange={(e) => onChange(e.target.value ? { manager: 'submitter', fallback: e.target.value } : { manager: 'submitter' })}
+        >
+          <option value="">no fallback: wait for an administrator</option>
+          {roles.map((r) => (
+            <option key={r.key} value={r.key}>
+              no manager on file: role {r.key}
+            </option>
+          ))}
+        </select>
+      )}
 
       {'role' in party && (
         <select
@@ -3750,6 +3770,7 @@ function partyWords(p: Party): string {
   if ('assignee' in p) return 'whoever it is assigned to';
   if ('role' in p) return `everyone with the ${p.role.replace(/_/g, ' ')} role`;
   if ('field' in p) return `the address in ${p.field.replace(/_/g, ' ')}`;
+  if ('manager' in p) return p.fallback ? `the submitter's manager, or the ${p.fallback.replace(/_/g, ' ')} role if they have none` : "the submitter's manager";
   return p.user || 'a named person';
 }
 

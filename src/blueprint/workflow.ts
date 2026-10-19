@@ -27,6 +27,18 @@ export const Party = z.union([
   z.object({ user: z.string().email() }).strict(),
   z.object({ assignee: z.literal('current') }).strict(),
   z.object({ submitter: z.literal(true) }).strict(),
+  /**
+   * The submitter's manager, from the reporting lines an administrator keeps
+   * in the workspace directory — not an address the respondent typed. The
+   * submitter is the signed-in member who submitted, or failing that the
+   * member whose email is in the submitter field.
+   *
+   * `fallback` is the role that takes it when the submitter has no manager on
+   * file. Without one the request is created with nobody named and the
+   * record shows a `routing_unresolved` event, which is the PRD's other
+   * choice: block visibly, never guess a manager.
+   */
+  z.object({ manager: z.literal('submitter'), fallback: Key.optional() }).strict(),
 ]);
 export type Party = z.infer<typeof Party>;
 

@@ -24,6 +24,7 @@ import {
   startSession,
 } from '../runtime/auth.js';
 import { runRetention } from '../runtime/retention.js';
+import { createLegalEntity, createOrgUnit, orgChart, reportingHistory, setManager, setMemberPlacement, updateOrgUnit } from '../runtime/org.js';
 import { logIfEnabled, requestIdFrom, withTrace } from '../runtime/trace.js';
 import { callerFor, limitFor, processKeyFrom, takeIntakeToken } from './intake-limits.js';
 import { traceByRequest, traceForInstance } from '../runtime/support.js';
@@ -830,6 +831,28 @@ route('GET', /^\/api\/members\/grantable$/, async ({ pool, principal, actorId })
   // server will refuse.
   return { roles: grantableRoles(rows[0]!.workspace_role) };
 });
+
+// ---- the organisation directory (PRD Module 1, ORG-02). Reads for every
+// member; writes need `administer`, checked inside org.ts.
+route('GET', /^\/api\/org$/, async ({ pool, principal }) => orgChart(pool, principal));
+route('POST', /^\/api\/org\/entities$/, async ({ pool, principal }, body) =>
+  createLegalEntity(pool, principal, (body ?? {}) as { name?: unknown; code?: unknown }),
+);
+route('POST', /^\/api\/org\/units$/, async ({ pool, principal }, body) =>
+  createOrgUnit(pool, principal, (body ?? {}) as Record<string, unknown>),
+);
+route('POST', /^\/api\/org\/units\/([0-9a-f-]{36})$/, async ({ pool, principal, url }, body) =>
+  updateOrgUnit(pool, principal, url.pathname.split('/')[4]!, (body ?? {}) as Record<string, unknown>),
+);
+route('GET', /^\/api\/members\/([0-9a-f-]{36})\/reporting$/, async ({ pool, principal, url }) =>
+  reportingHistory(pool, principal, url.pathname.split('/')[3]!),
+);
+route('POST', /^\/api\/members\/([0-9a-f-]{36})\/manager$/, async ({ pool, principal, url }, body) =>
+  setManager(pool, principal, url.pathname.split('/')[3]!, (body ?? {}) as Record<string, unknown>),
+);
+route('POST', /^\/api\/members\/([0-9a-f-]{36})\/placement$/, async ({ pool, principal, url }, body) =>
+  setMemberPlacement(pool, principal, url.pathname.split('/')[3]!, (body ?? {}) as Record<string, unknown>),
+);
 
 route('POST', /^\/api\/members\/([0-9a-f-]{36})\/deactivate$/, async ({ pool, principal, url }) =>
   setMemberActive(pool, { principal, actorId: url.pathname.split('/')[3]!, active: false }),
