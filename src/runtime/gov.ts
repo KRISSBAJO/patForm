@@ -285,7 +285,8 @@ export async function reviseContract(pool: Pool, principal: Principal, contractI
           [contractId, version, r.discipline, r.reviewer_id, r.decision, `carried over from v${c.current_version}${material ? '' : ' (non-material change)'}${r.note ? `: ${r.note}` : ''}`]);
       }
     }
-    // Anything out for signature was for the old version.
+    // Anything out for signature was for the old version, in DocuSign or in Patform Sign.
+    await client.query(`update sign_envelope set status = 'voided', voided_at = now(), void_reason = $2 where contract_id = $1 and status in ('draft', 'sent')`, [contractId, `superseded by v${version}`]);
     await client.query(`update contract_envelope set status = 'voided', remote_void_pending = remote, updated_at = now(), history = history || $2::jsonb where contract_id = $1 and status in ('sent', 'delivered')`,
       [contractId, JSON.stringify([{ at: new Date().toISOString(), status: 'voided', note: `superseded by v${version}` }])]);
     const state = await reviewState(client, w, { ...c, current_version: version });
@@ -1181,8 +1182,9 @@ function sniffDoc(bytes: Buffer, filename: string): string | null {
 
 export async function uploadGovFile(pool: Pool, principal: Principal, body: Record<string, unknown>) {
   const w = await member(pool, principal);
-  const purpose = body.purpose === 'policy' ? 'policy' : body.purpose === 'contract' ? 'contract' : null;
-  if (!purpose) throw new InvalidInput('purpose must be contract or policy');
+  const purpose = body.purpose === 'policy' ? 'policy' : body.purpose === 'contract' ? 'contract' : body.purpose === 'signing' ? 'signing' : null;
+  if (!purpose) throw new InvalidInput('purpose must be contract, policy or signing');
+  if (purpose === 'signing' && !/\.pdf$/i.test(text(body.filename, 200))) throw new InvalidInput('Patform Sign signs PDFs; upload a PDF');
   if (purpose === 'policy') requireTeam(w, 'compliance');
   const filename = text(body.filename, 200); const base64 = typeof body.base64 === 'string' ? body.base64 : '';
   if (!filename || !base64 || base64.length > Math.ceil(MAX_DOC * 4 / 3) + 8) throw new InvalidInput('Choose a PDF or Word (.docx) file up to 20 MB.');
@@ -1232,6 +1234,7 @@ export async function govFileLink(pool: Pool, principal: Principal, fileId: stri
     engagementId = g[0].engagement_id;
   } else if (f.contract_id) await contractFor(pool, w, f.contract_id);
   else if (f.policy_version_id) { if (!(f.policy_status === 'published' || f.policy_status === 'superseded' || inTeam(w, 'compliance'))) throw new InvalidInput('no such document'); }
+  else if (f.purpose === 'signing') { const { rows: own } = await pool.query('select 1 from gov_file where id = $1 and uploaded_by = $2', [fileId, w.actorId]); if (!own[0] && !inTeam(w, 'legal', 'compliance')) throw new InvalidInput('no such document'); }
   else if (!inTeam(w, 'legal', 'compliance')) throw new InvalidInput('no such document');
   const store = objectStore();
   const scan = await store.scan(f.storage_key);
@@ -1379,3 +1382,6 @@ export async function docusignConnect(pool: Pool, raw: string, signature: string
   for (const e of rows) await syncEnvelopes(pool, { tenantId: e.tenant_id, envelopeId: e.id, doFetch });
   return { status: 200 };
 }
+
+/** For Patform Sign (esign.ts): the same access rules as the rest of this module. */
+export { member as govMember, contractFor as govContractFor, inTeam as govInTeam, GOV_FILE as GOV_FILE_REF };

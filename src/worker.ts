@@ -4,6 +4,7 @@ import { Engine, newWorkerId } from './runtime/engine.js';
 import { runScheduledRetention, sweepExpiredTokens } from './runtime/retention.js';
 import { sweepGov, syncEnvelopes } from './runtime/gov.js';
 import { runClosures, runExports } from './runtime/tenant-lifecycle.js';
+import { sweepSignatures } from './runtime/esign.js';
 import { sweepHeld } from './runtime/held.js';
 import { applyDueChanges } from './runtime/hr.js';
 import { deliverConnectors, generateMaintenance, reconcileAccess, sweepTickets } from './runtime/ops.js';
@@ -126,6 +127,7 @@ async function main(): Promise<void> {
         const purged = await runScheduledRetention(pool, now);
         // DocuSign status and signed copies; workspace exports and approved closures.
         await syncEnvelopes(pool).catch((err) => console.error('envelope sync failed:', err instanceof Error ? err.message : err));
+        await sweepSignatures(pool).catch((err) => console.error('signature sweep failed:', err instanceof Error ? err.message : err));
         await runExports(pool).catch((err) => console.error('exports failed:', err instanceof Error ? err.message : err));
         const closed = await runClosures(pool).catch((err) => { console.error('closure failed:', err instanceof Error ? err.message : err); return 0; });
         if (closed) console.log(`  ${now.toISOString()}  closed ${closed} workspace(s)`);

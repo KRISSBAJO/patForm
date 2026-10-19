@@ -3043,7 +3043,7 @@ create trigger control_test_no_change before update or delete on control_test fo
 create table if not exists gov_file (
   id                uuid primary key,
   tenant_id         uuid not null references tenant(id),
-  purpose           text not null check (purpose in ('contract', 'policy', 'signed')),
+  purpose           text not null check (purpose in ('contract', 'policy', 'signed', 'signing')),
   contract_id       uuid references contract(id),
   policy_version_id uuid references policy_version(id),
   filename          text not null,
@@ -3161,3 +3161,113 @@ begin
   raise exception '% is append-only', tg_table_name;
 end;
 $$ language plpgsql;
+
+-- -------------------------------------------------------- Patform Sign
+--
+-- Built-in electronic signature. A document (a contract version or any PDF)
+-- goes to signers in order or together; each proves control of their email
+-- with a one-time code, agrees to sign electronically, fills their fields and
+-- signs. The finished PDF carries the signatures and a certificate page, and
+-- its SHA-256 is kept so anyone can check a copy. Every step is an
+-- append-only event. This is a simple electronic signature: what most
+-- commercial contracts need, not a qualified one.
+
+alter table gov_file drop constraint if exists gov_file_purpose_check;
+alter table gov_file add constraint gov_file_purpose_check check (purpose in ('contract', 'policy', 'signed', 'signing'));
+
+alter table platform_email drop constraint if exists platform_email_kind_check;
+alter table platform_email add constraint platform_email_kind_check
+  check (kind in ('invitation', 'verify_email', 'password_reset', 'delivery_alert', 'task_assigned', 'record_shared', 'scheduled_report',
+                  'signature_request', 'signature_code', 'signature_completed', 'signature_declined', 'signature_reminder'));
+
+create table if not exists sign_envelope (
+  id               uuid primary key default gen_random_uuid(),
+  tenant_id        uuid not null references tenant(id),
+  number           int not null,
+  title            text not null,
+  message          text,
+  contract_id      uuid references contract(id),
+  contract_version int,
+  document_file_id uuid not null references gov_file(id),
+  original_sha256  text not null,
+  page_count       int not null,
+  routing          text not null default 'sequential' check (routing in ('sequential', 'parallel')),
+  status           text not null default 'draft' check (status in ('draft', 'sent', 'completed', 'declined', 'voided', 'expired')),
+  reminder_days    int not null default 3 check (reminder_days between 0 and 30),
+  expires_at       timestamptz not null,
+  created_by       uuid references actor(id),
+  created_at       timestamptz not null default now(),
+  sent_at          timestamptz,
+  completed_at     timestamptz,
+  voided_at        timestamptz,
+  void_reason      text,
+  final_file_id    uuid references gov_file(id),
+  final_sha256     text,
+  unique (tenant_id, number)
+);
+create index if not exists sign_envelope_final on sign_envelope (final_sha256) where final_sha256 is not null;
+
+create table if not exists sign_recipient (
+  id               uuid primary key default gen_random_uuid(),
+  envelope_id      uuid not null references sign_envelope(id),
+  name             text not null,
+  email            text not null,
+  role             text not null default 'signer' check (role in ('signer', 'cc')),
+  routing_order    int not null default 1,
+  actor_id         uuid references actor(id),
+  status           text not null default 'waiting' check (status in ('waiting', 'sent', 'viewed', 'signed', 'declined')),
+  token_hash       text unique,
+  otp_hash         text,
+  otp_expires_at   timestamptz,
+  otp_attempts     int not null default 0,
+  otp_sent_count   int not null default 0,
+  otp_window_start timestamptz,
+  session_hash     text,
+  session_expires_at timestamptz,
+  verified_at      timestamptz,
+  consented_at     timestamptz,
+  consent_text     text,
+  viewed_at        timestamptz,
+  signed_at        timestamptz,
+  declined_at      timestamptz,
+  decline_reason   text,
+  signature        jsonb,
+  initials         jsonb,
+  ip               text,
+  user_agent       text,
+  notified_at      timestamptz,
+  last_reminded_at timestamptz,
+  created_at       timestamptz not null default now()
+);
+
+create table if not exists sign_field (
+  id           uuid primary key default gen_random_uuid(),
+  envelope_id  uuid not null references sign_envelope(id),
+  recipient_id uuid not null references sign_recipient(id),
+  kind         text not null check (kind in ('signature', 'initials', 'date', 'name', 'text')),
+  page         int not null check (page >= 1),
+  x            numeric(6, 5) not null check (x >= 0 and x <= 1),
+  y            numeric(6, 5) not null check (y >= 0 and y <= 1),
+  width        numeric(6, 5) not null check (width > 0 and width <= 1),
+  height       numeric(6, 5) not null check (height > 0 and height <= 1),
+  required     boolean not null default true,
+  label        text,
+  value        text,
+  filled_at    timestamptz
+);
+
+create table if not exists sign_event (
+  id           bigserial primary key,
+  envelope_id  uuid not null references sign_envelope(id),
+  recipient_id uuid references sign_recipient(id),
+  kind         text not null,
+  detail       jsonb not null default '{}'::jsonb,
+  ip           text,
+  user_agent   text,
+  occurred_at  timestamptz not null default now()
+);
+drop trigger if exists sign_event_no_change on sign_event;
+create trigger sign_event_no_change before update or delete on sign_event for each row execute function gov_is_append_only();
+
+-- Reminders resend the same personal link, so it is kept sealed as well as hashed.
+alter table sign_recipient add column if not exists token_sealed text;

@@ -23,6 +23,11 @@ async function forward(req: Request, path: string[]): Promise<Response> {
   if (contentType) headers.set('content-type', contentType);
   const agent = req.headers.get('user-agent');
   if (agent) headers.set('user-agent', agent);
+  // Patform Sign: the signer's session, and the caller's address for the signing record.
+  const signSession = req.headers.get('x-sign-session');
+  if (signSession) headers.set('x-sign-session', signSession);
+  const forwarded = req.headers.get('x-forwarded-for');
+  if (forwarded) headers.set('x-forwarded-for', forwarded);
 
   const res = await fetch(target, {
     method: req.method,
@@ -35,10 +40,16 @@ async function forward(req: Request, path: string[]): Promise<Response> {
     return new Response(null, { status: res.status, headers: { location: res.headers.get('location')!, 'cache-control': 'no-store' } });
   }
 
-  const out = new Headers({ 'content-type': 'application/json' });
+  const type = res.headers.get('content-type') ?? 'application/json';
+  const out = new Headers({ 'content-type': type });
   // getSetCookie keeps multiple Set-Cookie headers separate; joining them
   // would corrupt cookies whose values contain a comma.
   for (const value of res.headers.getSetCookie?.() ?? []) out.append('set-cookie', value);
+  // A PDF (signing, signed copies) must arrive byte for byte.
+  if (!type.startsWith('application/json')) {
+    for (const h of ['content-disposition', 'cache-control', 'x-content-sha256']) { const v = res.headers.get(h); if (v) out.set(h, v); }
+    return new Response(await res.arrayBuffer(), { status: res.status, headers: out });
+  }
 
   return new Response(await res.text(), { status: res.status, headers: out });
 }

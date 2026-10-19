@@ -564,3 +564,51 @@ Keys, generate its RSA key pair, add the redirect URI, and fill the
 DOCUSIGN_* settings locally and on Render; use account-d.docusign.com until
 the app passes DocuSign's go-live review.
 
+## Patform Sign: built-in electronic signature (19 Oct 2026)
+
+Built in `src/runtime/esign.ts` (flow) and `src/runtime/esign-pdf.ts`
+(sealing, with pdf-lib), with the Signatures tab in Compliance, the public
+signing page at `/sign/{link}` and the check page at `/sign/verify`.
+DocuSign remains available as an option.
+
+- Send a contract (its approved current version) or any PDF to signers in
+  order or all at once, with people who get a copy. Place signature,
+  initials, date, printed name and text boxes on the pages; positions are
+  fractions of the page, so the sender's screen, the signer's screen and the
+  stamped PDF agree.
+- Signers need no account: a personal link (only its hash is stored, with a
+  sealed copy for reminders), then a 6-digit code to the same email address
+  (10 minutes, five wrong tries lock it, five sends an hour), then agreement
+  to sign electronically in stored words, then the document with their own
+  boxes, signed with the existing draw-or-type pad. They can decline with a
+  reason, which closes the envelope and tells the sender.
+- Integrity: the original's SHA-256 is taken when the envelope is made and
+  checked before showing and before sealing; a changed file is refused.
+  The sealed PDF has the signatures stamped in place, a signature page for
+  anyone without a box, and a certificate of completion (envelope, original
+  hash, each signer's verification, consent, signing time, method, IP and
+  browser, and the full event history). Its SHA-256 is kept; the public
+  check page hashes a file in the browser and says whether it is a genuine,
+  unchanged sealed copy.
+- Every step is an append-only event. Reminders every N days, expiry,
+  cancelling by the sender, and revising a contract voids an open envelope.
+  Completing an envelope for a contract marks it signed and attaches the
+  sealed copy. Everyone gets a link to the signed copy for 30 days.
+- Codes are sent only in the email body, never the subject (subjects are
+  logged). Found and fixed while testing in the browser: a wrong code was
+  counted inside a transaction that was then undone, so the lock would
+  never close; strikes are now committed before the refusal.
+
+What it is: a simple electronic signature, which is what most commercial
+contracts need. What it is not: a qualified signature; documents that the
+law requires to carry one (some deeds and wills, in some countries) need a
+qualified provider. Not built yet: a PDF digital signature (PAdES) over the
+sealed file with a certificate, SMS codes, and signing on behalf of a
+company by several authorised people.
+
+Operations: the web proxy now passes PDFs through byte for byte and
+forwards the caller's address; on the Vercel-plus-Render setup set
+TRUST_PROXY=2 on the API so the certificate records the signer's real IP.
+OBJECT_STORE=memory keeps files in memory for local trials (refused in
+production).
+

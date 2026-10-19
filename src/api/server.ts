@@ -33,6 +33,7 @@ import * as apr from '../runtime/appraisals.js';
 import * as ops from '../runtime/ops.js';
 import * as gov from '../runtime/gov.js';
 import * as life from '../runtime/tenant-lifecycle.js';
+import * as esign from '../runtime/esign.js';
 import { opsPhotoLink, uploadOpsPhoto } from '../runtime/ops-files.js';
 import { enabledModules, listModules, setModule, updateWorkspaceSettings, workspaceSettings } from '../runtime/modules.js';
 import { createDelegation, createGrant, listAuthority, revokeDelegation, revokeGrant as revokeAuthorityGrant, workspaceAudit } from '../runtime/authority.js';
@@ -1174,6 +1175,17 @@ route('GET', gr(`files/${A}`), async ({ pool, principal, url }) => gov.govFileLi
 route('POST', gr(`envelopes/${A}/check`), async ({ pool, principal, url }) => gov.checkEnvelopeNow(pool, principal, hid(url, 4)));
 route('POST', gr('docusign/test'), async ({ pool, principal }) => gov.testDocusignConnection(pool, principal));
 
+// ---- Patform Sign, the sender's side (signers use the public routes before the session gate).
+const sr = (re: string) => new RegExp(`^/api/sign/${re}$`);
+route('GET', sr('envelopes'), async ({ pool, principal }) => esign.listEnvelopes(pool, principal));
+route('POST', sr('envelopes'), async ({ pool, principal }, b) => esign.createEnvelope(pool, principal, hb(b)));
+route('GET', sr(`envelopes/${A}`), async ({ pool, principal, url }) => esign.envelopeDetail(pool, principal, hid(url, 4)));
+route('GET', sr(`envelopes/${A}/document`), async ({ pool, principal, url }) => new RawBody(await esign.envelopeDocument(pool, principal, hid(url, 4)), 'application/pdf'));
+route('POST', sr(`envelopes/${A}/fields`), async ({ pool, principal, url }, b) => esign.setFields(pool, principal, hid(url, 4), hb(b)));
+route('POST', sr(`envelopes/${A}/send`), async ({ pool, principal, url }) => esign.sendEnvelope(pool, principal, hid(url, 4)));
+route('POST', sr(`envelopes/${A}/void`), async ({ pool, principal, url }, b) => esign.voidEnvelope(pool, principal, hid(url, 4), hb(b)));
+route('POST', sr(`envelopes/${A}/remind`), async ({ pool, principal, url }) => esign.remindNow(pool, principal, hid(url, 4)));
+
 // ---- workspace export and closure (PRD 17.3): owners only; deletion needs a site owner.
 route('GET', /^\/api\/workspace\/exports$/, async ({ pool, principal }) => life.listExports(pool, principal));
 route('POST', /^\/api\/workspace\/exports$/, async ({ pool, principal }) => life.requestExport(pool, principal));
@@ -1714,6 +1726,21 @@ function readCookie(req: IncomingMessage, name: string): string | null {
   return null;
 }
 
+/** A route's answer that is a file, not JSON: a PDF to view or download. */
+class RawBody {
+  constructor(readonly bytes: Buffer, readonly contentType: string, readonly filename?: string) {}
+}
+function sendRaw(res: ServerResponse, body: RawBody): void {
+  res.writeHead(200, {
+    'content-type': body.contentType,
+    'content-length': body.bytes.length,
+    'cache-control': 'no-store',
+    'x-content-type-options': 'nosniff',
+    ...(body.filename ? { 'content-disposition': `attachment; filename="${body.filename.replace(/[^a-zA-Z0-9._-]/g, '_')}"` } : { 'content-disposition': 'inline' }),
+  });
+  res.end(body.bytes);
+}
+
 function send(
   res: ServerResponse,
   status: number,
@@ -1729,7 +1756,7 @@ function send(
     'access-control-allow-origin': process.env.CONSOLE_ORIGIN ?? 'http://localhost:3210',
     // x-request-id so a caller can supply their own correlation id, and read
     // it back off the response.
-    'access-control-allow-headers': 'content-type, x-request-id',
+    'access-control-allow-headers': 'content-type, x-request-id, x-sign-session',
     // A respondent's browser has to be able to read the limit it is being
     // held to, or a 429 is indistinguishable from the form being broken.
     'access-control-expose-headers': 'x-request-id, retry-after, x-ratelimit-limit, x-ratelimit-remaining, x-ratelimit-reset, x-ratelimit-window, x-ratelimit-scope',
@@ -1904,6 +1931,37 @@ async function main(): Promise<void> {
          * the session gate. The signature over the exact bytes, with the
          * system's own secret, is the credential.
          */
+        /*
+         * ---- Patform Sign, the signer's side. No account: the personal link
+         * (only its hash is stored) plus an emailed code, then a short signing
+         * session in the x-sign-session header. Public verify takes a file's
+         * fingerprint and says only whether it is a sealed copy.
+         */
+        const signMatch = /^\/api\/sign\/t\/([A-Za-z0-9_-]{30,60})(\/(code|verify|document|consent|sign|decline|final))?$/.exec(url.pathname);
+        if (signMatch || (url.pathname === '/api/sign/verify' && req.method === 'POST')) {
+          const ctx = { ip: callerFor(req), userAgent: String(req.headers['user-agent'] ?? '') };
+          const sess = String(req.headers['x-sign-session'] ?? '') || undefined;
+          try {
+            if (!signMatch) return send(res, 200, await esign.verifyFingerprint(pool, (await readBody(req, 30 * 1024 * 1024)) as Record<string, unknown>));
+            const [, t, , action] = signMatch;
+            if (req.method === 'GET' && !action) return send(res, 200, await esign.signerView(pool, t!, sess));
+            if (req.method === 'GET' && action === 'document') return sendRaw(res, new RawBody(await esign.signerDocument(pool, t!, sess), 'application/pdf'));
+            if (req.method === 'GET' && action === 'final') return sendRaw(res, new RawBody(await esign.finalDocument(pool, t!), 'application/pdf', 'signed.pdf'));
+            if (req.method === 'POST') {
+              const b = (await readBody(req, 1024 * 1024)) as Record<string, unknown>;
+              if (action === 'code') return send(res, 200, await esign.requestCode(pool, t!, ctx));
+              if (action === 'verify') return send(res, 200, await esign.verifyCode(pool, t!, b.code, ctx));
+              if (action === 'consent') return send(res, 200, await esign.giveConsent(pool, t!, sess, ctx));
+              if (action === 'sign') return send(res, 200, await esign.signDocument(pool, t!, sess, b, ctx));
+              if (action === 'decline') return send(res, 200, await esign.declineDocument(pool, t!, sess, b, ctx));
+            }
+            return send(res, 404, { error: 'not found' });
+          } catch (err) {
+            if (err instanceof InvalidInput) return send(res, 400, { error: 'invalid', reason: err.message });
+            throw err;
+          }
+        }
+
         // DocuSign Connect: never trusted, only a prompt to ask DocuSign for the real status.
         if (url.pathname === '/api/gov/docusign/connect' && req.method === 'POST') {
           const raw = await readRaw(req, 1024 * 1024);
@@ -2144,6 +2202,7 @@ async function main(): Promise<void> {
           { engine, pool, principal, actorId, url, session: { sessionId: session.sessionId, authenticatedAt: session.authenticatedAt } },
           body,
         );
+        if (result instanceof RawBody) return sendRaw(res, result);
         logIfEnabled('info', 'api.request', {
           method: req.method,
           path: url.pathname,

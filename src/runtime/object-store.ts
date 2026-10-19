@@ -43,12 +43,20 @@ function s3(): ObjectStore | null {
 }
 
 let current: ObjectStore | null | undefined;
+/** OBJECT_STORE=memory keeps files in this process only, for local trials; never in production. */
+function fromEnv(): ObjectStore | null {
+  if (process.env.OBJECT_STORE === 'memory') {
+    if (process.env.NODE_ENV === 'production') throw new Error('OBJECT_STORE=memory is for local trials only');
+    return memoryObjectStore().store;
+  }
+  return s3();
+}
 export function objectStore(): ObjectStore {
-  if (current === undefined) current = s3();
+  if (current === undefined) current = fromEnv();
   if (!current) throw new InvalidInput('File storage is not set up for this deployment (AWS_S3_BUCKET and AWS_REGION).');
   return current;
 }
-export function hasObjectStore(): boolean { if (current === undefined) current = s3(); return Boolean(current); }
+export function hasObjectStore(): boolean { if (current === undefined) current = fromEnv(); return Boolean(current); }
 /** Tests swap in an in-memory store. */
 export function setObjectStoreForTests(s: ObjectStore | null | undefined) { current = s; }
 

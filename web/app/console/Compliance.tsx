@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Icon } from './Icon';
 import { postJson } from './stepup';
+import { SignCenter } from './SignCenter';
 
 /*
  * Contracts, compliance and audit (PRD Module 10). Everyone: what needs
@@ -12,7 +13,7 @@ import { postJson } from './stepup';
  * engagement, read-only, with export only when granted.
  */
 
-type Tab = 'overview' | 'tasks' | 'read' | 'findings' | 'contracts' | 'policies' | 'controls' | 'exceptions' | 'audits' | 'holds' | 'setup' | 'engagement';
+type Tab = 'overview' | 'tasks' | 'read' | 'findings' | 'contracts' | 'signatures' | 'policies' | 'controls' | 'exceptions' | 'audits' | 'holds' | 'setup' | 'engagement';
 type Me = { admin: boolean; owner: boolean; teams: string[]; holds: boolean };
 type Dash = { auditor?: boolean; engagements?: Engagement[]; tasks?: { due: number; overdue: number; escalated: number }; remediation?: { id: string; number: number; title: string; severity: string; target_date: string; engagement: string }[]; expiring?: { id: string; number: number; title: string; end_date: string; notice_deadline: string | null; status: string }[]; policies?: { policy: string; version: number; due_on: string; acknowledged: number; audience: number }[]; exceptions?: number; controls?: { overdue: number; ineffective: number }; holds?: { active: number; released: number } | null; myAcknowledgements?: number; disclaimer?: string; me?: Me };
 type Task = { id: string; kind: string; title: string; due_on: string; notice_deadline: string | null; status: string; escalated_at: string | null; evidence: string | null; note: string | null; owner: string; contract: string | null; evidence_required: boolean };
@@ -80,6 +81,7 @@ export function ComplianceView() {
   const settings = useFeed<{ settings: { alwaysReview: string[]; financeAbove: number | null; securityForPersonalData: boolean; materialInvalidates: string[]; renewalLeadDays: number; docusign?: { userId: string; accountId?: string } | null }; teams: { team: string; actor_id: string; display_name: string }[]; docusign: { serverReady: boolean; consentUrl: string | null } }>(me?.admin ? '/api/gov/settings' : null);
   const members = useFeed<Member[]>(d && !auditor ? '/api/members' : null);
   const [openContract, setOpenContract] = useState<ContractDetail | null>(null);
+  const [signing, setSigning] = useState<{ id: string; title: string } | null>(null);
   const [openEngagement, setOpenEngagement] = useState<EngagementView | null>(null);
   const [openRecord, setOpenRecord] = useState<{ record: { id: string; process_key: string; state: string; answers: Record<string, unknown> }; events: { type: string; occurred_at: string }[] } | null>(null);
   const [note, setNote] = useState<string | null>(null);
@@ -118,6 +120,7 @@ export function ComplianceView() {
       { id: 'read', name: 'Policies to read', count: d.myAcknowledgements ?? 0, icon: 'export' },
       { id: 'findings', name: 'My findings', count: (findings.data ?? []).length, icon: 'trail' },
       { id: 'contracts', name: 'Contracts', count: (contracts.data ?? []).filter((c) => c.status === 'in_review').length, icon: 'export' },
+      { id: 'signatures', name: 'Signatures', count: null, icon: 'done' },
       ...(team('compliance') ? [{ id: 'policies' as const, name: 'Policies', count: null, icon: 'trail' as const }] : []),
       { id: 'controls', name: 'Controls', count: d.controls?.overdue ?? 0, icon: 'done' },
       { id: 'exceptions', name: 'Exceptions', count: d.exceptions ?? 0, icon: 'trail' },
@@ -195,7 +198,8 @@ export function ComplianceView() {
           <button type="button" className="cs__btn" onClick={() => void act(x.discipline, async () => { await postJson(`/api/gov/contracts/${c.id}/review`, { discipline: x.discipline, decision: 'approve' }); return `${x.discipline} approval recorded.`; })}>Approve as {x.discipline}</button>
           <button type="button" className="cs__btn" onClick={() => setAsking({ id: x.discipline, label: `What must change (${x.discipline})?`, run: async (n) => { await postJson(`/api/gov/contracts/${c.id}/review`, { discipline: x.discipline, decision: 'changes', note: n }); return 'Changes requested.'; } })}>Ask for changes</button></span>)}
         {!['signed', 'expired', 'terminated'].includes(c.status) && <button type="button" className="cs__btn" onClick={() => setAsking({ id: 'rev', label: 'What changed? Add " | material" if it is material; " | end YYYY-MM-DD" or " | value N" to change terms', run: async (s) => { const [changes, ...rest] = s.split('|').map((x) => x.trim()); const body: Record<string, unknown> = { changes }; for (const r of rest) { if (r === 'material') body.material = true; else if (r.startsWith('end ')) body.endDate = r.slice(4); else if (r.startsWith('value ')) body.value = r.slice(6); else if (r.startsWith('notice ')) body.noticeDays = r.slice(7); } if (f('nvDoc')) body.documentRef = f('nvDoc'); const x = await postJson<{ version: number; material: boolean; cancelled: string[] }>(`/api/gov/contracts/${c.id}/revise`, body); setForm((y) => ({ ...y, nvDoc: '', nvDocName: '' })); return `Version ${x.version} saved${x.material ? `; material, so these approvals were cancelled: ${x.cancelled.join(', ') || 'none yet'}` : '; not material, approvals carried over'}.`; } })}>New version</button>}
-        {c.status === 'approved' && <button type="button" className="cs__btn cs__btn--primary" onClick={() => setAsking({ id: 'ds', label: 'Signers in order, separated by ";" — e.g. Ada Obi <ada@supplier.com>; Hana Owner <hana@us.com>', run: async (s) => { const signers = s.split(';').map((x) => x.trim()).filter(Boolean).map((x) => { const m = /^(.*)<([^>]+)>$/.exec(x); return m ? { name: m[1]!.trim(), email: m[2]!.trim() } : { name: x, email: '' }; }); await postJson(`/api/gov/contracts/${c.id}/signature`, { via: 'docusign', signers }); return 'Sent through DocuSign. Patform follows it and stores the signed copy.'; } })}>Send with DocuSign</button>}
+        {c.status === 'approved' && <button type="button" className="cs__btn cs__btn--primary" onClick={() => setSigning({ id: c.id, title: c.title })}>Send with Patform Sign</button>}
+        {c.status === 'approved' && <button type="button" className="cs__btn" onClick={() => setAsking({ id: 'ds', label: 'Signers in order, separated by ";" — e.g. Ada Obi <ada@supplier.com>; Hana Owner <hana@us.com>', run: async (s) => { const signers = s.split(';').map((x) => x.trim()).filter(Boolean).map((x) => { const m = /^(.*)<([^>]+)>$/.exec(x); return m ? { name: m[1]!.trim(), email: m[2]!.trim() } : { name: x, email: '' }; }); await postJson(`/api/gov/contracts/${c.id}/signature`, { via: 'docusign', signers }); return 'Sent through DocuSign. Patform follows it and stores the signed copy.'; } })}>Send with DocuSign</button>}
         {c.status === 'approved' && <button type="button" className="cs__btn" onClick={() => setAsking({ id: 'sig', label: 'Signature provider | envelope reference', run: async (s) => { const [provider, envelopeRef] = s.split('|').map((x) => x.trim()); await postJson(`/api/gov/contracts/${c.id}/signature`, { provider, envelopeRef }); return 'Out for signature.'; } })}>Record sent for signature</button>}
         <button type="button" className="cs__btn" onClick={() => setAsking({ id: 'obl', label: 'Obligation: title | recurring every N months, one_off, or event | first due YYYY-MM-DD', run: async (s) => { const [title, kindRaw, first] = s.split('|').map((x) => x.trim()); const m = /every (\d+)/.exec(kindRaw ?? ''); await postJson('/api/gov/obligations', { contractId: c.id, title, kind: m ? 'recurring' : kindRaw === 'event' ? 'event' : 'one_off', everyMonths: m ? Number(m[1]) : undefined, firstDue: first, ownerId: c.owner_id }); return 'Obligation added.'; } })}>Add obligation</button>
         <button type="button" className="cs__btn" onClick={() => setOpenContract(null)}>Close</button>
@@ -270,7 +274,10 @@ export function ComplianceView() {
             {x.status === 'remediating' && <button type="button" className="cs__btn cs__btn--primary" onClick={() => setAsking({ id: x.id, label: 'Evidence it is fixed', run: async (r) => { await postJson(`/api/gov/findings/${x.id}`, { action: 'evidence', evidenceRef: r }); return 'Sent for validation.'; } })}>Submit fix</button>}
           </div></li>)}{findings.data && !findings.data.length && empty('No open findings for you.')}</ul>}
 
-        {current === 'contracts' && (openContract ? contractPanel : <>
+        {current === 'signatures' && <SignCenter />}
+
+        {current === 'contracts' && signing && <SignCenter startContract={signing} onClose={() => { const back = signing; setSigning(null); void showContract(back.id); void reloadAll(); }} />}
+        {current === 'contracts' && !signing && (openContract ? contractPanel : <>
           <form className="ig__form" onSubmit={(e) => { e.preventDefault(); void act('c', async () => { const r = await postJson<{ number: number }>('/api/gov/contracts', { title: f('cT'), counterparty: f('cP'), value: f('cV') || undefined, currency: f('cC') || undefined, startDate: f('cS') || undefined, endDate: f('cE') || undefined, noticeDays: f('cN') || undefined, noticeCalendar: f('cCal') || 'calendar', autoRenews: f('cAR') === 'yes', personalData: f('cPD') === 'yes', documentRef: f('cDoc') || undefined }); setForm({}); return `Contract #${r.number} saved as a draft.`; }); }}>
             <div className="ig__formTitle"><strong>New contract</strong><p>It starts as a draft. Sending it for review asks for the reviews your rules require.</p></div>
             <Field id="c-t" label="Title"><input id="c-t" className="cs__input" required value={f('cT')} onChange={(e) => setF('cT', e.target.value)} /></Field>
