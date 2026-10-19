@@ -34,6 +34,7 @@ import { recordWorkspaceAudit } from './authority.js';
 import { enabledModules } from './modules.js';
 import { open as unseal, seal } from './secret-box.js';
 import { tableToCsv } from './export.js';
+import { procurementSettings } from './procurement.js';
 import type { Answers } from './expr.js';
 
 export interface ExpenseSettings {
@@ -118,6 +119,17 @@ async function requireFinance(pool: Pool, principal: Principal): Promise<{ tenan
   await requireWorkspaceCapability(pool, principal, 'operate', 'expenses');
   if (principal.kind !== 'actor') throw new Error('unreachable');
   return { tenantId, actorId: principal.actorId };
+}
+
+/** Budgets serve both Expenses and Procurement: either module being on is enough. */
+async function requireBudgetModule(pool: Pool, principal: Principal, capability: 'operate' | 'administer') {
+  if (principal.kind !== 'actor') throw new InvalidInput('signed-in members only');
+  const on = await enabledModules(pool, principal.tenantId);
+  if (!on.has('expenses') && !on.has('procurement')) {
+    throw new InvalidInput('budgets need the Expenses or Procurement module switched on');
+  }
+  await requireWorkspaceCapability(pool, principal, capability, 'budgets');
+  return { tenantId: principal.tenantId, actorId: principal.actorId };
 }
 
 async function requireFinanceAdmin(pool: Pool, principal: Principal): Promise<{ tenantId: string; actorId: string }> {
@@ -244,7 +256,7 @@ async function rateFor(client: Client | Pool, tenantId: string, from: string, to
 // ----------------------------------------------------------------- budgets
 
 export async function listBudgets(pool: Pool, principal: Principal) {
-  const { tenantId } = await requireFinance(pool, principal);
+  const { tenantId } = await requireBudgetModule(pool, principal, 'operate');
   const { rows } = await pool.query(
     `select b.id, b.cost_centre, b.period_start, b.period_end, b.amount, b.mode, b.updated_at,
             coalesce(sum(r.amount) filter (where r.status = 'reserved'), 0) as reserved,
@@ -262,7 +274,7 @@ export async function listBudgets(pool: Pool, principal: Principal) {
 export async function saveBudget(pool: Pool, principal: Principal, body: {
   costCentre?: unknown; periodStart?: unknown; periodEnd?: unknown; amount?: unknown; mode?: unknown;
 }) {
-  const { tenantId, actorId } = await requireFinanceAdmin(pool, principal);
+  const { tenantId, actorId } = await requireBudgetModule(pool, principal, 'administer');
   const costCentre = text(body.costCentre, 60);
   if (!costCentre) throw new InvalidInput('costCentre is required');
   const start = text(body.periodStart, 10); const end = text(body.periodEnd, 10);
@@ -379,7 +391,9 @@ export async function applyFinancePolicy(
   // amounts in the claim's currency, so they are converted at the same rate.
   const inClaimCurrency = (limit: number) => round(limit / rate);
   if (finance.policy.autoApproveLimit) answers[finance.policy.autoApproveLimit] = inClaimCurrency(settings.autoApproveLimit);
-  if (finance.policy.managerLimit) answers[finance.policy.managerLimit] = inClaimCurrency(settings.managerLimit);
+  // A purchase request is routed by Procurement's own manager limit.
+  const managerLimit = finance.kind === 'purchase' ? (await procurementSettings(pool, args.tenantId)).managerLimit : settings.managerLimit;
+  if (finance.policy.managerLimit) answers[finance.policy.managerLimit] = inClaimCurrency(managerLimit);
   if (finance.policy.lineLimit) answers[finance.policy.lineLimit] = inClaimCurrency(settings.lineLimit);
 
   if (finance.receiptField && baseAmount > settings.receiptThreshold) {
@@ -449,6 +463,25 @@ export async function recordFinanceOutcome(
       [args.tenantId, args.instanceId, reference, args.submitter, amount, currency]);
     if (!rows[0]) return [];
     return [{ type: 'advance_recorded', payload: { reference, amount, currency, status: 'approved' } }];
+  }
+
+  if (finance.kind === 'purchase') {
+    // PRC-03: an approved request becomes a requisition waiting to be sourced.
+    // The budget hold becomes consumed at the requested amount; the order and
+    // the invoices adjust it later.
+    const requested = finance.baseAmountField ? round(num(args.data[finance.baseAmountField])) : amount;
+    const reference = `PR-${args.instanceId.slice(0, 8).toUpperCase()}`;
+    const title = finance.titleField ? text(args.data[finance.titleField], 200) || null : null;
+    const neededBy = finance.neededByField && typeof args.data[finance.neededByField] === 'string' ? String(args.data[finance.neededByField]).slice(0, 10) : null;
+    const costCentre = finance.costCentreField ? text(args.data[finance.costCentreField], 60) || null : null;
+    const { rows } = await client.query<{ id: string }>(
+      `insert into purchase_requisition (tenant_id, instance_id, reference, requester, title, amount, currency, cost_centre, needed_by)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9) on conflict (instance_id) do nothing returning id`,
+      [args.tenantId, args.instanceId, reference, args.submitter, title, requested, currency, costCentre, neededBy]);
+    await client.query(
+      `update budget_reservation set status = 'consumed', amount = $2, updated_at = now() where instance_id = $1 and status = 'reserved'`,
+      [args.instanceId, requested]);
+    return rows[0] ? [{ type: 'requisition_opened', payload: { reference, amount: requested, currency } }] : [];
   }
 
   const rate = finance.fxRateField ? num(args.data[finance.fxRateField]) || 1 : 1;

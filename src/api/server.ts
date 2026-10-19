@@ -27,6 +27,7 @@ import { runRetention } from '../runtime/retention.js';
 import { importDirectory } from '../runtime/directory-import.js';
 import { createLegalEntity, createOrgUnit, orgChart, reportingHistory, setManager, setMemberPlacement, updateOrgUnit } from '../runtime/org.js';
 import { addRate, advanceMovements, disburseAdvance, expenseSummary, exportPaid, listAdvances, listBudgets, listExports, listRates, listSettlements, moveSettlement, myBeneficiary, readExpenseSettings, recordAdvanceReturn, revealBeneficiary, reviewLines, saveBeneficiary, saveBudget, settlementLines, updateExpenseSettings, verifyBeneficiary } from '../runtime/expenses.js';
+import { addQuote, approveOrder, cancelOrder, createAgreement, createOrder, createVendor, enterInvoice, exportInvoices, listAgreements, listInvoices, listOrders, listQuotes, listRequisitions, listVendors, openQuotes, orderDetail, payInvoice, procurementSummary, readProcurementSettings, receiveGoods, returnGoods, revealVendorBank, reviewInvoice, reviseOrder, saveVendorBank, selectQuote, setQuoteDeadline, setVendorStatus, updateProcurementSettings, updateVendor, vendorHistory, verifyVendorBank } from '../runtime/procurement.js';
 import { enabledModules, listModules, setModule, updateWorkspaceSettings, workspaceSettings } from '../runtime/modules.js';
 import { createDelegation, createGrant, listAuthority, revokeDelegation, revokeGrant as revokeAuthorityGrant, workspaceAudit } from '../runtime/authority.js';
 import { logIfEnabled, requestIdFrom, withTrace } from '../runtime/trace.js';
@@ -933,6 +934,42 @@ route('POST', /^\/api\/expenses\/advances\/([0-9a-f-]{36})\/disburse$/, async ({
 route('POST', /^\/api\/expenses\/advances\/([0-9a-f-]{36})\/return$/, async ({ pool, principal, url }, body) =>
   recordAdvanceReturn(pool, principal, url.pathname.split('/')[4]!, (body ?? {}) as Record<string, unknown>),
 );
+
+// ---- Procurement (PRD Module 6). Every route refuses when the module is off.
+const pid = (url: URL, i: number) => url.pathname.split('/')[i]!;
+const obj = (b: unknown) => (b ?? {}) as Record<string, unknown>;
+route('GET', /^\/api\/procurement\/summary$/, async ({ pool, principal }) => procurementSummary(pool, principal));
+route('GET', /^\/api\/procurement\/settings$/, async ({ pool, principal }) => readProcurementSettings(pool, principal));
+route('POST', /^\/api\/procurement\/settings$/, async ({ pool, principal }, b) => updateProcurementSettings(pool, principal, obj(b)));
+route('GET', /^\/api\/procurement\/vendors$/, async ({ pool, principal }) => listVendors(pool, principal));
+route('POST', /^\/api\/procurement\/vendors$/, async ({ pool, principal }, b) => createVendor(pool, principal, obj(b)));
+route('POST', /^\/api\/procurement\/vendors\/([0-9a-f-]{36})$/, async ({ pool, principal, url }, b) => updateVendor(pool, principal, pid(url, 4), obj(b)));
+route('POST', /^\/api\/procurement\/vendors\/([0-9a-f-]{36})\/status$/, async ({ pool, principal, url }, b) => setVendorStatus(pool, principal, pid(url, 4), obj(b)));
+route('GET', /^\/api\/procurement\/vendors\/([0-9a-f-]{36})\/history$/, async ({ pool, principal, url }) => vendorHistory(pool, principal, pid(url, 4)));
+route('POST', /^\/api\/procurement\/vendors\/([0-9a-f-]{36})\/bank$/, async ({ pool, principal, url }, b) => saveVendorBank(pool, principal, pid(url, 4), obj(b)));
+route('POST', /^\/api\/procurement\/vendors\/([0-9a-f-]{36})\/bank\/verify$/, async ({ pool, principal, url }) => verifyVendorBank(pool, principal, pid(url, 4)));
+route('POST', /^\/api\/procurement\/vendors\/([0-9a-f-]{36})\/bank\/reveal$/, async ({ pool, principal, url }) => revealVendorBank(pool, principal, pid(url, 4)));
+route('GET', /^\/api\/procurement\/agreements$/, async ({ pool, principal }) => listAgreements(pool, principal));
+route('POST', /^\/api\/procurement\/agreements$/, async ({ pool, principal }, b) => createAgreement(pool, principal, obj(b)));
+route('GET', /^\/api\/procurement\/requests$/, async ({ pool, principal }) => listRequisitions(pool, principal));
+route('GET', /^\/api\/procurement\/requests\/([0-9a-f-]{36})\/quotes$/, async ({ pool, principal, url }) => listQuotes(pool, principal, pid(url, 4)));
+route('POST', /^\/api\/procurement\/requests\/([0-9a-f-]{36})\/quotes$/, async ({ pool, principal, url }, b) => addQuote(pool, principal, pid(url, 4), obj(b)));
+route('POST', /^\/api\/procurement\/requests\/([0-9a-f-]{36})\/deadline$/, async ({ pool, principal, url }, b) => setQuoteDeadline(pool, principal, pid(url, 4), obj(b)));
+route('POST', /^\/api\/procurement\/requests\/([0-9a-f-]{36})\/open-quotes$/, async ({ pool, principal, url }) => openQuotes(pool, principal, pid(url, 4)));
+route('POST', /^\/api\/procurement\/requests\/([0-9a-f-]{36})\/select$/, async ({ pool, principal, url }, b) => selectQuote(pool, principal, pid(url, 4), obj(b)));
+route('GET', /^\/api\/procurement\/orders$/, async ({ pool, principal }) => listOrders(pool, principal));
+route('POST', /^\/api\/procurement\/orders$/, async ({ pool, principal }, b) => createOrder(pool, principal, obj(b)));
+route('GET', /^\/api\/procurement\/orders\/([0-9a-f-]{36})$/, async ({ pool, principal, url }) => orderDetail(pool, principal, pid(url, 4)));
+route('POST', /^\/api\/procurement\/orders\/([0-9a-f-]{36})\/revise$/, async ({ pool, principal, url }, b) => reviseOrder(pool, principal, pid(url, 4), obj(b)));
+route('POST', /^\/api\/procurement\/orders\/([0-9a-f-]{36})\/approve$/, async ({ pool, principal, url }) => approveOrder(pool, principal, pid(url, 4)));
+route('POST', /^\/api\/procurement\/orders\/([0-9a-f-]{36})\/cancel$/, async ({ pool, principal, url }, b) => cancelOrder(pool, principal, pid(url, 4), obj(b)));
+route('POST', /^\/api\/procurement\/orders\/([0-9a-f-]{36})\/receive$/, async ({ pool, principal, url }, b) => receiveGoods(pool, principal, pid(url, 4), obj(b)));
+route('POST', /^\/api\/procurement\/orders\/([0-9a-f-]{36})\/return$/, async ({ pool, principal, url }, b) => returnGoods(pool, principal, pid(url, 4), obj(b)));
+route('GET', /^\/api\/procurement\/invoices$/, async ({ pool, principal }) => listInvoices(pool, principal));
+route('POST', /^\/api\/procurement\/invoices$/, async ({ pool, principal }, b) => enterInvoice(pool, principal, obj(b)));
+route('POST', /^\/api\/procurement\/invoices\/([0-9a-f-]{36})\/review$/, async ({ pool, principal, url }, b) => reviewInvoice(pool, principal, pid(url, 4), obj(b)));
+route('POST', /^\/api\/procurement\/invoices\/([0-9a-f-]{36})\/pay$/, async ({ pool, principal, url }, b) => payInvoice(pool, principal, pid(url, 4), obj(b)));
+route('POST', /^\/api\/procurement\/invoices\/export$/, async ({ pool, principal }) => exportInvoices(pool, principal));
 
 // ---- modules and workspace settings (PRD ORG-01): which shelves are on.
 route('GET', /^\/api\/modules$/, async ({ pool, principal }) => listModules(pool, principal));

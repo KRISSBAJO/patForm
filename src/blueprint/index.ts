@@ -45,7 +45,7 @@ export const Blueprint = z
      */
     finance: z
       .object({
-        kind: z.enum(['claim', 'advance']),
+        kind: z.enum(['claim', 'advance', 'purchase']),
         amountField: Key,
         receiptField: Key.optional(),
         categoryField: Key.optional(),
@@ -57,6 +57,9 @@ export const Blueprint = z
         fxRateField: Key.optional(),
         /** EXP-05: the budget a claim draws on is found by this field. */
         costCentreField: Key.optional(),
+        /** PRC-03: what a purchase request is for, and when it is needed. */
+        titleField: Key.optional(),
+        neededByField: Key.optional(),
         /** EXP-07 and EXP-10: the lines Finance can decide one by one, and export. */
         linesField: Key.optional(),
         lineAmountField: Key.optional(),

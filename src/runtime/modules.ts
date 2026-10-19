@@ -46,9 +46,9 @@ export const MODULES: readonly ModuleDefinition[] = [
   {
     key: 'procurement',
     name: 'Procurement and vendors',
-    summary: 'Purchase requests, supplier records, quotations and purchase orders.',
+    summary: 'Purchase requests, suppliers, quotes, purchase orders, deliveries, invoice matching and supplier payments.',
     categories: ['Procurement'],
-    status: 'templates_only',
+    status: 'available',
   },
   {
     key: 'hr',

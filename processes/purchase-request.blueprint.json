@@ -1,0 +1,919 @@
+{
+  "schemaVersion": "0.1",
+  "key": "purchase_request",
+  "name": "Purchase request",
+  "description": "PRD Module 6. Staff ask to buy something. The manager from the directory approves; anything over Procurement's manager limit also needs a procurement approver. The cost centre's budget is held from submission. Approval opens a requisition that Procurement sources, orders, receives and pays on the Procurement page; the requester follows progress on this record but never sees competing quotes.",
+  "intent": {
+    "outcome": "What staff need is approved, bought from an approved supplier, delivered and paid for against the order.",
+    "owner": "procurement_ops",
+    "respondents": "Any member of staff who needs to buy something.",
+    "expectedVolume": {
+      "count": 60,
+      "per": "month"
+    },
+    "sensitivityCeiling": "confidential",
+    "completionState": "approved",
+    "retentionDays": 2555
+  },
+  "roles": [
+    {
+      "key": "procurement_ops",
+      "name": "Procurement",
+      "kind": "internal",
+      "capabilities": [
+        "view",
+        "edit",
+        "operate",
+        "report",
+        "administer"
+      ],
+      "editableFields": [
+        "cost_centre",
+        "delivery_location"
+      ]
+    },
+    {
+      "key": "line_manager",
+      "name": "Line manager",
+      "kind": "internal",
+      "capabilities": [
+        "view",
+        "approve"
+      ]
+    },
+    {
+      "key": "procurement_approver",
+      "name": "Procurement approver",
+      "kind": "internal",
+      "capabilities": [
+        "view",
+        "approve",
+        "report"
+      ]
+    },
+    {
+      "key": "requester",
+      "name": "Requester",
+      "kind": "respondent",
+      "capabilities": [
+        "submit",
+        "view"
+      ],
+      "editableFields": [
+        "purpose"
+      ]
+    }
+  ],
+  "data": {
+    "identity": [
+      "employee_email",
+      "title",
+      "needed_by"
+    ],
+    "submitterField": "employee_email",
+    "fields": [
+      {
+        "key": "requester_name",
+        "type": "short_text",
+        "label": "Your name",
+        "required": true,
+        "classification": "internal"
+      },
+      {
+        "key": "employee_email",
+        "type": "email",
+        "label": "Your work email",
+        "required": true,
+        "classification": "internal"
+      },
+      {
+        "key": "title",
+        "type": "short_text",
+        "label": "What do you need?",
+        "required": true,
+        "classification": "internal",
+        "constraints": {
+          "minLength": 3,
+          "maxLength": 200,
+          "message": "A short name for the request, such as \"Laptops for new field staff\"."
+        }
+      },
+      {
+        "key": "cost_centre",
+        "type": "dropdown",
+        "label": "Cost centre",
+        "required": true,
+        "classification": "internal",
+        "choices": [
+          {
+            "value": "eng",
+            "label": "Engineering"
+          },
+          {
+            "value": "sales",
+            "label": "Sales"
+          },
+          {
+            "value": "ops",
+            "label": "Operations"
+          },
+          {
+            "value": "admin",
+            "label": "Administration"
+          }
+        ]
+      },
+      {
+        "key": "needed_by",
+        "type": "date",
+        "label": "Needed by",
+        "required": true,
+        "classification": "internal",
+        "constraints": {
+          "minDaysFromToday": 0,
+          "maxDaysFromToday": 365,
+          "message": "Choose a date from today up to a year ahead."
+        }
+      },
+      {
+        "key": "delivery_location",
+        "type": "short_text",
+        "label": "Deliver to",
+        "required": true,
+        "classification": "internal"
+      },
+      {
+        "key": "purpose",
+        "type": "long_text",
+        "label": "Why it is needed",
+        "required": true,
+        "classification": "internal",
+        "constraints": {
+          "minLength": 15,
+          "message": "Say what it is for, so your manager can decide."
+        }
+      },
+      {
+        "key": "suggested_supplier",
+        "type": "short_text",
+        "label": "Supplier you suggest (optional)",
+        "classification": "internal",
+        "help": "Procurement decides who to buy from; a suggestion helps."
+      },
+      {
+        "key": "line_items",
+        "type": "repeating_group",
+        "label": "Items",
+        "required": true,
+        "classification": "internal",
+        "fields": [
+          {
+            "key": "item_description",
+            "type": "short_text",
+            "label": "Item and specification",
+            "required": true,
+            "classification": "internal"
+          },
+          {
+            "key": "quantity",
+            "type": "number",
+            "label": "Quantity",
+            "required": true,
+            "classification": "internal",
+            "constraints": {
+              "min": 1,
+              "message": "At least one."
+            }
+          },
+          {
+            "key": "estimated_cost",
+            "type": "currency",
+            "label": "Estimated cost for this line",
+            "required": true,
+            "classification": "internal",
+            "constraints": {
+              "min": 0.01,
+              "message": "Give your best estimate."
+            }
+          }
+        ]
+      },
+      {
+        "key": "request_total",
+        "type": "calculated",
+        "label": "Estimated total",
+        "classification": "internal",
+        "compute": {
+          "op": "sum",
+          "over": "line_items",
+          "of": "estimated_cost"
+        }
+      },
+      {
+        "key": "policy_manager_limit",
+        "type": "number",
+        "label": "Manager limit at submission",
+        "classification": "internal",
+        "setBy": "system"
+      }
+    ]
+  },
+  "experience": {
+    "showProgress": true,
+    "saveAndResume": true,
+    "locales": [
+      "en"
+    ],
+    "confirmation": {
+      "message": "Your request is with your manager. Once approved, Procurement buys it and you can follow progress from your status link.",
+      "showStatusLink": true
+    },
+    "pages": [
+      {
+        "key": "need",
+        "title": "What you need",
+        "sections": [
+          {
+            "key": "who",
+            "fields": [
+              "requester_name",
+              "employee_email"
+            ],
+            "widths": {
+              "requester_name": "half",
+              "employee_email": "half"
+            }
+          },
+          {
+            "key": "what",
+            "fields": [
+              "title",
+              "cost_centre",
+              "needed_by",
+              "delivery_location",
+              "purpose",
+              "suggested_supplier"
+            ],
+            "widths": {
+              "cost_centre": "half",
+              "needed_by": "half"
+            }
+          }
+        ]
+      },
+      {
+        "key": "items",
+        "title": "Items",
+        "description": "One line per item. The total is worked out for you.",
+        "sections": [
+          {
+            "key": "lines",
+            "fields": [
+              "line_items"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "workflow": {
+    "states": [
+      {
+        "key": "draft",
+        "name": "Not yet submitted",
+        "type": "initial"
+      },
+      {
+        "key": "manager_review",
+        "name": "With your manager",
+        "type": "waiting",
+        "slaHours": 48,
+        "publicLabel": "With your manager"
+      },
+      {
+        "key": "procurement_review",
+        "name": "With procurement",
+        "type": "waiting",
+        "slaHours": 48,
+        "publicLabel": "With procurement"
+      },
+      {
+        "key": "approved",
+        "name": "Approved, being bought",
+        "type": "terminal",
+        "outcome": "success",
+        "publicLabel": "Approved"
+      },
+      {
+        "key": "rejected",
+        "name": "Not approved",
+        "type": "terminal",
+        "outcome": "rejected",
+        "publicLabel": "Not approved"
+      },
+      {
+        "key": "expired",
+        "name": "Closed without a decision",
+        "type": "terminal",
+        "outcome": "expired",
+        "publicLabel": "Closed"
+      }
+    ],
+    "approvals": [
+      {
+        "key": "manager_approval",
+        "name": "Manager approval",
+        "approvers": [
+          {
+            "manager": "submitter",
+            "fallback": "line_manager"
+          }
+        ],
+        "mode": "single",
+        "allowRequestChanges": false,
+        "reasonRequired": true,
+        "notTheSubmitter": true,
+        "contextFields": [
+          "requester_name",
+          "title",
+          "request_total",
+          "needed_by",
+          "purpose"
+        ],
+        "dueInHours": 48
+      },
+      {
+        "key": "procurement_approval",
+        "name": "Procurement approval",
+        "approvers": [
+          {
+            "role": "procurement_approver"
+          }
+        ],
+        "mode": "single",
+        "allowRequestChanges": false,
+        "reasonRequired": true,
+        "notTheSubmitter": true,
+        "contextFields": [
+          "requester_name",
+          "title",
+          "request_total",
+          "cost_centre",
+          "line_items"
+        ],
+        "dueInHours": 48
+      }
+    ],
+    "tasks": [],
+    "transitions": [
+      {
+        "key": "submitted",
+        "from": "draft",
+        "to": "manager_review",
+        "trigger": {
+          "on": "submission"
+        },
+        "actions": [
+          {
+            "do": "send_email",
+            "key": "ack",
+            "template": "request_received"
+          },
+          {
+            "do": "request_approval",
+            "key": "ask_manager",
+            "approval": "manager_approval"
+          }
+        ]
+      },
+      {
+        "key": "manager_approved_within_limit",
+        "from": "manager_review",
+        "to": "approved",
+        "trigger": {
+          "on": "approval_decided",
+          "approval": "manager_approval",
+          "decision": "approved"
+        },
+        "when": {
+          "op": "lte",
+          "left": {
+            "field": "request_total"
+          },
+          "right": {
+            "field": "policy_manager_limit"
+          }
+        },
+        "actions": [
+          {
+            "do": "send_email",
+            "key": "ok",
+            "template": "request_approved"
+          }
+        ]
+      },
+      {
+        "key": "manager_approved_over_limit",
+        "from": "manager_review",
+        "to": "procurement_review",
+        "trigger": {
+          "on": "approval_decided",
+          "approval": "manager_approval",
+          "decision": "approved"
+        },
+        "when": {
+          "op": "gt",
+          "left": {
+            "field": "request_total"
+          },
+          "right": {
+            "field": "policy_manager_limit"
+          }
+        },
+        "actions": [
+          {
+            "do": "request_approval",
+            "key": "ask_procurement",
+            "approval": "procurement_approval"
+          }
+        ]
+      },
+      {
+        "key": "manager_rejected",
+        "from": "manager_review",
+        "to": "rejected",
+        "trigger": {
+          "on": "approval_decided",
+          "approval": "manager_approval",
+          "decision": "rejected"
+        },
+        "actions": [
+          {
+            "do": "send_email",
+            "key": "no",
+            "template": "request_rejected"
+          }
+        ]
+      },
+      {
+        "key": "procurement_approved",
+        "from": "procurement_review",
+        "to": "approved",
+        "trigger": {
+          "on": "approval_decided",
+          "approval": "procurement_approval",
+          "decision": "approved"
+        },
+        "actions": [
+          {
+            "do": "send_email",
+            "key": "ok_procurement",
+            "template": "request_approved"
+          }
+        ]
+      },
+      {
+        "key": "procurement_rejected",
+        "from": "procurement_review",
+        "to": "rejected",
+        "trigger": {
+          "on": "approval_decided",
+          "approval": "procurement_approval",
+          "decision": "rejected"
+        },
+        "actions": [
+          {
+            "do": "send_email",
+            "key": "no_procurement",
+            "template": "request_rejected"
+          }
+        ]
+      },
+      {
+        "key": "procurement_nudge",
+        "from": "procurement_review",
+        "to": "procurement_review",
+        "trigger": {
+          "on": "timer",
+          "afterHoursInState": 48
+        },
+        "actions": [
+          {
+            "do": "send_email",
+            "key": "nudge_procurement",
+            "template": "procurement_reminder"
+          }
+        ]
+      },
+      {
+        "key": "manager_never_decided",
+        "from": "manager_review",
+        "to": "expired",
+        "trigger": {
+          "on": "timer",
+          "afterHoursInState": 336
+        },
+        "actions": [
+          {
+            "do": "send_email",
+            "key": "closed",
+            "template": "request_closed"
+          }
+        ]
+      }
+    ]
+  },
+  "communications": {
+    "fromName": "Procurement",
+    "sms": [],
+    "email": [
+      {
+        "key": "request_received",
+        "name": "Request received",
+        "class": "transactional",
+        "to": [
+          {
+            "submitter": true
+          }
+        ],
+        "cc": [],
+        "subject": "We have your purchase request",
+        "body": "Hello {{requester_name}},\n\nYour request \"{{title}}\", needed by {{needed_by}}, is with your manager."
+      },
+      {
+        "key": "request_approved",
+        "name": "Request approved",
+        "class": "transactional",
+        "to": [
+          {
+            "submitter": true
+          }
+        ],
+        "cc": [],
+        "subject": "Your purchase request is approved",
+        "body": "Hello {{requester_name}},\n\nYour request \"{{title}}\" is approved. Procurement will order it; you can follow progress from your status link."
+      },
+      {
+        "key": "request_rejected",
+        "name": "Request not approved",
+        "class": "transactional",
+        "to": [
+          {
+            "submitter": true
+          }
+        ],
+        "cc": [],
+        "subject": "Your purchase request was not approved",
+        "body": "Hello {{requester_name}},\n\nYour request \"{{title}}\" was not approved. The reason is on the record."
+      },
+      {
+        "key": "procurement_reminder",
+        "name": "Procurement reminder",
+        "class": "reminder",
+        "to": [
+          {
+            "role": "procurement_approver"
+          }
+        ],
+        "cc": [],
+        "subject": "A purchase request is waiting for procurement",
+        "body": "A purchase request needed by {{needed_by}} has been waiting two days for a procurement decision."
+      },
+      {
+        "key": "request_closed",
+        "name": "Request closed",
+        "class": "transactional",
+        "to": [
+          {
+            "submitter": true
+          }
+        ],
+        "cc": [],
+        "subject": "Your purchase request was closed",
+        "body": "Hello {{requester_name}},\n\nYour request \"{{title}}\" had no decision for two weeks and has been closed. Send it again if you still need it."
+      }
+    ]
+  },
+  "outputs": {
+    "webhookEvents": [],
+    "exportFields": [
+      "employee_email",
+      "title",
+      "cost_centre",
+      "needed_by"
+    ],
+    "documents": [],
+    "dashboard": {
+      "metrics": [
+        {
+          "key": "requests",
+          "name": "Purchase requests",
+          "kind": "intake"
+        },
+        {
+          "key": "approved",
+          "name": "Approved",
+          "kind": "completion_rate"
+        },
+        {
+          "key": "time",
+          "name": "Days to decision",
+          "kind": "cycle_time"
+        }
+      ]
+    }
+  },
+  "finance": {
+    "kind": "purchase",
+    "amountField": "request_total",
+    "costCentreField": "cost_centre",
+    "titleField": "title",
+    "neededByField": "needed_by",
+    "linesField": "line_items",
+    "lineAmountField": "estimated_cost",
+    "lineDescriptionField": "item_description",
+    "policy": {
+      "managerLimit": "policy_manager_limit"
+    }
+  },
+  "tests": [
+    {
+      "key": "small_request_manager_only",
+      "kind": "happy_path",
+      "name": "A request within the manager limit needs only the manager",
+      "steps": [
+        {
+          "step": "submit",
+          "answers": {
+            "requester_name": "Sam Trent",
+            "employee_email": "sam@example.com",
+            "cost_centre": "ops",
+            "delivery_location": "Lagos office, 3rd floor",
+            "purpose": "Two laptops for the new field officers starting next month.",
+            "title": "Printer toner",
+            "needed_by": "2026-12-01",
+            "line_items": [
+              {
+                "item_description": "Toner cartridge",
+                "quantity": 2,
+                "estimated_cost": 300
+              }
+            ]
+          }
+        },
+        {
+          "step": "decide",
+          "approval": "manager_approval",
+          "as": "line_manager",
+          "decision": "approved",
+          "reason": "Needed."
+        }
+      ],
+      "expect": {
+        "state": "approved",
+        "emails": [
+          "request_received",
+          "request_approved"
+        ],
+        "instanceCount": 1
+      }
+    },
+    {
+      "key": "large_request_two_approvals",
+      "kind": "happy_path",
+      "name": "A request over the manager limit also needs procurement",
+      "steps": [
+        {
+          "step": "submit",
+          "answers": {
+            "requester_name": "Sam Trent",
+            "employee_email": "sam@example.com",
+            "cost_centre": "ops",
+            "delivery_location": "Lagos office, 3rd floor",
+            "purpose": "Two laptops for the new field officers starting next month.",
+            "title": "Laptops",
+            "needed_by": "2026-12-02",
+            "line_items": [
+              {
+                "item_description": "Laptop, 16GB",
+                "quantity": 2,
+                "estimated_cost": 1400
+              }
+            ]
+          }
+        },
+        {
+          "step": "decide",
+          "approval": "manager_approval",
+          "as": "line_manager",
+          "decision": "approved",
+          "reason": "Agreed."
+        },
+        {
+          "step": "decide",
+          "approval": "procurement_approval",
+          "as": "procurement_approver",
+          "decision": "approved",
+          "reason": "Budget checked."
+        }
+      ],
+      "expect": {
+        "state": "approved",
+        "emails": [
+          "request_received",
+          "request_approved"
+        ],
+        "instanceCount": 1
+      }
+    },
+    {
+      "key": "request_rejected",
+      "kind": "rejection",
+      "name": "A rejected request opens no requisition",
+      "steps": [
+        {
+          "step": "submit",
+          "answers": {
+            "requester_name": "Sam Trent",
+            "employee_email": "sam@example.com",
+            "cost_centre": "ops",
+            "delivery_location": "Lagos office, 3rd floor",
+            "purpose": "Two laptops for the new field officers starting next month.",
+            "title": "Desk chairs",
+            "needed_by": "2026-12-03",
+            "line_items": [
+              {
+                "item_description": "Chair",
+                "quantity": 4,
+                "estimated_cost": 150
+              }
+            ]
+          }
+        },
+        {
+          "step": "decide",
+          "approval": "manager_approval",
+          "as": "line_manager",
+          "decision": "rejected",
+          "reason": "Not this quarter."
+        }
+      ],
+      "expect": {
+        "state": "rejected",
+        "emails": [
+          "request_received",
+          "request_rejected"
+        ]
+      }
+    },
+    {
+      "key": "no_items",
+      "kind": "missing_data",
+      "name": "A request without items never reaches a manager",
+      "steps": [
+        {
+          "step": "submit",
+          "answers": {
+            "requester_name": "Sam Trent",
+            "employee_email": "sam@example.com",
+            "cost_centre": "ops",
+            "delivery_location": "Lagos office, 3rd floor",
+            "purpose": "Two laptops for the new field officers starting next month.",
+            "title": "Nothing",
+            "needed_by": "2026-12-04"
+          }
+        }
+      ],
+      "expect": {
+        "state": "draft",
+        "instanceCount": 0
+      }
+    },
+    {
+      "key": "self_approval",
+      "kind": "permission",
+      "name": "The requester cannot approve their own request",
+      "steps": [
+        {
+          "step": "submit",
+          "answers": {
+            "requester_name": "Sam Trent",
+            "employee_email": "sam@example.com",
+            "cost_centre": "ops",
+            "delivery_location": "Lagos office, 3rd floor",
+            "purpose": "Two laptops for the new field officers starting next month.",
+            "title": "Projector",
+            "needed_by": "2026-12-05",
+            "line_items": [
+              {
+                "item_description": "Projector",
+                "quantity": 1,
+                "estimated_cost": 600
+              }
+            ]
+          }
+        },
+        {
+          "step": "attempt",
+          "as": "requester",
+          "action": "approve",
+          "expectDenied": true
+        },
+        {
+          "step": "attempt",
+          "as": "line_manager",
+          "action": "approve",
+          "expectDenied": false
+        }
+      ],
+      "expect": {
+        "state": "manager_review"
+      }
+    },
+    {
+      "key": "never_decided",
+      "kind": "timeout",
+      "name": "Two weeks without a manager decision closes the request",
+      "steps": [
+        {
+          "step": "submit",
+          "answers": {
+            "requester_name": "Sam Trent",
+            "employee_email": "sam@example.com",
+            "cost_centre": "ops",
+            "delivery_location": "Lagos office, 3rd floor",
+            "purpose": "Two laptops for the new field officers starting next month.",
+            "title": "Whiteboard",
+            "needed_by": "2026-12-06",
+            "line_items": [
+              {
+                "item_description": "Whiteboard",
+                "quantity": 1,
+                "estimated_cost": 90
+              }
+            ]
+          }
+        },
+        {
+          "step": "advance_hours",
+          "hours": 336
+        }
+      ],
+      "expect": {
+        "state": "expired",
+        "emails": [
+          "request_received",
+          "request_closed"
+        ]
+      }
+    },
+    {
+      "key": "duplicate",
+      "kind": "duplicate",
+      "name": "The same request sent twice is one request",
+      "steps": [
+        {
+          "step": "submit",
+          "answers": {
+            "requester_name": "Sam Trent",
+            "employee_email": "sam@example.com",
+            "cost_centre": "ops",
+            "delivery_location": "Lagos office, 3rd floor",
+            "purpose": "Two laptops for the new field officers starting next month.",
+            "title": "Cables",
+            "needed_by": "2026-12-07",
+            "line_items": [
+              {
+                "item_description": "HDMI cable",
+                "quantity": 5,
+                "estimated_cost": 10
+              }
+            ]
+          }
+        },
+        {
+          "step": "submit",
+          "answers": {
+            "requester_name": "Sam Trent",
+            "employee_email": "sam@example.com",
+            "cost_centre": "ops",
+            "delivery_location": "Lagos office, 3rd floor",
+            "purpose": "Two laptops for the new field officers starting next month.",
+            "title": "Cables",
+            "needed_by": "2026-12-07",
+            "line_items": [
+              {
+                "item_description": "HDMI cable",
+                "quantity": 5,
+                "estimated_cost": 10
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "instanceCount": 1
+      }
+    }
+  ]
+}

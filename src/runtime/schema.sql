@@ -1679,3 +1679,245 @@ create table if not exists expense_export (
   created_at  timestamptz not null default now(),
   unique (tenant_id, batch_no)
 );
+
+-- ------------------------------------------------------------- procurement
+--
+-- PRD Module 6. A purchase request is a process (blueprint finance kind
+-- 'purchase'); its approval opens a requisition. Everything after that —
+-- quotes, orders, receipts, invoices, payment — is a record here, because
+-- each has its own state and its own controls, not a step in one form.
+
+create table if not exists procurement_settings (
+  tenant_id               uuid primary key references tenant(id),
+  price_tolerance_pct     numeric(6, 2) not null default 2 check (price_tolerance_pct >= 0 and price_tolerance_pct <= 100),
+  amount_tolerance        numeric(18, 2) not null default 0 check (amount_tolerance >= 0),
+  order_increase_pct      numeric(6, 2) not null default 10 check (order_increase_pct >= 0),
+  quotes_required         int not null default 1 check (quotes_required between 1 and 10),
+  quotes_required_over    numeric(18, 2) not null default 0 check (quotes_required_over >= 0),
+  require_vendor_bank_check boolean not null default true,
+  updated_by              uuid references actor(id),
+  updated_at              timestamptz not null default now()
+);
+
+-- PRC-01, PRC-02. A supplier and where it stands. The status change and
+-- its reason are kept; approving a supplier is separate from checking its
+-- bank details (PRC-08).
+create table if not exists vendor (
+  id               uuid primary key default gen_random_uuid(),
+  tenant_id        uuid not null references tenant(id),
+  name             text not null,
+  registration_no  text,
+  tax_id           text,
+  contact_name     text,
+  contact_email    text,
+  contact_phone    text,
+  categories       jsonb not null default '[]'::jsonb,
+  legal_entity_id  uuid references legal_entity(id),
+  documents_ref    text,
+  due_diligence    text,
+  status           text not null default 'draft'
+                   check (status in ('draft', 'under_review', 'approved', 'restricted', 'suspended', 'archived')),
+  status_reason    text,
+  external_ref     text,
+  version          int not null default 1,
+  created_by       uuid references actor(id),
+  approved_by      uuid references actor(id),
+  created_at       timestamptz not null default now(),
+  updated_at       timestamptz not null default now()
+);
+create unique index if not exists vendor_name_uq on vendor (tenant_id, lower(name));
+
+create table if not exists vendor_status_history (
+  id          bigserial primary key,
+  tenant_id   uuid not null references tenant(id),
+  vendor_id   uuid not null references vendor(id),
+  from_status text,
+  to_status   text not null,
+  reason      text,
+  actor_id    uuid references actor(id),
+  occurred_at timestamptz not null default now()
+);
+
+-- PRC-08. Sealed like staff bank details; each change bumps the version;
+-- verification must be by someone other than whoever made the change.
+create table if not exists vendor_bank (
+  id             uuid primary key default gen_random_uuid(),
+  tenant_id      uuid not null references tenant(id),
+  vendor_id      uuid not null references vendor(id) unique,
+  account_name   text not null,
+  bank_name      text not null,
+  bank_code      text,
+  account_sealed text not null,
+  account_last4  text not null,
+  version        int not null default 1,
+  changed_by     uuid references actor(id),
+  verified_version int,
+  verified_by    uuid references actor(id),
+  verified_at    timestamptz,
+  updated_at     timestamptz not null default now()
+);
+
+-- PRC-09. A framework agreement: a limit, a period, and what orders have used.
+create table if not exists vendor_agreement (
+  id           uuid primary key default gen_random_uuid(),
+  tenant_id    uuid not null references tenant(id),
+  vendor_id    uuid not null references vendor(id),
+  title        text not null,
+  limit_amount numeric(18, 2) not null check (limit_amount > 0),
+  valid_from   date not null,
+  valid_to     date not null,
+  created_by   uuid references actor(id),
+  created_at   timestamptz not null default now(),
+  check (valid_to >= valid_from)
+);
+
+-- An approved purchase request, waiting to be sourced and ordered.
+create table if not exists purchase_requisition (
+  id            uuid primary key default gen_random_uuid(),
+  tenant_id     uuid not null references tenant(id),
+  instance_id   uuid not null references instance(id) unique,
+  reference     text not null,
+  requester     text not null,
+  title         text,
+  amount        numeric(18, 2) not null,
+  currency      text not null,
+  cost_centre   text,
+  needed_by     date,
+  status        text not null default 'approved' check (status in ('approved', 'sourcing', 'ordered', 'cancelled')),
+  quotes_open_at timestamptz,
+  quotes_opened  boolean not null default false,
+  selected_quote_id uuid,
+  selection_reason text,
+  created_at    timestamptz not null default now(),
+  updated_at    timestamptz not null default now(),
+  unique (tenant_id, reference)
+);
+
+-- PRC-04. A quote received for a requisition. Sealed quotes are recorded
+-- but their amounts are withheld until they are opened after the deadline.
+create table if not exists vendor_quote (
+  id             uuid primary key default gen_random_uuid(),
+  tenant_id      uuid not null references tenant(id),
+  requisition_id uuid not null references purchase_requisition(id),
+  vendor_id      uuid not null references vendor(id),
+  amount         numeric(18, 2) not null check (amount >= 0),
+  lead_days      int,
+  notes          text,
+  document_ref   text,
+  received_at    timestamptz not null default now(),
+  entered_by     uuid references actor(id),
+  unique (requisition_id, vendor_id)
+);
+
+-- PRC-05. An order and its lines. A material change makes a new revision;
+-- an increase beyond the tolerance needs re-approval by someone else.
+create table if not exists purchase_order (
+  id              uuid primary key default gen_random_uuid(),
+  tenant_id       uuid not null references tenant(id),
+  number          int not null,
+  requisition_id  uuid references purchase_requisition(id),
+  vendor_id       uuid not null references vendor(id),
+  vendor_version  int not null,
+  agreement_id    uuid references vendor_agreement(id),
+  revision        int not null default 1,
+  status          text not null default 'issued'
+                  check (status in ('pending_approval', 'issued', 'partially_received', 'received', 'closed', 'cancelled')),
+  currency        text not null,
+  total           numeric(18, 2) not null check (total >= 0),
+  approved_total  numeric(18, 2) not null,
+  expected_by     date,
+  delivery_location text,
+  terms           text,
+  exception_reason text,
+  external_ref    text,
+  created_by      uuid references actor(id),
+  approved_by     uuid references actor(id),
+  created_at      timestamptz not null default now(),
+  updated_at      timestamptz not null default now(),
+  unique (tenant_id, number)
+);
+
+create table if not exists purchase_order_line (
+  id           uuid primary key default gen_random_uuid(),
+  order_id     uuid not null references purchase_order(id),
+  line_no      int not null,
+  description  text not null,
+  kind         text not null default 'goods' check (kind in ('goods', 'service')),
+  quantity     numeric(18, 3) not null check (quantity > 0),
+  unit_price   numeric(18, 2) not null check (unit_price >= 0),
+  unique (order_id, line_no)
+);
+
+create table if not exists purchase_order_revision (
+  id         bigserial primary key,
+  order_id   uuid not null references purchase_order(id),
+  revision   int not null,
+  total      numeric(18, 2) not null,
+  lines      jsonb not null,
+  vendor_id  uuid not null,
+  reason     text,
+  actor_id   uuid references actor(id),
+  occurred_at timestamptz not null default now()
+);
+
+-- PRC-06. What arrived, line by line: accepted, rejected (with a reason),
+-- and returned later. Append-only; a correction is another row.
+create table if not exists goods_receipt (
+  id          uuid primary key default gen_random_uuid(),
+  tenant_id   uuid not null references tenant(id),
+  order_id    uuid not null references purchase_order(id),
+  line_id     uuid not null references purchase_order_line(id),
+  accepted    numeric(18, 3) not null default 0 check (accepted >= 0),
+  rejected    numeric(18, 3) not null default 0 check (rejected >= 0),
+  returned    numeric(18, 3) not null default 0 check (returned >= 0),
+  reason      text,
+  evidence_ref text,
+  received_at timestamptz not null default now(),
+  received_by uuid references actor(id),
+  check (accepted + rejected + returned > 0)
+);
+create or replace function goods_receipt_is_append_only() returns trigger as $$
+begin
+  raise exception 'goods receipts are append-only';
+end;
+$$ language plpgsql;
+drop trigger if exists goods_receipt_no_change on goods_receipt;
+create trigger goods_receipt_no_change before update or delete on goods_receipt
+  for each row execute function goods_receipt_is_append_only();
+
+-- PRC-07. An invoice against an order, matched to what was accepted.
+create table if not exists vendor_invoice (
+  id            uuid primary key default gen_random_uuid(),
+  tenant_id     uuid not null references tenant(id),
+  vendor_id     uuid not null references vendor(id),
+  order_id      uuid not null references purchase_order(id),
+  invoice_no    text not null,
+  invoice_date  date not null,
+  currency      text not null,
+  total         numeric(18, 2) not null check (total >= 0),
+  status        text not null default 'held'
+                check (status in ('held', 'approved', 'paid', 'rejected', 'void')),
+  mismatches    jsonb not null default '[]'::jsonb,
+  review_reason text,
+  reviewed_by   uuid references actor(id),
+  entered_by    uuid references actor(id),
+  bank_version  int,
+  payment_ref   text,
+  paid_at       timestamptz,
+  external_ref  text,
+  exported_at   timestamptz,
+  created_at    timestamptz not null default now(),
+  updated_at    timestamptz not null default now(),
+  unique (tenant_id, vendor_id, invoice_no)
+);
+
+create table if not exists vendor_invoice_line (
+  id          uuid primary key default gen_random_uuid(),
+  invoice_id  uuid not null references vendor_invoice(id),
+  line_id     uuid not null references purchase_order_line(id),
+  quantity    numeric(18, 3) not null check (quantity > 0),
+  unit_price  numeric(18, 2) not null check (unit_price >= 0)
+);
+
+
+alter table procurement_settings add column if not exists manager_limit numeric(18, 2) not null default 1000;

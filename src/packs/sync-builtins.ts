@@ -39,6 +39,14 @@ export const REFERENCES = [
     audience: 'Organisations that pay travel or field costs in advance and need to know who still holds what.',
   },
   {
+    file: 'purchase-request.blueprint.json',
+    key: 'purchase_request',
+    name: 'Purchase request',
+    category: 'Procurement',
+    summary: 'Staff ask to buy something; their manager from the directory approves, Procurement approves larger requests, and the budget is held. Procurement then gets quotes, orders, receives and pays on the Procurement page.',
+    audience: 'Organisations that want every purchase approved, ordered from an approved supplier, and paid only for what arrived.',
+  },
+  {
     file: 'church-worker-onboarding.blueprint.json',
     key: 'volunteer_safeguarding',
     name: 'Volunteer onboarding with safeguarding',

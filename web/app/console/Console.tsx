@@ -13,6 +13,7 @@ import { IntegrationsView } from './Integrations';
 import { ModulesView } from './Modules';
 import { OrganisationView } from './Organisation';
 import { ExpensesView } from './Expenses';
+import { ProcurementView } from './Procurement';
 import { RecordTrail } from './Trail';
 import { RecordPage } from './Record';
 import { WorkList } from './WorkList';
@@ -143,9 +144,10 @@ export function Console() {
     | 'modules'
     | 'organisation'
     | 'expenses'
+    | 'procurement'
     | 'held'
   >('work');
-  const recordOrigin = useRef<'work' | 'records' | 'ask' | 'processes' | 'expenses'>('work');
+  const recordOrigin = useRef<'work' | 'records' | 'ask' | 'processes' | 'expenses' | 'procurement'>('work');
   const [settingsRevision, setSettingsRevision] = useState(0);
   /*
    * How many public submissions are waiting on a person. Fetched on its own:
@@ -402,7 +404,7 @@ export function Console() {
    * people are sent to in order to decide something.
    */
   const open = async (instanceId: string) => {
-    recordOrigin.current = view === 'records' || view === 'ask' || view === 'processes' || view === 'expenses' ? view : 'work';
+    recordOrigin.current = view === 'records' || view === 'ask' || view === 'processes' || view === 'expenses' || view === 'procurement' ? view : 'work';
     try {
       const detail = await call<RecordDetail>(`/api/records/${instanceId}`);
       setRecord(detail);
@@ -518,6 +520,7 @@ export function Console() {
         <nav className="cs__nav" aria-label="Console">
 {([{key:'work',label:'My work',icon:'work'},{key:'ask',label:'Ask',icon:'ask'},{key:'records',label:'Records',icon:'records'},{key:'dashboard',label:'Dashboard',icon:'dashboard'},{key:'processes',label:'Processes',icon:'processes'},{key:'people',label:'People',icon:'people'}] as const).map(item => <button type="button" key={item.key} className="cs__navItem" title={item.label} aria-current={view === item.key || (item.key === 'people' && view === 'invite') ? 'page' : undefined} onClick={() => setView(item.key)}><NavIcon name={item.icon}/><span className="cs__navText">{item.label}</span>{item.key === 'work' && counts.needsYou > 0 && <span className="cs__navCount">{counts.needsYou}</span>}</button>)}
 {session.modules?.includes('expenses') && <button type="button" className="cs__navItem" title="Expenses" aria-current={view === 'expenses' ? 'page' : undefined} onClick={() => setView('expenses')}><NavIcon name="data"/><span className="cs__navText">Expenses</span></button>}
+{session.modules?.includes('procurement') && <button type="button" className="cs__navItem" title="Procurement" aria-current={view === 'procurement' ? 'page' : undefined} onClick={() => setView('procurement')}><NavIcon name="processes"/><span className="cs__navText">Procurement</span></button>}
 <a className="cs__navItem" href="/builder" title="Builder"><NavIcon name="builder"/><span className="cs__navText">Builder</span></a>
 </nav>
 <div className="cs__railBottom">
@@ -562,7 +565,9 @@ export function Console() {
                                   ? 'Organisation & authority'
                                   : view === 'expenses'
                                     ? 'Expenses'
-                                    : 'My work'}
+                                    : view === 'procurement'
+                                      ? 'Procurement'
+                                      : 'My work'}
           </h1>
           {/* The process pill is context for the record views. On People,
               Processes and Your account it named a process the page has
@@ -575,12 +580,12 @@ export function Console() {
             <button type="button" className="cs__btn cs__btn--create" onClick={() => { sessionStorage.removeItem('patform:new-process-description'); window.location.href = '/builder/ai'; }}>
               <span className="cs__createMark" aria-hidden="true">✦</span> Build with AI
             </button>
-          ) : view !== 'security' && <button type="button" className="cs__btn" onClick={() => { if (view === 'integrations' || view === 'data' || view === 'modules' || view === 'organisation' || view === 'expenses') setSettingsRevision(value => value + 1); void load(); }}>
+          ) : view !== 'security' && <button type="button" className="cs__btn" onClick={() => { if (view === 'integrations' || view === 'data' || view === 'modules' || view === 'organisation' || view === 'expenses' || view === 'procurement') setSettingsRevision(value => value + 1); void load(); }}>
             Refresh
           </button>}
         </div>
 
-        <div className={`cs__body ${view === 'security' ? 'cs__body--security' : ''} ${view === 'ask' ? 'cs__body--ask' : ''} ${view === 'record' ? 'cs__body--record' : ''} ${view === 'health' ? 'cs__body--health' : ''} ${view === 'dashboard' ? 'cs__body--dashboard' : ''} ${view === 'people' ? 'cs__body--people' : ''} ${view === 'records' ? 'cs__body--records' : ''} ${view === 'work' ? 'cs__body--work' : ''} ${view === 'processes' ? 'cs__body--processes' : ''} ${view === 'held' ? 'cs__body--held' : ''} ${view === 'integrations' ? 'cs__body--integrations' : ''} ${view === 'data' ? 'cs__body--data' : ''} ${view === 'modules' || view === 'organisation' || view === 'expenses' ? 'cs__body--integrations' : ''}`}>
+        <div className={`cs__body ${view === 'security' ? 'cs__body--security' : ''} ${view === 'ask' ? 'cs__body--ask' : ''} ${view === 'record' ? 'cs__body--record' : ''} ${view === 'health' ? 'cs__body--health' : ''} ${view === 'dashboard' ? 'cs__body--dashboard' : ''} ${view === 'people' ? 'cs__body--people' : ''} ${view === 'records' ? 'cs__body--records' : ''} ${view === 'work' ? 'cs__body--work' : ''} ${view === 'processes' ? 'cs__body--processes' : ''} ${view === 'held' ? 'cs__body--held' : ''} ${view === 'integrations' ? 'cs__body--integrations' : ''} ${view === 'data' ? 'cs__body--data' : ''} ${view === 'modules' || view === 'organisation' || view === 'expenses' || view === 'procurement' ? 'cs__body--integrations' : ''}`}>
           <div className="cs__left">
             {view === 'record' && record ? (
               <RecordPage
@@ -590,7 +595,7 @@ export function Console() {
                 task={work?.tasks.find((t) => t.instanceId === record.instanceId)}
                 busy={busy}
                 onBack={closeRecord}
-                backLabel={recordOrigin.current === 'records' ? 'Back to records' : recordOrigin.current === 'ask' ? 'Back to Ask' : recordOrigin.current === 'processes' ? 'Back to processes' : recordOrigin.current === 'expenses' ? 'Back to Expenses' : 'Back to My work'}
+                backLabel={recordOrigin.current === 'records' ? 'Back to records' : recordOrigin.current === 'ask' ? 'Back to Ask' : recordOrigin.current === 'processes' ? 'Back to processes' : recordOrigin.current === 'expenses' ? 'Back to Expenses' : recordOrigin.current === 'procurement' ? 'Back to Procurement' : 'Back to My work'}
                 onDecide={(id, key, decision, reason, signatureName, signatureConfirmed) => void decide(id, key, decision, reason, signatureName, signatureConfirmed)}
                 onCompleteTask={(id, key, answers) => void completeTask(id, key, answers)}
                 onExport={(id, ref, format) => void exportRecord(id, ref, format)}
@@ -602,6 +607,8 @@ export function Console() {
               <DataView key={settingsRevision} processes={session.processes} />
             ) : view === 'modules' ? (
               <ModulesView canAdminister={['owner', 'admin'].includes(me.workspace_role)} onChanged={() => void load()} />
+            ) : view === 'procurement' ? (
+              <ProcurementView key={settingsRevision} canAdminister={['owner', 'admin'].includes(me.workspace_role)} canOperate={['owner', 'admin', 'operator'].includes(me.workspace_role)} onOpenRecord={(id) => void open(id)} />
             ) : view === 'expenses' ? (
               <ExpensesView key={settingsRevision} canAdminister={['owner', 'admin'].includes(me.workspace_role)} canOperate={['owner', 'admin', 'operator'].includes(me.workspace_role)} onOpenRecord={(id) => void open(id)} />
             ) : view === 'organisation' ? (
