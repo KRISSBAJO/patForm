@@ -171,7 +171,14 @@ export function Platform() {
         ? 'Site administration requires a site role, a verified email and two-step verification.'
         : e.message); });
   }, []);
-  useEffect(() => { if (role && role !== 'none') void load(); }, [role, load]);
+  /*
+   * Bumped whenever the address is (re)read. Reading it cancels any load in
+   * flight (requestSeq), so a load must follow it even when the section did
+   * not change — otherwise the first visit discards its own data and the
+   * page says "Loading…" for ever.
+   */
+  const [addressRead, setAddressRead] = useState(0);
+  useEffect(() => { if (role && role !== 'none') void load(); }, [role, load, addressRead]);
 
   const selectWorkspace = useCallback(async (id: string, updateAddress = true) => {
     if (updateAddress) {
@@ -196,7 +203,7 @@ export function Platform() {
       const wanted = params.get('section');
       const next = sections.some((s) => s.key === wanted) ? wanted as Section : 'overview';
       const workspace = params.get('workspace');
-      setSection(next); setData(null); setPage(1); setError('');
+      setSection(next); setData(null); setPage(1); setError(''); setAddressRead((n) => n + 1);
       if (next === 'workspaces' && workspace && /^[0-9a-f-]{36}$/.test(workspace)) {
         void selectWorkspace(workspace, false);
       } else { setDetail(null); setDetailLoading(false); }
