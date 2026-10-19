@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { Closures } from './Closures';
 import './platform.css';
 
 type Section = 'overview' | 'workspaces' | 'people' | 'integrations' | 'security' | 'jobs' | 'trace' | 'mail' | 'audit' | 'operators';
@@ -300,6 +301,7 @@ export function Platform() {
               <button className="platform__textAction" onClick={() => navigate('mail')}>Review delivery <Icon name="arrow" size={15}/></button>
             </Panel>
           </div>
+          <Panel title="Workspace closures"><Closures reloadKey={data} mayApprove={isOwner} onApprove={(c) => setAction({ path: `closures/${c.id}/approve`, label: `Approve deleting ${c.workspace} and all its data` })}/></Panel>
           <div className="platform__columns">
             <Panel title="Recent workspaces" aside={<button className="platform__textAction" onClick={() => navigate('workspaces')}>View all <Icon name="arrow" size={15}/></button>}>
               {data.recentWorkspaces.length ? data.recentWorkspaces.map((w: Json) => <button className="platform__rowbutton" key={w.id} onClick={() => openWorkspace(w.id)}><span>{w.name}</span><span>{w.records} records <Icon name="arrow" size={15}/></span></button>) : <Empty title="No workspaces yet"/>}

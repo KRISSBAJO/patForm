@@ -32,6 +32,7 @@ import { acknowledgeDocument, addCaseNote, addCertification, cancelLeave, comple
 import * as apr from '../runtime/appraisals.js';
 import * as ops from '../runtime/ops.js';
 import * as gov from '../runtime/gov.js';
+import * as life from '../runtime/tenant-lifecycle.js';
 import { opsPhotoLink, uploadOpsPhoto } from '../runtime/ops-files.js';
 import { enabledModules, listModules, setModule, updateWorkspaceSettings, workspaceSettings } from '../runtime/modules.js';
 import { createDelegation, createGrant, listAuthority, revokeDelegation, revokeGrant as revokeAuthorityGrant, workspaceAudit } from '../runtime/authority.js';
@@ -1168,6 +1169,21 @@ route('POST', gr('holds'), async ({ pool, principal }, b) => gov.createHold(pool
 route('POST', gr(`holds/${A}/release`), async ({ pool, principal, url }, b) => gov.releaseHold(pool, principal, hid(url, 4), hb(b)));
 route('POST', gr(`holds/${A}/clear`), async ({ pool, principal, url }, b) => gov.clearHold(pool, principal, hid(url, 4), hb(b)));
 route('POST', gr('retention-schedules'), async ({ pool, principal }, b) => gov.setRetentionSchedule(pool, principal, hb(b)));
+route('POST', gr('files'), async ({ pool, principal }, b) => gov.uploadGovFile(pool, principal, hb(b)));
+route('GET', gr(`files/${A}`), async ({ pool, principal, url }) => gov.govFileLink(pool, principal, hid(url, 4)));
+route('POST', gr(`envelopes/${A}/check`), async ({ pool, principal, url }) => gov.checkEnvelopeNow(pool, principal, hid(url, 4)));
+route('POST', gr('docusign/test'), async ({ pool, principal }) => gov.testDocusignConnection(pool, principal));
+
+// ---- workspace export and closure (PRD 17.3): owners only; deletion needs a site owner.
+route('GET', /^\/api\/workspace\/exports$/, async ({ pool, principal }) => life.listExports(pool, principal));
+route('POST', /^\/api\/workspace\/exports$/, async ({ pool, principal }) => life.requestExport(pool, principal));
+route('POST', /^\/api\/workspace\/exports\/([0-9a-f-]{36})\/download$/, async ({ pool, principal, url }) => life.exportLink(pool, principal, hid(url, 4)));
+route('GET', /^\/api\/workspace\/closure$/, async ({ pool, principal }) => life.closureStatus(pool, principal));
+route('POST', /^\/api\/workspace\/closure$/, async ({ pool, principal }, b) => life.requestClosure(pool, principal, hb(b)));
+route('POST', /^\/api\/workspace\/closure\/suspend$/, async ({ pool, principal }, b) => life.suspendWorkspace(pool, principal, hb(b)));
+route('POST', /^\/api\/workspace\/closure\/cancel$/, async ({ pool, principal }) => life.cancelClosure(pool, principal));
+route('GET', /^\/api\/platform\/closures$/, async ({ pool, actorId }) => life.listClosures(pool, actorId));
+route('POST', /^\/api\/platform\/closures\/([0-9a-f-]{36})\/approve$/, async ({ pool, actorId, url }) => life.approveClosure(pool, actorId, hid(url, 4)));
 
 // ---- modules and workspace settings (PRD ORG-01): which shelves are on.
 route('GET', /^\/api\/modules$/, async ({ pool, principal }) => listModules(pool, principal));
@@ -1888,6 +1904,12 @@ async function main(): Promise<void> {
          * the session gate. The signature over the exact bytes, with the
          * system's own secret, is the credential.
          */
+        // DocuSign Connect: never trusted, only a prompt to ask DocuSign for the real status.
+        if (url.pathname === '/api/gov/docusign/connect' && req.method === 'POST') {
+          const raw = await readRaw(req, 1024 * 1024);
+          const result = await gov.docusignConnect(pool, raw, String(req.headers['x-docusign-signature-1'] ?? ''));
+          return send(res, result.status, { ok: result.status === 200 });
+        }
         const connectorMatch = /^\/api\/ops\/connectors\/([0-9a-f-]{36})\/callback$/.exec(url.pathname);
         if (connectorMatch && req.method === 'POST') {
           const raw = await readRaw(req, 64 * 1024);
@@ -2101,7 +2123,7 @@ async function main(): Promise<void> {
         const match = routes.find((r) => r.method === req.method && r.pattern.test(url.pathname));
         if (!match) throw new HttpError(404, `no route for ${req.method} ${url.pathname}`);
 
-        const body = req.method === 'POST' ? await readBody(req, url.pathname.endsWith('/brand-assets') ? 4 * 1024 * 1024 + 1024 : url.pathname.endsWith('/files') || url.pathname === '/api/ops/photos' ? 7 * 1024 * 1024 : Number.MAX_SAFE_INTEGER) : {};
+        const body = req.method === 'POST' ? await readBody(req, url.pathname.endsWith('/brand-assets') ? 4 * 1024 * 1024 + 1024 : url.pathname === '/api/gov/files' ? 28 * 1024 * 1024 : url.pathname.endsWith('/files') || url.pathname === '/api/ops/photos' ? 7 * 1024 * 1024 : Number.MAX_SAFE_INTEGER) : {};
 
         /*
          * Actions that grant access or destroy data ask for a recent sign-in.

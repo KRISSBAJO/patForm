@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { WorkspaceLifecycle } from './WorkspaceLifecycle';
 import { postJson } from './stepup';
 
 /*
@@ -141,5 +142,6 @@ export function ModulesView({ canAdminister, onChanged }: { canAdminister: boole
         </form>}
       </section>
     </div>
+    {draft && <WorkspaceLifecycle workspaceName={draft.name} />}
   </div>;
 }

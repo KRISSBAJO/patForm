@@ -521,7 +521,46 @@ in the startup upgrades did not include the new auditor role, so the
 server would not start once an auditor existed. Every copy now includes
 it.
 
-Not built: a live signature provider connection (envelopes are recorded by
-hand or through the API), document upload for contracts and policies
-(references for now), and tenant export/closure (PRD 17.3).
+Added the same day:
+
+- Documents (`gov.ts`, `object-store.ts`): contract and policy files (PDF or
+  Word, typed by their bytes, up to 20 MB) go to the S3 bucket under
+  `gov/files/`; a version points at `gov-file:<id>`; a file opens only
+  through a 5-minute link after the malware scan passes, for people who may
+  see the contract (or any member, for a published policy). Auditors open
+  contract files only through an engagement that covers the contract, and
+  each download is logged. Evidence packs list each document's SHA-256.
+- DocuSign (`docusign.ts`): Patform's DocuSign app is in the environment
+  (`DOCUSIGN_INTEGRATION_KEY`, `DOCUSIGN_PRIVATE_KEY`,
+  `DOCUSIGN_AUTH_SERVER`, `DOCUSIGN_REDIRECT_URI`); each workspace names
+  the DocuSign user it sends as, who consents once. Only an approved
+  current version with an uploaded, clean document can be sent; signers
+  sign in order. Patform checks status every 15 minutes (or at once when
+  DocuSign Connect calls, which only prompts a check and must carry a
+  valid HMAC when `DOCUSIGN_CONNECT_HMAC_KEY` is set), downloads the signed
+  PDF on completion and stores it with its SHA-256, and voids envelopes in
+  DocuSign when the contract is revised. Hand-recorded envelopes still work.
+- Workspace export and closure (`tenant-lifecycle.ts`, PRD 17.3). The
+  workspace's tables are found from the database's own foreign keys, so new
+  tables are covered automatically. An owner's export is a .tar.gz in the
+  bucket: every table as JSON, every process definition version, every
+  clean attachment, and a manifest with a SHA-256 per file; password and
+  token hashes, secrets and sealed bank numbers are left out; it can be
+  downloaded for seven days. Closure: the owner asks (typing the workspace
+  name; an export starts), suspends once the export is ready or waived
+  (other members signed out and deactivated, API keys revoked, webhooks and
+  intake stopped), waits (`WORKSPACE_CLOSURE_WAIT_DAYS`, default 14), then a
+  site owner approves — refused while any legal hold is active or released
+  but unreviewed. The worker deletes every row and file of that workspace,
+  table by table, and records a certificate (rows per table, files, export
+  hash, and a note that backups expire on their own schedule). The
+  append-only guards accept a DELETE only inside that transaction, through
+  a transaction-local flag. Until deletion starts, the owner can cancel and
+  everyone suspended is restored (API keys stay revoked). Site owners see
+  and approve closures on the site admin page.
+
+To switch DocuSign on: create an app (integration key) in DocuSign Apps and
+Keys, generate its RSA key pair, add the redirect URI, and fill the
+DOCUSIGN_* settings locally and on Render; use account-d.docusign.com until
+the app passes DocuSign's go-live review.
 

@@ -3037,3 +3037,127 @@ drop trigger if exists finding_action_no_change on finding_action;
 create trigger finding_action_no_change before update or delete on finding_action for each row execute function gov_is_append_only();
 drop trigger if exists control_test_no_change on control_test;
 create trigger control_test_no_change before update or delete on control_test for each row execute function gov_is_append_only();
+
+-- Contract and policy documents in the workspace's S3 bucket, shown only
+-- after the malware scan passes. A version's document_ref is gov-file:<id>.
+create table if not exists gov_file (
+  id                uuid primary key,
+  tenant_id         uuid not null references tenant(id),
+  purpose           text not null check (purpose in ('contract', 'policy', 'signed')),
+  contract_id       uuid references contract(id),
+  policy_version_id uuid references policy_version(id),
+  filename          text not null,
+  content_type      text not null,
+  byte_size         int not null,
+  sha256            text not null,
+  storage_key       text not null,
+  scan_status       text not null default 'unscanned' check (scan_status in ('unscanned', 'clean', 'quarantined')),
+  uploaded_by       uuid references actor(id),
+  created_at        timestamptz not null default now()
+);
+
+-- DocuSign envelopes are sent and followed by Patform; manual ones are typed in.
+alter table contract_envelope add column if not exists remote boolean not null default false;
+alter table contract_envelope add column if not exists signers jsonb not null default '[]'::jsonb;
+alter table contract_envelope add column if not exists last_checked_at timestamptz;
+alter table contract_envelope add column if not exists remote_void_pending boolean not null default false;
+alter table contract_envelope add column if not exists remote_error text;
+
+-- PRD 17.3: workspace export and closure.
+alter table tenant add column if not exists closed_at timestamptz;
+
+create table if not exists tenant_export (
+  id           uuid primary key default gen_random_uuid(),
+  tenant_id    uuid not null references tenant(id),
+  requested_by uuid,
+  reason       text not null default 'export',
+  status       text not null default 'queued' check (status in ('queued', 'running', 'ready', 'failed', 'expired')),
+  storage_key  text,
+  manifest     jsonb,
+  sha256       text,
+  byte_size    bigint,
+  error        text,
+  created_at   timestamptz not null default now(),
+  ready_at     timestamptz,
+  expires_at   timestamptz
+);
+
+create table if not exists tenant_closure (
+  id                  uuid primary key default gen_random_uuid(),
+  tenant_id           uuid not null references tenant(id),
+  requested_by        uuid,
+  requested_by_email  text,
+  reason              text not null,
+  status              text not null default 'requested' check (status in ('requested', 'suspended', 'approved', 'deleting', 'closed', 'cancelled')),
+  export_id           uuid references tenant_export(id),
+  export_waived       boolean not null default false,
+  suspended_at        timestamptz,
+  suspended_actors    jsonb not null default '[]'::jsonb,
+  waiting_until       timestamptz,
+  approved_by         uuid,
+  approved_at         timestamptz,
+  progress            jsonb not null default '{}'::jsonb,
+  certificate         jsonb,
+  cancelled_by        uuid,
+  cancelled_at        timestamptz,
+  created_at          timestamptz not null default now(),
+  closed_at           timestamptz
+);
+create unique index if not exists tenant_closure_open on tenant_closure (tenant_id) where status not in ('closed', 'cancelled');
+
+-- Workspace closure (PRD 17.3) must be able to delete a closed workspace's
+-- history. The append-only guards allow a DELETE only when the transaction
+-- has set patform.workspace_purge, which only runtime/tenant-lifecycle.ts
+-- does, inside its own transaction, after a site owner approved the closure.
+-- Updates are never allowed, and nothing else changes for anyone else.
+create or replace function event_is_append_only() returns trigger as $$
+begin
+  if tg_op = 'DELETE' and (coalesce(current_setting('patform.retention_run', true), '') = 'on'
+                           or coalesce(current_setting('patform.workspace_purge', true), '') = 'on') then
+    return old;
+  end if;
+  raise exception 'event history is append-only; % is not permitted', lower(tg_op);
+end;
+$$ language plpgsql;
+create or replace function process_version_is_immutable() returns trigger as $$
+begin
+  if tg_op = 'DELETE' and coalesce(current_setting('patform.workspace_purge', true), '') = 'on' then return old; end if;
+  raise exception 'process_version % is published and cannot be % (publish a new version instead)', coalesce(old.id::text, '?'), lower(tg_op);
+end;
+$$ language plpgsql;
+create or replace function workspace_admin_audit_is_append_only() returns trigger as $$
+begin
+  if tg_op = 'DELETE' and coalesce(current_setting('patform.workspace_purge', true), '') = 'on' then return old; end if;
+  raise exception 'workspace admin audit is append-only';
+end;
+$$ language plpgsql;
+create or replace function advance_movement_is_append_only() returns trigger as $$
+begin
+  if tg_op = 'DELETE' and coalesce(current_setting('patform.workspace_purge', true), '') = 'on' then return old; end if;
+  raise exception 'advance movements are append-only';
+end;
+$$ language plpgsql;
+create or replace function goods_receipt_is_append_only() returns trigger as $$
+begin
+  if tg_op = 'DELETE' and coalesce(current_setting('patform.workspace_purge', true), '') = 'on' then return old; end if;
+  raise exception 'goods receipts are append-only';
+end;
+$$ language plpgsql;
+create or replace function calibration_is_append_only() returns trigger as $$
+begin
+  if tg_op = 'DELETE' and coalesce(current_setting('patform.workspace_purge', true), '') = 'on' then return old; end if;
+  raise exception 'calibration adjustments are append-only';
+end;
+$$ language plpgsql;
+create or replace function asset_event_is_append_only() returns trigger as $$
+begin
+  if tg_op = 'DELETE' and coalesce(current_setting('patform.workspace_purge', true), '') = 'on' then return old; end if;
+  raise exception 'asset history is append-only';
+end;
+$$ language plpgsql;
+create or replace function gov_is_append_only() returns trigger as $$
+begin
+  if tg_op = 'DELETE' and coalesce(current_setting('patform.workspace_purge', true), '') = 'on' then return old; end if;
+  raise exception '% is append-only', tg_table_name;
+end;
+$$ language plpgsql;

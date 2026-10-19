@@ -20,7 +20,9 @@
  *     side lives in retention.ts).
  *   - Storing controls here is not a certification (GOV-06).
  */
-import { createHash } from 'node:crypto';
+import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
+import { objectStore } from './object-store.js';
+import { consentUrl, docusignConfigured, DocusignRefused, envelopeStatus, sendEnvelope, signedDocument, testDocusign, voidEnvelope, type DocusignConfig } from './docusign.js';
 import { inTransaction, type Client, type Pool } from './db.js';
 import { InvalidInput } from './errors.js';
 import { type Principal } from './policy.js';
@@ -92,6 +94,8 @@ export interface GovSettings {
   renewalLeadDays: number;
   /** How many days ahead obligation tasks appear. */
   obligationLeadDays: number;
+  /** The DocuSign user Patform sends as, after they consent once. */
+  docusign?: DocusignConfig | null;
 }
 export const DEFAULT_GOV: GovSettings = { alwaysReview: ['business', 'legal'], financeAbove: 50000, securityForPersonalData: true, materialInvalidates: ['business', 'legal', 'security', 'finance'], renewalLeadDays: 30, obligationLeadDays: 14 };
 const DISCIPLINES: Discipline[] = ['business', 'legal', 'security', 'finance'];
@@ -103,7 +107,7 @@ export async function govSettings(client: Client | Pool, tenantId: string): Prom
 export async function readGovSettings(pool: Pool, principal: Principal) {
   const w = await member(pool, principal);
   const { rows } = await pool.query(`select m.team, m.actor_id, a.display_name from gov_member m join actor a on a.id = m.actor_id where m.tenant_id = $1 order by m.team, a.display_name`, [w.tenantId]);
-  return { settings: await govSettings(pool, w.tenantId), teams: rows, me: { admin: w.admin, owner: w.owner, teams: w.teams, holds: holdManager(w) } };
+  return { settings: await govSettings(pool, w.tenantId), teams: rows, me: { admin: w.admin, owner: w.owner, teams: w.teams, holds: holdManager(w) }, docusign: { serverReady: docusignConfigured(), consentUrl: consentUrl() } };
 }
 export async function updateGovSettings(pool: Pool, principal: Principal, body: Record<string, unknown>) {
   const w = await member(pool, principal); requireAdmin(w);
@@ -114,6 +118,17 @@ export async function updateGovSettings(pool: Pool, principal: Principal, body: 
   if (body.materialInvalidates !== undefined) { next.materialInvalidates = pick(body.materialInvalidates); if (!next.materialInvalidates.includes('legal')) throw new InvalidInput('a material change must at least send the contract back to Legal'); }
   if (body.financeAbove !== undefined) { const n = body.financeAbove === null || body.financeAbove === '' ? null : num(body.financeAbove); if (n !== null && !(n >= 0)) throw new InvalidInput('financeAbove must be 0 or more'); next.financeAbove = n; }
   if (body.securityForPersonalData !== undefined) next.securityForPersonalData = body.securityForPersonalData === true;
+  if (body.docusign !== undefined) {
+    if (body.docusign === null) next.docusign = null;
+    else {
+      const d = body.docusign as Record<string, unknown>;
+      const userId = text(d.userId, 36);
+      if (!UUID.test(userId)) throw new InvalidInput('the DocuSign user ID is a GUID, from Apps and Keys in DocuSign');
+      const accountId = text(d.accountId, 36);
+      if (accountId && !UUID.test(accountId)) throw new InvalidInput('the DocuSign account ID is a GUID');
+      next.docusign = { userId, ...(accountId ? { accountId } : {}) };
+    }
+  }
   for (const k of ['renewalLeadDays', 'obligationLeadDays'] as const) if (body[k] !== undefined) { const n = Math.trunc(num(body[k])); if (!(n >= 0 && n <= 365)) throw new InvalidInput(`${k} must be 0 to 365`); next[k] = n; }
   await pool.query(`insert into gov_settings (tenant_id, settings, updated_by) values ($1, $2, $3) on conflict (tenant_id) do update set settings = excluded.settings, updated_by = excluded.updated_by, updated_at = now()`, [w.tenantId, JSON.stringify(next), w.actorId]);
   await recordWorkspaceAudit(pool, { tenantId: w.tenantId, actorId: w.actorId, action: 'gov.settings_changed', targetId: w.tenantId, detail: { before: cur, after: next } });
@@ -201,8 +216,9 @@ export async function createContract(pool: Pool, principal: Principal, body: Rec
        values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) returning id`,
       [w.tenantId, number, title, terms.counterparty, vendorId, text(body.entity, 120) || null, text(body.project, 120) || null, ownerId, terms.value, terms.currency, terms.start_date, terms.end_date,
         terms.auto_renews, terms.notice_days, calendar, body.personalData === true, w.actorId]);
+    const doc = await attachDocument(client, w.tenantId, text(body.documentRef, 500), 'contract', { contractId: rows[0]!.id });
     await client.query(`insert into contract_version (contract_id, version, document_ref, changes, material, terms, created_by) values ($1, 1, $2, 'First version', true, $3, $4)`,
-      [rows[0]!.id, text(body.documentRef, 500) || null, JSON.stringify(terms), w.actorId]);
+      [rows[0]!.id, doc, JSON.stringify(terms), w.actorId]);
     return { id: rows[0]!.id, number };
   });
 }
@@ -226,7 +242,8 @@ export async function contractDetail(pool: Pool, principal: Principal, contractI
   const { rows: tasks } = await pool.query(`select t.id, t.kind, t.title, t.due_on::text, t.notice_deadline::text, t.status, t.evidence, t.note, a.display_name as owner from obligation_task t join actor a on a.id = t.owner_id where t.contract_id = $1 order by t.due_on desc`, [contractId]);
   const { rows: obligations } = await pool.query(`select o.id, o.title, o.kind, o.every_months, o.next_due::text, o.active, a.display_name as owner from obligation o join actor a on a.id = o.owner_id where o.contract_id = $1`, [contractId]);
   const holidays = await holidaysFor(pool, w.tenantId);
-  return { contract: c, versions, reviews, envelopes, tasks, obligations, review: await reviewState(pool, w, c), noticeDeadline: c.end_date && c.notice_days !== null ? noticeDeadline(c.end_date, c.notice_days, c.notice_calendar as 'calendar' | 'business', holidays) : null };
+  const { rows: files } = await pool.query(`select id, purpose, filename, byte_size, sha256, scan_status, created_at from gov_file where contract_id = $1 order by created_at desc`, [contractId]);
+  return { contract: c, versions, reviews, envelopes, tasks, obligations, files, review: await reviewState(pool, w, c), noticeDeadline: c.end_date && c.notice_days !== null ? noticeDeadline(c.end_date, c.notice_days, c.notice_calendar as 'calendar' | 'business', holidays) : null };
 }
 
 /**
@@ -249,8 +266,9 @@ export async function reviseContract(pool: Pool, principal: Principal, contractI
     const changed = TERM_KEYS.filter((k) => JSON.stringify(before[k]) !== JSON.stringify(after[k]));
     const material = body.material === true || changed.length > 0;
     const version = c.current_version + 1;
+    const doc = await attachDocument(client, w.tenantId, text(body.documentRef, 500), 'contract', { contractId });
     await client.query(`insert into contract_version (contract_id, version, document_ref, changes, material, terms, created_by) values ($1, $2, $3, $4, $5, $6, $7)`,
-      [contractId, version, text(body.documentRef, 500) || null, changes, material, JSON.stringify(after), w.actorId]);
+      [contractId, version, doc, changes, material, JSON.stringify(after), w.actorId]);
     await client.query(`update contract set current_version = $2, counterparty = $3, value = $4, currency = $5, start_date = $6, end_date = $7, notice_days = $8, auto_renews = $9, updated_at = now() where id = $1`,
       [contractId, version, after.counterparty, after.value, after.currency, after.start_date, after.end_date, after.notice_days, after.auto_renews]);
     const s = await govSettings(client, w.tenantId);
@@ -268,7 +286,7 @@ export async function reviseContract(pool: Pool, principal: Principal, contractI
       }
     }
     // Anything out for signature was for the old version.
-    await client.query(`update contract_envelope set status = 'voided', updated_at = now(), history = history || $2::jsonb where contract_id = $1 and status in ('sent', 'delivered')`,
+    await client.query(`update contract_envelope set status = 'voided', remote_void_pending = remote, updated_at = now(), history = history || $2::jsonb where contract_id = $1 and status in ('sent', 'delivered')`,
       [contractId, JSON.stringify([{ at: new Date().toISOString(), status: 'voided', note: `superseded by v${version}` }])]);
     const state = await reviewState(client, w, { ...c, current_version: version });
     const status = c.status === 'draft' ? 'draft' : state.approved ? 'approved' : 'in_review';
@@ -321,7 +339,8 @@ export async function reviewContract(pool: Pool, principal: Principal, contractI
 }
 
 /** GOV-03: an envelope for the approved version, tracked apart from approval. */
-export async function sendForSignature(pool: Pool, principal: Principal, contractId: string, body: Record<string, unknown>) {
+export async function sendForSignature(pool: Pool, principal: Principal, contractId: string, body: Record<string, unknown>, doFetch: typeof fetch = fetch) {
+  if (body.via === 'docusign') return sendWithDocusign(pool, principal, contractId, body, doFetch);
   const w = await member(pool, principal);
   const provider = text(body.provider, 80); const ref = text(body.envelopeRef, 200);
   if (!provider || !ref) throw new InvalidInput('give the signature provider and the envelope reference');
@@ -343,6 +362,8 @@ export async function updateEnvelope(pool: Pool, principal: Principal, envelopeI
   const artifact = text(body.signedArtifactRef, 500);
   if (status === 'completed' && !artifact) throw new InvalidInput('a completed envelope needs the signed document reference');
   return inTransaction(pool, async (client) => {
+    const { rows: r } = await client.query<{ remote: boolean }>(`select e.remote from contract_envelope e join contract c on c.id = e.contract_id where e.id = $1 and c.tenant_id = $2`, [envelopeId, w.tenantId]);
+    if (r[0]?.remote) throw new InvalidInput('DocuSign envelopes update themselves from DocuSign; use "Check now"');
     const { rows } = await client.query<{ contract_id: string; version: number; status: string }>(
       `select e.contract_id, e.version, e.status from contract_envelope e join contract c on c.id = e.contract_id where e.id = $1 and c.tenant_id = $2 for update of e`, [envelopeId, w.tenantId]);
     const e = rows[0];
@@ -545,7 +566,9 @@ export async function createPolicy(pool: Pool, principal: Principal, body: Recor
   const ownerId = body.ownerId ? id(body.ownerId, 'ownerId') : w.actorId;
   return inTransaction(pool, async (client) => {
     const { rows } = await client.query<{ id: string }>('insert into policy (tenant_id, title, owner_id) values ($1, $2, $3) returning id', [w.tenantId, title, ownerId]);
-    const { rows: v } = await client.query<{ id: string }>(`insert into policy_version (policy_id, version, summary, document_ref, created_by) values ($1, 1, $2, $3, $4) returning id`, [rows[0]!.id, summary, text(body.documentRef, 500) || null, w.actorId]);
+    const { rows: v } = await client.query<{ id: string }>(`insert into policy_version (policy_id, version, summary, document_ref, created_by) values ($1, 1, $2, null, $3) returning id`, [rows[0]!.id, summary, w.actorId]);
+    const doc = await attachDocument(client, w.tenantId, text(body.documentRef, 500), 'policy', { policyVersionId: v[0]!.id });
+    await client.query('update policy_version set document_ref = $2 where id = $1', [v[0]!.id, doc]);
     return { id: rows[0]!.id, versionId: v[0]!.id };
   });
 }
@@ -556,8 +579,12 @@ export async function newPolicyVersion(pool: Pool, principal: Principal, policyI
   if (!summary) throw new InvalidInput('summarise the new version');
   const { rows } = await pool.query<{ n: number }>(`select coalesce(max(v.version), 0) + 1 as n from policy_version v join policy p on p.id = v.policy_id where p.id = $1 and p.tenant_id = $2`, [policyId, w.tenantId]);
   if (rows[0]!.n === 1) throw new InvalidInput('no such policy');
-  const { rows: v } = await pool.query<{ id: string }>(`insert into policy_version (policy_id, version, summary, document_ref, created_by) values ($1, $2, $3, $4, $5) returning id`, [policyId, rows[0]!.n, summary, text(body.documentRef, 500) || null, w.actorId]);
-  return { id: v[0]!.id, version: rows[0]!.n };
+  return inTransaction(pool, async (client) => {
+    const { rows: v } = await client.query<{ id: string }>(`insert into policy_version (policy_id, version, summary, document_ref, created_by) values ($1, $2, $3, null, $4) returning id`, [policyId, rows[0]!.n, summary, w.actorId]);
+    const doc = await attachDocument(client, w.tenantId, text(body.documentRef, 500), 'policy', { policyVersionId: v[0]!.id });
+    await client.query('update policy_version set document_ref = $2 where id = $1', [v[0]!.id, doc]);
+    return { id: v[0]!.id, version: rows[0]!.n };
+  });
 }
 
 async function policyVersion(client: Client | Pool, w: Who, versionId: string) {
@@ -1004,6 +1031,8 @@ export async function buildEvidencePack(pool: Pool, principal: Principal, engage
     for (const v of versions) items.push({ id: `contract_version:${v.id}`, kind: 'original', source: `contract ${c.number} "${c.title}"`, version: v.version, captured_at: now, data: v });
     const { rows: reviews } = await pool.query(`select r.version, r.discipline, r.decision, r.note, r.decided_at, r.invalidated_at, r.invalidated_reason, a.display_name as reviewer from contract_review r join actor a on a.id = r.reviewer_id where r.contract_id = $1 order by r.decided_at`, [c.id]);
     items.push({ id: `contract_reviews:${c.id}`, kind: 'original', source: `decision history of contract ${c.number}`, captured_at: now, data: reviews });
+    const { rows: files } = await pool.query(`select id, purpose, filename, byte_size, sha256, scan_status, created_at from gov_file where contract_id = $1 order by created_at`, [c.id]);
+    if (files.length) items.push({ id: `contract_files:${c.id}`, kind: 'original', source: `documents of contract ${c.number} (the files themselves are in the bucket; each has its SHA-256 here)`, captured_at: now, data: files });
   }
   for (const c of view.controls) items.push({ id: `control_tests:${c.id}`, kind: 'original', source: `control ${c.ref} tests in period`, captured_at: now, data: c.tests ?? [] });
   for (const r of view.requests) items.push({ id: `evidence_request:${r.id}`, kind: 'original', source: `evidence request "${r.title}" (${r.status})`, captured_at: now, data: { evidence: r.evidence, decision: r.decision_note } });
@@ -1134,4 +1163,219 @@ export async function govDashboard(pool: Pool, principal: Principal) {
         and not exists (select 1 from policy_ack k where k.campaign_id = c.id and k.actor_id = $2)`, [w.tenantId, w.actorId, w.role]);
   return { tasks: tasks[0], remediation, expiring, policies, exceptions: exceptions[0]!.n, controls: controls[0], holds, myAcknowledgements: acks[0]!.n, disclaimer: CONTROLS_DISCLAIMER,
     me: { admin: w.admin, owner: w.owner, teams: w.teams, holds: holdManager(w) } };
+}
+
+// --------------------------------------------------------------- documents
+//
+// Contract and policy files go to the workspace's S3 bucket. The bytes decide
+// the type (PDF or Word); a file is shown only through a short link once the
+// bucket's malware scan passes; a version refers to it as gov-file:<id>.
+
+const GOV_FILE = /^gov-file:([0-9a-f-]{36})$/;
+const MAX_DOC = 20 * 1024 * 1024;
+function sniffDoc(bytes: Buffer, filename: string): string | null {
+  if (bytes.subarray(0, 5).toString('ascii') === '%PDF-') return 'application/pdf';
+  if (bytes.subarray(0, 4).equals(Buffer.from([0x50, 0x4b, 0x03, 0x04])) && /\.docx$/i.test(filename)) return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+  return null;
+}
+
+export async function uploadGovFile(pool: Pool, principal: Principal, body: Record<string, unknown>) {
+  const w = await member(pool, principal);
+  const purpose = body.purpose === 'policy' ? 'policy' : body.purpose === 'contract' ? 'contract' : null;
+  if (!purpose) throw new InvalidInput('purpose must be contract or policy');
+  if (purpose === 'policy') requireTeam(w, 'compliance');
+  const filename = text(body.filename, 200); const base64 = typeof body.base64 === 'string' ? body.base64 : '';
+  if (!filename || !base64 || base64.length > Math.ceil(MAX_DOC * 4 / 3) + 8) throw new InvalidInput('Choose a PDF or Word (.docx) file up to 20 MB.');
+  const bytes = Buffer.from(base64, 'base64');
+  const type = sniffDoc(bytes, filename);
+  if (!type || bytes.length > MAX_DOC) throw new InvalidInput('Choose a PDF or Word (.docx) file up to 20 MB.');
+  const fileId = randomUUID(); const key = `gov/files/${w.tenantId}/${fileId}`;
+  const sha = createHash('sha256').update(bytes).digest('hex');
+  await objectStore().put(key, bytes, type, { sha256: sha });
+  await pool.query(`insert into gov_file (id, tenant_id, purpose, filename, content_type, byte_size, sha256, storage_key, uploaded_by) values ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+    [fileId, w.tenantId, purpose, filename, type, bytes.length, sha, key, w.actorId]);
+  return { id: fileId, reference: `gov-file:${fileId}`, filename, sha256: sha, status: 'scanning' as const };
+}
+
+/** A version's document: an uploaded file of this workspace and purpose, not used elsewhere, not failed; or a plain reference. */
+async function attachDocument(client: Client | Pool, tenantId: string, ref: string, purpose: 'contract' | 'policy', link: { contractId?: string; policyVersionId?: string }): Promise<string | null> {
+  if (!ref) return null;
+  const m = GOV_FILE.exec(ref);
+  if (!m) return ref;
+  const { rows } = await client.query<{ purpose: string; contract_id: string | null; policy_version_id: string | null; scan_status: string }>(
+    'select purpose, contract_id, policy_version_id, scan_status from gov_file where id = $1 and tenant_id = $2', [m[1], tenantId]);
+  const f = rows[0];
+  if (!f || f.purpose !== purpose) throw new InvalidInput('that document was not uploaded for this; upload it again');
+  if (f.scan_status === 'quarantined') throw new InvalidInput('that document failed its malware check');
+  if (purpose === 'contract' && f.contract_id && f.contract_id !== link.contractId) throw new InvalidInput('that document belongs to another contract');
+  if (purpose === 'policy' && f.policy_version_id) throw new InvalidInput('that document belongs to another policy version');
+  if (link.contractId) await client.query('update gov_file set contract_id = $2 where id = $1', [m[1], link.contractId]);
+  if (link.policyVersionId) await client.query('update gov_file set policy_version_id = $2 where id = $1', [m[1], link.policyVersionId]);
+  return ref;
+}
+
+/** A 5-minute link, for people who may see the contract or policy, once the scan has passed. Auditors' downloads are logged. */
+export async function govFileLink(pool: Pool, principal: Principal, fileId: string) {
+  const w = await who(pool, principal);
+  if (!UUID.test(fileId)) throw new InvalidInput('no such document');
+  const { rows } = await pool.query<{ purpose: string; contract_id: string | null; policy_version_id: string | null; storage_key: string; content_type: string; filename: string; scan_status: string; policy_status: string | null }>(
+    `select f.purpose, f.contract_id, f.policy_version_id, f.storage_key, f.content_type, f.filename, f.scan_status, v.status as policy_status
+       from gov_file f left join policy_version v on v.id = f.policy_version_id where f.id = $1 and f.tenant_id = $2`, [fileId, w.tenantId]);
+  const f = rows[0];
+  if (!f) throw new InvalidInput('no such document');
+  let engagementId: string | null = null;
+  if (w.auditor) {
+    const { rows: g } = await pool.query<{ engagement_id: string }>(
+      `select ea.engagement_id from engagement_auditor ea join engagement e on e.id = ea.engagement_id
+        where ea.actor_id = $1 and ea.revoked_at is null and ea.expires_at > now() and e.scope->'contractIds' ? $2 limit 1`, [w.actorId, f.contract_id ?? '']);
+    if (!g[0]) { await logAccess(pool, w, null, 'denied', 'document', fileId); throw new InvalidInput('no such document'); }
+    engagementId = g[0].engagement_id;
+  } else if (f.contract_id) await contractFor(pool, w, f.contract_id);
+  else if (f.policy_version_id) { if (!(f.policy_status === 'published' || f.policy_status === 'superseded' || inTeam(w, 'compliance'))) throw new InvalidInput('no such document'); }
+  else if (!inTeam(w, 'legal', 'compliance')) throw new InvalidInput('no such document');
+  const store = objectStore();
+  const scan = await store.scan(f.storage_key);
+  const stored = scan === 'scanning' ? 'unscanned' : scan;
+  if (stored !== f.scan_status) await pool.query('update gov_file set scan_status = $2 where id = $1', [fileId, stored]);
+  if (scan === 'scanning') throw new InvalidInput('The document is still being checked for malware. Try again in a minute.');
+  if (scan === 'quarantined') throw new InvalidInput('The document did not pass its malware check and cannot be shown.');
+  if (engagementId) await logAccess(pool, w, engagementId, 'view', 'document', fileId);
+  return { url: await store.link(f.storage_key, { contentType: f.content_type, filename: f.filename }), filename: f.filename };
+}
+
+// ---------------------------------------------------------------- DocuSign
+
+const EMAIL = /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i;
+
+async function sendWithDocusign(pool: Pool, principal: Principal, contractId: string, body: Record<string, unknown>, doFetch: typeof fetch) {
+  const w = await member(pool, principal);
+  const s = await govSettings(pool, w.tenantId);
+  if (!s.docusign) throw new InvalidInput('DocuSign is not connected for this workspace; an admin connects it in Setup');
+  const signers = (Array.isArray(body.signers) ? body.signers : []).map((x) => { const o = (x ?? {}) as Record<string, unknown>; return { name: text(o.name, 120), email: text(o.email, 200).toLowerCase() }; });
+  if (!signers.length || signers.length > 10) throw new InvalidInput('give one to ten signers, in signing order');
+  for (const sg of signers) if (!sg.name || !EMAIL.test(sg.email)) throw new InvalidInput('each signer needs a name and an email address');
+  const c = await contractFor(pool, w, contractId);
+  if (c.owner_id !== w.actorId && !inTeam(w, 'legal')) throw new InvalidInput('the owner or Legal sends it for signature');
+  if (c.status !== 'approved') throw new InvalidInput('only a contract approved in its current version can go for signature');
+  const { rows: v } = await pool.query<{ document_ref: string | null }>('select document_ref from contract_version where contract_id = $1 and version = $2', [contractId, c.current_version]);
+  const m = GOV_FILE.exec(v[0]?.document_ref ?? '');
+  if (!m) throw new InvalidInput('upload the contract document to this version before sending it through DocuSign');
+  const { rows: f } = await pool.query<{ storage_key: string; filename: string }>('select storage_key, filename from gov_file where id = $1', [m[1]]);
+  const store = objectStore();
+  const scan = await store.scan(f[0]!.storage_key);
+  if (scan !== 'clean') throw new InvalidInput(scan === 'scanning' ? 'the document is still being checked for malware; try again shortly' : 'the document failed its malware check');
+  const bytes = await store.get(f[0]!.storage_key);
+  let envelopeId: string;
+  try { envelopeId = await sendEnvelope(s.docusign, { subject: `Please sign: ${c.title}`, document: bytes, filename: f[0]!.filename, signers }, doFetch); }
+  catch (err) { throw new InvalidInput(err instanceof DocusignRefused ? err.message : `DocuSign could not be reached: ${err instanceof Error ? err.message : String(err)}`); }
+  return inTransaction(pool, async (client) => {
+    const now = await contractFor(client, w, contractId, true);
+    if (now.status !== 'approved' || now.current_version !== c.current_version) {
+      // Changed while DocuSign was sending: the envelope is for an old version.
+      await client.query(`insert into contract_envelope (contract_id, version, provider, envelope_ref, status, remote, remote_void_pending, signers, history, created_by) values ($1, $2, 'DocuSign', $3, 'voided', true, true, $4, $5, $6)`,
+        [contractId, c.current_version, envelopeId, JSON.stringify(signers), JSON.stringify([{ at: new Date().toISOString(), status: 'voided', note: 'the contract changed while it was being sent' }]), w.actorId]);
+      throw new InvalidInput('the contract changed while it was being sent; the envelope will be voided');
+    }
+    const { rows } = await client.query<{ id: string }>(
+      `insert into contract_envelope (contract_id, version, provider, envelope_ref, remote, signers, history, created_by, last_checked_at) values ($1, $2, 'DocuSign', $3, true, $4, $5, $6, now()) returning id`,
+      [contractId, c.current_version, envelopeId, JSON.stringify(signers), JSON.stringify([{ at: new Date().toISOString(), status: 'sent', via: 'docusign' }]), w.actorId]);
+    await client.query(`update contract set status = 'out_for_signature', updated_at = now() where id = $1`, [contractId]);
+    await recordWorkspaceAudit(client, { tenantId: w.tenantId, actorId: w.actorId, action: 'gov.envelope_sent', targetId: rows[0]!.id, detail: { provider: 'DocuSign', envelopeId, signers: signers.map((x) => x.email) } });
+    return { id: rows[0]!.id, version: c.current_version, envelopeId };
+  });
+}
+
+/**
+ * Follows DocuSign envelopes: status every 15 minutes (or now, when asked or
+ * when DocuSign calls), the signed PDF on completion, and voiding envelopes
+ * for versions that changed.
+ */
+export async function syncEnvelopes(pool: Pool, opts: { tenantId?: string; envelopeId?: string; doFetch?: typeof fetch } = {}) {
+  const doFetch = opts.doFetch ?? fetch;
+  let done = 0;
+  const { rows: toVoid } = await pool.query<{ id: string; envelope_ref: string; tenant_id: string }>(
+    `select e.id, e.envelope_ref, c.tenant_id from contract_envelope e join contract c on c.id = e.contract_id where e.remote and e.remote_void_pending and ($1::uuid is null or c.tenant_id = $1) limit 50`, [opts.tenantId ?? null]);
+  for (const e of toVoid) {
+    const s = await govSettings(pool, e.tenant_id);
+    if (!s.docusign) continue;
+    try { await voidEnvelope(s.docusign, e.envelope_ref, 'Superseded by a new version of the contract', doFetch); await pool.query('update contract_envelope set remote_void_pending = false, remote_error = null where id = $1', [e.id]); }
+    catch (err) { await pool.query('update contract_envelope set remote_error = $2 where id = $1', [e.id, err instanceof Error ? err.message : String(err)]); }
+  }
+  const { rows } = await pool.query<{ id: string; envelope_ref: string; tenant_id: string; contract_id: string; version: number; status: string }>(
+    `select e.id, e.envelope_ref, c.tenant_id, e.contract_id, e.version, e.status from contract_envelope e join contract c on c.id = e.contract_id
+      where e.remote and e.status in ('sent', 'delivered') and ($1::uuid is null or c.tenant_id = $1) and ($2::uuid is null or e.id = $2)
+        and ($2::uuid is not null or e.last_checked_at is null or e.last_checked_at < now() - interval '15 minutes') limit 50`, [opts.tenantId ?? null, opts.envelopeId ?? null]);
+  for (const e of rows) {
+    const s = await govSettings(pool, e.tenant_id);
+    if (!s.docusign) continue;
+    try {
+      const status = await envelopeStatus(s.docusign, e.envelope_ref, doFetch);
+      await pool.query('update contract_envelope set last_checked_at = now(), remote_error = null where id = $1', [e.id]);
+      if (status === 'completed') {
+        const pdf = await signedDocument(s.docusign, e.envelope_ref, doFetch);
+        const fileId = randomUUID(); const key = `gov/files/${e.tenant_id}/${fileId}`;
+        const sha = createHash('sha256').update(pdf).digest('hex');
+        await objectStore().put(key, pdf, 'application/pdf', { sha256: sha });
+        await inTransaction(pool, async (client) => {
+          await client.query(`insert into gov_file (id, tenant_id, purpose, contract_id, filename, content_type, byte_size, sha256, storage_key) values ($1, $2, 'signed', $3, $4, 'application/pdf', $5, $6, $7)`,
+            [fileId, e.tenant_id, e.contract_id, `signed-${e.envelope_ref}.pdf`, pdf.length, sha, key]);
+          await client.query(`update contract_envelope set status = 'completed', signed_artifact_ref = $2, updated_at = now(), history = history || $3::jsonb where id = $1`,
+            [e.id, `gov-file:${fileId}`, JSON.stringify([{ at: new Date().toISOString(), status: 'completed', via: 'docusign', sha256: sha }])]);
+          const { rows: c } = await client.query<{ current_version: number }>('select current_version from contract where id = $1 for update', [e.contract_id]);
+          if (c[0]!.current_version === e.version) await client.query(`update contract set status = 'signed', updated_at = now() where id = $1`, [e.contract_id]);
+          else await client.query('update contract_envelope set remote_error = $2 where id = $1', [e.id, `signed v${e.version}, but the contract is now v${c[0]!.current_version}`]);
+          await recordWorkspaceAudit(client, { tenantId: e.tenant_id, actorId: null, action: 'gov.envelope_completed', targetId: e.id, detail: { provider: 'DocuSign', sha256: sha } });
+        });
+      } else if (status === 'declined' || status === 'voided') {
+        await inTransaction(pool, async (client) => {
+          await client.query(`update contract_envelope set status = $2, updated_at = now(), history = history || $3::jsonb where id = $1`, [e.id, status, JSON.stringify([{ at: new Date().toISOString(), status, via: 'docusign' }])]);
+          await client.query(`update contract set status = 'approved', updated_at = now() where id = $1 and status = 'out_for_signature'
+                                and not exists (select 1 from contract_envelope where contract_id = $1 and status in ('sent', 'delivered'))`, [e.contract_id]);
+        });
+      } else if (status === 'delivered' && e.status !== 'delivered') {
+        await pool.query(`update contract_envelope set status = 'delivered', updated_at = now(), history = history || $2::jsonb where id = $1`, [e.id, JSON.stringify([{ at: new Date().toISOString(), status: 'delivered', via: 'docusign' }])]);
+      }
+      done++;
+    } catch (err) {
+      await pool.query('update contract_envelope set last_checked_at = now(), remote_error = $2 where id = $1', [e.id, err instanceof Error ? err.message : String(err)]);
+    }
+  }
+  return done;
+}
+
+export async function checkEnvelopeNow(pool: Pool, principal: Principal, envelopeId: string, doFetch: typeof fetch = fetch) {
+  const w = await member(pool, principal);
+  const { rows } = await pool.query<{ contract_id: string; remote: boolean }>(`select e.contract_id, e.remote from contract_envelope e join contract c on c.id = e.contract_id where e.id = $1 and c.tenant_id = $2`, [envelopeId, w.tenantId]);
+  if (!rows[0]) throw new InvalidInput('no such envelope');
+  await contractFor(pool, w, rows[0].contract_id);
+  if (!rows[0].remote) throw new InvalidInput('this envelope was recorded by hand');
+  await syncEnvelopes(pool, { tenantId: w.tenantId, envelopeId, doFetch });
+  const { rows: e } = await pool.query('select status, remote_error, signed_artifact_ref from contract_envelope where id = $1', [envelopeId]);
+  return e[0];
+}
+
+export async function testDocusignConnection(pool: Pool, principal: Principal, doFetch: typeof fetch = fetch) {
+  const w = await member(pool, principal); requireAdmin(w);
+  const s = await govSettings(pool, w.tenantId);
+  if (!s.docusign) throw new InvalidInput('give the DocuSign user ID first');
+  return testDocusign(s.docusign, doFetch);
+}
+
+/**
+ * DocuSign Connect. The body is never trusted: when the HMAC key is set the
+ * signature must match, and either way the call only makes Patform ask
+ * DocuSign for the envelope's real status.
+ */
+export async function docusignConnect(pool: Pool, raw: string, signature: string, doFetch: typeof fetch = fetch): Promise<{ status: number }> {
+  const key = process.env.DOCUSIGN_CONNECT_HMAC_KEY;
+  if (key) {
+    const expected = createHmac('sha256', key).update(raw).digest();
+    const given = Buffer.from(signature, 'base64');
+    if (given.length !== expected.length || !timingSafeEqual(given, expected)) return { status: 401 };
+  }
+  const idMatch = /"envelopeId"\s*:\s*"([0-9a-f-]{36})"/i.exec(raw) ?? /<EnvelopeID>([0-9a-f-]{36})<\/EnvelopeID>/i.exec(raw);
+  if (!idMatch) return { status: 200 };
+  const { rows } = await pool.query<{ id: string; tenant_id: string }>(`select e.id, c.tenant_id from contract_envelope e join contract c on c.id = e.contract_id where e.remote and e.envelope_ref = $1`, [idMatch[1]]);
+  for (const e of rows) await syncEnvelopes(pool, { tenantId: e.tenant_id, envelopeId: e.id, doFetch });
+  return { status: 200 };
 }
