@@ -132,6 +132,11 @@ Acceptance scenarios (4.4):
   currency, locale) with validation, routes under `/api/modules` and
   `/api/workspace/settings`, `modules` on `/api/session`, and a
   "Modules & workspace" page in the console settings menu. Audited.
+- 19 Oct 2026: console pages: a "Place in the organisation" section on
+  every member profile (manager with effective date and history, unit,
+  entity, title) and a Settings > "Organisation & authority" page with
+  Structure (entities, nested units, move, head), Approval authority
+  (grants, delegations, revoke) and Audit tabs. Checked in the browser.
 
 ## What to build first
 

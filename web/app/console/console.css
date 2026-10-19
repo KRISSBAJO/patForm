@@ -5295,3 +5295,17 @@ a.cs__navItem {
  .cs__settingsMenu { position: static; width: auto; box-shadow: none; margin-top: 5px; }
  .cs__railExpand { display: none !important; }
 }
+
+/* Place in the organisation: a third profile section, full width. */
+.pp2__detailSection--wide { grid-column: 1 / -1; border-top: 1px solid var(--line); min-height: 0; }
+.pp2__detailSection--wide + .pp2__detailSection { border-left: 0; }
+.pp2__placement { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+.pp2__placement .pp2__select, .pp2__placement .cs__input { width: 100%; margin-bottom: 14px; }
+.pp2__placement .pp2__roleEdit { align-items: center; }
+.pp2__inlineLabel { margin: 0; color: var(--ink-soft); font-size: 11.5px; font-weight: 600; }
+.pp2__date { width: auto; height: 36px; }
+.pp2__problem { margin: 8px 0 0; color: var(--red-text); font-size: 12px; }
+.pp2__history { margin-top: 12px; font-size: 12px; color: var(--muted); }
+.pp2__history summary { cursor: pointer; color: var(--ink-soft); font-weight: 600; }
+.pp2__history ul { margin: 8px 0 0; padding-left: 18px; }
+@media (max-width: 720px) { .pp2__placement { grid-template-columns: 1fr; } }

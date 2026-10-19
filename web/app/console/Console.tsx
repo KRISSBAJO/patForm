@@ -11,6 +11,7 @@ import { BootScreen } from '../../components/boot-screen';
 import { DataView } from './Data';
 import { IntegrationsView } from './Integrations';
 import { ModulesView } from './Modules';
+import { OrganisationView } from './Organisation';
 import { RecordTrail } from './Trail';
 import { RecordPage } from './Record';
 import { WorkList } from './WorkList';
@@ -137,6 +138,7 @@ export function Console() {
     | 'integrations'
     | 'data'
     | 'modules'
+    | 'organisation'
     | 'held'
   >('work');
   const recordOrigin = useRef<'work' | 'records' | 'ask' | 'processes'>('work');
@@ -514,8 +516,8 @@ export function Console() {
 <a className="cs__navItem" href="/builder" title="Builder"><NavIcon name="builder"/><span className="cs__navText">Builder</span></a>
 </nav>
 <div className="cs__railBottom">
-<div className="cs__railSettings" ref={settingsRef}><button type="button" className="cs__navItem" title="Settings" aria-expanded={settingsOpen} aria-controls="console-settings-menu" aria-current={['health','held','integrations','data','modules'].includes(view) ? 'page' : undefined} onClick={event => { event.stopPropagation(); setSettingsOpen(!settingsOpen); }}><NavIcon name="integrations"/><span className="cs__navText">Settings</span></button>
-{settingsOpen && <nav id="console-settings-menu" className="cs__settingsMenu" aria-label="Workspace settings">{([{key:'health',label:'Automation health',icon:'health'},{key:'held',label:'Held submissions',icon:'held'},{key:'integrations',label:'Integrations',icon:'integrations'},{key:'data',label:'Import & data',icon:'data'},{key:'modules',label:'Modules & workspace',icon:'processes'}] as const).map(item => <button type="button" key={item.key} aria-current={view === item.key ? 'page' : undefined} onClick={() => { setView(item.key); setSettingsOpen(false); }}><NavIcon name={item.icon}/><span>{item.label}</span>{item.key === 'held' && heldCount > 0 && <span className="cs__navCount">{heldCount}</span>}</button>)}</nav>}
+<div className="cs__railSettings" ref={settingsRef}><button type="button" className="cs__navItem" title="Settings" aria-expanded={settingsOpen} aria-controls="console-settings-menu" aria-current={['health','held','integrations','data','modules','organisation'].includes(view) ? 'page' : undefined} onClick={event => { event.stopPropagation(); setSettingsOpen(!settingsOpen); }}><NavIcon name="integrations"/><span className="cs__navText">Settings</span></button>
+{settingsOpen && <nav id="console-settings-menu" className="cs__settingsMenu" aria-label="Workspace settings">{([{key:'health',label:'Automation health',icon:'health'},{key:'held',label:'Held submissions',icon:'held'},{key:'integrations',label:'Integrations',icon:'integrations'},{key:'data',label:'Import & data',icon:'data'},{key:'modules',label:'Modules & workspace',icon:'processes'},{key:'organisation',label:'Organisation & authority',icon:'people'}] as const).map(item => <button type="button" key={item.key} aria-current={view === item.key ? 'page' : undefined} onClick={() => { setView(item.key); setSettingsOpen(false); }}><NavIcon name={item.icon}/><span>{item.label}</span>{item.key === 'held' && heldCount > 0 && <span className="cs__navCount">{heldCount}</span>}</button>)}</nav>}
 </div>
 <button type="button" className="cs__navItem cs__railExpand" title={railExpanded ? 'Collapse sidebar' : 'Expand sidebar'} aria-label={railExpanded ? 'Collapse sidebar' : 'Expand sidebar'} aria-expanded={railExpanded} onClick={() => setRailExpanded(!railExpanded)}><span aria-hidden="true">{railExpanded ? '‹' : '›'}</span><span className="cs__navText">{railExpanded ? 'Collapse' : 'Expand'}</span></button>
 </div>
@@ -551,7 +553,9 @@ export function Console() {
                               ? 'Import & data'
                               : view === 'modules'
                                 ? 'Modules & workspace'
-                                : 'My work'}
+                                : view === 'organisation'
+                                  ? 'Organisation & authority'
+                                  : 'My work'}
           </h1>
           {/* The process pill is context for the record views. On People,
               Processes and Your account it named a process the page has
@@ -564,12 +568,12 @@ export function Console() {
             <button type="button" className="cs__btn cs__btn--create" onClick={() => { sessionStorage.removeItem('patform:new-process-description'); window.location.href = '/builder/ai'; }}>
               <span className="cs__createMark" aria-hidden="true">✦</span> Build with AI
             </button>
-          ) : view !== 'security' && <button type="button" className="cs__btn" onClick={() => { if (view === 'integrations' || view === 'data' || view === 'modules') setSettingsRevision(value => value + 1); void load(); }}>
+          ) : view !== 'security' && <button type="button" className="cs__btn" onClick={() => { if (view === 'integrations' || view === 'data' || view === 'modules' || view === 'organisation') setSettingsRevision(value => value + 1); void load(); }}>
             Refresh
           </button>}
         </div>
 
-        <div className={`cs__body ${view === 'security' ? 'cs__body--security' : ''} ${view === 'ask' ? 'cs__body--ask' : ''} ${view === 'record' ? 'cs__body--record' : ''} ${view === 'health' ? 'cs__body--health' : ''} ${view === 'dashboard' ? 'cs__body--dashboard' : ''} ${view === 'people' ? 'cs__body--people' : ''} ${view === 'records' ? 'cs__body--records' : ''} ${view === 'work' ? 'cs__body--work' : ''} ${view === 'processes' ? 'cs__body--processes' : ''} ${view === 'held' ? 'cs__body--held' : ''} ${view === 'integrations' ? 'cs__body--integrations' : ''} ${view === 'data' ? 'cs__body--data' : ''} ${view === 'modules' ? 'cs__body--integrations' : ''}`}>
+        <div className={`cs__body ${view === 'security' ? 'cs__body--security' : ''} ${view === 'ask' ? 'cs__body--ask' : ''} ${view === 'record' ? 'cs__body--record' : ''} ${view === 'health' ? 'cs__body--health' : ''} ${view === 'dashboard' ? 'cs__body--dashboard' : ''} ${view === 'people' ? 'cs__body--people' : ''} ${view === 'records' ? 'cs__body--records' : ''} ${view === 'work' ? 'cs__body--work' : ''} ${view === 'processes' ? 'cs__body--processes' : ''} ${view === 'held' ? 'cs__body--held' : ''} ${view === 'integrations' ? 'cs__body--integrations' : ''} ${view === 'data' ? 'cs__body--data' : ''} ${view === 'modules' || view === 'organisation' ? 'cs__body--integrations' : ''}`}>
           <div className="cs__left">
             {view === 'record' && record ? (
               <RecordPage
@@ -591,6 +595,8 @@ export function Console() {
               <DataView key={settingsRevision} processes={session.processes} />
             ) : view === 'modules' ? (
               <ModulesView canAdminister={['owner', 'admin'].includes(me.workspace_role)} onChanged={() => void load()} />
+            ) : view === 'organisation' ? (
+              <OrganisationView key={settingsRevision} canAdminister={['owner', 'admin', 'builder'].includes(me.workspace_role)} processes={session.processes.map((p) => ({ process_key: p.process_key, name: p.name }))} myId={me.id} />
             ) : view === 'people' ? (
               <PeopleView
                 canAdminister={['owner', 'admin', 'builder'].includes(me.workspace_role)}

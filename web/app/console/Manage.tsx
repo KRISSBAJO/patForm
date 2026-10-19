@@ -17,6 +17,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ShareForm } from '../../components/share-form';
 import { postJson } from './stepup';
+import { PlacementSection } from './OrgPlacement';
 
 async function get<T>(path: string): Promise<T> {
   const res = await fetch(path, { credentials: 'same-origin' });
@@ -264,6 +265,7 @@ export function PeopleView({ canAdminister, onInvite }: { canAdminister: boolean
               <div className="pp2__value">{selected.sessions} signed-in {selected.sessions === 1 ? 'device' : 'devices'}</div>
               {canAdminister && selected.sessions > 0 && <button type="button" className="cs__btn" disabled={busy === selected.id} onClick={() => void act(selected.id, async () => { const done = await post<{ revoked: number }>(`/api/members/${selected.id}/revoke-sessions`); return `Signed ${selected.display_name} out of ${done.revoked} session(s).`; })}>Sign out devices</button>}
             </div>
+            <PlacementSection key={selected.id} memberId={selected.id} canAdminister={canAdminister} onChanged={() => void load()} />
           </div>
           {canAdminister && selected.provisioned_by !== 'scim' && <div className="pp2__accessAction"><div><strong>{selected.active ? 'Deactivate access' : 'Restore access'}</strong><p>{selected.active ? 'They will be signed out and unable to use this workspace.' : 'They will be able to sign in again.'}</p></div><button type="button" className="cs__btn" disabled={busy === selected.id} onClick={() => void act(selected.id, async () => { await post(`/api/members/${selected.id}/${selected.active ? 'deactivate' : 'reactivate'}`); return selected.active ? `${selected.display_name} is deactivated, and their sessions are revoked.` : `${selected.display_name} can sign in again.`; })}>{selected.active ? 'Deactivate' : 'Reactivate'}</button></div>}
         </section>
