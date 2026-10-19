@@ -34,6 +34,7 @@ import { govContractFor, govInTeam, govMember, GOV_FILE_REF } from './gov.js';
 import { sealPdf, pageCount } from './esign-pdf.js';
 import { checkSeal, sealConfig } from './esign-seal.js';
 import { PHONE, maskPhone, normalisePhone, sendSms, smsConfigured } from './sms.js';
+import { lookupCompany, matchOfficer, type RegisterResult } from './company-register.js';
 
 const UUID = /^[0-9a-f-]{36}$/;
 const EMAIL = /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i;
@@ -122,9 +123,30 @@ export async function createEnvelope(pool: Pool, principal: Principal, body: Rec
     if (!name) throw new InvalidInput(`company ${i + 1} needs a name`);
     if (!members.length) throw new InvalidInput(`no signers are listed for ${name}`);
     if (!(required >= 1 && required <= members.length)) throw new InvalidInput(`${name}: between 1 and ${members.length} signatures can be required`);
-    return { name, required, order: Math.max(1, Math.trunc(Number(o.order ?? members[0]!.order)) || 1), authorityNote: text(o.authorityNote, 500) || null };
+    const reg = (o.register ?? null) as { country?: unknown; number?: unknown } | null;
+    const register = reg && text(reg.number, 40) ? { country: text(reg.country, 2).toUpperCase() || 'GB', number: text(reg.number, 40) } : null;
+    return { name, required, order: Math.max(1, Math.trunc(Number(o.order ?? members[0]!.order)) || 1), authorityNote: text(o.authorityNote, 500) || null, register, requireRegistered: o.requireRegistered === true };
   });
   for (const r of recipients) if (r.party && !parties.some((pp) => pp.name === r.party)) throw new InvalidInput(`say how many signatures ${r.party} needs`);
+  // Register checks, before anything is written: a company that is not active cannot sign; an
+  // unlisted signatory is allowed (board resolutions and powers of attorney exist) unless the
+  // sender asked for listed officers only. What the register said is kept with the envelope.
+  const registers = new Map<string, { result: RegisterResult; matches: Map<string, ReturnType<typeof matchOfficer>> }>();
+  for (const pp of parties) {
+    if (!pp.register) continue;
+    let result: RegisterResult;
+    try { result = await lookupCompany(pp.register.country, pp.register.number); }
+    catch (err) { throw new InvalidInput(`the ${pp.register.country} company register could not be reached: ${err instanceof Error ? err.message : String(err)}`); }
+    if (pp.requireRegistered && !result.available) throw new InvalidInput(`${pp.name}: ${result.reason}`);
+    if (result.available && result.status !== 'active') throw new InvalidInput(`${pp.name}: the register lists ${pp.register.country} ${result.number} as ${result.status ?? 'not found'}${result.companyName ? ` (${result.companyName})` : ''}`);
+    const matches = new Map<string, ReturnType<typeof matchOfficer>>();
+    for (const r of recipients.filter((x) => x.party === pp.name)) {
+      const m = result.available ? matchOfficer(r.name, result.officers ?? []) : null;
+      matches.set(r.email, m);
+      if (pp.requireRegistered && !m) throw new InvalidInput(`${r.name} is not listed as a current officer of ${result.companyName ?? pp.name} at ${result.source ?? 'the register'}`);
+    }
+    registers.set(pp.name, { result, matches });
+  }
   let fileId: string; let contractId: string | null = null; let version: number | null = null; let title = text(body.title, 200);
   if (body.contractId) {
     contractId = text(body.contractId, 36);
@@ -161,21 +183,27 @@ export async function createEnvelope(pool: Pool, principal: Principal, body: Rec
     const envelopeId = rows[0]!.id;
     const partyIds = new Map<string, { id: string; order: number }>();
     for (const pp of parties) {
-      const { rows: made } = await client.query<{ id: string }>(`insert into sign_party (envelope_id, name, required_count, routing_order, authority_note) values ($1, $2, $3, $4, $5) returning id`,
-        [envelopeId, pp.name, pp.required, routing === 'parallel' ? 1 : pp.order, pp.authorityNote]);
+      const reg = registers.get(pp.name);
+      const { rows: made } = await client.query<{ id: string }>(`insert into sign_party (envelope_id, name, required_count, routing_order, authority_note, register, register_required) values ($1, $2, $3, $4, $5, $6, $7) returning id`,
+        [envelopeId, pp.name, pp.required, routing === 'parallel' ? 1 : pp.order, pp.authorityNote, reg ? JSON.stringify(reg.result) : null, pp.requireRegistered]);
       partyIds.set(pp.name, { id: made[0]!.id, order: pp.order });
     }
     const ids: string[] = [];
     for (const r of recipients) {
       const { rows: a } = await client.query<{ id: string }>('select id from actor where tenant_id = $1 and lower(email) = $2 and active', [w.tenantId, r.email]);
       const party = r.party ? partyIds.get(r.party)! : null;
+      const reg = r.party ? registers.get(r.party) : undefined;
+      const match = reg?.result.available ? { officer: reg.matches.get(r.email) ?? null, checkedAt: reg.result.checkedAt } : null;
       const { rows: made } = await client.query<{ id: string }>(
-        `insert into sign_recipient (envelope_id, name, email, role, routing_order, actor_id, title, phone, verify_by, party_id) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) returning id`,
-        [envelopeId, r.name, r.email, r.role, routing === 'parallel' ? 1 : party ? party.order : r.order, a[0]?.id ?? null, r.title, r.phone, r.verifyBy, party?.id ?? null]);
+        `insert into sign_recipient (envelope_id, name, email, role, routing_order, actor_id, title, phone, verify_by, party_id, register_match) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) returning id`,
+        [envelopeId, r.name, r.email, r.role, routing === 'parallel' ? 1 : party ? party.order : r.order, a[0]?.id ?? null, r.title, r.phone, r.verifyBy, party?.id ?? null, match ? JSON.stringify(match) : null]);
       ids.push(made[0]!.id);
     }
-    await event(client, envelopeId, null, 'created', { by: w.actorId, sha256: docSha, pages, companies: parties.map((pp) => `${pp.name} (${pp.required} required)`) });
-    return { id: envelopeId, number, pages, recipients: ids, parties: [...partyIds.entries()].map(([name, v]) => ({ name, id: v.id })) };
+    await event(client, envelopeId, null, 'created', { by: w.actorId, sha256: docSha, pages, companies: parties.map((pp) => `${pp.name} (${pp.required} required)`),
+      registers: [...registers.entries()].map(([name, v]) => ({ company: name, ...(v.result.available ? { source: v.result.source, found: v.result.companyName, status: v.result.status, listed: [...v.matches.entries()].filter(([, m]) => m).map(([e]) => e) } : { unavailable: v.result.reason }) })) });
+    return { id: envelopeId, number, pages, recipients: ids, parties: [...partyIds.entries()].map(([name, v]) => ({ name, id: v.id, register: registers.get(name)?.result ?? null,
+      // Only a register that answered can say who is not listed.
+      unlisted: registers.get(name)?.result.available ? [...registers.get(name)!.matches.entries()].filter(([, m]) => !m).map(([e]) => e) : [] })) };
   });
 }
 
@@ -300,12 +328,12 @@ export async function listEnvelopes(pool: Pool, principal: Principal) {
 export async function envelopeDetail(pool: Pool, principal: Principal, envelopeId: string) {
   const { e } = await envelopeFor(pool, principal, envelopeId);
   const { rows: recipients } = await pool.query(
-    `select r.id, r.name, r.email, r.role, r.routing_order, r.status, r.notified_at, r.viewed_at, r.verified_at, r.consented_at, r.signed_at, r.declined_at, r.decline_reason, r.last_reminded_at, r.title, r.verify_by, r.party_id, p.name as party
+    `select r.id, r.name, r.email, r.role, r.routing_order, r.status, r.notified_at, r.viewed_at, r.verified_at, r.consented_at, r.signed_at, r.declined_at, r.decline_reason, r.last_reminded_at, r.title, r.verify_by, r.party_id, r.register_match, p.name as party
        from sign_recipient r left join sign_party p on p.id = r.party_id where r.envelope_id = $1 order by r.role, r.routing_order, r.created_at`, [envelopeId]);
   const { rows: fields } = await pool.query(`select id, recipient_id, party_id, slot, kind, page, x::float, y::float, width::float, height::float, required, label, (value is not null) as filled from sign_field where envelope_id = $1 order by page, y`, [envelopeId]);
   const { rows: events } = await pool.query(`select v.kind, v.detail, v.ip, v.occurred_at, r.name as recipient from sign_event v left join sign_recipient r on r.id = v.recipient_id where v.envelope_id = $1 order by v.id`, [envelopeId]);
   const { rows: parties } = await pool.query(
-    `select p.id, p.name, p.required_count, p.authority_note, p.completed_at, (select count(*)::int from sign_recipient r where r.party_id = p.id and r.status = 'signed') as signed from sign_party p where p.envelope_id = $1 order by p.routing_order`, [envelopeId]);
+    `select p.id, p.name, p.required_count, p.authority_note, p.completed_at, p.register, p.register_required, (select count(*)::int from sign_recipient r where r.party_id = p.id and r.status = 'signed') as signed from sign_party p where p.envelope_id = $1 order by p.routing_order`, [envelopeId]);
   return { envelope: e, recipients, fields, events, parties };
 }
 
@@ -371,11 +399,11 @@ function sessionOk(r: { session_hash: string | null; session_expires_at: Date | 
   const a = Buffer.from(hash(session)); const b = Buffer.from(r.session_hash);
   return a.length === b.length && timingSafeEqual(a, b);
 }
-interface SignerExtra { party_id: string | null; signer_title: string | null; phone: string | null; verify_by: VerifyBy; sms_otp_hash: string | null; authority_confirmed_at: Date | null }
+interface SignerExtra { party_id: string | null; signer_title: string | null; register_match: { officer: { name: string; role: string; appointedOn: string | null } | null; checkedAt: string } | null; phone: string | null; verify_by: VerifyBy; sms_otp_hash: string | null; authority_confirmed_at: Date | null }
 async function partyOf(client: Client | Pool, partyId: string | null) {
   if (!partyId) return null;
-  const { rows } = await client.query<{ id: string; name: string; required_count: number; signed: number; authority_note: string | null }>(
-    `select p.id, p.name, p.required_count, p.authority_note, (select count(*)::int from sign_recipient r where r.party_id = p.id and r.status = 'signed') as signed from sign_party p where p.id = $1`, [partyId]);
+  const { rows } = await client.query<{ id: string; name: string; required_count: number; signed: number; authority_note: string | null; register: RegisterResult | null }>(
+    `select p.id, p.name, p.required_count, p.authority_note, p.register, (select count(*)::int from sign_recipient r where r.party_id = p.id and r.status = 'signed') as signed from sign_party p where p.id = $1`, [partyId]);
   return rows[0] ?? null;
 }
 const mask = (email: string) => email.replace(/^(.)(.*)(@.*)$/, (_, a: string, b: string, c: string) => `${a}${'•'.repeat(Math.min(6, b.length))}${c}`);
@@ -386,7 +414,9 @@ export async function signerView(pool: Pool, t: string, session?: string) {
   const x = r as typeof r & SignerExtra;
   const party = await partyOf(pool, x.party_id);
   const base = { title: r.title, workspace: r.workspace, sender: r.sender, name: r.name, email: mask(r.email), expiresAt: r.expires_at, verifyBy: x.verify_by, phone: x.phone ? maskPhone(x.phone) : null,
-    party: party ? { name: party.name, required: party.required_count, signed: party.signed } : null, signerTitle: x.signer_title };
+    party: party ? { name: party.name, required: party.required_count, signed: party.signed,
+      register: party.register?.available ? { source: party.register.source, companyName: party.register.companyName, status: party.register.status, number: party.register.number } : null,
+      listedAs: x.register_match?.officer ? `${x.register_match.officer.role}${x.register_match.officer.appointedOn ? ` since ${x.register_match.officer.appointedOn}` : ''}` : x.register_match ? 'not listed as an officer' : null } : null, signerTitle: x.signer_title };
   if (r.status === 'not_needed') return { ...base, stage: 'closed' as const, status: `no longer needed: enough people have signed for ${party?.name ?? 'the company'}` };
   if (r.e_status === 'completed') return { ...base, stage: 'completed' as const, completedAt: r.completed_at };
   if (r.e_status !== 'sent' || r.expires_at < new Date()) return { ...base, stage: 'closed' as const, status: r.e_status === 'sent' ? 'expired' : r.e_status };
@@ -554,20 +584,21 @@ export async function completeEnvelope(pool: Pool, e: EnvelopeRow) {
   const original = await documentBytes(pool, e.document_file_id);
   if (hash(original) !== e.original_sha256) throw new Error('the original document changed after the envelope was made');
   const { rows: recipients } = await pool.query<{ id: string; name: string; email: string; role: string; routing_order: number; signature: SignatureValue | null; initials: SignatureValue | null; verified_at: Date | null; consented_at: Date | null; viewed_at: Date | null; signed_at: Date | null; ip: string | null; user_agent: string | null; notified_at: Date | null;
-    status: string; title: string | null; phone: string | null; verify_by: string; party_id: string | null; party_slot: number | null; authority_confirmed_at: Date | null; authority_statement: string | null }>(
-    `select id, name, email, role, routing_order, signature, initials, verified_at, consented_at, viewed_at, signed_at, ip, user_agent, notified_at, status, title, phone, verify_by, party_id, party_slot, authority_confirmed_at, authority_statement
+    status: string; title: string | null; phone: string | null; verify_by: string; party_id: string | null; party_slot: number | null; authority_confirmed_at: Date | null; authority_statement: string | null; register_match: { officer: { name: string; role: string; appointedOn: string | null } | null; checkedAt: string } | null }>(
+    `select id, name, email, role, routing_order, signature, initials, verified_at, consented_at, viewed_at, signed_at, ip, user_agent, notified_at, status, title, phone, verify_by, party_id, party_slot, authority_confirmed_at, authority_statement, register_match
        from sign_recipient where envelope_id = $1 order by role desc, routing_order, party_slot nulls first, created_at`, [e.id]);
   const { rows: fields } = await pool.query<{ recipient_id: string | null; filled_by: string | null; kind: string; page: number; x: number; y: number; width: number; height: number; value: string | null }>(
     `select recipient_id, filled_by, kind, page, x::float, y::float, width::float, height::float, value from sign_field where envelope_id = $1`, [e.id]);
-  const { rows: parties } = await pool.query<{ id: string; name: string; required_count: number; authority_note: string | null }>('select id, name, required_count, authority_note from sign_party where envelope_id = $1 order by routing_order, created_at', [e.id]);
+  const { rows: parties } = await pool.query<{ id: string; name: string; required_count: number; authority_note: string | null; register: RegisterResult | null }>('select id, name, required_count, authority_note, register from sign_party where envelope_id = $1 order by routing_order, created_at', [e.id]);
   const { rows: events } = await pool.query<{ kind: string; occurred_at: Date; ip: string | null; name: string | null }>(
     `select v.kind, v.occurred_at, v.ip, r.name from sign_event v left join sign_recipient r on r.id = v.recipient_id where v.envelope_id = $1 order by v.id`, [e.id]);
   const { rows: t } = await pool.query<{ name: string }>('select name from tenant where id = $1', [e.tenant_id]);
   const completedAt = new Date();
-  const finalBytes = await sealPdf(original, {
+  const sealed = await sealPdf(original, {
     envelope: { id: e.id, number: e.number, title: e.title, workspace: t[0]!.name, originalSha256: e.original_sha256, routing: e.routing, completedAt },
     recipients: recipients.map((r) => ({ ...r, phone: r.phone ? maskPhone(r.phone) : null })), fields, events, parties,
   });
+  const finalBytes = sealed.bytes;
   const sealInfo = sealConfig()?.info ?? null;
   const finalSha = hash(finalBytes);
   const fileId = randomUUID();
@@ -576,8 +607,9 @@ export async function completeEnvelope(pool: Pool, e: EnvelopeRow) {
   await inTransaction(pool, async (client) => {
     await client.query(`insert into gov_file (id, tenant_id, purpose, contract_id, filename, content_type, byte_size, sha256, storage_key, scan_status) values ($1, $2, 'signed', $3, $4, 'application/pdf', $5, $6, $7, 'clean')`,
       [fileId, e.tenant_id, e.contract_id, `${e.title.replace(/[^a-zA-Z0-9 ._-]/g, '').slice(0, 60) || 'document'} - signed.pdf`, finalBytes.length, finalSha, key]);
-    await client.query(`update sign_envelope set status = 'completed', completed_at = $2, final_file_id = $3, final_sha256 = $4, seal = $5 where id = $1`, [e.id, completedAt, fileId, finalSha, sealInfo ? JSON.stringify(sealInfo) : null]);
-    await event(client, e.id, null, 'completed', { sha256: finalSha });
+    await client.query(`update sign_envelope set status = 'completed', completed_at = $2, final_file_id = $3, final_sha256 = $4, seal = $5, seal_timestamp = $6 where id = $1`,
+      [e.id, completedAt, fileId, finalSha, sealInfo ? JSON.stringify(sealInfo) : null, sealInfo ? JSON.stringify(sealed.timestamp ?? { missing: sealed.timestampError ?? 'no timestamping authority configured' }) : null]);
+    await event(client, e.id, null, 'completed', { sha256: finalSha, ...(sealInfo ? { seal: sealInfo.subject, timestamp: sealed.timestamp ?? null, timestampError: sealed.timestampError } : {}) });
     await closeContractEnvelope(client, e, 'completed', `gov-file:${fileId}`);
     // Everyone, copies included, gets a personal link to the signed copy for 30 days. Signers keep
     // the link they signed with; only those who never had one (copies) get a new one.

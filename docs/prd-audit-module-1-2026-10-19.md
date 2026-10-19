@@ -632,9 +632,35 @@ Found and fixed while testing: the signer's job title came out as the
 document's title, because both columns are called `title` and the
 document's overwrote the signer's when joined.
 
-Not built: a trusted timestamp from a timestamping authority inside the
-seal (for long-term validation), and an optional check against a company
-register of who may sign.
+Added the same day:
+
+- Trusted time stamp (`esign-tsa.ts`): the seal's signature is hashed and
+  sent to a timestamping authority (RFC 3161); its signed token goes into
+  the seal as an unsigned attribute, so readers show "signed at <time>,
+  attested by <authority>" and the time stays provable after Patform's own
+  certificate expires. SIGN_TSA_URL names the authority; the default is
+  DigiCert's free public service, which Adobe trusts; "none" switches it
+  off. If the authority does not answer, the seal is still made and the
+  missing stamp is recorded on the envelope and in the event. The verify
+  page reads the stamp from the file and checks it covers that very seal.
+- Company register check (`company-register.ts`): a company signing
+  through several people can carry its register number. UK: Companies
+  House, free, with COMPANIES_HOUSE_API_KEY — the company must exist and be
+  active (a dissolved or unknown company is refused), and each signatory is
+  matched against current officers by surname and forename (initials and
+  middle names allowed). A listed officer is recorded with role and
+  appointment date; an unlisted one may still sign (board resolutions and
+  powers of attorney exist) unless the sender ticks "only listed officers
+  may sign". What the register said is snapshotted on the envelope with
+  the time, shown to the sender and the signer, and printed on the
+  certificate. Nigeria: the CAC has no public lookup; `registerProviders.NG`
+  is the slot for a paid identity provider (Dojah, Prembly, Smile ID), and
+  until one is wired in the check is reported as not available, never
+  guessed.
+
+Found and fixed while testing: with no register available, every signatory
+was reported as "not listed"; now nothing is said about who is listed
+unless a register actually answered.
 
 Operations: the web proxy now passes PDFs through byte for byte and
 forwards the caller's address; on the Vercel-plus-Render setup set

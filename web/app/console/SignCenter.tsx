@@ -10,10 +10,11 @@ import { postJson } from './stepup';
 import { PdfPages, PageBox } from '../../components/pdf-pages';
 
 type Envelope = { id: string; number: number; title: string; status: string; routing: string; created_at: string; sent_at: string | null; completed_at: string | null; expires_at: string; final_sha256: string | null; contract: string | null; signers: number; signed: number };
-type Recipient = { id: string; name: string; email: string; role: string; routing_order: number; status: string; party_id: string | null; party: string | null; title: string | null; verify_by: string; notified_at: string | null; verified_at: string | null; signed_at: string | null; declined_at: string | null; decline_reason: string | null };
+type Recipient = { id: string; name: string; email: string; role: string; routing_order: number; status: string; party_id: string | null; party: string | null; title: string | null; verify_by: string; register_match: { officer: { name: string; role: string; appointedOn: string | null } | null } | null; notified_at: string | null; verified_at: string | null; signed_at: string | null; declined_at: string | null; decline_reason: string | null };
 type Field = { id?: string; recipient_id: string | null; party_id?: string | null; slot?: number | null; kind: Kind; page: number; x: number; y: number; width: number; height: number; required: boolean; label: string | null };
-type Party = { id: string; name: string; required_count: number; signed: number; authority_note: string | null; completed_at: string | null };
-type Detail = { envelope: Envelope & { page_count: number; original_sha256: string; void_reason: string | null; seal: { subject: string; selfIssued: boolean } | null }; recipients: Recipient[]; parties: Party[]; fields: Field[]; events: { kind: string; occurred_at: string; recipient: string | null; ip: string | null }[] };
+type Register = { available: boolean; reason?: string; country: string; number: string; companyName?: string; status?: string; source?: string; checkedAt: string };
+type Party = { id: string; name: string; required_count: number; signed: number; authority_note: string | null; completed_at: string | null; register: Register | null; register_required: boolean };
+type Detail = { envelope: Envelope & { page_count: number; original_sha256: string; void_reason: string | null; seal: { subject: string; selfIssued: boolean } | null; seal_timestamp: { time?: string; authority?: string; missing?: string } | null }; recipients: Recipient[]; parties: Party[]; fields: Field[]; events: { kind: string; occurred_at: string; recipient: string | null; ip: string | null }[] };
 type Kind = 'signature' | 'initials' | 'date' | 'name' | 'text' | 'title';
 type Row = { name: string; email: string; role: 'signer' | 'cc'; order: number; party: string; title: string; phone: string; verifyBy: 'email' | 'sms' | 'email_and_sms' };
 const blank = (order: number): Row => ({ name: '', email: '', role: 'signer', order, party: '', title: '', phone: '', verifyBy: 'email' });
@@ -47,7 +48,9 @@ export function SignCenter({ startContract, onClose }: { startContract?: { id: s
   const [routing, setRouting] = useState<'sequential' | 'parallel'>('sequential');
   const [days, setDays] = useState('30');
   const [rows, setRows] = useState<Row[]>([blank(1)]);
-  const [partyRules, setPartyRules] = useState<Record<string, { required: string; note: string }>>({});
+  const [partyRules, setPartyRules] = useState<Record<string, { required: string; note: string; country: string; number: string; strict: boolean }>>({});
+  const rule = (c: string) => partyRules[c] ?? { required: '1', note: '', country: 'GB', number: '', strict: false };
+  const setRule = (c: string, patch: Partial<ReturnType<typeof rule>>) => setPartyRules((x) => ({ ...x, [c]: { ...rule(c), ...patch } }));
   const [docRef, setDocRef] = useState<{ ref: string; name: string } | null>(null);
   const [detail, setDetail] = useState<Detail | null>(null);
   const [pdf, setPdf] = useState<ArrayBuffer | null>(null);
@@ -91,11 +94,17 @@ export function SignCenter({ startContract, onClose }: { startContract?: { id: s
     </>}
 
     {mode === 'compose' && <form onSubmit={(e) => { e.preventDefault(); void act(async () => {
-      const r = await postJson<{ id: string }>('/api/sign/envelopes', { ...(startContract ? { contractId: startContract.id } : { documentRef: docRef?.ref }), title, message, routing, expiresInDays: Number(days),
+      const r = await postJson<{ id: string; parties: { name: string; unlisted: string[]; register: Register | null }[] }>('/api/sign/envelopes', { ...(startContract ? { contractId: startContract.id } : { documentRef: docRef?.ref }), title, message, routing, expiresInDays: Number(days),
         recipients: rows.filter((x) => x.name || x.email).map((x) => ({ name: x.name, email: x.email, role: x.role, order: x.order, party: x.role === 'signer' ? x.party.trim() || undefined : undefined, title: x.title || undefined, phone: x.phone || undefined, verifyBy: x.verifyBy })),
-        parties: companies.map((c) => ({ name: c, required: Number(partyRules[c]?.required || 1), order: rows.find((x) => x.party.trim() === c)?.order ?? 1, authorityNote: partyRules[c]?.note || undefined })) });
+        parties: companies.map((c) => ({ name: c, required: Number(rule(c).required || 1), order: rows.find((x) => x.party.trim() === c)?.order ?? 1, authorityNote: rule(c).note || undefined,
+          register: rule(c).number.trim() ? { country: rule(c).country, number: rule(c).number.trim() } : undefined, requireRegistered: rule(c).strict })) });
       await open(r.id, 'place');
-      return 'Saved as a draft. Now place the boxes each signer fills, then send.';
+      const notes = r.parties.flatMap((p) => [
+        ...(p.register && !p.register.available ? [`${p.name}: register check not available (${p.register.reason}).`] : []),
+        ...(p.register?.available ? [`${p.name}: ${p.register.source} lists ${p.register.companyName} as ${p.register.status}.`] : []),
+        ...(p.unlisted.length ? [`Not listed as officers of ${p.name}: ${p.unlisted.join(', ')} — they can still sign under the authority you recorded.`] : []),
+      ]);
+      return `Saved as a draft. Now place the boxes each signer fills, then send.${notes.length ? ` ${notes.join(' ')}` : ''}`;
     }); }} style={{ display: 'grid', gap: 12 }}>
       {startContract ? <p>Contract: <strong>{startContract.title}</strong> (its current, approved version)</p>
         : <div><label className="cs__label" htmlFor="ps-file">PDF to sign{docRef ? ` — ${docRef.name} uploaded` : ''}</label><input id="ps-file" type="file" accept="application/pdf,.pdf" onChange={(e) => { const file = e.target.files?.[0]; if (!file) return; void act(async () => { const r = await postJson<{ reference: string; filename: string }>('/api/gov/files', { purpose: 'signing', filename: file.name, base64: await readBase64(file) }); setDocRef({ ref: r.reference, name: r.filename }); if (!title) setTitle(file.name.replace(/\.pdf$/i, '')); return 'Uploaded. It can be sent once the malware check passes (usually under a minute).'; }); }} /></div>}
@@ -119,8 +128,11 @@ export function SignCenter({ startContract, onClose }: { startContract?: { id: s
       </div>)}
       {companies.map((c) => { const members = rows.filter((x) => x.role === 'signer' && x.party.trim() === c).length; return <div key={c} className="pp2__roleEdit" style={{ alignItems: 'end' }}>
         <strong style={{ alignSelf: 'center' }}>{c}</strong>
-        <div><label className="cs__label" htmlFor={`pr-${c}`}>Signatures needed (of {members})</label><input id={`pr-${c}`} type="number" min={1} max={members} className="cs__input" style={{ width: 90 }} value={partyRules[c]?.required ?? '1'} onChange={(e) => setPartyRules((x) => ({ ...x, [c]: { required: e.target.value, note: x[c]?.note ?? '' } }))} /></div>
-        <div><label className="cs__label" htmlFor={`pn-${c}`}>Authority (e.g. board resolution reference)</label><input id={`pn-${c}`} className="cs__input" value={partyRules[c]?.note ?? ''} onChange={(e) => setPartyRules((x) => ({ ...x, [c]: { required: x[c]?.required ?? '1', note: e.target.value } }))} /></div>
+        <div><label className="cs__label" htmlFor={`pr-${c}`}>Signatures needed (of {members})</label><input id={`pr-${c}`} type="number" min={1} max={members} className="cs__input" style={{ width: 90 }} value={rule(c).required} onChange={(e) => setRule(c, { required: e.target.value })} /></div>
+        <div><label className="cs__label" htmlFor={`pn-${c}`}>Authority (e.g. board resolution reference)</label><input id={`pn-${c}`} className="cs__input" value={rule(c).note} onChange={(e) => setRule(c, { note: e.target.value })} /></div>
+        <div><label className="cs__label" htmlFor={`pc-${c}`}>Register</label><select id={`pc-${c}`} className="cs__input" value={rule(c).country} onChange={(e) => setRule(c, { country: e.target.value })}><option value="GB">UK Companies House</option><option value="NG">Nigeria CAC</option></select></div>
+        <div><label className="cs__label" htmlFor={`pk-${c}`}>Company number (optional)</label><input id={`pk-${c}`} className="cs__input" style={{ width: 150 }} placeholder={rule(c).country === 'NG' ? 'RC123456' : '12345678'} value={rule(c).number} onChange={(e) => setRule(c, { number: e.target.value })} /></div>
+        {rule(c).number.trim() && <div><label className="pp2__inlineLabel"><input type="checkbox" checked={rule(c).strict} onChange={(e) => setRule(c, { strict: e.target.checked })} /> Only listed officers may sign</label></div>}
       </div>; })}
       <div className="pp2__roleEdit"><button type="button" className="cs__btn" onClick={() => setRows((x) => [...x, blank(x.length + 1)])}>Add a recipient</button>
         <button type="submit" className="cs__btn cs__btn--primary" disabled={busy || (!startContract && !docRef)}>Next: place the boxes</button>
@@ -154,9 +166,11 @@ export function SignCenter({ startContract, onClose }: { startContract?: { id: s
     {mode === 'detail' && detail && <>
       <p><strong>PS-{detail.envelope.number} {detail.envelope.title}</strong> · {detail.envelope.status}{detail.envelope.void_reason ? ` (${detail.envelope.void_reason})` : ''} · expires {day(detail.envelope.expires_at)}</p>
       {detail.envelope.final_sha256 && <p className="ig__muted" style={{ wordBreak: 'break-all' }}>Signed copy SHA-256: {detail.envelope.final_sha256}{detail.envelope.seal ? ` · sealed with ${detail.envelope.seal.subject}${detail.envelope.seal.selfIssued ? ' (self-issued certificate)' : ''}` : ''}</p>}
-      {detail.parties.map((p) => <p key={p.id}><strong>{p.name}</strong>: {p.signed} of {p.required_count} required signature(s){p.completed_at ? ' — done' : ''}{p.authority_note ? ` · authority: ${p.authority_note}` : ''}</p>)}
+      {detail.parties.map((p) => <p key={p.id}><strong>{p.name}</strong>: {p.signed} of {p.required_count} required signature(s){p.completed_at ? ' — done' : ''}{p.authority_note ? ` · authority: ${p.authority_note}` : ''}
+        {p.register && <><br /><small>{p.register.available ? `${p.register.source} (${p.register.country} ${p.register.number}): ${p.register.companyName ?? 'not found'}${p.register.status ? `, ${p.register.status}` : ''}, checked ${day(p.register.checkedAt)}${p.register_required ? ' · listed officers only' : ''}` : `Register check not available: ${p.register.reason}`}</small></>}</p>)}
+      {detail.envelope.seal_timestamp && <p className="ig__muted">{detail.envelope.seal_timestamp.time ? `Time stamped ${day(detail.envelope.seal_timestamp.time)} by ${detail.envelope.seal_timestamp.authority}` : `No trusted time stamp: ${detail.envelope.seal_timestamp.missing}`}</p>}
       <table className="ex__table"><thead><tr><th scope="col">Recipient</th><th scope="col">Status</th><th scope="col">Verified</th><th scope="col">Signed</th></tr></thead>
-        <tbody>{detail.recipients.map((r) => <tr key={r.id}><td>{r.name}{r.title ? `, ${r.title}` : ''}<br /><small>{r.email} · {r.role === 'cc' ? 'copy' : r.party ? `for ${r.party}` : `signer ${r.routing_order}`}{r.verify_by !== 'email' ? ` · ${r.verify_by === 'sms' ? 'text code' : 'email + text codes'}` : ''}</small></td><td>{r.status === 'not_needed' ? 'not needed' : r.status}{r.decline_reason ? `: ${r.decline_reason}` : ''}</td><td>{day(r.verified_at)}</td><td>{day(r.signed_at)}</td></tr>)}</tbody></table>
+        <tbody>{detail.recipients.map((r) => <tr key={r.id}><td>{r.name}{r.title ? `, ${r.title}` : ''}<br /><small>{r.email} · {r.role === 'cc' ? 'copy' : r.party ? `for ${r.party}` : `signer ${r.routing_order}`}{r.verify_by !== 'email' ? ` · ${r.verify_by === 'sms' ? 'text code' : 'email + text codes'}` : ''}{r.register_match ? ` · ${r.register_match.officer ? `listed as ${r.register_match.officer.role}` : 'not listed at the register'}` : ''}</small></td><td>{r.status === 'not_needed' ? 'not needed' : r.status}{r.decline_reason ? `: ${r.decline_reason}` : ''}</td><td>{day(r.verified_at)}</td><td>{day(r.signed_at)}</td></tr>)}</tbody></table>
       <div className="pp2__roleEdit">
         {detail.envelope.status === 'completed' && <button type="button" className="cs__btn cs__btn--primary" onClick={() => void act(async () => { const blob = new Blob([await pdfOf(detail.envelope.id)], { type: 'application/pdf' }); const url = URL.createObjectURL(blob); window.open(url, '_blank', 'noopener'); setTimeout(() => URL.revokeObjectURL(url), 60_000); })}>Open the signed copy</button>}
         {detail.envelope.status === 'sent' && <button type="button" className="cs__btn" disabled={busy} onClick={() => void act(async () => { const r = await postJson<{ reminded: number }>(`/api/sign/envelopes/${detail.envelope.id}/remind`, {}); return `Reminded ${r.reminded} signer(s).`; })}>Remind now</button>}

@@ -162,7 +162,7 @@ test('a company signs through any 2 of 3 authorised people: each confirms author
 
     const [ta, tb, tc] = dirs.map((d) => w.link(d.email)!);
     const view = await signerView(pool, ta!);
-    assert.deepEqual(view.party, { name: 'Acme Ltd', required: 2, signed: 0 });
+    assert.deepEqual(view.party, { name: 'Acme Ltd', required: 2, signed: 0, register: null, listedAs: null });
     // Authority must be confirmed.
     await requestCode(pool, ta!);
     const { session } = await verifyCode(pool, ta!, w.emailCode(dirs[0]!.email));

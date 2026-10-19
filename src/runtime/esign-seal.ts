@@ -15,7 +15,7 @@
 import { createHash } from 'node:crypto';
 import forge from 'node-forge';
 import { SignPdf } from '@signpdf/signpdf';
-import { P12Signer } from '@signpdf/signer-p12';
+import { TimestampedP12Signer, timestampIn } from './esign-tsa.js';
 import { pdflibAddPlaceholder } from '@signpdf/placeholder-pdf-lib';
 import type { PDFDocument } from 'pdf-lib';
 
@@ -48,14 +48,20 @@ export function sealConfig() {
 
 /** Adds the empty signature to the document before it is saved. */
 export function addSealPlaceholder(doc: PDFDocument, envelope: { number: number; workspace: string }) {
-  pdflibAddPlaceholder({ pdfDoc: doc, reason: `Patform Sign envelope PS-${envelope.number}: all parties have signed`, contactInfo: 'Patform Sign', name: 'Patform Sign', location: envelope.workspace, signatureLength: 16384, appName: 'Patform Sign' });
+  // Room for the signature, the certificate chain and a timestamping authority's token.
+  pdflibAddPlaceholder({ pdfDoc: doc, reason: `Patform Sign envelope PS-${envelope.number}: all parties have signed`, contactInfo: 'Patform Sign', name: 'Patform Sign', location: envelope.workspace, signatureLength: 32768, appName: 'Patform Sign' });
 }
 
-/** Signs the saved bytes. */
-export async function applySeal(bytes: Buffer): Promise<Buffer> {
+export interface SealOutcome { bytes: Buffer; timestamp: { time: string; authority: string } | null; timestampError: string | null }
+/** Signs the saved bytes, with a trusted time stamp when the authority answers. */
+export async function applySeal(bytes: Buffer, opts: { tsaUrl?: string | null; fetchImpl?: typeof fetch } = {}): Promise<SealOutcome> {
   const c = sealConfig();
-  if (!c) return bytes;
-  return new SignPdf().sign(bytes, new P12Signer(c.p12, { passphrase: c.passphrase }));
+  if (!c) return { bytes, timestamp: null, timestampError: null };
+  const configured = process.env.SIGN_TSA_URL;
+  const tsaUrl = opts.tsaUrl !== undefined ? opts.tsaUrl : configured === 'none' ? null : undefined;
+  const signer = new TimestampedP12Signer(c.p12, { passphrase: c.passphrase, tsaUrl, fetchImpl: opts.fetchImpl });
+  const out = await new SignPdf().sign(bytes, signer);
+  return { bytes: out, timestamp: signer.lastTimestamp ? { time: signer.lastTimestamp.time, authority: signer.lastTimestamp.authority } : null, timestampError: signer.lastError };
 }
 
 /**
@@ -63,7 +69,7 @@ export async function applySeal(bytes: Buffer): Promise<Buffer> {
  * signature hash to the digest inside it, and the certificate's key signed
  * that digest. Says nothing about whether the certificate is trusted.
  */
-export function checkSeal(bytes: Buffer): { sealed: false } | { sealed: true; intact: boolean; covers: 'whole file' | 'part of the file'; signer: string; issuer: string; signedAt: string | null } {
+export function checkSeal(bytes: Buffer): { sealed: false } | { sealed: true; intact: boolean; covers: 'whole file' | 'part of the file'; signer: string; issuer: string; signedAt: string | null; timestamp: { time: string; authority: string; coversSignature: boolean } | null } {
   const text = bytes.toString('latin1');
   const at = text.lastIndexOf('/ByteRange');
   if (at < 0) return { sealed: false };
@@ -88,8 +94,12 @@ export function checkSeal(bytes: Buffer): { sealed: false } | { sealed: true; in
     }
     const intact = keyOk && digest === createHash('sha256').update(signed).digest('hex');
     const name = (attrs2: forge.pki.CertificateField[]) => attrs2.map((x) => `${x.shortName ?? x.name}=${x.value}`).join(', ');
-    return { sealed: true, intact, covers: c + d === bytes.length ? 'whole file' : 'part of the file', signer: name(cert.subject.attributes), issuer: name(cert.issuer.attributes), signedAt };
+    const signedData = (forge.asn1.fromDer(forge.util.hexToBytes(hex)).value[1] as forge.asn1.Asn1).value[0] as forge.asn1.Asn1;
+    const infos = signedData.value[signedData.value.length - 1] as forge.asn1.Asn1;
+    let timestamp: { time: string; authority: string; coversSignature: boolean } | null = null;
+    try { timestamp = timestampIn(infos.value[0] as forge.asn1.Asn1, Buffer.from(p7.rawCapture.signature, 'binary')); } catch { timestamp = null; }
+    return { sealed: true, intact, covers: c + d === bytes.length ? 'whole file' : 'part of the file', signer: name(cert.subject.attributes), issuer: name(cert.issuer.attributes), signedAt, timestamp };
   } catch {
-    return { sealed: true, intact: false, covers: 'part of the file', signer: 'unreadable', issuer: 'unreadable', signedAt: null };
+    return { sealed: true, intact: false, covers: 'part of the file', signer: 'unreadable', issuer: 'unreadable', signedAt: null, timestamp: null };
   }
 }

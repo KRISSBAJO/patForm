@@ -2254,3 +2254,10 @@ alter table platform_email drop constraint if exists platform_email_kind_check;
 alter table platform_email add constraint platform_email_kind_check
   check (kind in ('invitation', 'verify_email', 'password_reset', 'delivery_alert', 'task_assigned', 'record_shared', 'scheduled_report',
                   'signature_request', 'signature_code', 'signature_completed', 'signature_declined', 'signature_reminder', 'signature_not_needed'));
+
+-- Patform Sign: what the company register said about a company and its
+-- signatories when the envelope was made (a snapshot, with the time).
+alter table sign_party add column if not exists register jsonb;
+alter table sign_party add column if not exists register_required boolean not null default false;
+alter table sign_recipient add column if not exists register_match jsonb;
+alter table sign_envelope add column if not exists seal_timestamp jsonb;

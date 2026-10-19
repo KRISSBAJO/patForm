@@ -8,7 +8,8 @@
 import { useState } from 'react';
 import '../sign.css';
 
-type Result = { valid: boolean; sha256: string; note?: string; title?: string; workspace?: string; envelope?: string; completedAt?: string; signers?: { name: string; signed_at: string }[] };
+type Seal = { sealed: false } | { sealed: true; intact: boolean; signer: string; timestamp: { time: string; authority: string; coversSignature: boolean } | null };
+type Result = { valid: boolean; sha256: string; note?: string; title?: string; workspace?: string; envelope?: string; completedAt?: string; signers?: { name: string; signed_at: string; party?: string | null; title?: string | null }[]; seal?: Seal | null };
 
 export default function VerifyPage() {
   const [result, setResult] = useState<Result | null>(null);
@@ -19,7 +20,9 @@ export default function VerifyPage() {
     try {
       const digest = await crypto.subtle.digest('SHA-256', await file.arrayBuffer());
       const sha256 = [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
-      const res = await fetch('/api/sign/verify', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sha256 }) });
+      // The file goes along too, so the seal inside it can be read; it is not kept.
+      const bytes = new Uint8Array(await file.arrayBuffer()); let bin = ''; for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+      const res = await fetch('/api/sign/verify', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sha256, base64: btoa(bin) }) });
       const body = await res.json();
       if (!res.ok) throw new Error(body.reason ?? body.error ?? 'The check failed.');
       setResult(body);
@@ -30,7 +33,7 @@ export default function VerifyPage() {
     <main className="ps__main">
       <div className="ps__card">
         <h1>Is this the genuine signed copy?</h1>
-        <p className="ps__muted">Choose the PDF. It stays on your device; only its fingerprint (SHA-256) is checked.</p>
+        <p className="ps__muted">Choose the PDF. Its fingerprint (SHA-256) is checked against Patform's record, and any digital seal inside it is read. The file is not kept.</p>
         <input type="file" accept="application/pdf,.pdf" aria-label="Choose the signed PDF" disabled={busy} onChange={(e) => { const f = e.target.files?.[0]; if (f) void check(f); }} />
       </div>
       {error && <p className="ps__error" role="alert">{error}</p>}
@@ -39,7 +42,8 @@ export default function VerifyPage() {
           <h2 className="ps__ok" style={{ fontSize: 18, marginTop: 0 }}>Genuine: unchanged since it was signed</h2>
           <p><strong>{result.title}</strong> · {result.envelope} · from {result.workspace}</p>
           <p className="ps__muted">Completed {result.completedAt ? new Date(result.completedAt).toLocaleString() : ''}</p>
-          <ul>{result.signers?.map((s) => <li key={s.name + s.signed_at}>{s.name} — signed {new Date(s.signed_at).toLocaleString()}</li>)}</ul>
+          <ul>{result.signers?.map((s) => <li key={s.name + s.signed_at}>{s.name}{s.title ? `, ${s.title}` : ''}{s.party ? ` for ${s.party}` : ''} — signed {new Date(s.signed_at).toLocaleString()}</li>)}</ul>
+          {result.seal?.sealed && <p className={result.seal.intact ? 'ps__ok' : 'ps__error'}>{result.seal.intact ? `Digital seal intact (${result.seal.signer})` : 'The digital seal does not match the file'}{result.seal.intact && result.seal.timestamp ? ` · time stamped ${new Date(result.seal.timestamp.time).toLocaleString()} by ${result.seal.timestamp.authority}${result.seal.timestamp.coversSignature ? '' : ' (stamp does not cover this seal)'}` : ''}</p>}
         </> : <><h2 className="ps__error" style={{ fontSize: 18, marginTop: 0 }}>Not a match</h2><p>{result.note}</p></>}
         <p className="ps__muted" style={{ wordBreak: 'break-all' }}>SHA-256: {result.sha256}</p>
       </div>}

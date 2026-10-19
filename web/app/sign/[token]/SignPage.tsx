@@ -14,7 +14,7 @@ import '../sign.css';
 type Field = { id: string; kind: 'signature' | 'initials' | 'date' | 'name' | 'text' | 'title'; page: number; x: number; y: number; width: number; height: number; required: boolean; label: string | null };
 type View = { stage: 'verify' | 'sign' | 'signed' | 'completed' | 'closed'; title: string; workspace: string; sender: string | null; name: string; email: string; expiresAt: string; status?: string;
   message?: string | null; pages?: number; consented?: boolean; consentText?: string; fields?: Field[]; completedAt?: string;
-  verifyBy?: 'email' | 'sms' | 'email_and_sms'; phone?: string | null; party?: { name: string; required: number; signed: number } | null; signerTitle?: string | null; authorityText?: string | null; authorityNote?: string | null };
+  verifyBy?: 'email' | 'sms' | 'email_and_sms'; phone?: string | null; party?: { name: string; required: number; signed: number; register?: { source?: string; companyName?: string; status?: string; number: string } | null; listedAs?: string | null } | null; signerTitle?: string | null; authorityText?: string | null; authorityNote?: string | null };
 
 const KEY = (t: string) => `patform-sign:${t.slice(0, 12)}`;
 async function call<T>(path: string, init: RequestInit & { session?: string | null } = {}): Promise<T> {
@@ -78,7 +78,8 @@ export function SignPage({ token }: { token: string }) {
       <div className="ps__card">
         <h1>{view.title}</h1>
         <p className="ps__muted">From {view.sender ? `${view.sender}, ` : ''}{view.workspace} · for {view.name}{view.signerTitle ? `, ${view.signerTitle}` : ''} ({view.email})</p>
-        {view.party && <p><strong>You are signing on behalf of {view.party.name}.</strong> {view.party.required} authorised signature{view.party.required === 1 ? '' : 's'} needed; {view.party.signed} so far.</p>}
+        {view.party && <p><strong>You are signing on behalf of {view.party.name}.</strong> {view.party.required} authorised signature{view.party.required === 1 ? '' : 's'} needed; {view.party.signed} so far.
+          {view.party.register && <><br /><span className="ps__muted">{view.party.register.source} lists {view.party.register.companyName} ({view.party.register.number}) as {view.party.register.status}{view.party.listedAs ? `; you are ${view.party.listedAs}` : ''}.</span></>}</p>}
         {view.message && <p>{view.message}</p>}
       </div>
       {note && <p className="ps__error" role="alert">{note}</p>}
