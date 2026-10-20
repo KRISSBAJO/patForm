@@ -2250,6 +2250,24 @@ html {
 .footer__utility { grid-column: 1 / -1; gap: 8px 18px; }
 .footer__utility a { color: #66766a; font-size: 11.5px; }
 
+.footer__wordmark {
+  display: block;
+  width: max-content;
+  max-width: none;
+  margin: 34px 0 -0.18em 50%;
+  transform: translateX(-50%);
+  color: #dfe3dd;
+  font-family: 'Instrument Sans', Arial, sans-serif;
+  font-size: clamp(220px, 31vw, 560px);
+  font-weight: 700;
+  line-height: .86;
+  letter-spacing: -.105em;
+  text-align: center;
+  white-space: nowrap;
+  user-select: none;
+  pointer-events: none;
+}
+
 @media (max-width: 800px) {
   .footer { padding: 34px 0 30px; }
   .footer__main { display: block; }
@@ -2257,6 +2275,7 @@ html {
   .footer__bottom { grid-template-columns: 1fr; gap: 10px; }
   .footer__bottom .footer__compliance { text-align: left; }
   .footer__utility { grid-column: 1; margin-top: 8px; }
+  .footer__wordmark { margin-top: 40px; font-size: 42vw; }
 }
 
 /* ------------------------------------------------- the narrow-screen menu */

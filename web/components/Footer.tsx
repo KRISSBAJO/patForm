@@ -38,6 +38,7 @@ export function Footer() {
           </nav>
         </div>
       </div>
+      <div className="footer__wordmark" aria-hidden="true">Patform</div>
     </footer>
   );
 }
