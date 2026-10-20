@@ -338,10 +338,6 @@ function Story() {
               <span className="lp-chapter__n mono">{String(i + 1).padStart(2, '0')} / {String(CHAPTERS.length).padStart(2, '0')} · {c.module}</span>
               <h3>{c.title}</h3>
               <p>{c.copy}</p>
-              <div className="lp-chapter__mobileRecord">
-                <strong>HR-2041 · {c.record.state}</strong>
-                <span>{c.log}</span>
-              </div>
             </article>
           ))}
         </div>
