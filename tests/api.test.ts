@@ -319,6 +319,13 @@ test('x-forwarded-for is counted, not trusted', () => {
 
   const bare = { socket: { remoteAddress: '203.0.113.9' }, headers: {} } as unknown as Parameters<typeof callerFor>[0];
   assert.equal(callerFor(bare), '203.0.113.9');
+  assert.equal(callerFor(spoofed, 2), '198.51.100.1', 'two observed proxy hops select the client');
+  assert.equal(callerFor(spoofed, 1), '198.51.100.2', 'one observed proxy hop selects the nearest forwarded address');
+  const shortChain = {
+    socket: { remoteAddress: '203.0.113.9' },
+    headers: { 'x-forwarded-for': '198.51.100.1' },
+  } as unknown as Parameters<typeof callerFor>[0];
+  assert.equal(callerFor(shortChain, 2), '203.0.113.9', 'an incomplete chain cannot supply a trusted caller');
 });
 
 /*

@@ -38,9 +38,9 @@ import { takeRateTokenShared, type RateVerdict } from './keys.js';
  */
 const TRUSTED_HOPS = Math.max(0, Number(process.env.TRUST_PROXY ?? 0) || 0);
 
-export function callerFor(req: IncomingMessage): string {
+export function callerFor(req: IncomingMessage, trustedHops = TRUSTED_HOPS): string {
   const socket = req.socket.remoteAddress ?? 'unknown';
-  if (TRUSTED_HOPS === 0) return socket;
+  if (trustedHops <= 0) return socket;
 
   const header = req.headers['x-forwarded-for'];
   const chain = (Array.isArray(header) ? header.join(',') : (header ?? ''))
@@ -55,8 +55,10 @@ export function callerFor(req: IncomingMessage): string {
    * observe ourselves — and the first one the caller could have written — is
    * at length - N. Anything further left is theirs to invent.
    */
-  const index = chain.length - TRUSTED_HOPS;
-  return chain[index] ?? chain[0] ?? socket;
+  const index = chain.length - trustedHops;
+  // A shorter chain does not prove the configured proxies were traversed.
+  // Its leftmost address may have been supplied by the caller.
+  return index >= 0 ? chain[index]! : socket;
 }
 
 export interface IntakeLimit {

@@ -33,7 +33,7 @@ feature exists at all:
 | Setting | Needed for | If missing |
 | --- | --- | --- |
 | `AWS_REGION`, `AWS_S3_BUCKET` + AWS credentials | receipts, photos, documents, signed PDFs, exports | those uploads are refused with a plain reason |
-| `TRUST_PROXY` | the caller's real IP for rate limits and the signing record | set `2` (Vercel proxy + Render); `0` records Render's own address |
+| `TRUST_PROXY` | the caller's IP for rate limits and the signing record | leave at `0` until the actual forwarding chain is verified on staging; then set only the verified number of trusted hops. An incorrect value can record a proxy or spoofed address. |
 | `APP_URL` | every link in email (signing links, exports) | links point at localhost |
 | `MFA_ENCRYPTION_KEY` | sealing connector secrets, signing links, bank details | secrets sealed with the public dev key: **never in production** |
 | `MS365_CLIENT_ID/SECRET` | Microsoft 365 access connector | Setup says the server is missing them |
