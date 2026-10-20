@@ -49,7 +49,7 @@ export function Signup() {
   return (
     <div className="cs__login">
       <form className="cs__loginBox" onSubmit={submit}>
-        <div className="cs__brand" style={{ color: 'var(--ink)', padding: 0 }}>
+        <Link className="cs__brand" href="/" aria-label="Patform home" style={{ color: 'var(--ink)', padding: 0, textDecoration: 'none' }}>
           <svg width="24" height="24" viewBox="0 0 26 26" fill="none" aria-hidden="true">
             <rect x="1.5" y="1.5" width="23" height="23" rx="6" stroke="var(--green)" strokeWidth="1.8" />
             <path
@@ -61,7 +61,7 @@ export function Signup() {
             />
           </svg>
           Patform
-        </div>
+        </Link>
         <h1 className="cs__loginTitle">Create a workspace</h1>
 
         <label className="cs__label" htmlFor="workspace">

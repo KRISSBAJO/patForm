@@ -483,13 +483,13 @@ export function Console() {
         <button type="button" className="cs__menuToggle" aria-label="Open menu" aria-expanded={mobileNavOpen} aria-controls="console-navigation" onClick={() => setMobileNavOpen(true)}>
           <span aria-hidden="true">☰</span>
         </button>
-        <span className="cs__topBrand">
+        <a className="cs__topBrand" href="/" aria-label="Patform home" style={{ textDecoration: 'none' }}>
           <svg width="20" height="20" viewBox="0 0 26 26" fill="none" aria-hidden="true">
             <rect x="1.5" y="1.5" width="23" height="23" rx="6" stroke="var(--green-mint)" strokeWidth="1.8" />
             <path d="M7 13.2L11 17L19 9" stroke="var(--green-mint)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
           Patform
-        </span>
+        </a>
         <span className="cs__topDivider" aria-hidden="true" />
         <span className="cs__topWorkspace">{me.workspace_name}</span><span className="cs__topSpacer" />        {session.processes.length > 0 && <div className="cs__headerProcess">
 
@@ -1153,13 +1153,13 @@ function SignIn({ onSignedIn: signedIn, signedOut }: { onSignedIn: () => void; s
   };
 
   const brand = (
-    <div className="cs__brand" style={{ color: 'var(--ink)', padding: 0 }}>
+    <a className="cs__brand" href="/" aria-label="Patform home" style={{ color: 'var(--ink)', padding: 0, textDecoration: 'none' }}>
       <svg width="24" height="24" viewBox="0 0 26 26" fill="none" aria-hidden="true">
         <rect x="1.5" y="1.5" width="23" height="23" rx="6" stroke="var(--green)" strokeWidth="1.8" />
         <path d="M7 13.2L11 17L19 9" stroke="var(--green)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
       Patform
-    </div>
+    </a>
   );
 
   // ---- the link has been sent, or would have been

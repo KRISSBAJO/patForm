@@ -93,13 +93,13 @@ export function Consent() {
   return (
     <main className="oc">
       <div className="oc__card">
-        <div className="oc__brand">
+        <a className="oc__brand" href="/" aria-label="Patform home" style={{ textDecoration: 'none' }}>
           <svg width="22" height="22" viewBox="0 0 26 26" fill="none" aria-hidden="true">
             <rect x="1.5" y="1.5" width="23" height="23" rx="6" stroke="currentColor" strokeWidth="1.8" />
             <path d="M7 13.2L11 17L19 9" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
           Patform
-        </div>
+        </a>
 
         {stage.kind === 'loading' && <p className="oc__quiet">Checking the request…</p>}
 

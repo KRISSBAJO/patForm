@@ -165,13 +165,13 @@ export function ProcessPage({ kind }: { kind: Kind }) {
         Skip to the content
       </a>
       <header className="bd__top">
-        <span className="bd__topBrand">
+        <a className="bd__topBrand" href="/" aria-label="Patform home" style={{ textDecoration: 'none' }}>
           <svg width="20" height="20" viewBox="0 0 26 26" fill="none" aria-hidden="true">
             <rect x="1.5" y="1.5" width="23" height="23" rx="6" stroke="var(--green-mint)" strokeWidth="1.8" />
             <path d="M7 13.2L11 17L19 9" stroke="var(--green-mint)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
           Patform
-        </span>
+        </a>
         <span className="bd__topDivider" aria-hidden="true" />
         <span className="bd__topWhere">Builder · {TITLES[kind].eyebrow}</span>
         <span style={{ flexGrow: 1 }} />

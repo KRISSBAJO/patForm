@@ -878,7 +878,7 @@ export function Builder({ view = 'home' }: { view?: 'home' | 'processes' } = {})
     return (
       <div className="bd__gate">
         <div className="bd__gateCard">
-          <div className="bd__gateBrand">
+          <a className="bd__gateBrand" href="/" aria-label="Patform home" style={{ textDecoration: 'none' }}>
             <svg width="26" height="26" viewBox="0 0 26 26" fill="none" aria-hidden="true">
               <rect x="1.5" y="1.5" width="23" height="23" rx="6" stroke="var(--green)" strokeWidth="1.8" />
               <path
@@ -890,7 +890,7 @@ export function Builder({ view = 'home' }: { view?: 'home' | 'processes' } = {})
               />
             </svg>
             Patform
-          </div>
+          </a>
           <h1>Sign in to keep building</h1>
           <p>
             Your session ended. Nothing you were working on is lost — drafts are stored on the
@@ -913,13 +913,13 @@ export function Builder({ view = 'home' }: { view?: 'home' | 'processes' } = {})
       {/* The same product bar the console carries. Without it the two halves
           of one product have two different tops. */}
       <header className="bd__top">
-        <span className="bd__topBrand">
+        <a className="bd__topBrand" href="/" aria-label="Patform home" style={{ textDecoration: 'none' }}>
           <svg width="20" height="20" viewBox="0 0 26 26" fill="none" aria-hidden="true">
             <rect x="1.5" y="1.5" width="23" height="23" rx="6" stroke="var(--green-mint)" strokeWidth="1.8" />
             <path d="M7 13.2L11 17L19 9" stroke="var(--green-mint)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
           Patform
-        </span>
+        </a>
         <span className="bd__topDivider" aria-hidden="true" />
         <span className="bd__topWhere">Builder</span>
         <span style={{ flexGrow: 1 }} />

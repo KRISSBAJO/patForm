@@ -314,7 +314,7 @@ export function Go() {
   return (
     <main className="go">
       <header className="go__top">
-        <a className="go__brand" href="/go" aria-label="Patform"><Mark /> <span>Patform</span></a>
+        <a className="go__brand" href="/" aria-label="Patform home"><Mark /> <span>Patform</span></a>
         <a className="go__console" href="/console">Console</a>
       </header>
 

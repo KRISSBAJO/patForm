@@ -35,7 +35,7 @@ function Card({ title, children }: { title: string; children: React.ReactNode })
   return (
     <div className="cs__login">
       <div className="cs__loginBox">
-        <div className="cs__brand" style={{ color: 'var(--ink)', padding: 0 }}>
+        <Link className="cs__brand" href="/" aria-label="Patform home" style={{ color: 'var(--ink)', padding: 0, textDecoration: 'none' }}>
           <svg width="24" height="24" viewBox="0 0 26 26" fill="none" aria-hidden="true">
             <rect x="1.5" y="1.5" width="23" height="23" rx="6" stroke="var(--green)" strokeWidth="1.8" />
             <path
@@ -47,7 +47,7 @@ function Card({ title, children }: { title: string; children: React.ReactNode })
             />
           </svg>
           Patform
-        </div>
+        </Link>
         <h1 className="cs__loginTitle">{title}</h1>
         {children}
       </div>

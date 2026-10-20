@@ -70,7 +70,7 @@ export function Nav() {
   return (
     <header className="nav">
       <div className="shell nav__inner">
-        <a className="wordmark" href="#top" style={{ color: 'var(--green)' }}>
+        <a className="wordmark" href="/" aria-label="Patform home" style={{ color: 'var(--green)' }}>
           <Mark />
           <span style={{ color: 'var(--ink)' }}>Patform</span>
         </a>
