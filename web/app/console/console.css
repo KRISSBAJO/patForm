@@ -5466,3 +5466,29 @@ a.cs__navItem {
 /* Meetings fills the body: the calendar needs the width and explains itself. */
 .cs__body--wide > .cs__left { max-width: 1380px; }
 .cs__body--wide > .cs__right { display: none; }
+
+/* ------------------------------------------------- the rail fits the screen
+ * The modules used to be seven more rows; they are one launcher now. The
+ * nav scrolls inside the rail if it ever has to, and the bottom stays put.
+ */
+.cs__side { max-height: calc(100vh - 52px); position: sticky; top: 52px; align-self: flex-start; overflow: visible; }
+.cs__nav { min-height: 0; overflow: visible; }
+.cs__railModules { position: relative; }
+.cs__navCount--quiet { background: var(--paper-2); color: var(--muted); }
+.cs__appMenu { position: absolute; left: calc(100% + 10px); top: -8px; width: 420px; max-width: calc(100vw - 100px); z-index: 50; background: #fff; color: var(--ink); border: 1px solid #dbe5df; border-radius: 16px; padding: 14px; box-shadow: 0 24px 60px -20px rgba(16, 45, 35, .35); }
+.cs__appMenuHead { display: flex; flex-direction: column; gap: 2px; padding: 2px 4px 12px; }
+.cs__appMenuHead strong { font: 700 14px var(--ui); } .cs__appMenuHead small { font: 12px var(--ui); color: var(--muted); }
+.cs__appGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.cs__appTile { display: grid; grid-template-columns: 36px 1fr; grid-template-rows: auto auto; column-gap: 10px; align-items: center; text-align: left; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line); background: #fff; cursor: pointer; font: inherit; transition: transform .12s, box-shadow .12s, border-color .12s; }
+.cs__appTile:hover { transform: translateY(-1px); border-color: color-mix(in srgb, var(--mod) 40%, var(--line)); box-shadow: 0 10px 24px -16px var(--mod-deep); }
+.cs__appTile.is-on { background: var(--mod-tint); border-color: var(--mod); }
+.cs__appIcon { grid-row: span 2; display: grid; place-items: center; width: 36px; height: 36px; border-radius: 10px; background: var(--mod); color: #fff; }
+.cs__appTile strong { font: 600 13px var(--ui); color: var(--ink); }
+.cs__appTile small { font: 11.5px/1.3 var(--ui); color: var(--muted); }
+.cs__appMenuFoot { margin-top: 10px; width: 100%; border: 0; background: transparent; padding: 8px 4px 2px; text-align: left; font: 600 12.5px var(--ui); color: var(--green-deep); cursor: pointer; }
+.cs__appMenuFoot:hover { text-decoration: underline; }
+@media (max-width: 760px) {
+  .cs__side { max-height: none; position: fixed; }
+  .cs__appMenu { position: static; width: auto; max-width: none; margin: 6px 0 10px; box-shadow: none; border-color: var(--line); }
+  .cs__appGrid { grid-template-columns: 1fr; }
+}

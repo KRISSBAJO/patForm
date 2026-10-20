@@ -123,9 +123,11 @@ export function Console() {
   const [moduleSection, setModuleSection] = useState<string | null>(null);
   const [moduleSections, setModuleSections] = useState<Section[]>([]);
   const settingsRef = useRef<HTMLDivElement>(null);
+  const modulesRef = useRef<HTMLDivElement>(null);
+  const [modulesOpen, setModulesOpen] = useState(false);
   const headerRef = useRef<HTMLElement>(null);
   useEffect(() => {
-    const close = (event: MouseEvent) => { if (!headerRef.current?.contains(event.target as Node)) { setAccountOpen(false); setProcessPickerOpen(false); } if (!settingsRef.current?.contains(event.target as Node)) setSettingsOpen(false); };
+    const close = (event: MouseEvent) => { if (!headerRef.current?.contains(event.target as Node)) { setAccountOpen(false); setProcessPickerOpen(false); } if (!settingsRef.current?.contains(event.target as Node)) setSettingsOpen(false); if (!modulesRef.current?.contains(event.target as Node)) setModulesOpen(false); };
     const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') { setAccountOpen(false); setProcessPickerOpen(false); setSettingsOpen(false); setMobileNavOpen(false); } };
     document.addEventListener('mousedown', close); document.addEventListener('keydown', escape);
     return () => { document.removeEventListener('mousedown', close); document.removeEventListener('keydown', escape); };
@@ -550,14 +552,32 @@ export function Console() {
         {area ? <ModuleRail area={area} sections={moduleSections} current={moduleSection} onPick={setModuleSection} onBack={() => setView('work')} /> : <>
         <nav className="cs__nav" aria-label="Console">
 {([{key:'work',label:'My work',icon:'work'},{key:'ask',label:'Ask',icon:'ask'},{key:'records',label:'Records',icon:'records'},{key:'dashboard',label:'Dashboard',icon:'dashboard'},{key:'processes',label:'Processes',icon:'processes'},{key:'people',label:'People',icon:'people'}] as const).map(item => <button type="button" key={item.key} className="cs__navItem" title={item.label} aria-current={view === item.key || (item.key === 'people' && view === 'invite') ? 'page' : undefined} onClick={() => setView(item.key)}><NavIcon name={item.icon}/><span className="cs__navText">{item.label}</span>{item.key === 'work' && counts.needsYou > 0 && <span className="cs__navCount">{counts.needsYou}</span>}</button>)}
-{session.modules?.includes('expenses') && <button type="button" className="cs__navItem" title="Expenses" aria-current={view === 'expenses' ? 'page' : undefined} onClick={() => setView('expenses')}><NavIcon name="data"/><span className="cs__navText">Expenses</span></button>}
-{session.modules?.includes('hr') && <button type="button" className="cs__navItem" title="HR" aria-current={view === 'hr' ? 'page' : undefined} onClick={() => setView('hr')}><NavIcon name="people"/><span className="cs__navText">HR</span></button>}
-{session.modules?.includes('appraisals') && <button type="button" className="cs__navItem" title="Appraisals" aria-current={view === 'appraisals' ? 'page' : undefined} onClick={() => setView('appraisals')}><NavIcon name="dashboard"/><span className="cs__navText">Appraisals</span></button>}
-{session.modules?.includes('assets') && <button type="button" className="cs__navItem" title="Assets & IT" aria-current={view === 'operations' ? 'page' : undefined} onClick={() => setView('operations')}><NavIcon name="health"/><span className="cs__navText">Assets &amp; IT</span></button>}
-{session.modules?.includes('contracts') && <button type="button" className="cs__navItem" title="Compliance" aria-current={view === 'compliance' ? 'page' : undefined} onClick={() => setView('compliance')}><NavIcon name="held"/><span className="cs__navText">Compliance</span></button>}
-{session.modules?.includes('contracts') && <button type="button" className="cs__navItem" title="Patform Sign" aria-current={view === 'sign' ? 'page' : undefined} onClick={() => setView('sign')}><NavIcon name="records"/><span className="cs__navText">Patform Sign</span></button>}
-{session.modules?.includes('meetings') && <button type="button" className="cs__navItem" title="Meetings" aria-current={view === 'meetings' ? 'page' : undefined} onClick={() => setView('meetings')}><NavIcon name="dashboard"/><span className="cs__navText">Meetings</span></button>}
-{session.modules?.includes('procurement') && <button type="button" className="cs__navItem" title="Procurement" aria-current={view === 'procurement' ? 'page' : undefined} onClick={() => setView('procurement')}><NavIcon name="processes"/><span className="cs__navText">Procurement</span></button>}
+{(() => {
+  const mods = ([
+    { on: 'expenses', view: 'expenses', area: MODULE_AREAS.expenses },
+    { on: 'procurement', view: 'procurement', area: MODULE_AREAS.procurement },
+    { on: 'hr', view: 'hr', area: MODULE_AREAS.hr },
+    { on: 'appraisals', view: 'appraisals', area: MODULE_AREAS.appraisals },
+    { on: 'assets', view: 'operations', area: MODULE_AREAS.operations },
+    { on: 'contracts', view: 'compliance', area: MODULE_AREAS.compliance },
+    { on: 'contracts', view: 'sign', area: MODULE_AREAS.sign },
+    { on: 'meetings', view: 'meetings', area: MODULE_AREAS.meetings },
+  ] as const).filter((m) => session.modules?.includes(m.on) && m.area);
+  if (!mods.length) return null;
+  const inModule = mods.some((m) => m.view === view);
+  return <div className="cs__railModules" ref={modulesRef}>
+    <button type="button" className="cs__navItem" title="Modules" aria-expanded={modulesOpen} aria-controls="console-modules-menu" aria-current={inModule ? 'page' : undefined} onClick={(event) => { event.stopPropagation(); setModulesOpen(!modulesOpen); setSettingsOpen(false); }}><NavIcon name="processes"/><span className="cs__navText">Modules</span><span className="cs__navCount cs__navCount--quiet">{mods.length}</span></button>
+    {modulesOpen && <div id="console-modules-menu" className="cs__appMenu" role="menu" aria-label="Modules">
+      <div className="cs__appMenuHead"><strong>Modules</strong><small>Switched on for this workspace</small></div>
+      <div className="cs__appGrid">
+        {mods.map((m) => <button type="button" key={m.view} role="menuitem" className={`cs__appTile ${view === m.view ? 'is-on' : ''}`} style={{ '--mod': m.area!.colour, '--mod-tint': m.area!.tint, '--mod-deep': m.area!.deep } as React.CSSProperties} onClick={() => { setView(m.view as typeof view); setModulesOpen(false); setMobileNavOpen(false); }}>
+          <span className="cs__appIcon">{m.area!.icon}</span><strong>{m.area!.name}</strong><small>{m.area!.blurb}</small>
+        </button>)}
+      </div>
+      {['owner', 'admin'].includes(me.workspace_role) && <button type="button" className="cs__appMenuFoot" onClick={() => { setView('modules'); setModulesOpen(false); }}>Switch modules on or off →</button>}
+    </div>}
+  </div>;
+})()}
 <a className="cs__navItem" href="/builder" title="Builder"><NavIcon name="builder"/><span className="cs__navText">Builder</span></a>
 </nav>
 <div className="cs__railBottom">
