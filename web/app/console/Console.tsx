@@ -25,6 +25,7 @@ import { ComplianceView } from './Compliance';
 import { RecordTrail } from './Trail';
 import { RecordPage } from './Record';
 import { WorkList } from './WorkList';
+import { HomeView } from './Home';
 import { ReauthDialog } from './stepup';
 import { PasswordInput } from './PasswordInput';
 import { Icon } from './Icon';
@@ -141,6 +142,7 @@ export function Console() {
   const [health, setHealth] = useState<Health | null>(null);
   const [record, setRecord] = useState<RecordDetail | null>(null);
   const [view, setView] = useState<
+    | 'home'
     | 'work'
     | 'record'
     | 'ask'
@@ -164,7 +166,7 @@ export function Console() {
     | 'sign'
     | 'meetings'
     | 'held'
-  >('work');
+  >('home');
   const recordOrigin = useRef<'work' | 'records' | 'ask' | 'processes' | 'expenses' | 'procurement'>('work');
   const [settingsRevision, setSettingsRevision] = useState(0);
   /*
@@ -489,7 +491,7 @@ export function Console() {
   return (
     <div className="cs">
       <a className="skip-link" href="#console-main">
-        Skip to your work
+        Skip to content
       </a>
 
       {/*
@@ -509,7 +511,7 @@ export function Console() {
           Patform
         </a>
         <span className="cs__topDivider" aria-hidden="true" />
-        <span className="cs__topWorkspace">{me.workspace_name}</span><span className="cs__topSpacer" />        {session.processes.length > 0 && <div className="cs__headerProcess">
+        <span className="cs__topWorkspace">{me.workspace_name}</span><span className="cs__topSpacer" />        {['work', 'ask', 'records', 'dashboard', 'record'].includes(view) && session.processes.length > 0 && <div className="cs__headerProcess">
 
           <button type="button" className="cs__processCurrent" aria-expanded={processPickerOpen} aria-controls="console-process-picker" onClick={(event) => { event.stopPropagation(); setAccountOpen(false); setProcessPickerOpen((open) => !open); setProcessSearch(''); }}>
             <span><small>Current process</small><strong>{currentProcess?.name ?? 'Choose a process'}</strong></span>
@@ -551,7 +553,7 @@ export function Console() {
         <div className="cs__mobileNavHead"><strong>{area ? area.name : 'Menu'}</strong><button type="button" aria-label="Close menu" onClick={() => setMobileNavOpen(false)}>×</button></div>
         {area ? <ModuleRail area={area} sections={moduleSections} current={moduleSection} onPick={setModuleSection} onBack={() => setView('work')} /> : <>
         <nav className="cs__nav" aria-label="Console">
-{([{key:'work',label:'My work',icon:'work'},{key:'ask',label:'Ask',icon:'ask'},{key:'records',label:'Records',icon:'records'},{key:'dashboard',label:'Dashboard',icon:'dashboard'},{key:'processes',label:'Processes',icon:'processes'},{key:'people',label:'People',icon:'people'}] as const).map(item => <button type="button" key={item.key} className="cs__navItem" title={item.label} aria-current={view === item.key || (item.key === 'people' && view === 'invite') ? 'page' : undefined} onClick={() => setView(item.key)}><NavIcon name={item.icon}/><span className="cs__navText">{item.label}</span>{item.key === 'work' && counts.needsYou > 0 && <span className="cs__navCount">{counts.needsYou}</span>}</button>)}
+{([{key:'home',label:'Home',icon:'home'},{key:'work',label:'My work',icon:'work'},{key:'ask',label:'Ask',icon:'ask'},{key:'records',label:'Records',icon:'records'},{key:'dashboard',label:'Dashboard',icon:'dashboard'},{key:'processes',label:'Processes',icon:'processes'},{key:'people',label:'People',icon:'people'}] as const).map(item => <button type="button" key={item.key} className="cs__navItem" title={item.label} aria-current={view === item.key || (item.key === 'people' && view === 'invite') ? 'page' : undefined} onClick={() => setView(item.key)}><NavIcon name={item.icon}/><span className="cs__navText">{item.label}</span>{item.key === 'work' && counts.needsYou > 0 && <span className="cs__navCount">{counts.needsYou}</span>}</button>)}
 {(() => {
   const mods = ([
     { on: 'expenses', view: 'expenses', area: MODULE_AREAS.expenses },
@@ -593,7 +595,9 @@ export function Console() {
         {!me.email_verified_at && <VerifyBanner email={me.email} />}
         <div className="cs__head">
           <h1>
-            {view === 'record'
+            {view === 'home'
+              ? 'Home'
+              : view === 'record'
               ? (record?.reference ?? 'Record')
               : view === 'ask'
                 ? 'Ask'
@@ -647,15 +651,17 @@ export function Console() {
             <button type="button" className="cs__btn cs__btn--create" onClick={() => { sessionStorage.removeItem('patform:new-process-description'); window.location.href = '/builder/ai'; }}>
               <span className="cs__createMark" aria-hidden="true">✦</span> Build with AI
             </button>
-          ) : view !== 'security' && <button type="button" className="cs__btn" onClick={() => { if (view === 'integrations' || view === 'data' || view === 'modules' || view === 'organisation' || view === 'expenses' || view === 'procurement' || view === 'hr' || view === 'appraisals' || view === 'operations' || view === 'compliance' || view === 'sign' || view === 'meetings') setSettingsRevision(value => value + 1); void load(); }}>
+          ) : view !== 'security' && view !== 'home' && <button type="button" className="cs__btn" onClick={() => { if (view === 'integrations' || view === 'data' || view === 'modules' || view === 'organisation' || view === 'expenses' || view === 'procurement' || view === 'hr' || view === 'appraisals' || view === 'operations' || view === 'compliance' || view === 'sign' || view === 'meetings') setSettingsRevision(value => value + 1); void load(); }}>
             Refresh
           </button>}
         </div>
 
         {area && <ModuleStrip sections={moduleSections} current={moduleSection} onPick={setModuleSection} />}
-        <div className={`cs__body ${view === 'security' ? 'cs__body--security' : ''} ${view === 'ask' ? 'cs__body--ask' : ''} ${view === 'record' ? 'cs__body--record' : ''} ${view === 'health' ? 'cs__body--health' : ''} ${view === 'dashboard' ? 'cs__body--dashboard' : ''} ${view === 'people' ? 'cs__body--people' : ''} ${view === 'records' ? 'cs__body--records' : ''} ${view === 'work' ? 'cs__body--work' : ''} ${view === 'processes' ? 'cs__body--processes' : ''} ${view === 'held' ? 'cs__body--held' : ''} ${view === 'integrations' ? 'cs__body--integrations' : ''} ${view === 'data' ? 'cs__body--data' : ''} ${view === 'modules' || view === 'organisation' || view === 'expenses' || view === 'procurement' || view === 'hr' || view === 'appraisals' || view === 'operations' || view === 'compliance' || view === 'sign' || view === 'meetings' ? 'cs__body--integrations' : ''} ${view === 'meetings' || view === 'hr' || view === 'expenses' || view === 'procurement' || view === 'appraisals' ? 'cs__body--wide' : ''}`}>
+        <div className={`cs__body ${view === 'home' ? 'cs__body--home' : ''} ${view === 'security' ? 'cs__body--security' : ''} ${view === 'ask' ? 'cs__body--ask' : ''} ${view === 'record' ? 'cs__body--record' : ''} ${view === 'health' ? 'cs__body--health' : ''} ${view === 'dashboard' ? 'cs__body--dashboard' : ''} ${view === 'people' ? 'cs__body--people' : ''} ${view === 'records' ? 'cs__body--records' : ''} ${view === 'work' ? 'cs__body--work' : ''} ${view === 'processes' ? 'cs__body--processes' : ''} ${view === 'held' ? 'cs__body--held' : ''} ${view === 'integrations' ? 'cs__body--integrations' : ''} ${view === 'data' ? 'cs__body--data' : ''} ${view === 'modules' || view === 'organisation' || view === 'expenses' || view === 'procurement' || view === 'hr' || view === 'appraisals' || view === 'operations' || view === 'compliance' || view === 'sign' || view === 'meetings' ? 'cs__body--integrations' : ''} ${view === 'meetings' || view === 'hr' || view === 'expenses' || view === 'procurement' || view === 'appraisals' ? 'cs__body--wide' : ''}`}>
           <div className="cs__left">
-            {view === 'record' && record ? (
+            {view === 'home' ? (
+              <HomeView name={me.display_name} workspace={me.workspace_name} modules={session.modules ?? []} processes={session.processes} canAdminister={['owner', 'admin'].includes(me.workspace_role)} onView={(next) => setView(next as typeof view)} onProcess={(key) => { setProcessKey(key); setView('dashboard'); }} onOpenRecord={(id) => void open(id)} />
+            ) : view === 'record' && record ? (
               <RecordPage
                 key={`${record.instanceId}:${work?.tasks.find((t) => t.instanceId === record.instanceId)?.taskKey ?? ''}`}
                 record={record}
@@ -813,7 +819,7 @@ export function Console() {
 
           {/* The record page carries its own side column; two of them would
               be a column of cards about a different subject. */}
-          {view !== 'record' && view !== 'health' && view !== 'security' && view !== 'ask' && view !== 'dashboard' && view !== 'people' && view !== 'records' && view !== 'work' && view !== 'processes' && view !== 'held' && view !== 'integrations' && view !== 'data' && (
+          {view !== 'home' && view !== 'record' && view !== 'health' && view !== 'security' && view !== 'ask' && view !== 'dashboard' && view !== 'people' && view !== 'records' && view !== 'work' && view !== 'processes' && view !== 'held' && view !== 'integrations' && view !== 'data' && (
           <div className="cs__right">
             {!processKey ? null : health ? (
               <div className="cs__card">
@@ -977,6 +983,7 @@ function NavIcon({
   name,
 }: {
   name:
+    | 'home'
     | 'work'
     | 'ask'
     | 'records'
@@ -1000,6 +1007,8 @@ function NavIcon({
     'aria-hidden': true,
   };
   switch (name) {
+    case 'home':
+      return <svg {...common}><path d="M2.7 9 10 3l7.3 6v7.1a1.2 1.2 0 0 1-1.2 1.2H3.9a1.2 1.2 0 0 1-1.2-1.2z" /><path d="M7.3 17.3v-5.1h5.4v5.1" /></svg>;
     case 'work':
       return (
         <svg {...common}>
