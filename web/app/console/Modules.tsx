@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { WorkspaceLifecycle } from './WorkspaceLifecycle';
 import { postJson } from './stepup';
+import type { ConsoleModule } from './module-catalog';
 
 /*
  * Modules: the shelves this workspace has switched on, and the workspace
@@ -35,7 +36,7 @@ const ZONES = ['Europe/London', 'Africa/Lagos', 'Africa/Nairobi', 'Africa/Johann
 const CURRENCIES = ['GBP', 'NGN', 'USD', 'EUR', 'KES', 'GHS', 'ZAR', 'AED', 'INR'];
 const LOCALES = ['en-GB', 'en-NG', 'en-US', 'en-KE', 'en-ZA', 'fr-FR'];
 
-export function ModulesView({ canAdminister, onChanged }: { canAdminister: boolean; onChanged: () => void }) {
+export function ModulesView({ canAdminister, onChanged, focusModule, onOpenModule }: { canAdminister: boolean; onChanged: () => void; focusModule?: ConsoleModule | null; onOpenModule?: () => void }) {
   const [modules, setModules] = useState<Module[] | null>(null);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -79,6 +80,7 @@ export function ModulesView({ canAdminister, onChanged }: { canAdminister: boole
   };
 
   const dirty = !!draft && !!settings && (draft.name !== settings.name || draft.timezone !== settings.timezone || draft.defaultCurrency !== settings.defaultCurrency || draft.locale !== settings.locale);
+  const focused = modules?.find((module) => module.key === focusModule?.enabledBy);
 
   return <div className="ig__workspace">
     <header className="ig__hero">
@@ -89,6 +91,19 @@ export function ModulesView({ canAdminister, onChanged }: { canAdminister: boole
 
     {note && <p className="ig__notice" role="status">{note}</p>}
     {error && <p className="ig__error" role="alert">{error}</p>}
+
+    {focusModule && focused && <section className="ig__activate" aria-labelledby="module-activation-title">
+      <span className="ig__activateIcon" aria-hidden="true">{focusModule.area.icon}</span>
+      <div className="ig__activateCopy">
+        <span className="ig__eyebrow">{focused.enabled ? 'READY TO OPEN' : 'MODULE IS OFF'}</span>
+        <h3 id="module-activation-title">{focused.enabled ? `Open ${focusModule.name}` : `Switch on ${focusModule.name}`}</h3>
+        <p>{focusModule.blurb}. {focused.enabled ? 'This module is ready in your workspace.' : 'Switch it on to make its workspace and templates available to your team. Nothing is deleted if you switch it off later.'}</p>
+        {!focused.enabled && !canAdminister && <p>Ask a workspace owner or admin to switch this module on.</p>}
+        {focused.status !== 'available' && !focused.enabled && <p>{STATUS_WORDS[focused.status]}.</p>}
+      </div>
+      {focused.enabled ? <button type="button" className="cs__btn cs__btn--primary" onClick={onOpenModule}>Open {focusModule.name}</button>
+        : canAdminister && focused.status === 'available' ? <button type="button" className="cs__btn cs__btn--primary" disabled={busy === focused.key} onClick={() => void toggle(focused)}>{busy === focused.key ? 'Switching on…' : `Switch on ${focusModule.name}`}</button> : null}
+    </section>}
 
     <div className="ig__surface">
       <section className="ig__panel" aria-labelledby="modules-heading">
