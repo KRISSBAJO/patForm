@@ -18,8 +18,8 @@
 .mx__band::after, .mx__band::before { content: none; }
 .mx__bandGrid { position: relative; display: grid; grid-template-columns: 1.2fr repeat(3, minmax(0, .8fr)); gap: 18px; align-items: stretch; }
 .mx__eyebrow { font: 700 10.5px var(--ui); letter-spacing: .14em; text-transform: uppercase; opacity: .8; }
-.mx__bandTitle { margin-top: 8px; font: 600 clamp(22px, 2.2vw, 30px)/1.1 var(--ui); letter-spacing: -.03em; }
-.mx__bandSub { margin-top: 8px; font: 14px/1.5 var(--ui); opacity: .85; max-width: 46ch; }
+.mx__bandTitle { margin-top: 6px; font: 600 clamp(20px, 1.8vw, 24px)/1.15 var(--ui); letter-spacing: -.02em; }
+.mx__bandSub { margin-top: 6px; font: 13px/1.45 var(--ui); opacity: .8; max-width: 40ch; }
 .mx__bandActions { display: flex; gap: 10px; margin-top: 18px; flex-wrap: wrap; }
 .mx__kpi { display: flex; flex-direction: column; justify-content: space-between; padding: 16px 18px; border-radius: 14px; background: rgba(255,255,255,.12); backdrop-filter: blur(6px); border: 1px solid rgba(255,255,255,.18); }
 .mx__kpi span { font: 600 11px var(--ui); letter-spacing: .08em; text-transform: uppercase; opacity: .8; }

@@ -524,7 +524,7 @@ export function MeetingsView({ shell }: { shell?: ModuleShell } = {}) {
           <div>
             <div className="mx__eyebrow">Meetings &amp; resolutions</div>
             <h2 className="mx__bandTitle">{live ? `In the room now: ${live.title}` : next ? `Next: ${next.title}` : 'Nothing on the calendar yet'}</h2>
-            <p className="mx__bandSub">{live ? `${live.body} is sitting. Enter the room to vote, write minutes and agree actions.` : next ? `${next.body} · ${when(next.starts_at)} · ${countdown(next.starts_at)}${next.location ? ` · ${next.location}` : ''}` : 'Create a board or committee, then call its first meeting. Notices, invitations, quorum, votes and minutes are handled here.'}</p>
+            <p className="mx__bandSub">{live ? `${live.body} is sitting. Enter the room.` : next ? `${next.body} · ${when(next.starts_at)} · ${countdown(next.starts_at)}${next.location ? ` · ${next.location}` : ''}` : 'Create a board, then call its first meeting.'}</p>
             <div className="mx__bandActions">
               {live ? <button type="button" className="mx__btn mx__btn--light" onClick={() => openM(live.id)}>Enter the room</button> : next ? <button type="button" className="mx__btn mx__btn--light" onClick={() => openM(next.id)}>Open the meeting</button> : null}
               <button type="button" className="mx__btn mx__btn--outline" onClick={() => newMeeting()}>+ New meeting</button>

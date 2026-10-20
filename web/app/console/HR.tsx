@@ -160,7 +160,7 @@ export function HRView({ onChanged, shell }: { onChanged?: () => void; shell?: M
         <div>
           <div className="mx__eyebrow">People &amp; HR</div>
           <h2 className="mx__bandTitle">{pre ? 'Welcome — a few things before your first day' : hr ? 'Joiners, movers, leavers and leave' : s.myTasks ? `${s.myTasks} thing${s.myTasks === 1 ? '' : 's'} for you` : 'Your HR, in one place'}</h2>
-          <p className="mx__bandSub">{pre ? 'These are the tasks for you. The rest of the workspace opens on your first day, once your checks are done.' : hr ? 'Each team sees only its tasks and the basic facts about a person. Pay, health, disciplinary notes and restricted cases stay with HR.' : 'Your tasks, leave and documents. Ask HR about anything else.'}</p>
+          <p className="mx__bandSub">{pre ? 'Your tasks before day one. Everything else opens when you start.' : hr ? 'Joiners, leavers, leave and records. Pay and restricted cases stay with HR.' : 'Your tasks, leave and documents.'}</p>
           <div className="mx__bandActions">
             {hr && <button type="button" className="mx__btn mx__btn--light" onClick={() => { pickTab('cases'); setStarting('onboarding'); }}>+ Start an onboarding</button>}
             {!pre && <button type="button" className={`mx__btn ${hr ? 'mx__btn--outline' : 'mx__btn--light'}`} onClick={() => pickTab('leave')}>Ask for leave</button>}

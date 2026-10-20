@@ -213,7 +213,7 @@ export function SignCenter({ startContract, onClose, shell }: { startContract?: 
           <div>
             <div className="mx__eyebrow">Patform Sign</div>
             <h2 className="mx__bandTitle">{mine.length ? `${mine.length} document${mine.length === 1 ? '' : 's'} waiting for your signature` : summary?.out ? `${summary.out} out for signature` : 'Send, sign, seal, verify'}</h2>
-            <p className="mx__bandSub">Each signer proves it is them, agrees to sign electronically and signs. The finished PDF carries every signature, a certificate page and a sealed, time-stamped fingerprint anyone can check.</p>
+            <p className="mx__bandSub">Send, sign and verify. Every finished PDF is sealed and checkable.</p>
             <div className="mx__bandActions">
               {mine.length > 0 && <button type="button" className="mx__btn mx__btn--light" onClick={() => go('mine')}>Sign now</button>}
               <button type="button" className={`mx__btn ${mine.length ? 'mx__btn--outline' : 'mx__btn--light'}`} onClick={startCompose}>+ Send a document</button>

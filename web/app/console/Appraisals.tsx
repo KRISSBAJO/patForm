@@ -189,7 +189,7 @@ export function AppraisalsView({ shell }: { shell?: ModuleShell } = {}) {
         <div>
           <div className="mx__eyebrow">Goals &amp; appraisals</div>
           <h2 className="mx__bandTitle">{s.reviewsToDo ? `${s.reviewsToDo} review${s.reviewsToDo === 1 ? '' : 's'} to write` : hr ? 'Cycles, calibration and development' : 'Your goals, reviews and development'}</h2>
-          <p className="mx__bandSub">Scores are worked out from the template and kept with each review, so a result can always be checked. A rating never changes pay on its own: promotions and pay rises go to HR as separate decisions.</p>
+          <p className="mx__bandSub">Reviews, goals and results. A rating never changes pay by itself.</p>
           <div className="mx__bandActions">
             <button type="button" className="mx__btn mx__btn--light" onClick={() => pickTab('reviews')}>Write a review</button>
             <button type="button" className="mx__btn mx__btn--outline" onClick={() => { pickTab('goals'); setAdding('goal'); }}>+ Goal</button>

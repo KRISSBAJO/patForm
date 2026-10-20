@@ -291,7 +291,7 @@ export function ExpensesView({ canAdminister, canOperate, onOpenRecord, shell }:
         <div>
           <div className="mx__eyebrow">Expenses</div>
           <h2 className="mx__bandTitle">{canOperate ? (s && s.awaitingPayment + s.failed ? `${money(s.awaitingAmount, cur)} owed to staff` : 'Nothing owed right now') : 'Your expenses'}</h2>
-          <p className="mx__bandSub">{canOperate ? 'Approved is not paid. A claim shows as paid only when Finance records the payment reference, after checking the bank details.' : 'Keep your bank details up to date so Finance can pay your claims. Make a claim from the expense claim form.'}</p>
+          <p className="mx__bandSub">{canOperate ? 'Approved claims are paid once the bank details are checked.' : 'Keep your bank details current so Finance can pay you.'}</p>
           <div className="mx__bandActions">
             {canOperate && <button type="button" className="mx__btn mx__btn--light" onClick={() => pickTab('claims')}>Pay claims</button>}
             {canOperate && <button type="button" className="mx__btn mx__btn--outline" onClick={() => pickTab('exports')}>Export to accounts</button>}

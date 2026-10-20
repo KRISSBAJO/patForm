@@ -129,7 +129,7 @@ export function ProcurementView({ canAdminister, canOperate, onOpenRecord, shell
   const seg = (k: string, cur: string, set: (v: never) => void, label: string) => <button type="button" className={`mx__seg ${cur === k ? 'is-on' : ''}`} onClick={() => set(k as never)}>{label}</button>;
   const panelBtn = (id: 'quote' | 'seal' | 'order' | 'receive' | 'invoice' | 'revise', label: string, primary?: boolean) => <button type="button" className={`mx__btn mx__btn--sm ${panel === id ? '' : primary ? '' : 'mx__btn--ghost'} ${panel === id ? 'is-on' : ''}`} aria-expanded={panel === id} onClick={() => { setPanel(panel === id ? null : id); setForm({}); }}>{label}</button>;
 
-  if (!on) return <div className="mx"><section className="mx__band"><div className="mx__bandGrid"><div><div className="mx__eyebrow">Procurement</div><h2 className="mx__bandTitle">Buying for the organisation</h2><p className="mx__bandSub">To ask for something to be bought, use the Purchase request form. Procurement staff manage suppliers, orders and invoices here.</p></div></div></section></div>;
+  if (!on) return <div className="mx"><section className="mx__band"><div className="mx__bandGrid"><div><div className="mx__eyebrow">Procurement</div><h2 className="mx__bandTitle">Buying for the organisation</h2><p className="mx__bandSub">Ask with the Purchase request form. Procurement staff work here.</p></div></div></section></div>;
 
   const s = summary.data;
   const tabs: { id: Tab; name: string; count: number | null }[] = [
@@ -155,7 +155,7 @@ export function ProcurementView({ canAdminister, canOperate, onOpenRecord, shell
         <div>
           <div className="mx__eyebrow">Procurement</div>
           <h2 className="mx__bandTitle">{s && s.toOrder ? `${s.toOrder} request${s.toOrder === 1 ? '' : 's'} to order` : s && s.invoicesHeld ? `${s.invoicesHeld} invoice${s.invoicesHeld === 1 ? '' : 's'} held` : 'From approved request to paid invoice'}</h2>
-          <p className="mx__bandSub">Order from approved suppliers, record what actually arrived, and pay only for what was accepted. Mismatched invoices wait here with the reason.</p>
+          <p className="mx__bandSub">Order from approved suppliers, record what arrived, pay what was accepted.</p>
           <div className="mx__bandActions">
             <button type="button" className="mx__btn mx__btn--light" onClick={() => pickTab('requests')}>Order now</button>
             <button type="button" className="mx__btn mx__btn--outline" onClick={() => pickTab('invoices')}>Invoices</button>
