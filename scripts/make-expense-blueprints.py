@@ -59,6 +59,7 @@ for r in c['roles']:
     if r['key'] == 'claimant' and 'advance_reference' not in r.get('editableFields', []):
         r.setdefault('editableFields', []).append('advance_reference')
 for a_ in c['workflow']['approvals']:
+    a_['policy'] = True
     if a_['key'] == 'manager_approval':
         a_['approvers'] = [{'manager': 'submitter', 'fallback': 'line_manager'}]
 for t in c['communications']['email']:
@@ -138,9 +139,9 @@ a = {
       {'key': 'expired', 'name': 'Closed without a decision', 'type': 'terminal', 'outcome': 'expired', 'publicLabel': 'Closed'},
     ],
     'approvals': [
-      {'key': 'manager_approval', 'name': 'Manager approval', 'approvers': [{'manager': 'submitter', 'fallback': 'line_manager'}], 'mode': 'single',
+      {'key': 'manager_approval', 'policy': True, 'name': 'Manager approval', 'approvers': [{'manager': 'submitter', 'fallback': 'line_manager'}], 'mode': 'single',
        'allowRequestChanges': False, 'reasonRequired': True, 'notTheSubmitter': True, 'contextFields': ['claimant_name', 'advance_amount', 'needed_by', 'purpose'], 'dueInHours': 48},
-      {'key': 'finance_approval', 'name': 'Finance approval', 'approvers': [{'role': 'finance_approver'}], 'mode': 'single',
+      {'key': 'finance_approval', 'policy': True, 'name': 'Finance approval', 'approvers': [{'role': 'finance_approver'}], 'mode': 'single',
        'allowRequestChanges': False, 'reasonRequired': True, 'notTheSubmitter': True, 'contextFields': ['claimant_name', 'advance_amount', 'cost_centre', 'purpose'], 'dueInHours': 48},
     ],
     'tasks': [],

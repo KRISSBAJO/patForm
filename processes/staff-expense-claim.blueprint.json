@@ -423,7 +423,8 @@
           "receipt_reference"
         ],
         "dueInHours": 72,
-        "notTheSubmitter": true
+        "notTheSubmitter": true,
+        "policy": true
       },
       {
         "key": "finance_approval",
@@ -443,7 +444,8 @@
           "line_items",
           "receipt_reference"
         ],
-        "dueInHours": 72
+        "dueInHours": 72,
+        "policy": true
       }
     ],
     "tasks": [],

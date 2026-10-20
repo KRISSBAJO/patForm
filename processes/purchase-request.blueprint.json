@@ -340,7 +340,8 @@
           "needed_by",
           "purpose"
         ],
-        "dueInHours": 48
+        "dueInHours": 48,
+        "policy": true
       },
       {
         "key": "procurement_approval",
@@ -361,7 +362,8 @@
           "cost_centre",
           "line_items"
         ],
-        "dueInHours": 48
+        "dueInHours": 48,
+        "policy": true
       }
     ],
     "tasks": [],

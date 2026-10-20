@@ -309,7 +309,8 @@
           "headcount",
           "justification"
         ],
-        "dueInHours": 72
+        "dueInHours": 72,
+        "policy": true
       },
       {
         "key": "hr_approval",
@@ -331,7 +332,8 @@
           "annual_cost",
           "justification"
         ],
-        "dueInHours": 72
+        "dueInHours": 72,
+        "policy": true
       }
     ],
     "tasks": [],

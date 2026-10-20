@@ -55,9 +55,9 @@ async function workspace(pool: Pool, engine: Engine) {
   return { tenantId, owner, mo, boss, fin, fin2, sam, version };
 }
 const ask = (email: string, amount: number, extra: Record<string, unknown> = {}) => ({ requester_name: 'Sam Staff', employee_email: email, title: `Request for ${amount} ${stamp()}`, category: 'purchase', cost_centre: 'ops', amount, description: 'Two field officers start in December and need laptops to run the survey app offline.', ...extra });
-async function drained(engine: Engine, pool: Pool, tenantId: string, instanceId: string) {
+async function drained(engine: Engine, pool: Pool, tenantId: string, instanceId: string, at = now) {
   for (let i = 0; i < 40; i++) {
-    await engine.drain(now, 'test', tenantId);
+    await engine.drain(at, 'test', tenantId);
     const { rows } = await pool.query("select 1 from approval_request where instance_id = $1 and status = 'pending'", [instanceId]);
     if (rows[0]) return;
     await new Promise((r) => setTimeout(r, 200));
@@ -182,5 +182,70 @@ test('templates are adopted and edited; a branch policy beats the workspace one;
     assert.ok(sim.steps[0]!.who[0]!.includes('ops.owner@apr.test'));
     const small = await simulatePolicy(pool, w.owner.p, { processKey: 'approval_request', amount: 100, steps: TEMPLATES.find((t) => t.key === 'cost_centre_owner')!.steps });
     assert.deepEqual(small.steps.map((s) => s.applies), [true, false]);
+  } finally { await pool.end(); }
+});
+
+test('a module process under a policy: the chain decides once and the process\u2019s later gate is covered, never asked twice', { skip: !localDatabase }, async () => {
+  const pool = createPool(3); const engine = new Engine(pool);
+  setApprovalMailerForTests(async () => undefined);
+  try {
+    const tenantId = await engine.createTenant(`approvals-mod-${stamp()}`, { scenario: true });
+    const mk = async (name: string, role: 'owner' | 'admin' | 'operator' | 'approver' | 'read_only') => { const email = `${name.toLowerCase().replace(/\s+/g, '.')}-${stamp()}@apr.test`; const id = await engine.createActor(tenantId, email, name, role); await pool.query('update actor set email_verified_at = now() where id = $1', [id]); return { id, email, p: { kind: 'actor', tenantId, actorId: id } as Principal }; };
+    const owner = await mk('Owner', 'owner'); const mo = await mk('Mo Manager', 'approver'); const fin = await mk('Fola Finance', 'operator'); const sam = await mk('Sam Staff', 'read_only');
+    await setModule(pool, owner.p, 'expenses', { enabled: true });
+    await setManager(pool, owner.p, sam.id, { managerId: mo.id, effectiveFrom: '2026-01-01T00:00:00Z' });
+    const claimBp = Blueprint.parse(JSON.parse(readFileSync('processes/staff-expense-claim.blueprint.json', 'utf8')));
+    assert.ok(claimBp.workflow.approvals.every((a) => a.policy), 'the shipped module approvals are policy-driven');
+    const version = await engine.publish(tenantId, claimBp, 'test');
+    await engine.grant({ tenantId, actorId: mo.id, processKey: 'staff_expense_claim', roleKey: 'line_manager' });
+    await engine.grant({ tenantId, actorId: fin.id, processKey: 'staff_expense_claim', roleKey: 'finance_approver' });
+    // Adopting the shipped chain picks up the module's manager limit as the Finance band.
+    const adopted = await adoptTemplate(pool, owner.p, { templateKey: 'expense_claim_chain' });
+    const { policies } = await listPolicies(pool, owner.p);
+    const pol = policies.find((p) => p.id === adopted.id)!;
+    assert.equal(pol.process_key, 'staff_expense_claim');
+    assert.equal(pol.steps[1]!.applies!.minAmount, 1000);
+    assert.deepEqual(pol.steps[0]!.responsible[0], { kind: 'manager', fallback: 'line_manager' });
+
+    const submit = async (amount: number, at = now) => {
+      const r = await engine.submit({ version, now: at, answers: { claimant_name: 'Sam Staff', employee_email: sam.email, expense_date: `2026-10-${10 + Math.round((at.getTime() - now.getTime()) / 3_600_000)}`, cost_centre: 'ops', category: 'travel', business_purpose: 'Site visit: transport and two nights of lodging for the audit.', line_items: [{ line_description: 'Lodging', line_amount: amount }], receipt_reference: 'Photos in the finance drive' } });
+      assert.ok(r.instanceId, JSON.stringify(r));
+      await drained(engine, pool, tenantId, r.instanceId, at);
+      return r.instanceId;
+    };
+    const state = async (id: string) => (await pool.query<{ state: string }>('select state from instance where id = $1', [id])).rows[0]!.state;
+
+    // Over the manager limit: manager, then Finance in the chain; the process's own Finance gate is then covered.
+    const big = await submit(2600);
+    assert.deepEqual((await pendingFor(pool, big))!.approvers, [mo.email]);
+    const d1 = await engine.decide({ instanceId: big, approvalKey: 'manager_approval', decision: 'approved', reason: 'Trip agreed.', principal: mo.p, now });
+    assert.equal(d1.chain?.stepName, 'Finance approval');
+    assert.equal(await state(big), 'manager_review', 'the process has not heard yet');
+    assert.deepEqual((await pendingFor(pool, big))!.approvers, ['role:finance_approver']);
+    await engine.decide({ instanceId: big, approvalKey: 'manager_approval', decision: 'approved', reason: 'Within budget.', principal: fin.p, now: later(1) });
+    for (let i = 0; i < 20 && (await state(big)) !== 'approved'; i++) { await engine.drain(later(1), 'test', tenantId); await new Promise((r) => setTimeout(r, 150)); }
+    assert.equal(await state(big), 'approved');
+    const { rows: reqs } = await pool.query<{ approval_key: string; status: string; decided_by: string | null; approvers: string[] }>('select approval_key, status, decided_by, approvers from approval_request where instance_id = $1 order by id', [big]);
+    assert.deepEqual(reqs.map((r) => [r.approval_key, r.status, r.decided_by?.startsWith('actor:') ? 'a person' : r.decided_by]), [['manager_approval', 'decided', 'a person'], ['manager_approval', 'decided', 'a person'], ['finance_approval', 'decided', 'system:policy']]);
+    const { rows: ev } = await pool.query<{ type: string }>("select type from event where instance_id = $1 and type in ('approval_covered', 'approval_step_decided') order by seq", [big]);
+    assert.deepEqual(ev.map((e) => e.type), ['approval_step_decided', 'approval_step_decided', 'approval_covered']);
+
+    // Under the manager limit (and under the line limit): only the manager, and the process goes straight to approved.
+    const small = await submit(150, later(2));
+    assert.deepEqual((await pendingFor(pool, small))!.approvers, [mo.email]);
+    await engine.decide({ instanceId: small, approvalKey: 'manager_approval', decision: 'approved', reason: 'Fine.', principal: mo.p, now: later(2) });
+    for (let i = 0; i < 20 && (await state(small)) !== 'approved'; i++) { await engine.drain(later(2), 'test', tenantId); await new Promise((r) => setTimeout(r, 150)); }
+    assert.equal(await state(small), 'approved');
+    assert.equal((await pool.query('select count(*)::int as n from approval_request where instance_id = $1', [small])).rows[0]!.n, 1);
+
+    // Policy switched off: the shipped chain runs exactly as before.
+    await setPolicyActive(pool, owner.p, adopted.id, false);
+    const plain = await submit(2600, later(3));
+    assert.deepEqual((await pendingFor(pool, plain))!.approvers, [mo.email]);
+    await engine.decide({ instanceId: plain, approvalKey: 'manager_approval', decision: 'approved', reason: 'Agreed.', principal: mo.p, now: later(3) });
+    for (let i = 0; i < 20 && (await state(plain)) !== 'finance_review'; i++) { await engine.drain(later(3), 'test', tenantId); await new Promise((r) => setTimeout(r, 150)); }
+    assert.equal(await state(plain), 'finance_review');
+    await drained(engine, pool, tenantId, plain, later(3));
+    assert.deepEqual((await pendingFor(pool, plain))!.approvers, ['role:finance_approver']);
   } finally { await pool.end(); }
 });

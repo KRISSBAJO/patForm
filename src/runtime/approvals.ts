@@ -29,6 +29,8 @@ import { InvalidInput } from './errors.js';
 import { requireWorkspaceCapability, type Principal } from './policy.js';
 import { recordWorkspaceAudit } from './authority.js';
 import { managerOf } from './org.js';
+import { expenseSettings } from './expenses.js';
+import { procurementSettings } from './procurement.js';
 import { objectStore } from './object-store.js';
 import { sendPlatformMail, type PlatformMailKind } from './platform-mail.js';
 import { appendEvent, resolveParty, submitterActor, submitterOf, type InstanceRow } from './engine.js';
@@ -40,8 +42,9 @@ const num = (v: unknown) => { const n = typeof v === 'number' ? v : Number(Strin
 // ------------------------------------------------------------------- model
 
 export type Responsible =
-  | { kind: 'manager' }
-  | { kind: 'skip_manager' }
+  /** `fallback` is the process role that takes it when the submitter has no manager on file. */
+  | { kind: 'manager'; fallback?: string }
+  | { kind: 'skip_manager'; fallback?: string }
   | { kind: 'role'; role: string }
   | { kind: 'team'; team: 'hr' | 'it' | 'facilities' | 'finance' }
   | { kind: 'person'; email: string }
@@ -71,6 +74,7 @@ function checkResponsible(raw: unknown, where: string): Responsible {
   if (kind === 'person') { const email = text(r.email, 254).toLowerCase(); if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new InvalidInput(`${where}: give the person's email`); return { kind, email }; }
   if (kind === 'field') { const field = text(r.field, 60); if (!field) throw new InvalidInput(`${where}: name the form field`); return { kind, field }; }
   if (kind === 'cost_centre_owner') return { kind, ...(text(r.field, 60) ? { field: text(r.field, 60) } : {}) };
+  if (kind === 'manager' || kind === 'skip_manager') { const fallback = text(r.fallback, 60); if (fallback && !/^[a-z][a-z0-9_]*$/.test(fallback)) throw new InvalidInput(`${where}: the fallback must be a process role`); return fallback ? { kind, fallback } : { kind }; }
   return { kind } as Responsible;
 }
 
@@ -121,7 +125,13 @@ export function checkSteps(raw: unknown): Step[] {
 
 // --------------------------------------------------------------- templates
 
-export interface Template { key: string; name: string; description: string; fits: string; steps: Step[] }
+export interface Template {
+  key: string; name: string; description: string; fits: string; steps: Step[];
+  /** The process this template was written for; the editor preselects it. */
+  process?: string;
+  /** A step whose `applies.minAmount` is the module's own manager limit at the time of adoption. */
+  limitFrom?: { step: string; module: 'expenses' | 'procurement' };
+}
 
 const h = (remind: number, escalate: number, to: Responsible[]): StepSla => ({ remindAfterHours: remind, escalateAfterHours: escalate, escalateTo: to, escalateMode: 'add' });
 
@@ -148,6 +158,29 @@ export const TEMPLATES: Template[] = [
     steps: [
       { key: 'owner', name: 'Cost centre owner', responsible: [{ kind: 'cost_centre_owner' }, { kind: 'manager' }], mode: 'any', evidence: 'none', notTheSubmitter: true, sla: h(24, 72, [{ kind: 'skip_manager' }]), onReject: 'return', applies: {} },
       { key: 'finance', name: 'Finance approval', responsible: [{ kind: 'team', team: 'finance' }], mode: 'any', evidence: 'note', notTheSubmitter: true, sla: h(48, 120, [{ kind: 'role', role: 'finance_ops' }]), onReject: 'end', applies: { minAmount: 2000 } },
+    ] },
+  // The four module processes as they ship. Adopting one changes nothing
+  // about who decides; it makes the chain editable: evidence, reminders,
+  // escalation, bands, a second signature.
+  { key: 'expense_claim_chain', name: 'Expense claim as shipped', process: 'staff_expense_claim', limitFrom: { step: 'finance', module: 'expenses' }, description: 'The claimant\u2019s manager approves; Finance also approves anything above the manager limit in Expenses settings. Reminded after three days, as the process does.', fits: 'Staff expense claims. Start here, then tighten.',
+    steps: [
+      { key: 'manager', name: 'Manager approval', responsible: [{ kind: 'manager', fallback: 'line_manager' }], mode: 'any', evidence: 'none', notTheSubmitter: true, sla: { remindAfterHours: 72, escalateAfterHours: null, escalateTo: [], escalateMode: 'add' }, onReject: 'end', applies: {} },
+      { key: 'finance', name: 'Finance approval', responsible: [{ kind: 'role', role: 'finance_approver' }], mode: 'any', evidence: 'none', notTheSubmitter: true, sla: { remindAfterHours: 72, escalateAfterHours: null, escalateTo: [], escalateMode: 'add' }, onReject: 'end', applies: { minAmount: 1000 } },
+    ] },
+  { key: 'cash_advance_chain', name: 'Cash advance as shipped', process: 'cash_advance', limitFrom: { step: 'finance', module: 'expenses' }, description: 'The requester\u2019s manager approves; Finance also approves an advance above the manager limit in Expenses settings.', fits: 'Cash advances.',
+    steps: [
+      { key: 'manager', name: 'Manager approval', responsible: [{ kind: 'manager', fallback: 'line_manager' }], mode: 'any', evidence: 'none', notTheSubmitter: true, sla: { remindAfterHours: 72, escalateAfterHours: null, escalateTo: [], escalateMode: 'add' }, onReject: 'end', applies: {} },
+      { key: 'finance', name: 'Finance approval', responsible: [{ kind: 'role', role: 'finance_approver' }], mode: 'any', evidence: 'none', notTheSubmitter: true, sla: { remindAfterHours: 72, escalateAfterHours: null, escalateTo: [], escalateMode: 'add' }, onReject: 'end', applies: { minAmount: 1000 } },
+    ] },
+  { key: 'purchase_chain', name: 'Purchase request as shipped', process: 'purchase_request', limitFrom: { step: 'procurement', module: 'procurement' }, description: 'The requester\u2019s manager approves; Procurement also approves a request above the manager limit in Procurement settings.', fits: 'Purchase requests.',
+    steps: [
+      { key: 'manager', name: 'Manager approval', responsible: [{ kind: 'manager', fallback: 'line_manager' }], mode: 'any', evidence: 'none', notTheSubmitter: true, sla: { remindAfterHours: 72, escalateAfterHours: null, escalateTo: [], escalateMode: 'add' }, onReject: 'end', applies: {} },
+      { key: 'procurement', name: 'Procurement approval', responsible: [{ kind: 'role', role: 'procurement_approver' }], mode: 'any', evidence: 'none', notTheSubmitter: true, sla: { remindAfterHours: 72, escalateAfterHours: null, escalateTo: [], escalateMode: 'add' }, onReject: 'end', applies: { minAmount: 1000 } },
+    ] },
+  { key: 'hiring_chain', name: 'Hiring request as shipped', process: 'hiring_request', description: 'The requester\u2019s manager approves, then HR approves every request.', fits: 'Hiring requests.',
+    steps: [
+      { key: 'manager', name: 'Manager approval', responsible: [{ kind: 'manager', fallback: 'line_manager' }], mode: 'any', evidence: 'none', notTheSubmitter: true, sla: { remindAfterHours: 72, escalateAfterHours: null, escalateTo: [], escalateMode: 'add' }, onReject: 'end', applies: {} },
+      { key: 'hr', name: 'HR approval', responsible: [{ kind: 'role', role: 'hr_approver' }], mode: 'any', evidence: 'none', notTheSubmitter: true, sla: { remindAfterHours: 72, escalateAfterHours: null, escalateTo: [], escalateMode: 'add' }, onReject: 'end', applies: {} },
     ] },
   { key: 'hr_case', name: 'HR, then a director', description: 'HR approves; a director also approves when the category says so. Rejections end the request.', fits: 'HR requests: hiring, pay changes, contract changes.',
     steps: [
@@ -232,7 +265,15 @@ export async function adoptTemplate(pool: Pool, principal: Principal, body: Reco
   const key = text(body.templateKey, 40);
   const t = TEMPLATES.find((x) => x.key === key);
   if (!t) throw new InvalidInput('no such template');
-  return savePolicy(pool, principal, { processKey: body.processKey, name: text(body.name, 120) || t.name, description: t.description, branchId: body.branchId, steps: t.steps, templateKey: t.key, costCentreOwners: body.costCentreOwners, active: body.active });
+  let steps: Step[] = t.steps;
+  if (t.limitFrom) {
+    // The band starts where the module's own routing hands over today, so
+    // adopting the template changes who decides nothing.
+    const { tenantId } = await admin(pool, principal);
+    const limit = t.limitFrom.module === 'procurement' ? (await procurementSettings(pool, tenantId)).managerLimit : (await expenseSettings(pool, tenantId)).managerLimit;
+    steps = t.steps.map((s) => s.key === t.limitFrom!.step ? { ...s, applies: { ...s.applies, minAmount: limit } } : s);
+  }
+  return savePolicy(pool, principal, { processKey: body.processKey || t.process, name: text(body.name, 120) || t.name, description: t.description, branchId: body.branchId, steps, templateKey: t.key, costCentreOwners: body.costCentreOwners, active: body.active });
 }
 
 // ----------------------------------------------------------------- lookup
@@ -279,12 +320,14 @@ export function applicableSteps(policy: Policy, instance: InstanceRow, bp: Bluep
 export async function resolveResponsible(client: Client, r: Responsible, args: { instance: InstanceRow; bp: Blueprint; approval: Approval; policy: Policy; now: Date }): Promise<string[]> {
   const { instance, bp, now } = args;
   switch (r.kind) {
-    case 'manager': return resolveParty(client, { manager: 'submitter' }, instance, bp, now);
+    case 'manager': return resolveParty(client, { manager: 'submitter', ...(r.fallback ? { fallback: r.fallback } : {}) }, instance, bp, now);
     case 'skip_manager': {
       const submitter = await submitterActor(client, bp, instance);
       const m1 = submitter ? await managerOf(client, { tenantId: instance.tenant_id, actorId: submitter, at: now }) : null;
       const m2 = m1 ? await managerOf(client, { tenantId: instance.tenant_id, actorId: m1.id, at: now }) : null;
-      return m2 ? [m2.email] : m1 ? [m1.email] : [];
+      if (m2) return [m2.email];
+      if (m1) return [m1.email];
+      return r.fallback ? [`role:${r.fallback}`] : [];
     }
     case 'role': return [`role:${r.role}`];
     case 'team': {
@@ -367,6 +410,23 @@ async function openStep(client: Client, args: { instance: InstanceRow; bp: Bluep
  * true when a policy took it; false means fall back to the blueprint's own
  * approvers.
  */
+/**
+ * A process may ask for a second gate after the first (the shipped modules
+ * route "over the manager limit" to Finance or Procurement). When an active
+ * policy already ran its whole chain on this record, that later gate is
+ * covered: the organisation's policy decided it in full, and nobody should
+ * be asked twice. Covered only while nothing changed on the record since.
+ */
+export async function policyCoveredDecision(client: Client, instance: InstanceRow): Promise<{ chain: unknown; by: unknown; policy: unknown } | null> {
+  const { rows } = await client.query<{ type: string; payload: { decision?: string; policyChain?: unknown; by?: unknown; policy?: unknown } }>(
+    `select type, payload from event where instance_id = $1 and type in ('approval_decided', 'record_updated', 'approval_covered') order by seq desc limit 1`, [instance.id]);
+  const e = rows[0];
+  if (!e) return null;
+  if (e.type === 'approval_covered') return { chain: e.payload.policyChain, by: e.payload.by, policy: e.payload.policy };
+  if (e.type === 'approval_decided' && e.payload.decision === 'approved' && e.payload.policyChain) return { chain: e.payload.policyChain, by: e.payload.by, policy: e.payload.policy ?? null };
+  return null;
+}
+
 export async function startPolicyChain(client: Client, args: { instance: InstanceRow; bp: Blueprint; approval: Approval; runId: number; now: Date }): Promise<boolean> {
   const branchId = await branchOfSubmitter(client, args.bp, args.instance);
   const policy = await policyFor(client, args.instance.tenant_id, args.instance.process_key, branchId);

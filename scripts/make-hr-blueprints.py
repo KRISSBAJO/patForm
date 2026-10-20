@@ -62,10 +62,10 @@ bp = {
       {'key': 'expired', 'name': 'Closed without a decision', 'type': 'terminal', 'outcome': 'expired', 'publicLabel': 'Closed'},
     ],
     'approvals': [
-      {'key': 'manager_approval', 'name': 'Manager approval', 'approvers': [{'manager': 'submitter', 'fallback': 'line_manager'}], 'mode': 'single',
+      {'key': 'manager_approval', 'policy': True, 'name': 'Manager approval', 'approvers': [{'manager': 'submitter', 'fallback': 'line_manager'}], 'mode': 'single',
        'allowRequestChanges': False, 'reasonRequired': True, 'notTheSubmitter': True,
        'contextFields': ['requester_name', 'position', 'headcount', 'justification'], 'dueInHours': 72},
-      {'key': 'hr_approval', 'name': 'HR approval', 'approvers': [{'role': 'hr_approver'}], 'mode': 'single',
+      {'key': 'hr_approval', 'policy': True, 'name': 'HR approval', 'approvers': [{'role': 'hr_approver'}], 'mode': 'single',
        'allowRequestChanges': False, 'reasonRequired': True, 'notTheSubmitter': True,
        'contextFields': ['position', 'headcount', 'employment_type', 'cost_centre', 'annual_cost', 'justification'], 'dueInHours': 72},
     ],

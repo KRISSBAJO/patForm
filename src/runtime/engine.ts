@@ -22,7 +22,7 @@ import { inTransaction, isUniqueViolation, type Client, type Pool } from './db.j
 import { InvalidInput } from './errors.js';
 import { managerOf } from './org.js';
 import { authorityOf, covers } from './authority.js';
-import { continuePolicyChain, evidenceCount, startPolicyChain, stepRunFor } from './approvals.js';
+import { continuePolicyChain, evidenceCount, policyCoveredDecision, startPolicyChain, stepRunFor } from './approvals.js';
 import { BudgetExceeded, applyFinancePolicy, recordFinanceOutcome, releaseFinanceHolds, reserveBudget } from './expenses.js';
 import { ensurePublicForm } from './form-links.js';
 import { requireIntakeOpen } from './intake-control.js';
@@ -1850,7 +1850,23 @@ async function performEffect(
       const approval = bp.workflow.approvals.find((a) => a.key === action.approval)!;
       // Policy-driven: the workspace's approval policy decides the chain. With
       // no active policy the approvers declared here take it, as before.
-      if (approval.policy && (await startPolicyChain(client, { instance, bp, approval, runId, now }))) return;
+      if (approval.policy) {
+        const covered = await policyCoveredDecision(client, instance);
+        if (covered) {
+          // The policy chain already decided this record; this later gate of
+          // the process is satisfied by it. Recorded as its own event, and
+          // the process moves on as if the gate had been approved.
+          await client.query(
+            `insert into approval_request (tenant_id, instance_id, action_run_id, approval_key, approvers, mode, created_at, status, decision, decided_by, decided_at, reason)
+             values ($1, $2, $3, $4, $5, 'any_of', $6, 'decided', 'approved', 'system:policy', $6, 'covered by the approval policy chain')`,
+            [instance.tenant_id, instance.id, runId, approval.key, ['system:policy'], now]);
+          await appendEvent(client, { tenantId: instance.tenant_id, instanceId: instance.id, type: 'approval_covered', actor: 'system:policy', now, payload: { approval: approval.key, policyChain: covered.chain, by: covered.by, policy: covered.policy } });
+          const onward = bp.workflow.transitions.find((t) => t.from === instance.state && t.trigger.on === 'approval_decided' && t.trigger.approval === approval.key && t.trigger.decision === 'approved' && passesGuard(t, instance, now, 'system:policy'));
+          if (onward) await applyTransition(client, { bp, instance, transition: onward, eventType: 'approval_decided', payload: { approval: approval.key, decision: 'approved', reason: 'covered by the approval policy chain', by: covered.by, policyChain: covered.chain, covered: true }, actor: 'system:policy', now });
+          return;
+        }
+        if (await startPolicyChain(client, { instance, bp, approval, runId, now })) return;
+      }
       const approvers: string[] = [];
       const routing: { party: Party; resolved: string[] }[] = [];
       for (const p of approval.approvers) {

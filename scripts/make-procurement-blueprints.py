@@ -74,10 +74,10 @@ bp = {
       {'key': 'expired', 'name': 'Closed without a decision', 'type': 'terminal', 'outcome': 'expired', 'publicLabel': 'Closed'},
     ],
     'approvals': [
-      {'key': 'manager_approval', 'name': 'Manager approval', 'approvers': [{'manager': 'submitter', 'fallback': 'line_manager'}], 'mode': 'single',
+      {'key': 'manager_approval', 'policy': True, 'name': 'Manager approval', 'approvers': [{'manager': 'submitter', 'fallback': 'line_manager'}], 'mode': 'single',
        'allowRequestChanges': False, 'reasonRequired': True, 'notTheSubmitter': True,
        'contextFields': ['requester_name', 'title', 'request_total', 'needed_by', 'purpose'], 'dueInHours': 48},
-      {'key': 'procurement_approval', 'name': 'Procurement approval', 'approvers': [{'role': 'procurement_approver'}], 'mode': 'single',
+      {'key': 'procurement_approval', 'policy': True, 'name': 'Procurement approval', 'approvers': [{'role': 'procurement_approver'}], 'mode': 'single',
        'allowRequestChanges': False, 'reasonRequired': True, 'notTheSubmitter': True,
        'contextFields': ['requester_name', 'title', 'request_total', 'cost_centre', 'line_items'], 'dueInHours': 48},
     ],
