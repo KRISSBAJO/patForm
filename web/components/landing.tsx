@@ -257,24 +257,6 @@ function Ticker() {
   );
 }
 
-function PeopleInterlude() {
-  return (
-    <section className="lp-people" aria-labelledby="lp-people-title">
-      <div className="shell">
-        <div className="lp-people__frame">
-          <div className="lp-people__image" role="img" aria-label="Three colleagues reviewing a hiring request together" />
-          <div className="lp-people__copy">
-            <span className="eyebrow">Behind every record</span>
-            <h2 id="lp-people-title">People make the decisions. Patform carries the work.</h2>
-            <p>From the first request to the final signature, everyone works from the same history.</p>
-          </div>
-          <span className="lp-people__caption mono">One request · one connected journey</span>
-        </div>
-      </div>
-    </section>
-  );
-}
-
 /* ----------------------------------------------------------------- story */
 
 function Story() {
@@ -303,8 +285,16 @@ function Story() {
           <span className="eyebrow">01 — One record&apos;s week</span>
           <span className="rule" aria-hidden="true" />
         </div>
-        <Rise as="h2" text="One hiring request. Seven modules." className="lp-h2" />
-        <p className="section__lede lp-story__lede">Scroll. The record keeps up.</p>
+        <div className="lp-story__intro">
+          <div>
+            <Rise as="h2" text="One hiring request. Seven modules." className="lp-h2" />
+            <p className="section__lede lp-story__lede">Follow one request from the first approval to the final signature.</p>
+          </div>
+          <figure className="lp-story__photo">
+            <img src="/images/one-record-team.webp" alt="Three colleagues reviewing a hiring request together" width="1536" height="1024" loading="lazy" />
+            <figcaption className="mono">The people behind the record</figcaption>
+          </figure>
+        </div>
       </div>
 
       <div className="shell lp-story__grid">
@@ -593,7 +583,6 @@ export function Landing() {
       <Progress />
       <Hero />
       <Ticker />
-      <PeopleInterlude />
       <Story />
       <Modules />
       <Sign />

@@ -204,20 +204,14 @@
 @keyframes lp-marquee { to { transform: translateX(-50%); } }
 .lp-ticker:hover .lp-ticker__track { animation-play-state: paused; }
 
-/* A human pause between the system diagram and the record's journey. */
-.lp-people { padding-top: clamp(24px, 4vw, 56px); }
-.lp-people__frame { position: relative; min-height: clamp(390px, 44vw, 590px); overflow: hidden; border-radius: 22px; background: #10251a; color: #fff; isolation: isolate; }
-.lp-people__image { position: absolute; inset: 0; z-index: -2; background: url('/images/one-record-team.webp') center 53% / cover no-repeat; }
-.lp-people__frame::before { content: ''; position: absolute; inset: 0; z-index: -1; background: linear-gradient(90deg, rgba(4, 24, 15, 0.89) 0%, rgba(4, 24, 15, 0.64) 28%, rgba(4, 24, 15, 0.04) 70%), linear-gradient(0deg, rgba(4, 24, 15, 0.35), transparent 34%); }
-.lp-people__copy { position: relative; width: min(48%, 520px); padding: clamp(30px, 5vw, 70px); }
-.lp-people__copy .eyebrow { color: #c7e9d0; }
-.lp-people__copy h2 { margin-top: 20px; font-family: var(--font-display), serif; font-size: clamp(31px, 3.3vw, 49px); line-height: 1.07; letter-spacing: -0.02em; font-weight: 500; text-wrap: balance; }
-.lp-people__copy p { margin-top: 19px; max-width: 35ch; font-size: 16px; line-height: 1.55; color: #e1eae2; }
-.lp-people__caption { position: absolute; right: 27px; bottom: 24px; padding: 9px 12px; border: 1px solid rgba(255,255,255,0.28); border-radius: 4px; background: rgba(8, 24, 17, 0.58); color: #fff; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; backdrop-filter: blur(8px); }
 
 /* ---------------------------------------------------------------- story */
 
 .lp-story { padding-block: clamp(70px, 10vh, 130px) 0; }
+.lp-story__intro { display: grid; grid-template-columns: 1fr minmax(280px, 38%); gap: clamp(24px, 5vw, 78px); align-items: end; }
+.lp-story__photo { margin: 0; align-self: center; }
+.lp-story__photo img { display: block; width: 100%; height: clamp(190px, 21vw, 270px); object-fit: cover; object-position: 60% 52%; border-radius: 14px; }
+.lp-story__photo figcaption { margin-top: 9px; color: var(--muted); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; }
 .lp-story__lede { margin-bottom: 10px; }
 .lp-story__grid { display: grid; grid-template-columns: 0.95fr 1.05fr; gap: clamp(28px, 5vw, 80px); align-items: start; margin-top: 40px; }
 .lp-story__panelWrap { position: sticky; top: 92px; }
@@ -409,7 +403,7 @@
 }
 
 @media (max-width: 900px) {
-  .lp-people__copy { width: min(62%, 520px); }
+  .lp-story__intro { grid-template-columns: 1fr minmax(230px, 36%); }
   .lp-hero { min-height: 0; padding-top: 36px; }
   .lp-hero__grid, .lp-sign__grid, .lp-morning__grid, .lp-controls__head { grid-template-columns: 1fr; }
   .lp-orbit { width: min(100%, 420px); margin-top: 24px; }
@@ -428,13 +422,8 @@
 }
 
 @media (max-width: 640px) {
-  .lp-people__frame { min-height: 540px; border-radius: 16px; }
-  .lp-people__image { background-position: 57% center; }
-  .lp-people__frame::before { background: linear-gradient(180deg, rgba(4, 24, 15, 0.9) 0%, rgba(4, 24, 15, 0.51) 44%, rgba(4, 24, 15, 0.02) 72%), linear-gradient(0deg, rgba(4, 24, 15, 0.58), transparent 25%); }
-  .lp-people__copy { width: 100%; padding: 28px; }
-  .lp-people__copy h2 { font-size: clamp(30px, 8vw, 39px); max-width: 15ch; }
-  .lp-people__copy p { max-width: 29ch; font-size: 14px; }
-  .lp-people__caption { left: 20px; right: auto; bottom: 18px; }
+  .lp-story__intro { grid-template-columns: 1fr; gap: 24px; }
+  .lp-story__photo img { height: 190px; }
   .lp-modGrid, .lp-ctlList, .lp-numbers__grid { grid-template-columns: 1fr; }
   .lp-num { border-left: 0; border-top: 1px solid var(--line); }
   .lp-num:first-child { border-top: 0; }
