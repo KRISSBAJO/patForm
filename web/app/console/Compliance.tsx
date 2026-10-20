@@ -126,7 +126,6 @@ export function ComplianceView({ shell }: { shell?: ModuleShell } = {}) {
       { id: 'read', name: 'Policies to read', count: d.myAcknowledgements ?? 0, icon: 'export' },
       { id: 'findings', name: 'My findings', count: (findings.data ?? []).length, icon: 'trail' },
       { id: 'contracts', name: 'Contracts', count: (contracts.data ?? []).filter((c) => c.status === 'in_review').length, icon: 'export' },
-      { id: 'signatures', name: 'Signatures', count: null, icon: 'done' },
       ...(team('compliance') ? [{ id: 'policies' as const, name: 'Policies', count: null, icon: 'trail' as const }] : []),
       { id: 'controls', name: 'Controls', count: d.controls?.overdue ?? 0, icon: 'done' },
       { id: 'exceptions', name: 'Exceptions', count: d.exceptions ?? 0, icon: 'trail' },
@@ -283,7 +282,6 @@ export function ComplianceView({ shell }: { shell?: ModuleShell } = {}) {
             {x.status === 'remediating' && <button type="button" className="cs__btn cs__btn--primary" onClick={() => setAsking({ id: x.id, label: 'Evidence it is fixed', run: async (r) => { await postJson(`/api/gov/findings/${x.id}`, { action: 'evidence', evidenceRef: r }); return 'Sent for validation.'; } })}>Submit fix</button>}
           </div></li>)}{findings.data && !findings.data.length && empty('No open findings for you.')}</ul>}
 
-        {current === 'signatures' && <SignCenter />}
 
         {current === 'contracts' && signing && <SignCenter startContract={signing} onClose={() => { const back = signing; setSigning(null); void showContract(back.id); void reloadAll(); }} />}
         {current === 'contracts' && !signing && (openContract ? contractPanel : <>

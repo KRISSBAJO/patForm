@@ -48,6 +48,7 @@ export const MODULE_AREAS: Record<string, Area> = {
   hr: { key: 'hr', name: 'HR', blurb: 'People, leave, documents, cases', colour: '#7a3e9d', deep: '#512a68', tint: '#f4edf8', icon: svg('M16 11a4 4 0 1 0-8 0M4 20c0-3 4-5 8-5s8 2 8 5') },
   appraisals: { key: 'appraisals', name: 'Appraisals', blurb: 'Goals, reviews, calibration', colour: '#0e7c7b', deep: '#0a5554', tint: '#e8f4f4', icon: svg('M4 20V10M10 20V4M16 20v-8M22 20H2') },
   operations: { key: 'operations', name: 'Assets & IT', blurb: 'Assets, access, tickets, maintenance', colour: '#475569', deep: '#2f3a48', tint: '#eef1f5', icon: svg('M4 5h16v10H4zM2 19h20M9 15v4M15 15v4') },
+  sign: { key: 'sign', name: 'Patform Sign', blurb: 'Send, sign, seal, verify', colour: '#14663f', deep: '#0f4e30', tint: '#eaf3ed', icon: svg('M4 20h16M6 16l10-10 2 2L8 18H6zM14 8l2 2') },
   compliance: { key: 'compliance', name: 'Compliance', blurb: 'Contracts, policies, controls, audits', colour: '#8a3a34', deep: '#5e2621', tint: '#f8eeec', icon: svg('M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6zM9 12l2 2 4-4') },
 };
 

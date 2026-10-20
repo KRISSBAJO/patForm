@@ -7,6 +7,7 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { postJson } from './stepup';
+import { ShellSync, type ModuleShell } from './module-shell';
 import { PdfPages, PageBox } from '../../components/pdf-pages';
 
 type Envelope = { id: string; number: number; title: string; status: string; routing: string; created_at: string; sent_at: string | null; completed_at: string | null; expires_at: string; final_sha256: string | null; contract: string | null; signers: number; signed: number };
@@ -15,6 +16,7 @@ type Field = { id?: string; recipient_id: string | null; party_id?: string | nul
 type Register = { available: boolean; reason?: string; country: string; number: string; companyName?: string; status?: string; source?: string; checkedAt: string };
 type Party = { id: string; name: string; required_count: number; signed: number; authority_note: string | null; completed_at: string | null; register: Register | null; register_required: boolean };
 type Detail = { envelope: Envelope & { page_count: number; original_sha256: string; void_reason: string | null; seal: { subject: string; selfIssued: boolean } | null; seal_timestamp: { time?: string; authority?: string; missing?: string } | null }; recipients: Recipient[]; parties: Party[]; fields: Field[]; events: { kind: string; occurred_at: string; recipient: string | null; ip: string | null }[] };
+type Mode = 'list' | 'compose' | 'place' | 'detail' | 'verify';
 type Kind = 'signature' | 'initials' | 'date' | 'name' | 'text' | 'title';
 type Row = { name: string; email: string; role: 'signer' | 'cc'; order: number; party: string; title: string; phone: string; verifyBy: 'email' | 'sms' | 'email_and_sms' };
 const blank = (order: number): Row => ({ name: '', email: '', role: 'signer', order, party: '', title: '', phone: '', verifyBy: 'email' });
@@ -38,9 +40,12 @@ async function readBase64(file: File): Promise<string> {
   return await new Promise<string>((resolve, reject) => { const r = new FileReader(); r.onload = () => resolve(String(r.result).split(',')[1] ?? ''); r.onerror = () => reject(r.error); r.readAsDataURL(file); });
 }
 
-export function SignCenter({ startContract, onClose }: { startContract?: { id: string; title: string } | null; onClose?: () => void }) {
+export function SignCenter({ startContract, onClose, shell }: { startContract?: { id: string; title: string } | null; onClose?: () => void; shell?: ModuleShell }) {
   const [list, setList] = useState<Envelope[] | null>(null);
-  const [mode, setMode] = useState<'list' | 'compose' | 'place' | 'detail'>(startContract ? 'compose' : 'list');
+  const [mode, setMode] = useState<Mode>(startContract ? 'compose' : 'list');
+  // The rail's section for a mode, and a mode change that tells the rail.
+  const sectionOf = (m: Mode) => (m === 'verify' ? 'verify' : m === 'compose' || m === 'place' ? 'send' : 'envelopes');
+  const go = (m: Mode) => { setMode(m); shell?.onSection?.(sectionOf(m)); };
   const [note, setNote] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [title, setTitle] = useState(startContract?.title ?? '');
@@ -62,12 +67,25 @@ export function SignCenter({ startContract, onClose }: { startContract?: { id: s
 
   const loadList = useCallback(async () => { try { setList(await get<Envelope[]>('/api/sign/envelopes')); } catch (err) { setNote(err instanceof Error ? err.message : String(err)); } }, []);
   useEffect(() => { void loadList(); }, [loadList]);
+  useEffect(() => {
+    const want = shell?.section;
+    if (!want || want === sectionOf(mode)) return;
+    if (want === 'envelopes') { setMode('list'); setDetail(null); setPdf(null); }
+    else if (want === 'send') { setMode('compose'); setTitle(''); setDocRef(null); setRows([blank(1)]); setPartyRules({}); }
+    else if (want === 'verify') setMode('verify');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shell?.section]);
+  const sections = [
+    { id: 'envelopes', name: 'Envelopes', count: (list ?? []).filter((e) => e.status === 'sent').length },
+    { id: 'send', name: 'Send a document', count: null },
+    { id: 'verify', name: 'Verify a copy', count: null },
+  ];
   const open = async (id: string, next: 'place' | 'detail') => {
     const d = await get<Detail>(`/api/sign/envelopes/${id}`);
     setDetail(d); setFields(d.fields); setPdf(await pdfOf(id));
     const firstPerson = d.recipients.find((r) => r.role === 'signer' && !r.party_id);
     setCurrent({ recipient: firstPerson ? `r:${firstPerson.id}` : d.parties[0] ? `p:${d.parties[0].id}:1` : '', kind: 'signature' });
-    setMode(next);
+    go(next);
   };
   const act = async (work: () => Promise<string | void>) => { setBusy(true); setNote(null); try { const m = await work(); if (m) setNote(m); await loadList(); } catch (err) { setNote(err instanceof Error ? err.message : String(err)); } finally { setBusy(false); } };
   const signers = (detail?.recipients ?? []).filter((r) => r.role === 'signer');
@@ -81,17 +99,20 @@ export function SignCenter({ startContract, onClose }: { startContract?: { id: s
   const companies = [...new Set(rows.filter((r) => r.role === 'signer' && r.party.trim()).map((r) => r.party.trim()))];
 
   return <div className="ig__form" style={{ gridTemplateColumns: '1fr' }}>
-    <div className="ig__formTitle"><strong>Patform Sign</strong><p>Send a document for signature. Each signer confirms their email with a code, agrees to sign electronically and signs; the finished PDF carries every signature and a certificate, and can be checked at <a href="/sign/verify" target="_blank" rel="noopener">the verify page</a>.</p></div>
+    {!shell && <div className="ig__formTitle"><strong>Patform Sign</strong><p>Send a document for signature. Each signer confirms their email with a code, agrees to sign electronically and signs; the finished PDF carries every signature and a certificate, and can be checked at <a href="/sign/verify" target="_blank" rel="noopener">the verify page</a>.</p></div>}
+    <ShellSync sections={sections} onSections={shell?.onSections} />
     {note && <p className="ig__notice" role="status">{note}</p>}
 
     {mode === 'list' && <>
-      <div className="pp2__roleEdit"><button type="button" className="cs__btn cs__btn--primary" onClick={() => { setMode('compose'); setTitle(''); setDocRef(null); setRows([blank(1)]); setPartyRules({}); }}>Send a PDF for signature</button>{onClose && <button type="button" className="cs__btn" onClick={onClose}>Close</button>}</div>
+      <div className="pp2__roleEdit"><button type="button" className="cs__btn cs__btn--primary" onClick={() => { go('compose'); setTitle(''); setDocRef(null); setRows([blank(1)]); setPartyRules({}); }}>Send a PDF for signature</button>{onClose && <button type="button" className="cs__btn" onClick={onClose}>Close</button>}</div>
       <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>{(list ?? []).map((e) => <li key={e.id} className="ig__row"><div className="ig__rowMain">
         <strong>PS-{e.number} {e.title}</strong><span className={`ig__status ${e.status === 'completed' ? '' : 'ig__status--off'}`}>{e.status}{e.status === 'sent' ? ` · ${e.signed} of ${e.signers} signed` : ''}</span>
         <p>{e.contract ? `Contract: ${e.contract} · ` : ''}{e.routing === 'parallel' ? 'all at once' : 'in order'} · {e.sent_at ? `sent ${day(e.sent_at)}` : `created ${day(e.created_at)}`}{e.completed_at ? ` · completed ${day(e.completed_at)}` : ''}</p></div>
         <button type="button" className="cs__btn" onClick={() => void act(() => open(e.id, e.status === 'draft' ? 'place' : 'detail'))}>{e.status === 'draft' ? 'Continue' : 'Open'}</button>
       </li>)}{list && !list.length && <li className="ig__row"><div className="ig__rowMain"><p>Nothing sent for signature yet.</p></div></li>}</ul>
     </>}
+
+    {mode === 'verify' && <div className="ig__panelHead"><div><h3>Verify a signed copy</h3><p>Anyone holding the PDF can check it; no account is needed. The page reads the file in the browser, finds the seal and the fingerprint, and says whether the copy is genuine and who signed it.</p></div><a className="cs__btn cs__btn--primary" href="/sign/verify" target="_blank" rel="noreferrer">Open the verify page</a></div>}
 
     {mode === 'compose' && <form onSubmit={(e) => { e.preventDefault(); void act(async () => {
       const r = await postJson<{ id: string; parties: { name: string; unlisted: string[]; register: Register | null }[] }>('/api/sign/envelopes', { ...(startContract ? { contractId: startContract.id } : { documentRef: docRef?.ref }), title, message, routing, expiresInDays: Number(days),
@@ -136,7 +157,7 @@ export function SignCenter({ startContract, onClose }: { startContract?: { id: s
       </div>; })}
       <div className="pp2__roleEdit"><button type="button" className="cs__btn" onClick={() => setRows((x) => [...x, blank(x.length + 1)])}>Add a recipient</button>
         <button type="submit" className="cs__btn cs__btn--primary" disabled={busy || (!startContract && !docRef)}>Next: place the boxes</button>
-        <button type="button" className="cs__btn" onClick={() => { if (onClose && startContract) onClose(); else setMode('list'); }}>Cancel</button></div>
+        <button type="button" className="cs__btn" onClick={() => { if (onClose && startContract) onClose(); else go('list'); }}>Cancel</button></div>
     </form>}
 
     {mode === 'place' && detail && pdf && <>
@@ -152,7 +173,7 @@ export function SignCenter({ startContract, onClose }: { startContract?: { id: s
           await open(detail.envelope.id, 'detail');
           return `Sent. ${r.notified} signer(s) emailed.${owners.some((o) => !fields.some((f) => keyOf(f) === o.key && f.kind === 'signature')) ? ' Anyone without a signature box signs on an added signature page.' : ''}`;
         })}>Send</button>
-        <button type="button" className="cs__btn" onClick={() => { setMode('list'); setDetail(null); setPdf(null); }}>Later</button>
+        <button type="button" className="cs__btn" onClick={() => { go('list'); setDetail(null); setPdf(null); }}>Later</button>
       </div>
       <p className="ig__muted">{owners.map((o) => <span key={o.key} style={{ color: color(o.key), marginRight: 12 }}>■ {o.label}</span>)}</p>
       <PdfPages data={pdf}
@@ -176,7 +197,7 @@ export function SignCenter({ startContract, onClose }: { startContract?: { id: s
         {detail.envelope.status === 'sent' && <button type="button" className="cs__btn" disabled={busy} onClick={() => void act(async () => { const r = await postJson<{ reminded: number }>(`/api/sign/envelopes/${detail.envelope.id}/remind`, {}); return `Reminded ${r.reminded} signer(s).`; })}>Remind now</button>}
         {['draft', 'sent'].includes(detail.envelope.status) && <button type="button" className="cs__btn" disabled={busy} onClick={() => { setNote(null); const why = voidWhy.trim(); if (!why) { setNote('Type why you are cancelling in the box, then press Cancel envelope.'); return; } void act(async () => { await postJson(`/api/sign/envelopes/${detail.envelope.id}/void`, { reason: why }); await open(detail.envelope.id, 'detail'); return 'Cancelled. Signers who were asked have been told.'; }); }}>Cancel envelope</button>}
         {['draft', 'sent'].includes(detail.envelope.status) && <input id="ps-void" aria-label="Why cancel" className="cs__input" placeholder="Why cancel?" style={{ maxWidth: 260 }} value={voidWhy} onChange={(e) => setVoidWhy(e.target.value)} />}
-        <button type="button" className="cs__btn" onClick={() => { setMode('list'); setDetail(null); setPdf(null); if (onClose && startContract) onClose(); }}>Back</button>
+        <button type="button" className="cs__btn" onClick={() => { go('list'); setDetail(null); setPdf(null); if (onClose && startContract) onClose(); }}>Back</button>
       </div>
       <p className="ig__muted"><small>{detail.events.map((e) => `${day(e.occurred_at)} ${e.kind.replace(/_/g, ' ')}${e.recipient ? ` (${e.recipient})` : ''}`).join(' · ')}</small></p>
     </>}

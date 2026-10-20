@@ -744,4 +744,8 @@ them which section to show (`shell.section`) and learns which sections
 exist (`ShellSync`), so nothing about who may see what moved. Without a
 shell the views still draw their own tabs. Checked in the browser on all
 six at desktop and phone width.
+Patform Sign is its own area too (nav item "Patform Sign", shown with the
+Contracts module): Envelopes, Send a document, Verify a copy. The
+"Signatures" tab inside Compliance is gone; "Send with Patform Sign" on an
+approved contract still opens the sender inline on that contract.
 
