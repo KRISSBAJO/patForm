@@ -475,3 +475,41 @@
 .hr__ledger { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; padding: 0 20px 16px; }
 .hr__ledger div { padding: 10px 12px; border-radius: 12px; background: var(--mx-soft); display: grid; } .hr__ledger span { font: 600 10.5px var(--ui); color: var(--mx-muted); text-transform: uppercase; letter-spacing: .05em; } .hr__ledger strong { font-size: 18px; }
 @media (max-width: 900px) { .hr__grid2 { grid-template-columns: 1fr; } .hr__personBtns { margin-left: 0; } }
+
+/* Data table: the one list every module uses for big sets */
+.dt__bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; padding: 16px 20px 10px; }
+.dt__title { margin: 0; font: 600 18px var(--font-display, serif); display: flex; align-items: baseline; gap: 10px; }
+.dt__title small { font: 500 12.5px var(--ui); color: var(--mx-muted); }
+.dt__search { display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 10px 0 12px; border: 1px solid var(--mx-line); border-radius: 10px; background: #fff; color: var(--mx-muted); flex: 1 1 220px; max-width: 360px; }
+.dt__search:focus-within { outline: 2px solid var(--mod, #5b4bb7); outline-offset: 1px; }
+.dt__search input { flex: 1; border: 0; background: none; font: 14px var(--ui); color: var(--mx-ink); outline: none; min-width: 0; }
+.dt__search button { border: 0; background: none; font-size: 18px; color: var(--mx-muted); cursor: pointer; }
+.dt__tools { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-left: auto; }
+.dt__filter { position: relative; }
+.dt__pop { position: absolute; top: calc(100% + 6px); left: 0; z-index: 30; min-width: 240px; max-height: 340px; overflow: auto; padding: 8px; border-radius: 12px; border: 1px solid var(--mx-line); background: #fff; box-shadow: 0 18px 40px rgba(20, 16, 36, .18); display: grid; gap: 6px; }
+.dt__pop ul { list-style: none; margin: 0; padding: 0; display: grid; }
+.dt__pop label { display: flex; align-items: center; gap: 10px; padding: 7px 8px; border-radius: 8px; font-size: 13.5px; cursor: pointer; }
+.dt__pop label:hover { background: var(--mx-soft); }
+.dt__pop label span { flex: 1; text-transform: capitalize; } .dt__pop label small { color: var(--mx-muted); font-size: 12px; }
+.dt__pop input[type=checkbox], .dt__pop input[type=radio] { accent-color: var(--mod, #5b4bb7); width: 15px; height: 15px; }
+.dt__popFoot { display: flex; justify-content: flex-end; gap: 6px; padding-top: 4px; border-top: 1px solid var(--mx-line); }
+.dt__chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 0 20px 10px; }
+.dt__chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 6px 4px 10px; border-radius: 999px; background: var(--mod-tint, #efedf9); color: var(--mod-deep, #3d3280); font-size: 12.5px; font-weight: 600; }
+.dt__chip button { border: 0; background: none; color: inherit; font-size: 15px; line-height: 1; cursor: pointer; opacity: .7; } .dt__chip button:hover { opacity: 1; }
+.dt__scroll { overflow: auto; border-top: 1px solid var(--mx-line); transition: opacity .15s; } .dt__scroll.is-loading, .dt__cards.is-loading { opacity: .5; }
+.dt__table { width: 100%; border-collapse: separate; border-spacing: 0; font: 13.5px var(--ui); }
+.dt__table th { position: sticky; top: 0; z-index: 1; text-align: left; padding: 10px 14px; background: var(--mx-soft); color: var(--mx-muted); font: 600 11.5px var(--ui); letter-spacing: .05em; text-transform: uppercase; border-bottom: 1px solid var(--mx-line); white-space: nowrap; }
+.dt__table th:first-child, .dt__table td:first-child { padding-left: 20px; } .dt__table th:last-child, .dt__table td:last-child { padding-right: 20px; }
+.dt__sort { border: 0; background: none; font: inherit; color: inherit; letter-spacing: inherit; text-transform: inherit; cursor: pointer; padding: 0; }
+.dt__sort span { opacity: .4; } .dt__sort.is-on { color: var(--mod-deep, #3d3280); } .dt__sort.is-on span { opacity: 1; }
+.dt__table td { padding: 11px 14px; border-bottom: 1px solid var(--mx-line); vertical-align: middle; color: var(--mx-ink); }
+.dt__table tr.is-link { cursor: pointer; } .dt__table tr.is-link:hover td { background: var(--mod-tint, #efedf9); } .dt__table tr.is-link:focus-visible { outline: 2px solid var(--mod, #5b4bb7); outline-offset: -2px; }
+.dt__table tbody tr:last-child td { border-bottom: 0; }
+.dt__cell { display: flex; align-items: center; gap: 10px; } .dt__cell .mx__avatar { margin-left: 0; width: 30px; height: 30px; font-size: 11px; }
+.dt__cell strong { font-weight: 600; display: block; } .dt__cell small { color: var(--mx-muted); font-size: 12px; }
+.dt__cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; padding: 4px 20px 16px; border-top: 1px solid var(--mx-line); padding-top: 14px; }
+.dt__cards > div[role=button] { cursor: pointer; }
+.dt__foot { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: 12px 20px 16px; border-top: 1px solid var(--mx-line); color: var(--mx-muted); font-size: 12.5px; }
+.dt__pages { display: flex; gap: 4px; margin-left: auto; } .dt__pages .mx__seg { min-width: 34px; justify-content: center; } .dt__gap { padding: 0 4px; align-self: center; }
+.dt__size { display: flex; align-items: center; gap: 6px; } .dt__size select { height: 32px; border-radius: 8px; border: 1px solid var(--mx-line); background: #fff; font: 13px var(--ui); padding: 0 6px; }
+@media (max-width: 760px) { .dt__tools { margin-left: 0; } .dt__pages { margin-left: 0; } }

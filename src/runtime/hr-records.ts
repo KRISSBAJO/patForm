@@ -15,6 +15,7 @@ import { InvalidInput } from './errors.js';
 import type { Principal } from './policy.js';
 import { recordWorkspaceAudit } from './authority.js';
 import { objectStore } from './object-store.js';
+import { readListQuery, runList, toCsv, type ListSpec } from './listing.js';
 import { balances, countryCode, currencyCode, currentManager, day, employeeFor, ensureLeaveTypes, hrSettings, id, num, ownedElsewhere, recordForActor, requireHr, requireHrAdmin, text, weekdays, who, type Who } from './hr.js';
 
 const UUID = /^[0-9a-f-]{36}$/;
@@ -418,4 +419,50 @@ export async function setEmployeeBranch(pool: Pool, principal: Principal, employ
     await recordWorkspaceAudit(client, { tenantId: w.tenantId, actorId: w.actorId, action: 'hr.branch_assigned', targetId: e.id, detail: { branchId } });
     return { id: e.id, branchId };
   });
+}
+
+// ------------------------------------------------------------- people list
+
+const PEOPLE_SPEC: ListSpec = {
+  defaultSort: 'name:asc',
+  columns: {
+    name: { sql: 'e.name', sortable: true, searchable: true },
+    email: { sql: 'e.email', sortable: true, searchable: true },
+    title: { sql: 'a.position_title', sortable: true, searchable: true, filters: { title: 'like' } },
+    unit: { sql: 'u.name', filterSql: 'u.id', sortable: true, searchable: true, filters: { unit: 'eq' } },
+    branch: { sql: 'b.name', filterSql: 'b.id', sortable: true, filters: { branch: 'in' } },
+    status: { sql: 'e.status', sortable: true, filters: { status: 'in' } },
+    type: { sql: 'e.employment_type', sortable: true, filters: { type: 'in' } },
+    grade: { sql: 'e.grade', sortable: true, searchable: true, filters: { grade: 'in' } },
+    location: { sql: 'e.location', sortable: true, searchable: true, filters: { location: 'like' } },
+    manager: { sql: 'm.display_name', filterSql: 'm.id', sortable: true, searchable: true, filters: { manager: 'eq' } },
+    start_date: { sql: 'e.start_date', sortable: true, filters: { started_from: 'date_from', started_to: 'date_to' } },
+    probation_end: { sql: 'e.probation_end', sortable: true, filters: { probation_from: 'date_from', probation_to: 'date_to' } },
+  },
+};
+const PEOPLE_COLUMNS = [['name', 'Name'], ['email', 'Email'], ['title', 'Job title'], ['unit', 'Unit'], ['branch', 'Branch'], ['status', 'Status'], ['type', 'Type'], ['grade', 'Grade'], ['location', 'Location'], ['manager', 'Manager'], ['start_date', 'Start date'], ['probation_end', 'Probation ends']].map(([key, label]) => ({ key: key!, label: label! }));
+
+/** The people directory, a page at a time, with search, filters, sorting and a CSV of the whole filtered list. */
+export async function searchEmployees(pool: Pool, principal: Principal, params: URLSearchParams) {
+  const w = await who(pool, principal); requireHr(w);
+  const query = readListQuery(params, PEOPLE_SPEC);
+  const page = await runList<Record<string, unknown>>(pool, {
+    select: `e.id, e.name, e.email, e.status, e.employment_type as type, e.location, e.grade, e.start_date::text, e.end_date::text, e.probation_end::text,
+             a.position_title as title, u.name as unit, u.id as unit_id, b.name as branch, b.id as branch_id, b.country as branch_country, m.display_name as manager, m.id as manager_id`,
+    from: `employee_record e left join actor a on a.id = e.actor_id left join org_unit u on u.id = a.org_unit_id left join hr_branch b on b.id = e.branch_id
+           left join lateral (select x.display_name, x.id from reporting_line r join actor x on x.id = r.manager_id where r.actor_id = e.actor_id and r.kind = 'primary' and r.effective_from <= now() and (r.effective_to is null or r.effective_to > now()) limit 1) m on true`,
+    base: ['e.tenant_id = $1'], params: [w.tenantId], spec: PEOPLE_SPEC, query,
+  });
+  if (query.format === 'csv') {
+    await recordWorkspaceAudit(pool, { tenantId: w.tenantId, actorId: w.actorId, action: 'hr.people_exported', detail: { rows: page.total, q: query.q, filters: query.filters } });
+    return { filename: `people-${new Date().toISOString().slice(0, 10)}.csv`, csv: toCsv(page.rows, PEOPLE_COLUMNS), rows: page.total };
+  }
+  const { rows: facets } = await pool.query<{ kind: string; id: string | null; name: string; n: number }>(
+    `select 'branch' as kind, b.id::text, b.name, count(e.*)::int as n from hr_branch b left join employee_record e on e.branch_id = b.id and e.status <> 'left' where b.tenant_id = $1 and b.active group by b.id, b.name
+     union all select 'unit', u.id::text, u.name, count(a.*)::int from org_unit u left join actor a on a.org_unit_id = u.id and a.active where u.tenant_id = $1 group by u.id, u.name
+     union all select 'status', status, status, count(*)::int from employee_record where tenant_id = $1 group by status
+     union all select 'type', employment_type, employment_type, count(*)::int from employee_record where tenant_id = $1 group by employment_type
+     union all select 'manager', m.id::text, m.display_name, count(distinct r.actor_id)::int from reporting_line r join actor m on m.id = r.manager_id where r.tenant_id = $1 and r.kind = 'primary' and r.effective_to is null group by m.id, m.display_name
+     order by 1, 3`, [w.tenantId]);
+  return { ...page, facets };
 }

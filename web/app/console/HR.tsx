@@ -6,6 +6,7 @@ import { EmptyState, ShellSync, type ModuleShell } from './module-shell';
 import { Illustration, type IllustrationName } from './illustrations';
 import { postJson } from './stepup';
 import { COUNTRIES, CURRENCIES, Choice, F, Sheet, SheetSection, TIMEZONES, WEEKDAYS, money, readFileAsBase64 } from './sheet';
+import { DataTable } from './datatable';
 
 /*
  * HR (PRD Module 7). Everyone: my tasks, leave, documents and profile; the
@@ -41,6 +42,7 @@ type Detail = {
   timeline: { on: string; kind: string; title: string; detail: string | null; by?: string | null }[];
 };
 type PayLine = { id: number; kind: string; label: string; amount: string; currency: string; period: string; effective_from: string; ended_on: string | null; reason: string | null; entered_by: string | null };
+type PersonRow = { id: string; name: string; email: string; status: string; type: string; location: string | null; grade: string | null; start_date: string | null; probation_end: string | null; title: string | null; unit: string | null; branch: string | null; branch_country: string | null; manager: string | null };
 type OrgNode = { id: string; actorId: string | null; name: string; title: string | null; unit: string | null; branch: string | null; status: string | null; email: string; reports: OrgNode[] };
 type Calendar = { month: string; first: string; last: string; holidays: { day: string; name: string; branch: string | null }[]; away: { id: string; employee_id: string; name: string; unit: string | null; branch: string | null; type: string; start_date: string; end_date: string; days: number; status: string; mine: boolean }[]; scope: string };
 
@@ -355,8 +357,6 @@ export function HRView({ onChanged, shell }: { onChanged?: () => void; shell?: M
   const [answer, setAnswer] = useState('');
   const [openCase, setOpenCase] = useState<string | null>(null);
   const [caseFilter, setCaseFilter] = useState<string>('all');
-  const [q, setQ] = useState('');
-  const [branchFilter, setBranchFilter] = useState('');
   useEffect(() => {
     if (shell?.section && shell.section !== tab) { setTab(shell.section as Tab); setNote(null); setSheet(null); setForm({}); setAsking(null); setPerson(null); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -434,7 +434,6 @@ export function HRView({ onChanged, shell }: { onChanged?: () => void; shell?: M
   </div>; };
 
   const caseList = (cases.data ?? []).filter((c) => caseFilter === 'all' || (caseFilter === 'open' ? c.status === 'open' : c.kind === caseFilter));
-  const peopleList = (people.data ?? []).filter((p) => (!q.trim() || `${p.name} ${p.email} ${p.position_title ?? ''} ${p.unit_name ?? ''} ${p.branch_name ?? ''}`.toLowerCase().includes(q.toLowerCase())) && (!branchFilter || p.branch_id === branchFilter));
   const defaults = branches.data;
   const weekPicker = <div className="mx__segs">{WEEKDAYS.map(([n, label]) => <button key={n} type="button" className={`mx__seg ${week.includes(n) ? 'is-on' : ''}`} onClick={() => setWeek(week.includes(n) ? week.filter((d) => d !== n) : [...week, n].sort())}>{label}</button>)}</div>;
   const dayNames = (ds: number[]) => ds.map((d) => WEEKDAYS.find(([n]) => n === d)?.[1]).join(', ');
@@ -503,11 +502,34 @@ export function HRView({ onChanged, shell }: { onChanged?: () => void; shell?: M
         </div>
       </>}
 
-      {tab === 'people' && (person ? <PersonPage id={person} onBack={() => setPerson(null)} admin={!!s.admin} branches={br} act={act} busy={busy} /> : <div className="mx__card"><div className="mx__cardHead"><h3>People</h3><div className="mx__bar">{activeBranches.length > 0 && <div className="mx__segs"><button type="button" className={`mx__seg ${!branchFilter ? 'is-on' : ''}`} onClick={() => setBranchFilter('')}>All</button>{activeBranches.map((b) => <button key={b.id} type="button" className={`mx__seg ${branchFilter === b.id ? 'is-on' : ''}`} onClick={() => setBranchFilter(b.id)}>{flag(b.country)} {b.name}</button>)}</div>}<input className="mx__input" style={{ height: 36, width: 220 }} placeholder="Search name, title, unit" value={q} onChange={(e) => setQ(e.target.value)} /></div></div>
-        <div className="hr__people">{peopleList.map((p) => <button type="button" key={p.id} className="hr__person" style={{ textAlign: 'left', font: 'inherit', cursor: 'pointer' }} onClick={() => setPerson(p.id)}>
-          <Avatar name={p.name} lg />
-          <div className="mx__main"><strong>{p.name} <Pill s={p.status} /></strong><small>{[p.position_title, p.unit_name, p.branch_name && `${flag(p.branch_country)} ${p.branch_name}`].filter(Boolean).join(' · ') || p.employment_type}</small><small className="mx__tiny">{[p.employment_type, p.grade && `grade ${p.grade}`, p.manager_name && `reports to ${p.manager_name}`, p.start_date && `since ${day(p.start_date)}`].filter(Boolean).join(' · ')}</small></div>
-        </button>)}{people.data && !peopleList.length && <EmptyState icon="people" title={q || branchFilter ? 'No match' : 'No people yet'} text={q || branchFilter ? 'Try another name, title or branch.' : 'Add a new joiner and the person appears here with their record.'} action={!q && !branchFilter ? { label: 'New joiner', onClick: () => { setForm({ oType: 'employee' }); setSheet('onboarding'); } } : undefined} />}</div></div>)}
+      {tab === 'people' && (person ? <PersonPage id={person} onBack={() => setPerson(null)} admin={!!s.admin} branches={br} act={act} busy={busy} /> : <DataTable<PersonRow>
+        path="/api/hr/employees/search" title="People" defaultSort="name:asc" refreshKey={people.data} onRow={(r) => setPerson(r.id)}
+        columns={[
+          { key: 'name', label: 'Person', sortable: true, render: (r) => <span className="dt__cell"><Avatar name={r.name} /><span><strong>{r.name}</strong><small>{r.email}</small></span></span> },
+          { key: 'title', label: 'Job title', sortable: true },
+          { key: 'unit', label: 'Unit', sortable: true },
+          { key: 'branch', label: 'Branch', sortable: true, render: (r) => r.branch ? <>{flag(r.branch_country)} {r.branch}</> : '' },
+          { key: 'manager', label: 'Manager', sortable: true },
+          { key: 'status', label: 'Status', sortable: true, render: (r) => <Pill s={r.status} /> },
+          { key: 'type', label: 'Type', sortable: true },
+          { key: 'grade', label: 'Grade', sortable: true, hide: true },
+          { key: 'location', label: 'Location', sortable: true, hide: true },
+          { key: 'start_date', label: 'Started', sortable: true, render: (r) => day(r.start_date) },
+          { key: 'probation_end', label: 'Probation ends', sortable: true, hide: true, render: (r) => day(r.probation_end) },
+        ]}
+        filters={[
+          { key: 'branch', label: 'Branch', kind: 'facet', multi: true },
+          { key: 'status', label: 'Status', kind: 'facet', multi: true },
+          { key: 'unit', label: 'Unit', kind: 'facet' },
+          { key: 'manager', label: 'Manager', kind: 'facet' },
+          { key: 'type', label: 'Type', kind: 'facet', multi: true },
+          { key: 'started_from', label: 'Started after', kind: 'date_from' },
+          { key: 'started_to', label: 'Started before', kind: 'date_to' },
+        ]}
+        card={(p) => <div className="hr__person" style={{ cursor: 'pointer' }}><Avatar name={p.name} lg /><div className="mx__main"><strong>{p.name} <Pill s={p.status} /></strong><small>{[p.title, p.unit, p.branch && `${flag(p.branch_country)} ${p.branch}`].filter(Boolean).join(' · ') || p.type}</small><small className="mx__tiny">{[p.type, p.grade && `grade ${p.grade}`, p.manager && `reports to ${p.manager}`, p.start_date && `since ${day(p.start_date)}`].filter(Boolean).join(' · ')}</small></div></div>}
+        toolbar={<button type="button" className="mx__btn mx__btn--sm" onClick={() => { setForm({ oType: 'employee', oBranch: activeBranches[0]?.id ?? '' }); setSheet('onboarding'); }}>+ New joiner</button>}
+        empty={{ title: 'No people yet', text: 'Add a new joiner and the person appears here with their record.', action: { label: 'New joiner', onClick: () => { setForm({ oType: 'employee' }); setSheet('onboarding'); } } }}
+      />)}
 
       {tab === 'org' && <OrgChart onOpen={openPerson} />}
 
