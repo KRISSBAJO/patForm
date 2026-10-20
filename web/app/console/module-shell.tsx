@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, type ReactNode } from 'react';
+import { Illustration, type IllustrationName } from './illustrations';
 
 /**
  * A module as its own place.
@@ -133,20 +134,11 @@ export function SectionIcon({ id }: { id: string }) {
  * One look everywhere: a soft mark in the module colour, a title, one line,
  * and the action that fills it.
  */
-export function EmptyState({ icon = 'inbox', title, text, action }: { icon?: 'inbox' | 'calendar' | 'vote' | 'check' | 'register' | 'people' | 'send' | 'search'; title: string; text?: string; action?: { label: string; onClick: () => void; secondary?: boolean } }) {
-  const paths: Record<string, string> = {
-    inbox: 'M4 13h5l2 3h2l2-3h5M4 13V6h16v7M4 13v5h16v-5',
-    calendar: 'M4 6h16v14H4zM4 10h16M8 4v4M16 4v4',
-    vote: 'M6 3h9l4 4v14H6zM9 12l2 2 4-4',
-    check: 'M4 12l5 5L20 6',
-    register: 'M5 4h14v16H5zM8 8h8M8 12h8M8 16h5',
-    people: 'M9 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM2.5 20c0-3.3 3-5.5 6.5-5.5s6.5 2.2 6.5 5.5M16.5 10.5a3 3 0 1 0 0-6M21.5 19.5c0-2.6-1.8-4.4-4.5-5',
-    send: 'M22 2L11 13M22 2l-7 20-4-9-9-4z',
-    search: 'M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16zM21 21l-4.3-4.3',
-  };
+export function EmptyState({ icon = 'inbox', title, text, action }: { icon?: 'inbox' | 'calendar' | 'vote' | 'check' | 'register' | 'people' | 'send' | 'search' | 'sign' | 'templates'; title: string; text?: string; action?: { label: string; onClick: () => void; secondary?: boolean } }) {
+  const scene: IllustrationName = icon === 'check' ? 'actions' : icon === 'search' ? 'verify' : icon;
   return (
     <div className="cs__emptyState">
-      <span className="cs__emptyMark" aria-hidden="true"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d={paths[icon] ?? paths.inbox} /></svg></span>
+      <span className="cs__emptyArt" aria-hidden="true"><Illustration name={scene} size={72} /></span>
       <strong>{title}</strong>
       {text && <p>{text}</p>}
       {action && <button type="button" className={`cs__btn ${action.secondary ? '' : 'cs__btn--primary'}`} onClick={action.onClick}>{action.label}</button>}

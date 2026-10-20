@@ -3,6 +3,7 @@
 import './meetings.css';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { EmptyState, ShellSync, type ModuleShell } from './module-shell';
+import { Illustration } from './illustrations';
 import { postJson } from './stepup';
 
 /*
@@ -560,10 +561,10 @@ export function MeetingsView({ shell }: { shell?: ModuleShell } = {}) {
         </section>;
       })()}
       <div className="mx__quick" style={{ marginTop: 18 }}>
-        <button type="button" className="mx__quickBtn" onClick={() => newMeeting()}><em>📅</em><strong>Call a meeting</strong><small>Agenda, notice, invitations</small></button>
-        {manageable.some((b) => b.written_resolutions) && <button type="button" className="mx__quickBtn" onClick={() => { pickTab('resolutions'); setOpenRes(null); }}><em>✍️</em><strong>Written resolution</strong><small>Decide without a meeting</small></button>}
-        <button type="button" className="mx__quickBtn" onClick={() => pickTab('actions')}><em>✅</em><strong>Actions</strong><small>{(actions.data ?? []).filter((a) => a.status === 'open').length} open across bodies</small></button>
-        <button type="button" className="mx__quickBtn" onClick={() => pickTab('register')}><em>📜</em><strong>Register</strong><small>Decided resolutions, signed copies</small></button>
+        <button type="button" className="mx__quickBtn" onClick={() => newMeeting()}><Illustration name="calendar" size={48} /><strong>Call a meeting</strong><small>Agenda, notice, invitations</small></button>
+        {manageable.some((b) => b.written_resolutions) && <button type="button" className="mx__quickBtn" onClick={() => { pickTab('resolutions'); setOpenRes(null); }}><Illustration name="vote" size={48} /><strong>Written resolution</strong><small>Decide without a meeting</small></button>}
+        <button type="button" className="mx__quickBtn" onClick={() => pickTab('actions')}><Illustration name="actions" size={48} /><strong>Actions</strong><small>{(actions.data ?? []).filter((a) => a.status === 'open').length} open across bodies</small></button>
+        <button type="button" className="mx__quickBtn" onClick={() => pickTab('register')}><Illustration name="register" size={48} /><strong>Register</strong><small>Decided resolutions, signed copies</small></button>
       </div>
       <div className="mx__grid">
         <div className="mx__stack">

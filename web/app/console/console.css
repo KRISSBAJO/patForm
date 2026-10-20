@@ -5559,8 +5559,16 @@ a.cs__navItem {
 .cs__shell--module .pp2__overview strong { font-size: clamp(24px, 2.2vw, 32px); line-height: 1.05; overflow-wrap: anywhere; }
 .cs__shell--module .pp2__overview small { margin-top: 10px; }
 /* an empty list inside a module reads as a quiet state, not a stray line */
-.cs__shell--module .ig__panel > ul > li.ig__row:only-child, .cs__shell--module .ig__panel > p.ig__rowMain:only-child { justify-content: center; padding: 44px 28px; }
-.cs__shell--module .ig__panel > ul > li.ig__row:only-child .ig__rowMain > p, .cs__shell--module .ig__panel > p.ig__rowMain:only-child { text-align: center; font-size: 14px; color: var(--muted); }
+.cs__shell--module .ig__panel > ul > li.ig__row:only-child:not(:has(button, a, strong)), .cs__shell--module .ig__panel > p.ig__rowMain:only-child { justify-content: center; padding: 44px 28px; }
+.cs__shell--module .ig__panel > ul > li.ig__row:only-child:not(:has(button, a, strong)) .ig__rowMain > p, .cs__shell--module .ig__panel > p.ig__rowMain:only-child { text-align: center; font-size: 14px; color: var(--muted); }
+/* rows read as records: a mark, the name, the facts, the actions on the right */
+.cs__shell--module .ig__row { padding: 16px 24px; gap: 16px; }
+.cs__shell--module .ig__row::before { content: ''; flex: 0 0 10px; width: 10px; height: 10px; border-radius: 50%; background: var(--mod-tint); box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--mod) 45%, #fff); align-self: center; }
+.cs__shell--module .ig__row > .ig__rowMain { flex: 1; }
+.cs__shell--module .ig__rowMain > strong { font-size: 15px; letter-spacing: -.01em; }
+.cs__shell--module .ig__rowMain > p { font-size: 12.5px; margin-top: 4px; }
+.cs__shell--module .ig__row > .cs__btn, .cs__shell--module .ig__row .pp2__roleEdit .cs__btn { min-height: 36px; padding: 0 14px; font-size: 13px; border-radius: 9px; }
+.cs__shell--module .ig__row:not(:first-child) { border-top: 1px solid var(--card-line); }
 
 /* Patform Sign's sender sits on a white surface like every other module */
 .cs__shell--module .ig__form--plain { margin: 0; padding: 24px 28px 28px; background: #fff; border: 1px solid #e6e3f0; border-radius: 18px; box-shadow: 0 10px 30px -18px rgba(21, 22, 42, .35); }
@@ -5570,7 +5578,7 @@ a.cs__navItem {
 
 /* empty states that say what to do next */
 .cs__emptyState { display: grid; justify-items: center; gap: 6px; padding: 40px 24px 36px; text-align: center; width: 100%; }
-.cs__emptyMark { display: grid; place-items: center; width: 56px; height: 56px; border-radius: 18px; background: var(--mod-tint, var(--green-pale)); color: var(--mod, var(--green)); margin-bottom: 6px; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--mod, var(--green)) 18%, transparent); }
+.cs__emptyArt { display: grid; place-items: center; margin-bottom: 8px; filter: drop-shadow(0 10px 16px color-mix(in srgb, var(--mod, var(--green)) 25%, transparent)); }
 .cs__emptyState strong { font: 700 16px var(--ui); color: var(--ink); letter-spacing: -.01em; }
 .cs__emptyState p { margin: 0; max-width: 44ch; font: 13.5px/1.55 var(--ui); color: var(--muted); }
 .cs__emptyState .cs__btn { margin-top: 10px; }

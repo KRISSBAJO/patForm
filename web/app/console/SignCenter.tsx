@@ -12,6 +12,7 @@ import './meetings.css';
 import { useCallback, useEffect, useState } from 'react';
 import { postJson } from './stepup';
 import { EmptyState, ShellSync, type ModuleShell } from './module-shell';
+import { Illustration } from './illustrations';
 import { PdfPages, PageBox } from '../../components/pdf-pages';
 
 type Envelope = { id: string; number: number; title: string; status: string; routing: string; created_at: string; sent_at: string | null; completed_at: string | null; expires_at: string; final_sha256: string | null; contract: string | null; signers: number; signed: number; people: { name: string; status: string; order: number }[]; sender: string | null };
@@ -195,7 +196,7 @@ export function SignCenter({ startContract, onClose, shell }: { startContract?: 
     <button type="button" className={`mx__btn mx__btn--sm ${e.status === 'draft' ? '' : 'mx__btn--ghost'}`} onClick={() => void act(() => open(e.id, e.status === 'draft' ? 'place' : 'detail'))}>{e.status === 'draft' ? 'Continue' : 'Open'}</button>
   </li>;
   const mineRow = (m: Mine) => <li key={m.envelopeId}>
-    <span className="mx__avatar mx__avatar--lg" style={{ marginLeft: 0, background: '#14663f', color: '#fff' }}>✍</span>
+    <Illustration name="sign" size={40} />
     <div className="mx__main"><strong>PS-{m.number} · {m.title}</strong><small>{m.sender ? `from ${m.sender} · ` : ''}{m.workspace} · sent {day(m.sentAt)} · {daysLeft(m.expiresAt)} day{daysLeft(m.expiresAt) === 1 ? '' : 's'} left</small></div>
     {m.url ? <a className="mx__btn mx__btn--sm" href={m.url} target="_blank" rel="noreferrer">Sign now</a> : <span className="mx__tiny">Use the link in your email</span>}
   </li>;
@@ -225,10 +226,10 @@ export function SignCenter({ startContract, onClose, shell }: { startContract?: 
         </div>
       </section>
       <div className="mx__quick" style={{ marginTop: 18 }}>
-        <button type="button" className="mx__quickBtn" onClick={startCompose}><em>📄</em><strong>Send a document</strong><small>Upload a PDF, add signers, place boxes</small></button>
-        <button type="button" className="mx__quickBtn" onClick={() => go('mine')}><em>✍️</em><strong>Waiting for me</strong><small>{mine.length} to sign</small></button>
-        <button type="button" className="mx__quickBtn" onClick={() => go('templates')}><em>👥</em><strong>Signer sets</strong><small>Recurring signers in one click</small></button>
-        <button type="button" className="mx__quickBtn" onClick={() => go('verify')}><em>🔍</em><strong>Verify a copy</strong><small>Drop a PDF, know it is genuine</small></button>
+        <button type="button" className="mx__quickBtn" onClick={startCompose}><Illustration name="send" size={48} /><strong>Send a document</strong><small>Upload a PDF, add signers, place boxes</small></button>
+        <button type="button" className="mx__quickBtn" onClick={() => go('mine')}><Illustration name="sign" size={48} /><strong>Waiting for me</strong><small>{mine.length} to sign</small></button>
+        <button type="button" className="mx__quickBtn" onClick={() => go('templates')}><Illustration name="templates" size={48} /><strong>Signer sets</strong><small>Recurring signers in one click</small></button>
+        <button type="button" className="mx__quickBtn" onClick={() => go('verify')}><Illustration name="verify" size={48} /><strong>Verify a copy</strong><small>Drop a PDF, know it is genuine</small></button>
       </div>
       <div className="mx__grid">
         <div className="mx__stack">
