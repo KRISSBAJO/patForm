@@ -192,6 +192,12 @@ export function Console() {
       if (info.actor.workspace_role === 'pre_hire' && info.modules?.includes('hr')) setView('hr');
       // An auditor sees only their engagements (PRD GOV-10).
       if (info.actor.workspace_role === 'auditor' && info.modules?.includes('contracts')) setView('compliance');
+      // Phone shortcuts can open an enabled module directly in the full console.
+      const requestedView = new URLSearchParams(window.location.search).get('view');
+      const moduleViews: Record<string, string> = { expenses: 'expenses', procurement: 'procurement', hr: 'hr', appraisals: 'appraisals', assets: 'operations', contracts: 'compliance' };
+      if (requestedView && Object.entries(moduleViews).some(([module, page]) => page === requestedView && info.modules?.includes(module))) {
+        setView(requestedView as 'expenses' | 'procurement' | 'hr' | 'appraisals' | 'operations' | 'compliance');
+      }
       const requested = new URLSearchParams(window.location.search).get('process');
       setProcessKey((current) =>
         info.processes.find((process) => process.process_key === requested)?.process_key

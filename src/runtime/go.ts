@@ -57,6 +57,7 @@ export interface GoHome {
   tasks: GoTask[];
   late: number;
   capture: CaptureTarget[];
+  start: { processKey: string; name: string; publicId: string }[];
   leave: null | {
     toApprove: { id: string; who: string; type: string; start: string; end: string; days: number; reason: string | null }[];
     mine: { balances: { type: string; left: number | null; unlimited: boolean }[]; requests: { id: string; type: string; start_date: string; end_date: string; days: number; status: string }[] } | null;
@@ -80,6 +81,7 @@ export async function goHome(pool: Pool, engine: Engine, principal: Principal, a
   const approvals: GoApproval[] = [];
   const tasks: GoTask[] = [];
   const capture: CaptureTarget[] = [];
+  const start: GoHome['start'] = [];
 
   const { rows: latest } = await pool.query<{ process_key: string; blueprint: Blueprint }>(
     `select distinct on (process_key) process_key, blueprint from process_version where tenant_id = $1 order by process_key, version desc`,
@@ -108,6 +110,7 @@ export async function goHome(pool: Pool, engine: Engine, principal: Principal, a
     const access = bp?.experience.access;
     const mayOpen = Boolean(bp && p.public_id && (!access || access.mode === 'public' || p.roles.includes(access.role)));
     if (bp && p.public_id && mayOpen) {
+      start.push({ processKey: p.process_key, name: p.name, publicId: p.public_id });
       const field = captureField(bp);
       if (field) capture.push({ processKey: p.process_key, name: p.name, publicId: p.public_id, fieldKey: field.key, fieldLabel: field.label });
     }
@@ -135,5 +138,5 @@ export async function goHome(pool: Pool, engine: Engine, principal: Principal, a
     leave = { toApprove, mine };
   }
 
-  return { approvals, tasks, late: approvals.filter((a) => a.late).length + tasks.filter((t) => t.late).length, capture, leave };
+  return { approvals, tasks, late: approvals.filter((a) => a.late).length + tasks.filter((t) => t.late).length, capture, start, leave };
 }

@@ -20,6 +20,7 @@ interface Home {
   tasks: { processKey: string; processName: string; instanceId: string; reference: string; taskKey: string; taskName: string; late: boolean; summary: string }[];
   late: number;
   capture: { processKey: string; name: string; publicId: string; fieldKey: string; fieldLabel: string }[];
+  start: { processKey: string; name: string; publicId: string }[];
   leave: null | {
     toApprove: { id: string; who: string; type: string; start: string; end: string; days: number; reason: string | null }[];
     mine: { balances: { type: string; left: number | null; unlimited: boolean }[]; requests: { id: string; type: string; start_date: string; end_date: string; days: number; status: string }[] } | null;
@@ -263,9 +264,10 @@ function Nudges() {
   };
   const install = async () => { await window.__patformInstall?.prompt(); await refresh(); };
 
-  if (state === 'checking' || state === 'unsupported') return null;
+  if (state === 'checking') return null;
   return (
     <section className="go__nudge">
+      {state === 'unsupported' && <p>Notifications are not available in this browser. You can still check your inbox here.</p>}
       {state === 'on' && <p>🔔 You will get a nudge here when something needs you.</p>}
       {state === 'off' && <button type="button" className="go__btn go__btn--secondary go__btn--wide" disabled={busy} onClick={() => void turnOn()}>Nudge me when something needs me</button>}
       {state === 'install' && <button type="button" className="go__btn go__btn--secondary go__btn--wide" onClick={() => void install()}>Add Patform to your home screen</button>}
@@ -277,12 +279,28 @@ function Nudges() {
 
 /* ----------------------------------------------------------------- page */
 
+type GoTab = 'today' | 'inbox' | 'create' | 'you';
+
+function GoIcon({ name }: { name: GoTab | 'arrow' | 'refresh' }) {
+  const paths: Record<GoTab | 'arrow' | 'refresh', React.ReactNode> = {
+    today: <><path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/><path d="M9 21v-7h6v7"/></>,
+    inbox: <><rect x="3" y="5" width="18" height="15" rx="2"/><path d="M3 14h5l2 3h4l2-3h5"/></>,
+    create: <><circle cx="12" cy="12" r="9"/><path d="M12 7v10M7 12h10"/></>,
+    you: <><circle cx="12" cy="8" r="3.5"/><path d="M5 21c0-4 2.6-6 7-6s7 2 7 6"/></>,
+    arrow: <><path d="M5 12h14m-6-6 6 6-6 6"/></>,
+    refresh: <><path d="M20 7v5h-5M4 17v-5h5"/><path d="M5.5 9a7 7 0 0 1 12-2L20 12M4 12l2.5 5a7 7 0 0 0 12-2"/></>,
+  };
+  return <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>;
+}
+
 export function Go() {
   const [me, setMe] = useState<Me | null>(null);
   const [home, setHome] = useState<Home | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [showKeys, setShowKeys] = useState(false);
+  const [tab, setTab] = useState<GoTab>('today');
+  const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -310,74 +328,76 @@ export function Go() {
 
   const needs = (home?.approvals.length ?? 0) + (home?.tasks.length ?? 0) + (home?.leave?.toApprove.length ?? 0);
   const first = me?.actor.display_name.split(' ')[0] ?? '';
+  const moduleLinks = [
+    { key: 'expenses', label: 'Expenses', view: 'expenses' },
+    { key: 'procurement', label: 'Procurement', view: 'procurement' },
+    { key: 'hr', label: 'HR', view: 'hr' },
+    { key: 'appraisals', label: 'Appraisals', view: 'appraisals' },
+    { key: 'assets', label: 'Assets & IT', view: 'operations' },
+    { key: 'contracts', label: 'Contracts & compliance', view: 'compliance' },
+  ].filter((module) => me?.modules?.includes(module.key));
+  const switchTab = (next: GoTab) => { setTab(next); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+  const refresh = async () => { setRefreshing(true); await load(); setRefreshing(false); };
+  const signOut = async () => { await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' }).catch(() => {}); window.location.assign('/console'); };
 
   return (
     <main className="go">
       <header className="go__top">
         <a className="go__brand" href="/" aria-label="Patform home"><Mark /> <span>Patform</span></a>
-        <a className="go__console" href="/console">Console</a>
+        <button className="go__refresh" type="button" onClick={() => void refresh()} disabled={refreshing} aria-label="Refresh your workspace"><GoIcon name="refresh" /></button>
+        {home && <button type="button" className="go__profile" onClick={() => switchTab('you')} aria-label="Open your account">{me?.actor.display_name.split(/\s+/).slice(0,2).map((part) => part.charAt(0)).join('').toUpperCase() || 'P'}</button>}
       </header>
 
       {error && <p className="go__error" role="alert">{error} <button type="button" className="go__link" onClick={() => void load()}>Try again</button></p>}
-      {!home && !error && <p className="go__loading">Loading…</p>}
+      {!home && !error && <div className="go__loading" role="status">Opening your workspace…</div>}
 
       {home && (
         <>
-          <section className="go__hello">
-            <h1>{first ? `Hi ${first}.` : 'Hi.'}</h1>
-            <p>{needs === 0 ? 'Nothing needs you right now.' : `${needs} thing${needs === 1 ? '' : 's'} need${needs === 1 ? 's' : ''} you${home.late ? `, ${home.late} late` : ''}.`}</p>
-          </section>
-
-          {home.capture.length > 0 && <Snap targets={home.capture} onDone={done} />}
-
-          {home.approvals.length > 0 && (
-            <section className="go__section">
-              <h2>Decide</h2>
-              {home.approvals.map((a) => <Approval key={`${a.instanceId}-${a.approvalKey}`} a={a} onDone={done} />)}
-            </section>
-          )}
-
-          {home.leave && home.leave.toApprove.length > 0 && (
-            <section className="go__section">
-              <h2>Leave to approve</h2>
-              {home.leave.toApprove.map((r) => <LeaveToApprove key={r.id} r={r} onDone={done} />)}
-            </section>
-          )}
-
-          {home.tasks.length > 0 && (
-            <section className="go__section">
-              <h2>Do</h2>
-              {home.tasks.map((t) => (
-                <a className={`go__card go__card--link ${t.late ? 'is-late' : ''}`} key={`${t.instanceId}-${t.taskKey}`} href={`/console?record=${t.instanceId}`}>
-                  <header><span className="go__ref mono">{t.reference}</span>{t.late && <span className="go__age is-late">LATE</span>}</header>
-                  <h3>{t.taskName}</h3>
-                  <p>{t.summary} · {t.processName}</p>
-                </a>
-              ))}
-            </section>
-          )}
-
-          {home.leave?.mine && (
-            <section className="go__section">
-              <h2>My leave</h2>
-              <div className="go__chips">
-                {home.leave.mine.balances.map((b) => <span className="go__chip" key={b.type}>{b.type}: <strong>{b.unlimited ? '∞' : b.left ?? '—'}</strong></span>)}
+          {tab === 'today' && <div className="go__pane" id="go-main">
+            <section className="go__hero">
+              <span className="go__eyebrow">TODAY</span>
+              <h1>{first ? `Hi, ${first}` : 'Hi there'}</h1>
+              <p>{needs === 0 ? 'Your desk is clear. You can start something new or check your workspace.' : `${needs} ${needs === 1 ? 'item needs' : 'items need'} your attention${home.late ? ` · ${home.late} overdue` : ''}.`}</p>
+              <div className="go__heroCounts">
+                <button type="button" onClick={() => switchTab('inbox')}><strong>{home.approvals.length + (home.leave?.toApprove.length ?? 0)}</strong><span>Decisions</span></button>
+                <button type="button" onClick={() => switchTab('inbox')}><strong>{home.tasks.length}</strong><span>Tasks</span></button>
+                <button type="button" onClick={() => switchTab('inbox')}><strong>{home.late}</strong><span>Overdue</span></button>
               </div>
-              {home.leave.mine.requests.slice(0, 3).map((r) => (
-                <p className="go__line" key={r.id}><span>{r.type} · {r.start_date} → {r.end_date}</span><span className={`go__status go__status--${r.status}`}>{r.status}</span></p>
-              ))}
-              <RequestLeave onDone={done} />
             </section>
-          )}
+            <div className="go__sectionHead"><div><span className="go__eyebrow">AT YOUR FINGERTIPS</span><h2>Quick actions</h2></div></div>
+            <div className="go__quickGrid">
+              <button type="button" className="go__quick go__quick--green" onClick={() => switchTab('inbox')}><span className="go__quickIcon"><GoIcon name="inbox" /></span><strong>Review work</strong><small>{needs ? `${needs} waiting for you` : 'Your inbox is clear'}</small><GoIcon name="arrow" /></button>
+              <button type="button" className="go__quick" onClick={() => switchTab('create')}><span className="go__quickIcon"><GoIcon name="create" /></span><strong>Start something</strong><small>{home.start.length ? `${home.start.length} available forms` : 'See what you can create'}</small><GoIcon name="arrow" /></button>
+            </div>
+            {needs > 0 && <section className="go__section"><div className="go__sectionHead"><div><span className="go__eyebrow">UP NEXT</span><h2>First on your desk</h2></div><button type="button" className="go__textAction" onClick={() => switchTab('inbox')}>View all <GoIcon name="arrow" /></button></div>{home.approvals[0] ? <Approval a={home.approvals[0]} onDone={done} /> : home.tasks[0] ? <a className="go__card go__card--link" href={`/console?record=${home.tasks[0].instanceId}`}><h3>{home.tasks[0].taskName}</h3><p>{home.tasks[0].summary}</p></a> : home.leave?.toApprove[0] ? <LeaveToApprove r={home.leave.toApprove[0]} onDone={done} /> : null}</section>}
+            <section className="go__section go__workspaceLink"><div><span className="go__eyebrow">FULL WORKSPACE</span><h2>Need the complete view?</h2><p>Records, reports, settings and every module are in the console.</p></div><a href="/console" aria-label="Open full console"><GoIcon name="arrow" /></a></section>
+          </div>}
 
-          <Nudges />
+          {tab === 'inbox' && <div className="go__pane" id="go-main"><div className="go__pageHeading"><span className="go__eyebrow">YOUR INBOX</span><h1>Work that needs you</h1><p>{needs ? `${needs} open ${needs === 1 ? 'item' : 'items'} across your workspace.` : 'You are all caught up.'}</p></div>
+            {needs === 0 && <div className="go__empty"><span className="go__emptyMark">✓</span><h2>All clear for now</h2><p>New decisions and tasks will appear here as soon as they are assigned.</p><button type="button" className="go__btn go__btn--primary" onClick={() => switchTab('create')}>Start something</button></div>}
+            {home.approvals.length > 0 && <section className="go__section"><div className="go__sectionHead"><h2>Decisions <span>{home.approvals.length}</span></h2></div>{home.approvals.map((a) => <Approval key={`${a.instanceId}-${a.approvalKey}`} a={a} onDone={done} />)}</section>}
+            {home.leave && home.leave.toApprove.length > 0 && <section className="go__section"><div className="go__sectionHead"><h2>Leave requests <span>{home.leave.toApprove.length}</span></h2></div>{home.leave.toApprove.map((r) => <LeaveToApprove key={r.id} r={r} onDone={done} />)}</section>}
+            {home.tasks.length > 0 && <section className="go__section"><div className="go__sectionHead"><h2>Tasks <span>{home.tasks.length}</span></h2></div>{home.tasks.map((t) => <a className={`go__card go__card--link ${t.late ? 'is-late' : ''}`} key={`${t.instanceId}-${t.taskKey}`} href={`/console?record=${t.instanceId}`}><header><span className="go__ref mono">{t.reference}</span>{t.late && <span className="go__age is-late">OVERDUE</span>}</header><h3>{t.taskName}</h3><p>{t.summary} · {t.processName}</p><span className="go__cardArrow">Open record <GoIcon name="arrow" /></span></a>)}</section>}
+          </div>}
 
-          <section className="go__section go__section--quiet">
-            <button type="button" className="go__link" onClick={() => setShowKeys((s) => !s)}>{showKeys ? 'Hide' : 'Use fingerprint or face for confirmations'}</button>
-            {showKeys && <PasskeysPanel className="go__keys" />}
-          </section>
+          {tab === 'create' && <div className="go__pane" id="go-main"><div className="go__pageHeading"><span className="go__eyebrow">GET SOMETHING MOVING</span><h1>Start from your phone</h1><p>Open a form, add evidence, or request time away.</p></div>
+            {home.capture.length > 0 && <section className="go__section"><div className="go__sectionHead"><h2>Capture evidence</h2></div><Snap targets={home.capture} onDone={done} /></section>}
+            <section className="go__section"><div className="go__sectionHead"><h2>Available forms <span>{home.start.length}</span></h2></div>{home.start.length ? <div className="go__formList">{home.start.map((p) => <a className="go__formLink" key={p.processKey} href={`/f/${p.publicId}`}><span className="go__formInitial">{p.name.charAt(0).toUpperCase()}</span><span><strong>{p.name}</strong><small>Start a new submission</small></span><GoIcon name="arrow" /></a>)}</div> : <div className="go__empty go__empty--small"><h3>No forms available yet</h3><p>Your workspace will show forms here when you have permission to start them.</p></div>}</section>
+            {home.leave?.mine && <section className="go__section"><div className="go__sectionHead"><h2>Time away</h2></div><RequestLeave onDone={done} /></section>}
+          </div>}
+
+          {tab === 'you' && <div className="go__pane" id="go-main"><div className="go__pageHeading"><span className="go__eyebrow">YOUR ACCOUNT</span><h1>{me?.actor.display_name ?? 'Your workspace'}</h1><p>Preferences, leave and your full console.</p></div>
+            {moduleLinks.length > 0 && <section className="go__section"><div className="go__sectionHead"><h2>Your modules</h2></div><div className="go__formList">{moduleLinks.map((module) => <a className="go__formLink" href={`/console?view=${module.view}`} key={module.key}><span className="go__formInitial">{module.label.charAt(0)}</span><span><strong>{module.label}</strong><small>Open in the full console</small></span><GoIcon name="arrow" /></a>)}</div></section>}
+            {home.leave?.mine && <section className="go__section"><div className="go__sectionHead"><h2>My leave</h2></div><div className="go__chips">{home.leave.mine.balances.map((b) => <span className="go__chip" key={b.type}>{b.type}: <strong>{b.unlimited ? '∞' : b.left ?? '—'}</strong></span>)}</div>{home.leave.mine.requests.slice(0, 3).map((r) => <p className="go__line" key={r.id}><span>{r.type} · {r.start_date} → {r.end_date}</span><span className={`go__status go__status--${r.status}`}>{r.status}</span></p>)}</section>}
+            <section className="go__section go__settingsCard"><div className="go__sectionHead"><h2>Stay in the loop</h2></div><Nudges /></section>
+            <section className="go__section go__settingsCard"><div className="go__sectionHead"><h2>Sign in securely</h2></div><button type="button" className="go__textAction" onClick={() => setShowKeys((s) => !s)} aria-expanded={showKeys}>{showKeys ? 'Hide passkeys' : 'Use fingerprint or face'} <GoIcon name="arrow" /></button>{showKeys && <PasskeysPanel className="go__keys" />}</section>
+            <a className="go__fullConsole" href="/console"><span><strong>Open full console</strong><small>All modules, records and settings</small></span><GoIcon name="arrow" /></a>
+            <button type="button" className="go__signOut" onClick={() => void signOut()}>Sign out of Patform</button>
+          </div>}
         </>
       )}
+
+      {home && <nav className="go__bottomNav" aria-label="Phone workspace">{([['today', 'Today'], ['inbox', 'Inbox'], ['create', 'Create'], ['you', 'You']] as const).map(([key, label]) => <button key={key} type="button" aria-current={tab === key ? 'page' : undefined} onClick={() => switchTab(key)}><GoIcon name={key} /><span>{label}</span>{key === 'inbox' && needs > 0 && <i aria-label={`${needs} waiting`}>{needs}</i>}</button>)}</nav>}
 
       {toast && <div className="go__toast" role="status">{toast}</div>}
       <ReauthDialog />
