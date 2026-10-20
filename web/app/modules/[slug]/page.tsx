@@ -35,6 +35,7 @@ export default async function ModulePage({ params }: Props) {
   const { slug } = await params;
   const module = getModule(slug);
   if (!module) notFound();
+  const inDevelopment = slug === 'meetings';
 
   return (
     <>
@@ -46,13 +47,13 @@ export default async function ModulePage({ params }: Props) {
           </nav>
           <section className="module-page__hero" aria-labelledby="module-title">
             <div className="module-page__heroCopy">
-              <span className="module-page__eyebrow">{module.eyebrow} · {module.name}</span>
+              <span className="module-page__eyebrow">{module.eyebrow} · {module.name}{inDevelopment ? ' · In development' : ''}</span>
               <h1 id="module-title">{module.headline}</h1>
               <p>{module.intro}</p>
-              <div className="module-page__actions">
+              {!inDevelopment && <div className="module-page__actions">
                 <Link className="module-page__button module-page__button--primary" href="/signup">Create a workspace <span aria-hidden="true">↗</span></Link>
                 <Link className="module-page__textLink" href="/console">Already a member? Open your work <span aria-hidden="true">→</span></Link>
-              </div>
+              </div>}
             </div>
             <div className="module-page__art" aria-hidden="true">
               <span className="module-page__artIndex">PATFORM / {String(Object.keys(marketingModules).indexOf(slug) + 1).padStart(2, '0')}</span>
@@ -95,8 +96,8 @@ export default async function ModulePage({ params }: Props) {
           </section>
 
           <section className="module-page__close" aria-labelledby="module-close">
-            <div><span className="module-page__eyebrow">Get started</span><h2 id="module-close">Put {module.name.toLowerCase()} to work.</h2></div>
-            <Link className="module-page__button module-page__button--light" href="/signup">Create a workspace <span aria-hidden="true">↗</span></Link>
+            <div><span className="module-page__eyebrow">{inDevelopment ? 'In development' : 'Get started'}</span><h2 id="module-close">{inDevelopment ? 'More details when the module is ready.' : `Put ${module.name.toLowerCase()} to work.`}</h2></div>
+            <Link className="module-page__button module-page__button--light" href={inDevelopment ? '/#modules' : '/signup'}>{inDevelopment ? 'Explore other modules' : 'Create a workspace'} <span aria-hidden="true">↗</span></Link>
           </section>
           <Link href="/#modules" className="module-page__back">← See every module</Link>
         </div>

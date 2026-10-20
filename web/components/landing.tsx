@@ -37,10 +37,11 @@ const MODULES = [
   { key: 'ops', name: 'Assets & IT', fact: 'Asset register, access, tickets, maintenance and change requests.' },
   { key: 'gov', name: 'Contracts & compliance', fact: 'Contract reviews, renewals, policies, audits and legal holds.' },
   { key: 'sign', name: 'Patform Sign', fact: 'Built-in e-signature with a certificate seal and trusted time stamp.', tag: 'New' },
+  { key: 'meetings', name: 'Meetings & resolutions', fact: 'Agendas, quorum, minutes, votes and signed decisions in one record.', tag: 'In development' },
 ] as const;
 
 const TICKER = [
-  'One engine', 'Eight modules', 'One history', 'Separation of duties', 'Step-up re-auth', 'Append-only records', 'Legal holds', 'Built-in e-signature', 'Trusted time stamps', 'Microsoft 365', 'Google Workspace', 'Offline field checklists', 'Three-way matching', 'Sealed quotes', 'Scoped auditors', 'Retention schedules',
+  'One engine', 'Eight available modules', 'One history', 'Separation of duties', 'Step-up re-auth', 'Append-only records', 'Legal holds', 'Built-in e-signature', 'Trusted time stamps', 'Microsoft 365', 'Google Workspace', 'Offline field checklists', 'Three-way matching', 'Sealed quotes', 'Scoped auditors', 'Retention schedules',
 ];
 
 /*
@@ -188,7 +189,7 @@ function Scramble({ text, delay = 0 }: { text: string; delay?: number }) {
 
 function Orbit() {
   const p = usePointerVars<HTMLDivElement>();
-  const ring = MODULES.filter((m) => m.key !== 'core');
+  const ring = MODULES.filter((m) => m.key !== 'core' && m.key !== 'meetings');
   return (
     <div {...p} className="lp-orbit" aria-hidden="true">
       <div className="lp-orbit__glow" />
@@ -388,7 +389,7 @@ function Modules() {
           <span className="eyebrow">02 — Switch on what you need</span>
           <span className="rule" aria-hidden="true" />
         </div>
-        <Rise as="h2" text="Eight modules. One engine underneath." className="lp-h2" />
+        <Rise as="h2" text="Eight modules. One more on the way." className="lp-h2" />
         <p className="section__lede">Switch on what you need. Add the next without a migration.</p>
         <InView className="lp-modGrid">
           {MODULES.map((m, i) => (

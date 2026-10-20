@@ -97,6 +97,18 @@ export const marketingModules = {
     ],
     flow: ['Place signature fields', 'Invite signers', 'Verify the copy'], cta: 'Explore Patform Sign',
   },
+  meetings: {
+    name: 'Meetings & resolutions', eyebrow: 'Board, management and committees',
+    headline: 'Turn a meeting into a decision you can prove.',
+    intro: 'Plan meetings, check quorum, record minutes and actions, then circulate resolutions for voting and signature. This module is in development.',
+    example: 'A board chair calls a meeting with an agenda and papers. Members confirm attendance, vote on a resolution, and directors sign the approved text through Patform Sign.',
+    capabilities: [
+      ['Meetings with a clear record', 'Set membership, chair and quorum; send notices and papers; record attendance and minutes against each agenda item.'],
+      ['Decisions and signatures', 'Record votes and written resolutions, then route the agreed text for director signatures through Patform Sign.'],
+      ['Actions and audit history', 'Assign follow-up work, keep minutes and resolutions in an append-only register, and preserve records under legal hold.'],
+    ],
+    flow: ['Call the meeting', 'Record decisions', 'Sign and track actions'], cta: 'Explore meetings',
+  },
 } as const;
 
 export type MarketingModuleKey = keyof typeof marketingModules;

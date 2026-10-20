@@ -272,12 +272,12 @@
 /* -------------------------------------------------------------- modules */
 
 .lp-modules { padding-block: clamp(70px, 10vh, 130px); }
-.lp-modGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 42px; }
+.lp-modGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-top: 36px; }
 .lp-mod { opacity: 0; transform: translateY(24px); transition: opacity 0.7s var(--lp-ease), transform 0.7s var(--lp-ease); transition-delay: calc(0.07s * var(--i, 0)); }
 [data-motion='in'] .lp-mod, .lp-modGrid:not([data-motion]) .lp-mod { opacity: 1; transform: none; }
 .lp-mod__inner {
-  position: relative; height: 100%; min-height: 258px;
-  padding: 24px 26px; border-radius: 18px;
+  position: relative; height: 100%; min-height: 218px;
+  padding: 20px 22px; border-radius: 16px;
   background: var(--white); border: 1px solid var(--line);
   display: flex; flex-direction: column; overflow: hidden;
   box-shadow: 0 1px 0 rgba(19, 26, 23, 0.02);
@@ -289,10 +289,10 @@
 .lp-mod__n { font-size: 11px; color: var(--muted); letter-spacing: 0.1em; }
 .lp-mod__top .chip { height: 24px; padding: 0 8px; font-size: 10.5px; }
 .lp-mod__inner::before { content: ''; position: absolute; width: 260px; height: 260px; border-radius: 50%; right: -15px; bottom: -80px; background: radial-gradient(circle, rgba(170, 211, 180, 0.18), transparent 70%); pointer-events: none; }
-.lp-mod__art { position: absolute; right: 2%; bottom: 5%; display: block; width: 49%; height: 80%; object-fit: contain; object-position: center; pointer-events: none; }
-.lp-mod h3 { position: relative; z-index: 1; margin-top: auto; max-width: 51%; font-size: clamp(20px, 1.7vw, 24px); line-height: 1.13; letter-spacing: -0.01em; }
-.lp-mod p { position: relative; z-index: 1; margin-top: 12px; max-width: 51%; font-size: 14px; line-height: 1.55; color: var(--muted-3); }
-.lp-mod__action { position: relative; z-index: 1; display: inline-flex; align-items: center; gap: 7px; margin-top: 17px; max-width: 51%; color: var(--green); font-size: 12px; font-weight: 700; white-space: nowrap; }
+.lp-mod__art { position: absolute; right: 1%; bottom: 6%; display: block; width: 47%; height: 74%; object-fit: contain; object-position: center; pointer-events: none; }
+.lp-mod h3 { position: relative; z-index: 1; margin-top: auto; max-width: 55%; font-size: clamp(18px, 1.45vw, 21px); line-height: 1.13; letter-spacing: -0.01em; }
+.lp-mod p { position: relative; z-index: 1; margin-top: 10px; max-width: 55%; font-size: 12.5px; line-height: 1.48; color: var(--muted-3); }
+.lp-mod__action { position: relative; z-index: 1; display: inline-flex; align-items: center; gap: 7px; margin-top: 14px; max-width: 55%; color: var(--green); font-size: 11.5px; font-weight: 700; white-space: nowrap; }
 .lp-mod__action svg { transition: transform 0.25s var(--lp-ease); }
 .lp-mod:hover .lp-mod__action svg { transform: translateX(4px); }
 .lp-mod__shine { position: absolute; inset: -40%; background: radial-gradient(circle at calc(var(--mx, 0.5) * 100%) calc(var(--my, 0.5) * 100%), rgba(143, 210, 169, 0.28), transparent 35%); opacity: 0; transition: opacity 0.3s; pointer-events: none; }
@@ -306,6 +306,7 @@
 .lp-mod--core .lp-mod__inner { background: var(--green-pale); border-color: var(--green-border); }
 .lp-mod--expenses .lp-mod__inner, .lp-mod--appraisals .lp-mod__inner { background: #fbf8f2; }
 .lp-mod--hr .lp-mod__inner, .lp-mod--gov .lp-mod__inner { background: #f7faf7; }
+.lp-mod--meetings .lp-mod__inner { background: #edf4ee; border-color: var(--green-border); }
 
 /* ----------------------------------------------------------------- sign */
 
@@ -423,7 +424,8 @@
 /* ----------------------------------------------------------- responsive */
 
 @media (max-width: 1080px) {
-  .lp-mod__inner { min-height: 280px; }
+  .lp-modGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .lp-mod__inner { min-height: 236px; }
   .lp-numbers__grid { grid-template-columns: repeat(2, 1fr); }
   .lp-num:nth-child(3) { border-left: 0; }
   .lp-num:nth-child(n + 3) { border-top: 1px solid var(--line); }
