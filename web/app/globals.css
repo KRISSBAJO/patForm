@@ -1323,47 +1323,63 @@ html {
 /* ------------------------------------------------------------------ footer */
 
 .footer {
-  margin-top: 44px;
-  padding-block: 34px 30px;
-  background: var(--ink);
+  position: relative;
+  margin-top: 0;
+  padding-top: 62px;
+  overflow: hidden;
+  background: #f6f5f1;
+  border-top: 1px solid #e1e3dc;
+  color: #17261e;
+}
+
+.footer__grid {
+  display: grid;
+  gap: 45px;
 }
 
 .footer__brand {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 10px;
   font-family: var(--font-display), Georgia, serif;
-  font-size: 17px;
+  font-size: 21px;
   font-weight: 600;
-  color: var(--on-dark-1);
+  color: #135d43;
+  text-decoration: none;
+}
+
+.footer__brand:hover { color: #0a3f2c; }
+
+.footer__statement {
+  margin-top: 25px;
+  font-family: var(--font-display), Georgia, serif;
+  font-size: clamp(30px, 3vw, 43px);
+  line-height: 1.08;
+  letter-spacing: -0.025em;
 }
 
 .footer__blurb {
-  margin-top: 13px;
+  margin-top: 16px;
   font-size: 14px;
-  line-height: 1.55;
-  color: var(--on-dark-4);
-  max-width: 320px;
+  line-height: 1.65;
+  color: #5b6860;
+  max-width: 360px;
 }
 
-.footer__links {
-  margin-top: 22px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 22px;
-}
-
-.footer__links a,
 .footer__col a {
   font-size: 14px;
-  color: var(--on-dark-2);
+  color: #43564b;
+  text-decoration: none;
+  width: fit-content;
+  transition: color .2s;
 }
 
+.footer__col a:hover { color: #10563c; text-decoration: underline; text-underline-offset: 4px; }
+
 .footer__cols {
-  display: none;
-  flex-grow: 1;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 24px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 34px 20px;
 }
 
 .footer__col {
@@ -1374,29 +1390,48 @@ html {
 
 .footer__colHead {
   font-family: var(--font-mono), monospace;
-  font-size: 11px;
+  font-size: 10px;
   letter-spacing: 0.1em;
-  color: var(--on-dark-6);
+  color: #7a887e;
 }
 
 .footer__base {
-  margin-top: 24px;
-  padding-top: 18px;
-  border-top: 1px solid var(--ink-line);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 10px 30px;
+  margin-top: 64px;
+  padding-top: 22px;
+  border-top: 1px solid #d8ded6;
 }
 
-.footer__base p {
-  font-size: 13px;
-  /* 4.08:1 on the footer's #131a17. */
-  color: #86968c;
+.footer__base span {
+  font-size: 12px;
+  color: #68776d;
 }
 
-.footer__disclaimer {
-  margin-top: 8px;
-  font-family: var(--font-mono), monospace;
-  font-size: 11px;
-  line-height: 1.5;
-  color: var(--on-dark-6);
+.footer__wordmark {
+  width: 100%;
+  margin: 12px auto -0.21em;
+  text-align: center;
+  white-space: nowrap;
+  font-family: var(--font-display), Georgia, serif;
+  font-weight: 600;
+  font-size: clamp(112px, 22.5vw, 390px);
+  line-height: 1;
+  letter-spacing: -0.085em;
+  color: #dce5dc;
+  user-select: none;
+  pointer-events: none;
+}
+
+@media (max-width: 640px) {
+  .footer { padding-top: 45px; }
+  .footer__grid { gap: 42px; }
+  .footer__statement { font-size: 34px; }
+  .footer__cols { gap: 30px 16px; }
+  .footer__base { margin-top: 54px; }
+  .footer__wordmark { font-size: 20vw; margin-top: 25px; }
 }
 
 /* =========================================================== desktop board */
@@ -1986,59 +2021,37 @@ html {
   }
 
   .footer {
-    margin-top: 88px;
-    padding-block: 52px 44px;
+    padding-top: 78px;
   }
 
   .footer__grid {
-    display: flex;
-    gap: 48px;
-    align-items: flex-start;
+    grid-template-columns: minmax(290px, 1fr) minmax(0, 1.45fr);
+    gap: 65px;
   }
 
   .footer__brandCol {
-    flex: 1 1 260px;
     min-width: 0;
   }
 
   .footer__brand {
-    font-size: 19px;
+    font-size: 22px;
   }
 
   .footer__blurb {
-    margin-top: 16px;
-    font-size: 14.5px;
-  }
-
-  .footer__links {
-    display: none;
+    font-size: 14px;
   }
 
   .footer__cols {
-    display: grid;
-  }
-
-  .footer__col a {
-    font-size: 14.5px;
-    color: #c3cdc6;
-  }
-
-  .footer__base {
-    margin-top: 44px;
-    padding-top: 24px;
-    display: flex;
-    align-items: center;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 20px;
   }
 
-  .footer__base p {
+  .footer__col a {
     font-size: 13.5px;
-    flex-grow: 1;
   }
 
-  .footer__disclaimer {
-    margin-top: 0;
-    font-size: 11.5px;
+  .footer__base {
+    margin-top: 84px;
   }
 }
 
@@ -2162,7 +2175,7 @@ html {
   }
 
   .footer__brandCol {
-    flex: 0 0 320px;
+    max-width: 370px;
   }
 }
 

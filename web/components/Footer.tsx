@@ -23,12 +23,13 @@ export function Footer() {
       <div className="shell">
         <div className="footer__grid">
           <div className="footer__brandCol">
-            <div className="footer__brand" style={{ color: 'var(--green-mint)' }}>
+            <a className="footer__brand" href="/#top" aria-label="Patform home">
               <Mark size={22} />
-              <span style={{ color: 'var(--on-dark-1)' }}>Patform</span>
-            </div>
+              <span>Patform</span>
+            </a>
+            <p className="footer__statement">Good work deserves<br />a clear path.</p>
             <p className="footer__blurb">
-              A process platform for operational teams. Built by LogaXP, on Renviq managed PostgreSQL.
+              Forms, decisions, records and signatures that stay connected from the first request to the final outcome.
             </p>
           </div>
 
@@ -46,22 +47,12 @@ export function Footer() {
           </div>
         </div>
 
-        {/* On a phone the four columns collapse to one honest row of links. */}
-        <div className="footer__links">
-          <a href="/#story">How it works</a>
-          <a href="/#modules">Modules</a>
-          <a href="/reliability">Reliability</a>
-          <a href="/security">Security</a>
-          <a href="/privacy">Privacy</a>
-        </div>
-
         <div className="footer__base">
-          <p>&copy; 2026 LogaXP Ltd.</p>
-          <p className="footer__disclaimer">
-            We do not claim compliance we have not earned. Ask us what we hold.
-          </p>
+          <span>&copy; 2026 LogaXP Ltd.</span>
+          <span>Built for the work that matters.</span>
         </div>
       </div>
+      <div className="footer__wordmark" aria-hidden="true">Patform</div>
     </footer>
   );
 }
