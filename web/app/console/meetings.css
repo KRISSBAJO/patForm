@@ -513,3 +513,7 @@
 .dt__pages { display: flex; gap: 4px; margin-left: auto; } .dt__pages .mx__seg { min-width: 34px; justify-content: center; } .dt__gap { padding: 0 4px; align-self: center; }
 .dt__size { display: flex; align-items: center; gap: 6px; } .dt__size select { height: 32px; border-radius: 8px; border: 1px solid var(--mx-line); background: #fff; font: 13px var(--ui); padding: 0 6px; }
 @media (max-width: 760px) { .dt__tools { margin-left: 0; } .dt__pages { margin-left: 0; } }
+
+.dt__actions { display: flex; gap: 4px; justify-content: flex-end; white-space: nowrap; }
+.dt__progress { display: grid; gap: 3px; min-width: 120px; } .dt__progress small { color: var(--mx-muted); font-size: 11.5px; }
+.dt__table td .mx__pill { white-space: nowrap; }
