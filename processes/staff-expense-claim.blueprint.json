@@ -1366,6 +1366,7 @@
     "linesField": "line_items",
     "lineAmountField": "line_amount",
     "lineDescriptionField": "line_description",
+    "noteField": "business_purpose",
     "policy": {
       "autoApproveLimit": "policy_auto_approve_limit",
       "managerLimit": "policy_manager_limit",

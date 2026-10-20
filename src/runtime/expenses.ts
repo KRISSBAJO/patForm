@@ -406,6 +406,22 @@ export async function applyFinancePolicy(
     const category = answers[finance.categoryField];
     if (typeof category === 'string' && category && !settings.categories.includes(category)) {
       refuse(finance.categoryField, `"${category}" is not a category Finance accepts.`);
+    } else if (typeof category === 'string' && category) {
+      // The category's own rules: a cap per item, a cap per claim, a receipt or a note it insists on.
+      const { rows: cat } = await pool.query<{ max_per_line: string | null; max_per_claim: string | null; receipt_required: boolean; note_required: boolean; name: string }>(
+        'select max_per_line, max_per_claim, receipt_required, note_required, name from expense_category where tenant_id = $1 and key = $2 and active', [args.tenantId, category]);
+      const c = cat[0];
+      if (c) {
+        if (c.max_per_claim !== null && baseAmount > Number(c.max_per_claim)) refuse(finance.amountField, `${c.name} claims are capped at ${Number(c.max_per_claim)} ${base}.`);
+        if (c.max_per_line !== null && finance.linesField && finance.lineAmountField) {
+          const lines = Array.isArray(answers[finance.linesField]) ? (answers[finance.linesField] as Record<string, unknown>[]) : [];
+          const cap = Number(c.max_per_line);
+          const over = lines.find((l) => round(num(l?.[finance.lineAmountField!]) * rate) > cap);
+          if (over) refuse(finance.linesField, `No single ${c.name} item may be over ${cap} ${base}.`);
+        }
+        if (c.receipt_required && finance.receiptField && !String(answers[finance.receiptField] ?? '').trim()) refuse(finance.receiptField, `${c.name} claims always need a receipt.`);
+        if (c.note_required && finance.noteField && !String(answers[finance.noteField] ?? '').trim()) refuse(finance.noteField, `${c.name} claims need a note saying what it was for.`);
+      }
     }
   }
   if (finance.advanceReferenceField) {

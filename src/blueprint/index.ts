@@ -66,6 +66,7 @@ export const Blueprint = z
         linesField: Key.optional(),
         lineAmountField: Key.optional(),
         lineDescriptionField: Key.optional(),
+noteField: Key.optional(),
         policy: z
           .object({
             autoApproveLimit: Key.optional(),

@@ -2607,3 +2607,58 @@ alter table employee_compensation add constraint employee_compensation_period_ch
 alter table employee_compensation add column if not exists kind text not null default 'base' check (kind in ('base', 'allowance', 'bonus', 'deduction'));
 alter table employee_compensation add column if not exists label text;
 alter table employee_compensation add column if not exists ended_on date;
+
+-- Expenses depth: categories with their own limits and account codes,
+-- per-diem and mileage rate cards per branch or country, payment runs that
+-- pay many claims under one reference.
+create table if not exists expense_category (
+  id               uuid primary key default gen_random_uuid(),
+  tenant_id        uuid not null references tenant(id),
+  key              text not null,
+  name             text not null,
+  account_code     text,
+  max_per_line     numeric(18, 2) check (max_per_line is null or max_per_line >= 0),
+  max_per_claim    numeric(18, 2) check (max_per_claim is null or max_per_claim >= 0),
+  receipt_required boolean not null default false,
+  note_required    boolean not null default false,
+  active           boolean not null default true,
+  sort_order       int not null default 0,
+  unique (tenant_id, key)
+);
+
+create table if not exists expense_rate_card (
+  id             uuid primary key default gen_random_uuid(),
+  tenant_id      uuid not null references tenant(id),
+  kind           text not null check (kind in ('per_diem', 'mileage')),
+  label          text not null,
+  branch_id      uuid references hr_branch(id),
+  country        text,
+  rate           numeric(18, 4) not null check (rate >= 0),
+  currency       text not null,
+  unit           text not null check (unit in ('day', 'half_day', 'night', 'km', 'mile')),
+  effective_from date not null default current_date,
+  effective_to   date,
+  active         boolean not null default true,
+  created_by     uuid references actor(id),
+  created_at     timestamptz not null default now()
+);
+create index if not exists expense_rate_card_lookup on expense_rate_card (tenant_id, kind, active);
+
+create table if not exists expense_payment_run (
+  id          uuid primary key default gen_random_uuid(),
+  tenant_id   uuid not null references tenant(id),
+  run_no      int not null,
+  status      text not null default 'draft' check (status in ('draft', 'paid', 'cancelled')),
+  currency    text not null,
+  count       int not null default 0,
+  total       numeric(18, 2) not null default 0,
+  reference   text,
+  note        text,
+  created_by  uuid references actor(id),
+  created_at  timestamptz not null default now(),
+  paid_by     uuid references actor(id),
+  paid_at     timestamptz,
+  unique (tenant_id, run_no)
+);
+alter table expense_settlement add column if not exists payment_run_id uuid references expense_payment_run(id);
+create index if not exists expense_settlement_run on expense_settlement (payment_run_id);

@@ -30,6 +30,7 @@ import { importDirectory } from '../runtime/directory-import.js';
 import { createLegalEntity, createOrgUnit, orgChart, reportingHistory, setManager, setMemberPlacement, updateOrgUnit } from '../runtime/org.js';
 import { addRate, advanceMovements, disburseAdvance, expenseSummary, exportPaid, listAdvances, listBudgets, listExports, listRates, listSettlements, moveSettlement, myBeneficiary, readExpenseSettings, recordAdvanceReturn, revealBeneficiary, reviewLines, saveBeneficiary, saveBudget, settlementLines, updateExpenseSettings, verifyBeneficiary } from '../runtime/expenses.js';
 import { addQuote, approveOrder, cancelOrder, createAgreement, createOrder, createVendor, enterInvoice, exportInvoices, listAgreements, listInvoices, listOrders, listQuotes, listRequisitions, listVendors, openQuotes, orderDetail, payInvoice, procurementSummary, readProcurementSettings, receiveGoods, returnGoods, revealVendorBank, reviewInvoice, reviseOrder, saveVendorBank, selectQuote, setQuoteDeadline, setVendorStatus, updateProcurementSettings, updateVendor, vendorHistory, verifyVendorBank } from '../runtime/procurement.js';
+import { allowance, cancelPaymentRun, createPaymentRun, expenseReport, listCategories, listRateCards, paymentRun, paymentRunBankFile, saveCategory, saveRateCard, searchAdvances, searchClaims, searchMyClaims, searchPaymentRuns, settlePaymentRun } from '../runtime/expenses-depth.js';
 import { searchCases, searchDocuments, searchHiring, searchHolidays, searchLeave, searchReconciliation, searchUpcoming } from '../runtime/hr-lists.js';
 import { addEmployeeEvent, adjustLeave, documentFileLink, listBranches, saveBranch, searchEmployees, setEmployeeBranch, employeeDetail, employeeFileLink, leaveCalendar, leaveLedger, myProfile, orgTree, removeEmployeeFile, setEmployeeFileVisibility, updateProfile, uploadDocumentFile, uploadEmployeeFile } from '../runtime/hr-records.js';
 import { acknowledgeDocument, addCaseNote, addCertification, cancelLeave, completeTask, createDocument, decideLeave, decideProbation, exceptTask, hrSummary, leaveToApprove, listCaseNotes, listCases, listCompensation, listDocuments, listEmployees, listHiring, listHolidays, listLeaveTypes, listReconciliations, listTeams, listTemplates, myDocuments, myLeave, myTasks, readHrSettings, requestLeave, resolveReconciliation, saveHoliday, saveLeaveType, saveTemplate, sendDocument, setCompensation, setEntitlement, setTeamMember, startOffboarding, startOnboarding, startProbationReview, startTransfer, updateEmployee, updateHrSettings, upcoming, urgentTermination } from '../runtime/hr.js';
@@ -897,6 +898,21 @@ route('GET', /^\/api\/audit$/, async ({ pool, principal, url }) =>
 
 // ---- Expenses (PRD Module 5). Every route refuses when the module is off.
 // Reading and recording payments needs `operate`; changing the policy needs `administer`.
+route('GET', /^\/api\/expenses\/categories$/, async ({ pool, principal }) => listCategories(pool, principal));
+route('POST', /^\/api\/expenses\/categories$/, async ({ pool, principal }, b) => saveCategory(pool, principal, hb(b)));
+route('GET', /^\/api\/expenses\/rate-cards$/, async ({ pool, principal }) => listRateCards(pool, principal));
+route('POST', /^\/api\/expenses\/rate-cards$/, async ({ pool, principal }, b) => saveRateCard(pool, principal, hb(b)));
+route('GET', /^\/api\/expenses\/allowance$/, async ({ pool, principal, url }) => allowance(pool, principal, url.searchParams));
+route('GET', /^\/api\/expenses\/runs$/, async ({ pool, principal, url }) => searchPaymentRuns(pool, principal, url.searchParams));
+route('POST', /^\/api\/expenses\/runs$/, async ({ pool, principal }, b) => createPaymentRun(pool, principal, hb(b)));
+route('GET', /^\/api\/expenses\/runs\/([0-9a-f-]{36})$/, async ({ pool, principal, url }) => paymentRun(pool, principal, hid(url, 4)));
+route('GET', /^\/api\/expenses\/runs\/([0-9a-f-]{36})\/bank-file$/, async ({ pool, principal, url }) => paymentRunBankFile(pool, principal, hid(url, 4)));
+route('POST', /^\/api\/expenses\/runs\/([0-9a-f-]{36})\/pay$/, async ({ pool, principal, url }, b) => settlePaymentRun(pool, principal, hid(url, 4), hb(b)));
+route('POST', /^\/api\/expenses\/runs\/([0-9a-f-]{36})\/cancel$/, async ({ pool, principal, url }) => cancelPaymentRun(pool, principal, hid(url, 4)));
+route('GET', /^\/api\/expenses\/report$/, async ({ pool, principal, url }) => expenseReport(pool, principal, url.searchParams));
+route('GET', /^\/api\/expenses\/claims\/search$/, async ({ pool, principal, url }) => searchClaims(pool, principal, url.searchParams));
+route('GET', /^\/api\/expenses\/advances\/search$/, async ({ pool, principal, url }) => searchAdvances(pool, principal, url.searchParams));
+route('GET', /^\/api\/expenses\/mine\/search$/, async ({ pool, principal, url }) => searchMyClaims(pool, principal, url.searchParams));
 route('GET', /^\/api\/expenses\/summary$/, async ({ pool, principal }) => expenseSummary(pool, principal));
 route('GET', /^\/api\/expenses\/settings$/, async ({ pool, principal }) => readExpenseSettings(pool, principal));
 route('POST', /^\/api\/expenses\/settings$/, async ({ pool, principal }, body) =>
