@@ -159,6 +159,8 @@ export const STEP_UP: { method: string; test: RegExp; when?: (body: unknown) => 
   { method: 'POST', test: /^\/api\/members\/[0-9a-f-]{36}\/manager$/, what: "change somebody's manager" },
   { method: 'POST', test: /^\/api\/members\/[0-9a-f-]{36}\/reactivate$/, what: 'let somebody back in' },
   { method: 'POST', test: /^\/api\/account\/mfa\/begin$/, what: 'set up a new authenticator' },
+  { method: 'POST', test: /^\/api\/account\/passkeys\/begin$/, what: 'add a passkey' },
+  { method: 'POST', test: /^\/api\/account\/passkeys\/[0-9a-f-]{36}\/remove$/, what: 'remove a passkey' },
   {
     method: 'POST',
     test: /^\/api\/retention$/,

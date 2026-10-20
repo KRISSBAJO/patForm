@@ -5,6 +5,7 @@ import './console.css';
 import { Ask } from './Ask';
 import { DashboardView, HealthView, HeldView, RecordsView, SecurityView } from './Views';
 import { NotificationsPanel } from './Notifications';
+import { PasskeysPanel } from './Passkeys';
 import { PeopleView, ProcessesView } from './Manage';
 import { InviteView } from './Invite';
 import { BootScreen } from '../../components/boot-screen';
@@ -666,6 +667,7 @@ export function Console() {
               <>
                 <SecurityView onAccessChange={() => void checkSiteAdmin()} />
                 <NotificationsPanel />
+                <PasskeysPanel className="cs__passkeys" />
               </>
             ) : view === 'held' ? (
               <HeldView onChanged={setHeldCount} />
@@ -1046,7 +1048,7 @@ function returnPath(): string | null {
   if (typeof window === 'undefined') return null;
   const next = new URLSearchParams(window.location.search).get('next');
   if (!next || next.startsWith('//') ||
-      (!next.startsWith('/oauth/authorize?') && !/^\/f\/[a-z0-9_-]+$/.test(next))) return null;
+      (!next.startsWith('/oauth/authorize?') && next !== '/go' && !/^\/f\/[a-z0-9_-]+$/.test(next))) return null;
   return next;
 }
 

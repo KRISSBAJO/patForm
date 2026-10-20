@@ -5333,3 +5333,19 @@ a.cs__navItem {
 .dim__warn { color: #876841; }
 .dim__list { margin: 0; padding-left: 18px; font-size: 12px; color: var(--red-text); }
 .dim__go { align-items: center; justify-content: space-between; }
+
+/* Step-up by passkey: the device's own prompt, offered above the password. */
+.ru__passkey {
+  width: 100%;
+  margin: 14px 0 6px;
+  height: 46px;
+  border-radius: 10px;
+  border: 1px solid var(--green-border);
+  background: var(--green-pale);
+  color: var(--green-deep);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.ru__passkey:disabled { opacity: 0.6; cursor: default; }
+.cs__passkeys { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--line); }

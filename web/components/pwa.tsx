@@ -22,7 +22,7 @@ export function Pwa() {
   useEffect(() => {
     if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return;
     const path = window.location.pathname;
-    if (!(path.startsWith('/console') || path.startsWith('/builder'))) return;
+    if (!(path.startsWith('/console') || path.startsWith('/builder') || path.startsWith('/go'))) return;
     navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => {
       /* an old browser, or a private window that refuses: the page works the same */
     });

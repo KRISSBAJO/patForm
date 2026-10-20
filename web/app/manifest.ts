@@ -26,6 +26,7 @@ export default function manifest(): MetadataRoute.Manifest {
       { src: '/icons/maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
     ],
     shortcuts: [
+      { name: 'On my phone', url: '/go', description: 'Approve, snap a receipt, ask for leave' },
       { name: 'My work', url: '/console', description: 'Decisions and tasks waiting for you' },
       { name: 'Builder', url: '/builder', description: 'Change a process' },
     ],

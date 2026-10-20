@@ -8,6 +8,8 @@ import { Engine } from '../runtime/engine.js';
 import { addRecordNote, recordDocument } from '../runtime/console-queries.js';
 import { shareRecord } from '../runtime/share-record.js';
 import { pushConfig, removeSubscription, saveSubscription, testPush } from '../runtime/push.js';
+import { beginAssertion, beginRegistration, finishAssertion, finishRegistration, hasPasskeys, listPasskeys, removePasskey } from '../runtime/passkeys.js';
+import { goHome } from '../runtime/go.js';
 import { createView, deleteView, listViews, type Schedule, type ViewParams } from '../runtime/saved-views.js';
 import { isPublicApiPath, publicHandler } from './public-server.js';
 import { aiDraftStatus, applyAiRevision, queueAiDraft, queueAiRevision } from '../runtime/ai-drafts.js';
@@ -1532,6 +1534,33 @@ route('POST', /^\/api\/auth\/reauthenticate$/, async ({ pool, actorId, session }
   return reauthenticate(pool, { sessionId: session.sessionId, actorId, password, code });
 });
 
+/**
+ * Passkeys: a fingerprint or face on this device instead of the password,
+ * for the same step-up. Adding or removing one is itself a step-up
+ * (step-up.ts). See runtime/passkeys.ts.
+ */
+route('GET', /^\/api\/account\/passkeys$/, async ({ pool, actorId }) => ({ passkeys: await listPasskeys(pool, actorId) }));
+route('POST', /^\/api\/account\/passkeys\/begin$/, async ({ pool, actorId }) => beginRegistration(pool, { actorId }));
+route('POST', /^\/api\/account\/passkeys\/finish$/, async ({ pool, actorId }, body) => {
+  const { label, response } = body as { label?: unknown; response?: unknown };
+  if (!response || typeof response !== 'object') throw new HttpError(400, 'a passkey response is required');
+  return finishRegistration(pool, { actorId, label, response: response as Record<string, unknown> });
+});
+route('POST', /^\/api\/account\/passkeys\/([0-9a-f-]{36})\/remove$/, async ({ pool, actorId, url }) => removePasskey(pool, actorId, hid(url, 4)));
+route('POST', /^\/api\/auth\/reauthenticate\/passkey\/begin$/, async ({ pool, actorId, session }) => {
+  if (!session) throw new HttpError(401, 'sign in first');
+  return beginAssertion(pool, { actorId });
+});
+route('POST', /^\/api\/auth\/reauthenticate\/passkey\/finish$/, async ({ pool, actorId, session }, body) => {
+  if (!session) throw new HttpError(401, 'sign in first');
+  const { response } = body as { response?: unknown };
+  if (!response || typeof response !== 'object') throw new HttpError(400, 'a passkey response is required');
+  return finishAssertion(pool, { actorId, sessionId: session.sessionId, response: response as Record<string, unknown> });
+});
+
+// The phone screen: what needs me, across every module, in one call. See runtime/go.ts.
+route('GET', /^\/api\/go$/, async ({ pool, engine, principal, actorId }) => goHome(pool, engine, principal, actorId));
+
 /** §6.1 IAM-04: revoke sessions. Signing out everywhere is its own control. */
 route('POST', /^\/api\/session\/revoke-all$/, async ({ pool, actorId }) => {
   const revoked = await revokeAllSessions(pool, actorId);
@@ -2195,6 +2224,7 @@ async function main(): Promise<void> {
             error: 'reauthenticate',
             reason: `Confirm it is you to ${stepUp.what}.`,
             mfa: await mfaIsEnabled(pool, actorId),
+            passkey: await hasPasskeys(pool, actorId),
           });
         }
 

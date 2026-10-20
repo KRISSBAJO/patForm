@@ -69,7 +69,7 @@ self.addEventListener('notificationclick', (event) => {
   const url = new URL((event.notification.data && event.notification.data.url) || '/console', self.location.origin).href;
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
-      const existing = clients.find((c) => c.url.startsWith(self.location.origin + '/console'));
+      const existing = clients.find((c) => c.url.startsWith(self.location.origin + '/go')) || clients.find((c) => c.url.startsWith(self.location.origin + '/console'));
       if (existing) return existing.navigate(url).then((c) => (c || existing).focus());
       return self.clients.openWindow(url);
     }),

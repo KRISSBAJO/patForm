@@ -3321,3 +3321,30 @@ alter table sign_party add column if not exists register jsonb;
 alter table sign_party add column if not exists register_required boolean not null default false;
 alter table sign_recipient add column if not exists register_match jsonb;
 alter table sign_envelope add column if not exists seal_timestamp jsonb;
+
+-- Passkeys: the public half of a key a phone or laptop holds, used to prove
+-- it is still the same person before a sensitive action (runtime/passkeys.ts).
+-- Signing in is still password and code; a passkey only freshens a session.
+create table passkey (
+  id            uuid primary key default gen_random_uuid(),
+  actor_id      uuid not null references actor(id) on delete cascade,
+  credential_id text not null unique,
+  public_key    text not null,
+  alg           int not null,
+  counter       bigint not null default 0,
+  transports    text[],
+  label         text,
+  created_at    timestamptz not null default now(),
+  last_used_at  timestamptz
+);
+create index passkey_by_actor on passkey (actor_id);
+
+-- A challenge is answered once, within minutes, by the person it was issued to.
+create table passkey_challenge (
+  id         uuid primary key default gen_random_uuid(),
+  actor_id   uuid not null references actor(id) on delete cascade,
+  kind       text not null check (kind in ('register', 'reauth')),
+  challenge  text not null,
+  expires_at timestamptz not null,
+  created_at timestamptz not null default now()
+);

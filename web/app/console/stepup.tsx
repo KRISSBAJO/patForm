@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { PasswordInput } from './PasswordInput';
+import { answerWithPasskey, passkeysPossible } from './Passkeys';
 
 /**
  * Confirming it is you, in the middle of doing something.
@@ -14,13 +15,13 @@ import { PasswordInput } from './PasswordInput';
  * know this happens.
  */
 
-type Ask = { reason: string; mfa: boolean; resolve: (confirmed: boolean) => void };
+type Ask = { reason: string; mfa: boolean; passkey: boolean; resolve: (confirmed: boolean) => void };
 
 const EVENT = 'patform:reauth';
 
-function ask(reason: string, mfa: boolean): Promise<boolean> {
+function ask(reason: string, mfa: boolean, passkey = false): Promise<boolean> {
   return new Promise((resolve) => {
-    window.dispatchEvent(new CustomEvent<Ask>(EVENT, { detail: { reason, mfa, resolve } }));
+    window.dispatchEvent(new CustomEvent<Ask>(EVENT, { detail: { reason, mfa, passkey, resolve } }));
   });
 }
 
@@ -35,7 +36,7 @@ export async function postJson<T>(path: string, body?: unknown): Promise<T> {
     });
     const parsed = await res.json().catch(() => ({}));
     if (res.status === 403 && parsed.error === 'reauthenticate' && attempt === 0) {
-      if (!(await ask(parsed.reason ?? 'Confirm it is you to continue.', Boolean(parsed.mfa)))) {
+      if (!(await ask(parsed.reason ?? 'Confirm it is you to continue.', Boolean(parsed.mfa), Boolean(parsed.passkey)))) {
         throw new Error('Not done — you did not confirm it was you.');
       }
       continue;
@@ -52,6 +53,7 @@ export function ReauthDialog() {
   const [code, setCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [withKey, setWithKey] = useState(false);
   const first = useRef<HTMLInputElement>(null);
   const returnTo = useRef<Element | null>(null);
 
@@ -118,6 +120,27 @@ export function ReauthDialog() {
           Confirm it is you
         </h2>
         <p className="ru__reason">{asking.reason} It has been a while since you signed in.</p>
+        {asking.passkey && passkeysPossible() && (
+          <button
+            type="button"
+            className="ru__passkey"
+            disabled={busy || withKey}
+            onClick={() => void (async () => {
+              setWithKey(true);
+              setError(null);
+              try {
+                if (await answerWithPasskey()) close(true);
+              } catch (err) {
+                const m = err instanceof Error ? err.message : String(err);
+                setError(/NotAllowedError|not allowed|timed out|abort/i.test(m) ? 'That was cancelled — use your password instead.' : m);
+              } finally {
+                setWithKey(false);
+              }
+            })()}
+          >
+            {withKey ? 'Waiting for your device…' : 'Use fingerprint, face or device PIN'}
+          </button>
+        )}
         <div className="ru__row">
           <label htmlFor="reauth-password">Password</label>
           <PasswordInput

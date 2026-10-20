@@ -684,3 +684,49 @@ coloured; everything else sits on paper. All motion is switched off under
 `prefers-reduced-motion` and the server renders the finished state. Nav
 links now point at #story, #modules, #sign, #controls. `ProcessDemo` is no
 longer used by the landing page but stays in the repo.
+
+## Patform on a phone (20 October 2026)
+
+Not a native app: the installed web app, with the five things a person
+does on a phone on one screen, `/go` (`web/app/go/`). It calls `GET
+/api/go` (`src/runtime/go.ts`), which gathers from the modules that are
+on, under the same principal the console uses: approvals and tasks across
+every process the person holds a role in (engine `myWork`), leave waiting
+for their decision and their own leave (HR), and which forms can take a
+photo. Approve and reject call the console's own `/api/records/<id>/decide`;
+an approval that needs a signature is sent to the console record instead.
+"Snap a receipt" opens the camera, starts a draft of the expense form,
+uploads the photo through the public form's receipt route (same malware
+scan, same 5 MB limit), saves the reference into the draft and opens the
+form at `/f/<link>?resume=<token>` to finish. Leave can be requested from
+the phone. The screen reloads when the app comes back to the foreground.
+
+Push notifications already existed (`push.ts`, `sw.js`); `/go` now
+registers the worker, offers "Nudge me", and a tap on a notification opens
+the phone screen if that is what is open. The manifest gains an "On my
+phone" shortcut.
+
+Passkeys (`src/runtime/passkeys.ts`, tables `passkey`,
+`passkey_challenge`): a fingerprint, face or device PIN in place of the
+password when the console asks you to confirm it is you. WebAuthn with
+attestation "none", verified in our own code (a small CBOR reader, P-256
+and RSA keys): challenge single-use and five minutes, origin and relying
+party must be this site (`APP_URL`), the device must report that it checked
+the person (UV), the signature covers authenticator data and client data,
+and a counter that does not move forward is treated as a cloned key. A
+wrong answer counts against the session exactly like a wrong password;
+five end it. Adding or removing a passkey is itself a step-up. Signing in
+is unchanged: a passkey only freshens a session, so a lost phone is not a
+lost account. The console's account view and `/go` both have the panel;
+the re-auth dialog offers "Use fingerprint, face or device PIN" when the
+account has one. Tests: `tests/passkeys.test.ts` plays a phone with node's
+crypto and tries the attacks; `tests/go.test.ts` covers the phone screen.
+
+Checked in the browser at phone width on a seeded workspace: approved a
+claim and a leave request from the phone, saw the record list refresh,
+opened the passkey panel. The receipt upload itself was not exercised
+locally: receipts go through the existing S3 route (not the in-memory
+store), which this machine cannot reach from an app-launched server, and
+test files must not reach the real bucket. On staging, check 13 in
+`docs/deploy-and-check.md`.
+

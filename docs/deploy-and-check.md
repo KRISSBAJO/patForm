@@ -34,7 +34,7 @@ feature exists at all:
 | --- | --- | --- |
 | `AWS_REGION`, `AWS_S3_BUCKET` + AWS credentials | receipts, photos, documents, signed PDFs, exports | those uploads are refused with a plain reason |
 | `TRUST_PROXY` | the caller's IP for rate limits and the signing record | leave at `0` until the actual forwarding chain is verified on staging; then set only the verified number of trusted hops. An incorrect value can record a proxy or spoofed address. |
-| `APP_URL` | every link in email (signing links, exports) | links point at localhost |
+| `APP_URL` | every link in email (signing links, exports); the passkey origin | links point at localhost; passkeys refuse |
 | `MFA_ENCRYPTION_KEY` | sealing connector secrets, signing links, bank details | secrets sealed with the public dev key: **never in production** |
 | `MS365_CLIENT_ID/SECRET` | Microsoft 365 access connector | Setup says the server is missing them |
 | `GOOGLE_WORKSPACE_SA_EMAIL/CLIENT_ID/PRIVATE_KEY` | Google Workspace access connector | as above |
@@ -96,6 +96,13 @@ tab of that name inside the module's page in the console.
 12. **Auditor**: invite someone with the Auditor role; grant them an
     engagement for seven days; sign in as them: only "My engagements"
     exists, and `/api/members` answers 400.
+13. **Phone**: on a phone, sign in and open `/go`. Approve something; snap
+    a receipt (the camera opens, then the expense form opens with the
+    photo attached and "Scanning for malware…"); request leave. Tap "Use
+    fingerprint or face", set it up, then in the console change something
+    that asks you to confirm it is you (a budget): the dialog offers the
+    fingerprint first. `APP_URL` must be the exact https origin the phone
+    uses, or passkeys refuse with "another site".
 
 ## Things that bit us, so you can spot them fast
 
