@@ -5462,3 +5462,7 @@ a.cs__navItem {
 .mt__bodyCard.is-open { border-color: var(--mod, var(--green)); box-shadow: inset 0 0 0 1px var(--mod, var(--green)); }
 .mt__table { width: 100%; }
 @media (max-width: 900px) { .mt__roomGrid { grid-template-columns: 1fr; } .mt__agendaEdit li { grid-template-columns: 32px 1fr 1fr; } .mt__room { padding: 16px; } }
+
+/* Meetings fills the body: the calendar needs the width and explains itself. */
+.cs__body--wide > .cs__left { max-width: 1380px; }
+.cs__body--wide > .cs__right { display: none; }

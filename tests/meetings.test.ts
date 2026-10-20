@@ -8,7 +8,7 @@ import { setSignMailerForTests, envelopeDetail, listEnvelopes } from '../src/run
 import {
   approveMinutes, callMeeting, castVote, closeMeeting, closeResolution, completeAction, createAction, createMeeting, createResolution, decide, listActions,
   meetingDetail, meetingsOverview, openResolution, quorumMet, recordMinutes, resolutionDetail, resolutionRegister, rsvp, saveBody, sendResolutionForSignature, setBodyMember,
-  setMeetingMailerForTests, setPresence, startMeeting, sweepMeetings, updateMeetingSettings, withdrawResolution, registerCsv, minutesDocument,
+  setMeetingMailerForTests, setPresence, startMeeting, sweepMeetings, updateMeetingSettings, withdrawResolution, registerCsv, minutesDocument, meetingIcs, appointProxy, calendar, updateMeeting, cancelMeeting,
 } from '../src/runtime/meetings.js';
 import type { Principal } from '../src/runtime/policy.js';
 
@@ -20,7 +20,7 @@ import type { Principal } from '../src/runtime/policy.js';
 const localDatabase = !!process.env.DATABASE_URL && ['localhost', '127.0.0.1', '[::1]'].includes(new URL(process.env.DATABASE_URL).hostname);
 const stamp = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 const inDays = (n: number) => new Date(Date.now() + n * 86400000).toISOString();
-type Mail = { kind: string; to: string; subject: string; text: string };
+type Mail = { kind: string; to: string; subject: string; text: string; attachments?: { filename: string; content: Buffer; contentType: string }[] };
 
 test('decision rules: majority, two-thirds, unanimous, written resolutions and the casting vote', () => {
   const simple = { type: 'simple_majority', chairCasting: true } as const;
@@ -204,3 +204,87 @@ test('a passed resolution is signed through Patform Sign as the company, and the
     assert.equal((await listEnvelopes(pool, b.chair.p)).length, 1);
   } finally { setMeetingMailerForTests(null); setSignMailerForTests(null); setObjectStoreForTests(undefined); await pool.end(); }
 });
+
+test('the invitation is a valid calendar entry that updates and cancels the same event', () => {
+  const ics = meetingIcs({ id: 'abc', title: 'Q4 board; with a comma, too', body: 'Board', startsAt: new Date('2026-11-02T09:00:00Z'), endsAt: new Date('2026-11-02T11:00:00Z'), location: 'Boardroom', link: 'https://meet.example/x', agenda: ['Apologies', 'Budget'], sequence: 2, organiser: { name: 'Sam', email: 'sam@x.test' }, attendee: { name: 'Ada', email: 'ada@x.test' } });
+  assert.ok(ics.startsWith('BEGIN:VCALENDAR\r\n'));
+  assert.ok(ics.includes('METHOD:REQUEST'));
+  assert.ok(ics.includes('UID:abc@patform'));
+  assert.ok(ics.includes('DTSTART:20261102T090000Z'));
+  assert.ok(ics.includes('SEQUENCE:2'));
+  assert.ok(ics.includes('SUMMARY:Q4 board\\; with a comma\\, too'));
+  assert.ok(ics.includes('ATTENDEE;CN=Ada;ROLE=REQ-PARTICIPANT;RSVP=TRUE:mailto:ada@x.test'));
+  assert.ok(ics.split('\r\n').every((l) => Buffer.byteLength(l) <= 75), 'lines are folded');
+  const cancelled = meetingIcs({ id: 'abc', title: 'Q4', body: 'Board', startsAt: new Date(), endsAt: null, location: null, link: null, agenda: [], sequence: 3, cancelled: true });
+  assert.ok(cancelled.includes('METHOD:CANCEL') && cancelled.includes('STATUS:CANCELLED'));
+});
+
+test('notices carry the invitation; moving a called meeting re-sends it with a higher sequence; cancelling sends a cancellation', { skip: !localDatabase }, async () => {
+  const pool = createPool(3); const engine = new Engine(pool); const mails: Mail[] = [];
+  try {
+    const b = await board(pool, engine, mails);
+    const { id: meetingId } = await createMeeting(pool, b.sec.p, { bodyId: b.bodyId, title: 'Strategy day', startsAt: inDays(10), agenda: [{ title: 'Strategy' }] });
+    await callMeeting(pool, b.sec.p, meetingId, {});
+    const notice = mails.find((m) => m.kind === 'meeting_notice')!;
+    assert.equal(notice.attachments?.[0]?.filename, 'invite.ics');
+    const text = notice.attachments![0]!.content.toString();
+    assert.ok(text.includes(`UID:${meetingId}@patform`) && text.includes('SEQUENCE:0'));
+    mails.length = 0;
+    await updateMeeting(pool, b.sec.p, meetingId, { startsAt: inDays(11) });
+    const moved = mails.filter((m) => m.subject.startsWith('Changed:'));
+    assert.equal(moved.length, 5);
+    assert.ok(moved[0]!.attachments![0]!.content.toString().includes('SEQUENCE:1'));
+    mails.length = 0;
+    await updateMeeting(pool, b.sec.p, meetingId, { title: 'Strategy day (renamed)' });
+    assert.equal(mails.length, 0, 'a title change does not re-invite');
+    await cancelMeeting(pool, b.sec.p, meetingId, { reason: 'Postponed' });
+    const cancel = mails.find((m) => m.subject.startsWith('Cancelled:'))!;
+    assert.equal(cancel.attachments?.[0]?.filename, 'cancelled.ics');
+    assert.ok(cancel.attachments![0]!.content.toString().includes('METHOD:CANCEL'));
+    const cal = await calendar(pool, b.d1.p, {});
+    assert.ok(cal.meetings.some((m) => m.id === meetingId && m.status === 'cancelled'));
+  } finally { setMeetingMailerForTests(null); await pool.end(); }
+});
+
+test('proxies: only where the body allows, held by a present voting member, counted in the vote but not the quorum', { skip: !localDatabase }, async () => {
+  const pool = createPool(3); const engine = new Engine(pool); const mails: Mail[] = [];
+  try {
+    const b = await board(pool, engine, mails);
+    const { id: meetingId } = await createMeeting(pool, b.sec.p, { bodyId: b.bodyId, title: 'AGM', startsAt: inDays(10), agenda: [{ title: 'Dividend', purpose: 'resolution' }] });
+    await callMeeting(pool, b.sec.p, meetingId, {});
+    await assert.rejects(appointProxy(pool, b.d2.p, meetingId, { holderId: b.d1.id }), /does not allow proxies/);
+    await saveBody(pool, b.owner.p, { id: b.bodyId, name: 'Board of Directors', kind: 'general', quorum: { type: 'fraction', value: 0.5 }, decision: { type: 'simple_majority', chairCasting: true }, proxiesAllowed: true, maxProxies: 1 });
+    await assert.rejects(appointProxy(pool, b.obs.p, meetingId, { holderId: b.d1.id }), /only a voting member/);
+    await assert.rejects(appointProxy(pool, b.d2.p, meetingId, { holderId: b.obs.id }), /must be a voting member/);
+    await appointProxy(pool, b.d2.p, meetingId, { holderId: b.d1.id });
+    await assert.rejects(appointProxy(pool, b.sec.p, meetingId, { holderId: b.d1.id }), /already holds 1/);
+    await setPresence(pool, b.sec.p, meetingId, { actorId: b.chair.id, present: true });
+    await assert.rejects(startMeeting(pool, b.chair.p, meetingId, {}), /no quorum/);
+    await setPresence(pool, b.sec.p, meetingId, { actorId: b.d1.id, present: true });
+    await startMeeting(pool, b.chair.p, meetingId, {});
+    const d = await meetingDetail(pool, b.d1.p, meetingId);
+    assert.equal(d.quorum.present, 2); assert.equal(d.quorum.represented, 1);
+    assert.equal(d.me.holding.length, 1);
+    const item = d.agenda[0] as { id: string };
+    const { id: resId } = await createResolution(pool, b.chair.p, { meetingId, itemId: item.id, title: 'Pay a dividend', text: 'a dividend of 10 kobo per share is paid.' });
+    const opened = await openResolution(pool, b.chair.p, resId, {});
+    assert.equal(opened.eligible, 3, 'two present plus one represented');
+    const rd = await resolutionDetail(pool, b.d1.p, resId);
+    assert.deepEqual(rd.me.proxy_for.map((p: { name: string }) => p.name), ['Efe Director']);
+    await castVote(pool, b.d1.p, resId, { vote: 'for' });
+    await castVote(pool, b.d1.p, resId, { vote: 'for', actorId: b.d2.id });
+    await assert.rejects(castVote(pool, b.sec.p, resId, { vote: 'for', actorId: b.d2.id }), /only members marked present/);
+    await castVote(pool, b.chair.p, resId, { vote: 'against' });
+    const result = await closeResolution(pool, b.chair.p, resId);
+    assert.equal(result.status, 'passed');
+    assert.equal(result.for, 2);
+    const after = await resolutionDetail(pool, b.d1.p, resId);
+    assert.equal((after.votes as { actor_id: string; by_proxy: boolean }[]).find((v) => v.actor_id === b.d2.id)!.by_proxy, true);
+    await setPresence(pool, b.sec.p, meetingId, { actorId: b.d2.id, present: true });
+    const d2 = await meetingDetail(pool, b.d1.p, meetingId);
+    assert.equal(d2.quorum.represented, 0);
+    await appointProxy(pool, b.d2.p, meetingId, { revoke: true });
+    await assert.rejects(appointProxy(pool, b.d2.p, meetingId, { revoke: true }), /not given a proxy/);
+  } finally { setMeetingMailerForTests(null); await pool.end(); }
+});
+

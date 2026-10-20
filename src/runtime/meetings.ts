@@ -42,6 +42,7 @@ import { objectStore } from './object-store.js';
 import { appUrl, sendPlatformMail, type PlatformMailKind } from './platform-mail.js';
 import { renderPdf, type Block } from './pdf.js';
 import { createEnvelope, sendEnvelope } from './esign.js';
+import type { Attachment } from './email.js';
 
 const UUID = /^[0-9a-f-]{36}$/;
 const text = (v: unknown, max: number) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
@@ -64,10 +65,48 @@ const today = () => new Date().toISOString().slice(0, 10);
 
 // ------------------------------------------------------------------ mail
 
-type Mail = { kind: PlatformMailKind; to: string; subject: string; text: string; tenantId: string; idempotencyKey: string };
+type Mail = { kind: PlatformMailKind; to: string; subject: string; text: string; tenantId: string; idempotencyKey: string; attachments?: Attachment[] };
 let mailer: (pool: Pool | Client, m: Mail) => Promise<void> = async (pool, m) => { await sendPlatformMail(pool as Pool, m); };
 export function setMeetingMailerForTests(fn: ((pool: Pool | Client, m: Mail) => Promise<void>) | null) {
   mailer = fn ?? (async (pool, m) => { await sendPlatformMail(pool as Pool, m); });
+}
+
+// ------------------------------------------------------------- invitation
+
+const icsText = (v: string) => v.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
+const icsDate = (d: Date) => d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+/** Folds lines at 75 octets as RFC 5545 asks. */
+const fold = (line: string) => { const out: string[] = []; let rest = line; while (Buffer.byteLength(rest) > 73) { let cut = 73; while (Buffer.byteLength(rest.slice(0, cut)) > 73) cut -= 1; out.push(rest.slice(0, cut)); rest = ' ' + rest.slice(cut); } out.push(rest); return out.join('\r\n'); };
+
+/**
+ * A calendar invitation for a meeting, as every calendar understands it.
+ * The UID is the meeting id, so a changed time or a cancellation updates
+ * the same entry; the sequence number rises with each change.
+ */
+export function meetingIcs(args: { id: string; title: string; body: string; startsAt: Date; endsAt: Date | null; location: string | null; link: string | null; agenda: string[]; sequence: number; cancelled?: boolean; organiser?: { name: string; email: string } | null; attendee?: { name: string; email: string } | null; url?: string }): string {
+  const end = args.endsAt ?? new Date(args.startsAt.getTime() + 3600_000);
+  const description = [`${args.body}: ${args.title}`, '', 'Agenda:', ...args.agenda.map((a, i) => `${i + 1}. ${a}`), ...(args.link ? ['', `Join: ${args.link}`] : []), ...(args.url ? ['', `In Patform: ${args.url}`] : [])].join('\n');
+  const lines = [
+    'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Patform//Meetings//EN', `METHOD:${args.cancelled ? 'CANCEL' : 'REQUEST'}`,
+    'BEGIN:VEVENT', `UID:${args.id}@patform`, `DTSTAMP:${icsDate(new Date())}`, `DTSTART:${icsDate(args.startsAt)}`, `DTEND:${icsDate(end)}`,
+    `SEQUENCE:${args.sequence}`, `SUMMARY:${icsText(args.title)}`, `DESCRIPTION:${icsText(description)}`,
+    ...(args.location ? [`LOCATION:${icsText(args.location)}`] : []), ...(args.link ? [`URL:${args.link}`] : []),
+    `STATUS:${args.cancelled ? 'CANCELLED' : 'CONFIRMED'}`,
+    ...(args.organiser ? [`ORGANIZER;CN=${icsText(args.organiser.name)}:mailto:${args.organiser.email}`] : []),
+    ...(args.attendee ? [`ATTENDEE;CN=${icsText(args.attendee.name)};ROLE=REQ-PARTICIPANT;RSVP=TRUE:mailto:${args.attendee.email}`] : []),
+    'BEGIN:VALARM', 'TRIGGER:-PT30M', 'ACTION:DISPLAY', `DESCRIPTION:${icsText(args.title)}`, 'END:VALARM',
+    'END:VEVENT', 'END:VCALENDAR',
+  ];
+  return lines.map(fold).join('\r\n') + '\r\n';
+}
+
+async function invitationFor(client: Client | Pool, m: { id: string; body_id: string; title: string; starts_at: Date; ends_at: Date | null; location: string | null; link: string | null; sequence?: number; created_by?: string | null }, attendee: { display_name: string; email: string }, cancelled = false): Promise<Attachment> {
+  const { rows: b } = await client.query<{ name: string }>('select name from mtg_body where id = $1', [m.body_id]);
+  const { rows: items } = await client.query<{ title: string }>('select title from mtg_agenda_item where meeting_id = $1 order by position', [m.id]);
+  const { rows: org } = m.created_by ? await client.query<{ display_name: string; email: string }>('select display_name, email from actor where id = $1', [m.created_by]) : { rows: [] as { display_name: string; email: string }[] };
+  const ics = meetingIcs({ id: m.id, title: m.title, body: b[0]?.name ?? 'Meeting', startsAt: m.starts_at, endsAt: m.ends_at, location: m.location, link: m.link, agenda: items.map((i) => i.title), sequence: m.sequence ?? 0, cancelled,
+    organiser: org[0] ? { name: org[0].display_name, email: org[0].email } : null, attendee: { name: attendee.display_name, email: attendee.email }, url: `${appUrl()}/console?view=meetings&meeting=${m.id}` });
+  return { filename: cancelled ? 'cancelled.ics' : 'invite.ics', content: Buffer.from(ics, 'utf8'), contentType: `text/calendar; charset=utf-8; method=${cancelled ? 'CANCEL' : 'REQUEST'}` };
 }
 
 // ---------------------------------------------------------------- access
@@ -199,8 +238,8 @@ export function decide(rule: DecisionRule, v: { for: number; against: number; ab
 
 export async function listBodies(pool: Pool, principal: Principal) {
   const w = await who(pool, principal);
-  const { rows } = await pool.query<{ id: string; name: string; kind: string; quorum_rule: QuorumRule; decision_rule: DecisionRule; company_name: string | null; register: unknown; signatures_required: number; written_resolutions: boolean; active: boolean; members: number; next_meeting: string | null }>(
-    `select b.id, b.name, b.kind, b.quorum_rule, b.decision_rule, b.company_name, b.register, b.signatures_required, b.written_resolutions, b.active,
+  const { rows } = await pool.query<{ id: string; name: string; kind: string; quorum_rule: QuorumRule; decision_rule: DecisionRule; company_name: string | null; register: unknown; signatures_required: number; written_resolutions: boolean; proxies_allowed: boolean; max_proxies: number; active: boolean; members: number; next_meeting: string | null }>(
+    `select b.id, b.name, b.kind, b.quorum_rule, b.decision_rule, b.company_name, b.register, b.signatures_required, b.written_resolutions, b.proxies_allowed, b.max_proxies, b.active,
             (select count(*)::int from mtg_body_member m where m.body_id = b.id and m.until is null) as members,
             (select min(starts_at)::text from mtg_meeting x where x.body_id = b.id and x.status in ('called', 'in_progress') and x.starts_at > now() - interval '1 day') as next_meeting
        from mtg_body b where b.tenant_id = $1 order by b.active desc, b.name`, [w.tenantId]);
@@ -222,15 +261,18 @@ export async function saveBody(pool: Pool, principal: Principal, body: Record<st
   const required = body.signaturesRequired === undefined ? 1 : Math.trunc(num(body.signaturesRequired));
   if (!(required >= 1 && required <= 20)) throw new InvalidInput('signaturesRequired must be 1 to 20');
   const written = body.writtenResolutions !== false;
+  const proxies = body.proxiesAllowed === true;
+  const maxProxies = body.maxProxies === undefined ? 2 : Math.trunc(num(body.maxProxies));
+  if (!(maxProxies >= 1 && maxProxies <= 50)) throw new InvalidInput('maxProxies must be 1 to 50');
   return inTransaction(pool, async (client) => {
     let resultId = bodyId;
     if (bodyId) {
-      await client.query(`update mtg_body set name = $2, kind = $3, quorum_rule = $4, decision_rule = $5, company_name = $6, register = $7, signatures_required = $8, written_resolutions = $9, active = $10 where id = $1 and tenant_id = $11`,
-        [bodyId, name, kind, JSON.stringify(quorum), JSON.stringify(decision), companyName, register ? JSON.stringify(register) : null, required, written, body.active !== false, w.tenantId]);
+      await client.query(`update mtg_body set name = $2, kind = $3, quorum_rule = $4, decision_rule = $5, company_name = $6, register = $7, signatures_required = $8, written_resolutions = $9, active = $10, proxies_allowed = $12, max_proxies = $13 where id = $1 and tenant_id = $11`,
+        [bodyId, name, kind, JSON.stringify(quorum), JSON.stringify(decision), companyName, register ? JSON.stringify(register) : null, required, written, body.active !== false, w.tenantId, proxies, maxProxies]);
     } else {
       const { rows } = await client.query<{ id: string }>(
-        `insert into mtg_body (tenant_id, name, kind, quorum_rule, decision_rule, company_name, register, signatures_required, written_resolutions, created_by) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) returning id`,
-        [w.tenantId, name, kind, JSON.stringify(quorum), JSON.stringify(decision), companyName, register ? JSON.stringify(register) : null, required, written, w.actorId]);
+        `insert into mtg_body (tenant_id, name, kind, quorum_rule, decision_rule, company_name, register, signatures_required, written_resolutions, created_by, proxies_allowed, max_proxies) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) returning id`,
+        [w.tenantId, name, kind, JSON.stringify(quorum), JSON.stringify(decision), companyName, register ? JSON.stringify(register) : null, required, written, w.actorId, proxies, maxProxies]);
       resultId = rows[0]!.id;
     }
     await event(client, { tenantId: w.tenantId, bodyId: resultId, actorId: w.actorId, kind: bodyId ? 'body_changed' : 'body_created', detail: { name, kind, quorum, decision, companyName, register, required } });
@@ -285,7 +327,7 @@ export async function bodyDetail(pool: Pool, principal: Principal, bodyId: strin
 // --------------------------------------------------------------- meetings
 
 async function loadMeeting(client: Client | Pool, tenantId: string, meetingId: string) {
-  const { rows } = await client.query<{ id: string; body_id: string; number: number; title: string; kind: string; status: string; starts_at: Date; ends_at: Date | null; location: string | null; link: string | null; notice_sent_at: Date | null; quorum_met: boolean | null; quorum_note: string | null; chaired_by: string | null; minutes_author: string | null; minutes_approved_by: string | null; minutes_file_id: string | null; short_notice_reason: string | null; cancel_reason: string | null; created_by: string | null }>(
+  const { rows } = await client.query<{ id: string; body_id: string; number: number; title: string; kind: string; status: string; starts_at: Date; ends_at: Date | null; location: string | null; link: string | null; notice_sent_at: Date | null; quorum_met: boolean | null; quorum_note: string | null; chaired_by: string | null; minutes_author: string | null; minutes_approved_by: string | null; minutes_file_id: string | null; short_notice_reason: string | null; cancel_reason: string | null; created_by: string | null; sequence: number }>(
     'select * from mtg_meeting where id = $1 and tenant_id = $2', [meetingId, tenantId]);
   if (!rows[0]) throw new InvalidInput('no such meeting');
   return rows[0];
@@ -374,9 +416,20 @@ export async function updateMeeting(pool: Pool, principal: Principal, meetingId:
     const startsAt = body.startsAt === undefined ? m.starts_at : when(body.startsAt, 'startsAt', true)!;
     const endsAt = body.endsAt === undefined ? m.ends_at : when(body.endsAt, 'endsAt');
     if (endsAt && endsAt <= startsAt) throw new InvalidInput('the meeting ends before it starts');
-    await client.query('update mtg_meeting set title = $2, starts_at = $3, ends_at = $4, location = $5, link = $6 where id = $1',
-      [meetingId, title, startsAt, endsAt, body.location === undefined ? m.location : text(body.location, 200) || null, body.link === undefined ? m.link : text(body.link, 500) || null]);
+    const location = body.location === undefined ? m.location : text(body.location, 200) || null;
+    const link = body.link === undefined ? m.link : text(body.link, 500) || null;
+    const moved = m.status === 'called' && (startsAt.getTime() !== m.starts_at.getTime() || (endsAt?.getTime() ?? null) !== (m.ends_at?.getTime() ?? null) || location !== m.location || link !== m.link);
+    await client.query('update mtg_meeting set title = $2, starts_at = $3, ends_at = $4, location = $5, link = $6, sequence = sequence + $7 where id = $1',
+      [meetingId, title, startsAt, endsAt, location, link, moved ? 1 : 0]);
     if (Array.isArray(body.agenda)) await writeAgenda(client, w, meetingId, body.agenda);
+    if (moved) {
+      // A called meeting that moves: everyone's calendar entry is updated, not duplicated.
+      const fresh = await loadMeeting(client, w.tenantId, meetingId);
+      for (const p of await allMembers(client, m.body_id)) {
+        await mailer(client, { kind: 'meeting_notice', to: p.email, tenantId: w.tenantId, idempotencyKey: `mtg-moved:${meetingId}:${fresh.sequence}:${p.actor_id}`, attachments: [await invitationFor(client, fresh, p)],
+          subject: `Changed: ${title}`, text: `Hello ${p.display_name},\n\n"${title}" now takes place ${startsAt.toUTCString()}${location ? ` at ${location}` : ''}.${link ? `\nJoin: ${link}` : ''}\n\nYour calendar entry is updated by the attached invitation.\n` });
+      }
+    }
     await event(client, { tenantId: w.tenantId, bodyId: m.body_id, meetingId, actorId: w.actorId, kind: 'meeting_changed', detail: { title, startsAt, agenda: Array.isArray(body.agenda) ? body.agenda.length : undefined } });
     return { ok: true };
   });
@@ -402,7 +455,7 @@ export async function callMeeting(pool: Pool, principal: Principal, meetingId: s
     for (const p of members) {
       await client.query('insert into mtg_attendance (tenant_id, meeting_id, actor_id) values ($1, $2, $3) on conflict (meeting_id, actor_id) do nothing', [w.tenantId, meetingId, p.actor_id]);
       await mailer(client, {
-        kind: 'meeting_notice', to: p.email, tenantId: w.tenantId, idempotencyKey: `mtg-notice:${meetingId}:${p.actor_id}`,
+        kind: 'meeting_notice', to: p.email, tenantId: w.tenantId, idempotencyKey: `mtg-notice:${meetingId}:${p.actor_id}`, attachments: [await invitationFor(client, m, p)],
         subject: `Notice of meeting: ${b[0]!.name} — ${m.title}`,
         text: `Hello ${p.display_name},\n\n${b[0]!.name} meets on ${m.starts_at.toUTCString()}${m.location ? ` at ${m.location}` : ''}${m.link ? `\nJoin: ${m.link}` : ''}.\n\nAgenda:\n${items.map((i) => `  ${i.position}. ${i.title}${i.purpose === 'resolution' ? ' (resolution)' : i.purpose === 'decision' ? ' (decision)' : ''}`).join('\n')}\n${shortReason ? `\nThis meeting is called at short notice: ${shortReason}\n` : ''}\nPlease say whether you will attend: ${appUrl()}/console?view=meetings&meeting=${meetingId}\n`,
       });
@@ -431,23 +484,66 @@ export async function cancelMeeting(pool: Pool, principal: Principal, meetingId:
   return inTransaction(pool, async (client) => {
     const m = await loadMeeting(client, w.tenantId, meetingId); requireManage(w, m.body_id);
     if (!['draft', 'called'].includes(m.status)) throw new InvalidInput('a meeting that has started cannot be cancelled; close it instead');
-    await client.query('update mtg_meeting set status = $2, cancel_reason = $3 where id = $1', [meetingId, 'cancelled', reason]);
+    await client.query('update mtg_meeting set status = $2, cancel_reason = $3, sequence = sequence + 1 where id = $1', [meetingId, 'cancelled', reason]);
     await client.query(`update mtg_resolution set status = 'withdrawn', result_note = 'meeting cancelled' where meeting_id = $1 and status in ('draft', 'open')`, [meetingId]);
     await event(client, { tenantId: w.tenantId, bodyId: m.body_id, meetingId, actorId: w.actorId, kind: 'meeting_cancelled', detail: { reason } });
     if (m.status === 'called') {
       for (const p of await allMembers(client, m.body_id)) {
-        await mailer(client, { kind: 'meeting_notice', to: p.email, tenantId: w.tenantId, idempotencyKey: `mtg-cancel:${meetingId}:${p.actor_id}`, subject: `Cancelled: ${m.title}`, text: `Hello ${p.display_name},\n\nThe meeting "${m.title}" on ${m.starts_at.toUTCString()} is cancelled.\n\nReason: ${reason}\n` });
+        await mailer(client, { kind: 'meeting_notice', to: p.email, tenantId: w.tenantId, idempotencyKey: `mtg-cancel:${meetingId}:${p.actor_id}`, attachments: [await invitationFor(client, { ...m, sequence: m.sequence + 1 }, p, true)], subject: `Cancelled: ${m.title}`, text: `Hello ${p.display_name},\n\nThe meeting "${m.title}" on ${m.starts_at.toUTCString()} is cancelled.\n\nReason: ${reason}\n` });
       }
     }
     return { ok: true };
   });
 }
 
+/** Live proxies at a meeting: giver → holder. Only counts while the holder is in the room and the giver is not. */
+async function liveProxies(client: Client | Pool, meetingId: string): Promise<{ giver_id: string; holder_id: string; giver: string; holder: string }[]> {
+  const { rows } = await client.query<{ giver_id: string; holder_id: string; giver: string; holder: string }>(
+    `select p.giver_id, p.holder_id, g.display_name as giver, h.display_name as holder from mtg_proxy p join actor g on g.id = p.giver_id join actor h on h.id = p.holder_id
+      where p.meeting_id = $1 and p.revoked_at is null
+        and exists (select 1 from mtg_attendance t where t.meeting_id = p.meeting_id and t.actor_id = p.holder_id and t.present)
+        and not exists (select 1 from mtg_attendance t where t.meeting_id = p.meeting_id and t.actor_id = p.giver_id and t.present)`, [meetingId]);
+  return rows;
+}
+
+/** Present voting members, and those represented by a proxy. Quorum is bodies in the room; proxies add votes, not presence. */
 async function presentCount(client: Client | Pool, meetingId: string, bodyId: string) {
   const voting = await votingMembers(client, bodyId);
   const { rows } = await client.query<{ actor_id: string }>('select actor_id from mtg_attendance where meeting_id = $1 and present', [meetingId]);
   const presentIds = new Set(rows.map((r) => r.actor_id));
-  return { present: voting.filter((v) => presentIds.has(v.actor_id)).length, voting: voting.length };
+  const proxies = await liveProxies(client, meetingId);
+  const votingIds = new Set(voting.map((v) => v.actor_id));
+  const represented = proxies.filter((p) => votingIds.has(p.giver_id) && votingIds.has(p.holder_id)).length;
+  return { present: voting.filter((v) => presentIds.has(v.actor_id)).length, voting: voting.length, represented };
+}
+
+/** A voting member hands their vote at one meeting to another voting member. */
+export async function appointProxy(pool: Pool, principal: Principal, meetingId: string, body: Record<string, unknown>) {
+  const w = await who(pool, principal);
+  return inTransaction(pool, async (client) => {
+    const m = await loadMeeting(client, w.tenantId, meetingId); requireSee(w, m.body_id);
+    if (!['called', 'in_progress'].includes(m.status)) throw new InvalidInput('proxies are given once the meeting is called and before it closes');
+    const { rows: b } = await client.query<{ proxies_allowed: boolean; max_proxies: number }>('select proxies_allowed, max_proxies from mtg_body where id = $1', [m.body_id]);
+    if (!b[0]?.proxies_allowed) throw new InvalidInput('this body does not allow proxies; members vote in person');
+    if (body.revoke === true) {
+      const { rowCount } = await client.query('update mtg_proxy set revoked_at = now() where meeting_id = $1 and giver_id = $2 and revoked_at is null', [meetingId, w.actorId]);
+      if (!rowCount) throw new InvalidInput('you have not given a proxy for this meeting');
+      await event(client, { tenantId: w.tenantId, bodyId: m.body_id, meetingId, actorId: w.actorId, kind: 'proxy_revoked', detail: {} });
+      return { revoked: true };
+    }
+    const holderId = id(body.holderId, 'holderId');
+    if (holderId === w.actorId) throw new InvalidInput('you cannot be your own proxy');
+    const voters = await votingMembers(client, m.body_id);
+    if (!voters.some((v) => v.actor_id === w.actorId)) throw new InvalidInput('only a voting member can give a proxy');
+    const holder = voters.find((v) => v.actor_id === holderId);
+    if (!holder) throw new InvalidInput('the proxy holder must be a voting member of this body');
+    const { rows: held } = await client.query<{ n: number }>('select count(*)::int as n from mtg_proxy where meeting_id = $1 and holder_id = $2 and revoked_at is null and giver_id <> $3', [meetingId, holderId, w.actorId]);
+    if (held[0]!.n >= b[0].max_proxies) throw new InvalidInput(`${holder.display_name} already holds ${held[0]!.n} proxies, the most this body allows`);
+    await client.query('update mtg_proxy set revoked_at = now() where meeting_id = $1 and giver_id = $2 and revoked_at is null', [meetingId, w.actorId]);
+    await client.query('insert into mtg_proxy (tenant_id, meeting_id, giver_id, holder_id) values ($1, $2, $3, $4)', [w.tenantId, meetingId, w.actorId, holderId]);
+    await event(client, { tenantId: w.tenantId, bodyId: m.body_id, meetingId, actorId: w.actorId, kind: 'proxy_given', detail: { holderId, holder: holder.display_name } });
+    return { holder: holder.display_name };
+  });
 }
 
 /** Marks who is in the room. Allowed before and during the meeting. */
@@ -535,6 +631,7 @@ async function minutesPdf(client: Client, tenantId: string, meetingId: string): 
   const { rows: acts } = await client.query<{ agenda_item_id: string | null; number: number; title: string; owner: string; due_on: string | null }>(
     `select a.agenda_item_id, a.number, a.title, o.display_name as owner, a.due_on::text from mtg_action a join actor o on o.id = a.owner_id where a.meeting_id = $1 order by a.number`, [meetingId]);
   const chair = att.find((a) => a.role === 'chair')?.display_name ?? '—';
+  const proxies = await liveProxies(client, meetingId);
   const blocks: Block[] = [
     { kind: 'heading', level: 1, text: `Minutes of ${b[0]!.name}` },
     { kind: 'paragraph', text: `${b[0]!.company_name ?? t[0]!.name} · Meeting ${m.number}: ${m.title} (${m.kind})` },
@@ -544,7 +641,7 @@ async function minutesPdf(client: Client, tenantId: string, meetingId: string): 
     { kind: 'field', label: 'Quorum', value: m.quorum_met ? 'present' : `not present${m.quorum_note ? ` — ${m.quorum_note}` : ''}` },
     { kind: 'rule' },
     { kind: 'heading', level: 2, text: 'Attendance' },
-    { kind: 'table', head: ['Name', 'Role', 'Attendance'], rows: att.map((a) => [a.display_name, a.role, a.present ? 'present' : a.apologies ? `apologies: ${a.apologies}` : a.rsvp === 'no' ? 'apologies' : 'absent']) },
+    { kind: 'table', head: ['Name', 'Role', 'Attendance'], rows: att.map((a) => [a.display_name, a.role, a.present ? 'present' : proxies.find((p) => p.giver === a.display_name) ? `by proxy (${proxies.find((p) => p.giver === a.display_name)!.holder})` : a.apologies ? `apologies: ${a.apologies}` : a.rsvp === 'no' ? 'apologies' : 'absent']) },
     { kind: 'spacer', height: 8 },
   ];
   for (const i of items) {
@@ -612,13 +709,17 @@ export async function meetingDetail(pool: Pool, principal: Principal, meetingId:
   const { rows: events } = await pool.query(
     `select e.kind, e.detail, e.occurred_at::text, a.display_name as actor from mtg_event e left join actor a on a.id = e.actor_id where e.meeting_id = $1 order by e.id`, [meetingId]);
   const q = await presentCount(pool, meetingId, m.body_id);
+  const { rows: proxies } = await pool.query<{ giver_id: string; holder_id: string; giver: string; holder: string }>(
+    `select p.giver_id, p.holder_id, g.display_name as giver, h.display_name as holder from mtg_proxy p join actor g on g.id = p.giver_id join actor h on h.id = p.holder_id where p.meeting_id = $1 and p.revoked_at is null`, [meetingId]);
+  const { rows: bodyRules } = await pool.query<{ proxies_allowed: boolean; max_proxies: number }>('select proxies_allowed, max_proxies from mtg_body where id = $1', [m.body_id]);
   const minutesFile = m.minutes_file_id ? (await pool.query<{ sha256: string; filename: string }>('select sha256, filename from gov_file where id = $1', [m.minutes_file_id])).rows[0] ?? null : null;
   return {
     meeting: { ...m, starts_at: m.starts_at.toISOString(), ends_at: m.ends_at?.toISOString() ?? null, body: b[0]!.name, company_name: b[0]!.company_name, quorum_rule: b[0]!.quorum_rule, decision_rule: b[0]!.decision_rule },
     agenda: items, attendance, resolutions, actions, events,
-    quorum: { present: q.present, voting: q.voting, met: quorumMet(b[0]!.quorum_rule, q.present, q.voting) },
+    quorum: { present: q.present, voting: q.voting, represented: q.represented, met: quorumMet(b[0]!.quorum_rule, q.present, q.voting) },
+    proxies, proxies_allowed: bodyRules[0]?.proxies_allowed ?? false, max_proxies: bodyRules[0]?.max_proxies ?? 0,
     minutes_file: minutesFile,
-    me: { can_manage: canManage(w, m.body_id), can_vote: canVote(w, m.body_id), is_chair: isChair(w, m.body_id), actor_id: w.actorId, wrote_minutes: m.minutes_author === w.actorId },
+    me: { can_manage: canManage(w, m.body_id), can_vote: canVote(w, m.body_id), is_chair: isChair(w, m.body_id), actor_id: w.actorId, wrote_minutes: m.minutes_author === w.actorId, my_proxy: proxies.find((p) => p.giver_id === w.actorId) ?? null, holding: proxies.filter((p) => p.holder_id === w.actorId) },
   };
 }
 
@@ -683,7 +784,8 @@ export async function openResolution(pool: Pool, principal: Principal, resolutio
       const m = await loadMeeting(client, w.tenantId, r.meeting_id);
       if (m.status !== 'in_progress') throw new InvalidInput('the meeting must be running to put a resolution to it');
       if (!m.quorum_met) throw new InvalidInput('no quorum: a resolution cannot be put to an inquorate meeting');
-      eligible = (await presentCount(client, r.meeting_id, r.body_id)).present;
+      const pc = await presentCount(client, r.meeting_id, r.body_id);
+      eligible = pc.present + pc.represented;
     } else {
       deadline = when(body.deadlineAt, 'deadlineAt') ?? new Date(Date.now() + settings.writtenDays * DAY);
       if (deadline.getTime() < Date.now() + 3600_000) throw new InvalidInput('give at least an hour to vote');
@@ -712,18 +814,25 @@ export async function castVote(pool: Pool, principal: Principal, resolutionId: s
     if (r.deadline_at && r.deadline_at.getTime() < Date.now()) throw new InvalidInput('the deadline has passed');
     // Whose vote: your own, or — for a present member — one the chair or secretary records.
     const forActor = body.actorId ? id(body.actorId, 'actorId') : w.actorId;
-    if (forActor !== w.actorId) { requireManage(w, r.body_id); if (!r.meeting_id) throw new InvalidInput('written resolutions are voted by each member personally'); }
+    let byProxy = false;
+    if (forActor !== w.actorId) {
+      if (!r.meeting_id) throw new InvalidInput('written resolutions are voted by each member personally');
+      // Either an officer recording a present member's vote, or a proxy holder voting for an absent giver.
+      const proxies = await liveProxies(client, r.meeting_id);
+      byProxy = proxies.some((p) => p.giver_id === forActor && p.holder_id === w.actorId);
+      if (!byProxy) requireManage(w, r.body_id);
+    }
     const voters = await votingMembers(client, r.body_id);
     if (!voters.some((v) => v.actor_id === forActor)) throw new InvalidInput(forActor === w.actorId ? 'you do not have a vote on this body' : 'that person does not have a vote on this body');
-    if (r.meeting_id) {
+    if (r.meeting_id && !byProxy) {
       const { rows } = await client.query('select 1 from mtg_attendance where meeting_id = $1 and actor_id = $2 and present', [r.meeting_id, forActor]);
       if (!rows[0]) throw new InvalidInput('only members marked present can vote in the meeting');
     }
     await client.query(
-      `insert into mtg_vote (tenant_id, resolution_id, actor_id, vote, recorded_by, note) values ($1, $2, $3, $4, $5, $6)
-       on conflict (resolution_id, actor_id) do update set vote = excluded.vote, recorded_by = excluded.recorded_by, note = excluded.note, cast_at = now()`,
-      [w.tenantId, resolutionId, forActor, vote, forActor === w.actorId ? null : w.actorId, text(body.note, 300) || null]);
-    await event(client, { tenantId: w.tenantId, bodyId: r.body_id, meetingId: r.meeting_id, resolutionId, actorId: w.actorId, kind: 'vote_cast', detail: { for: forActor, vote, recordedFor: forActor !== w.actorId } });
+      `insert into mtg_vote (tenant_id, resolution_id, actor_id, vote, recorded_by, note, by_proxy) values ($1, $2, $3, $4, $5, $6, $7)
+       on conflict (resolution_id, actor_id) do update set vote = excluded.vote, recorded_by = excluded.recorded_by, note = excluded.note, by_proxy = excluded.by_proxy, cast_at = now()`,
+      [w.tenantId, resolutionId, forActor, vote, forActor === w.actorId ? null : w.actorId, text(body.note, 300) || null, byProxy]);
+    await event(client, { tenantId: w.tenantId, bodyId: r.body_id, meetingId: r.meeting_id, resolutionId, actorId: w.actorId, kind: 'vote_cast', detail: { for: forActor, vote, recordedFor: forActor !== w.actorId, byProxy } });
     const tally = await countVotes(client, resolutionId);
     return { vote, ...tally };
   });
@@ -830,11 +939,12 @@ export async function resolutionDetail(pool: Pool, principal: Principal, resolut
   const w = await who(pool, principal);
   const r = await loadResolution(pool, w.tenantId, resolutionId); requireSee(w, r.body_id);
   const { rows: votes } = await pool.query(
-    `select v.actor_id, a.display_name, v.vote, v.cast_at::text, (select display_name from actor where id = v.recorded_by) as recorded_by from mtg_vote v join actor a on a.id = v.actor_id where v.resolution_id = $1 order by v.cast_at`, [resolutionId]);
+    `select v.actor_id, a.display_name, v.vote, v.by_proxy, v.cast_at::text, (select display_name from actor where id = v.recorded_by) as recorded_by from mtg_vote v join actor a on a.id = v.actor_id where v.resolution_id = $1 order by v.cast_at`, [resolutionId]);
   const { rows: events } = await pool.query(`select e.kind, e.detail, e.occurred_at::text, a.display_name as actor from mtg_event e left join actor a on a.id = e.actor_id where e.resolution_id = $1 order by e.id`, [resolutionId]);
   const { rows: b } = await pool.query<{ name: string; company_name: string | null }>('select name, company_name from mtg_body where id = $1', [r.body_id]);
   const envelope = r.envelope_id ? (await pool.query<{ number: number; status: string; final_sha256: string | null; completed_at: Date | null }>('select number, status, final_sha256, completed_at from sign_envelope where id = $1', [r.envelope_id])).rows[0] ?? null : null;
   const canVoteNow = r.status === 'open' && canVote(w, r.body_id) && (!r.meeting_id || (await pool.query('select 1 from mtg_attendance where meeting_id = $1 and actor_id = $2 and present', [r.meeting_id, w.actorId])).rows.length > 0);
+  const proxyFor = r.status === 'open' && r.meeting_id ? (await liveProxies(pool, r.meeting_id)).filter((p) => p.holder_id === w.actorId).map((p) => ({ actor_id: p.giver_id, name: p.giver, voted: votes.some((v) => (v as { actor_id: string }).actor_id === p.giver_id) })) : [];
   // Who has voted is shown only after the close (or to officers), so a running vote is not steered by its tally.
   const officer = canManage(w, r.body_id);
   const settled = !['draft', 'open'].includes(r.status);
@@ -844,7 +954,7 @@ export async function resolutionDetail(pool: Pool, principal: Principal, resolut
     tally: settled || officer ? await countVotes(pool, resolutionId) : null,
     voted: votes.length,
     events, envelope,
-    me: { can_manage: officer, can_vote: canVoteNow, my_vote: (votes.find((v) => v.actor_id === w.actorId) as { vote?: string } | undefined)?.vote ?? null, is_proposer: r.proposed_by === w.actorId },
+    me: { can_manage: officer, can_vote: canVoteNow, my_vote: (votes.find((v) => v.actor_id === w.actorId) as { vote?: string } | undefined)?.vote ?? null, is_proposer: r.proposed_by === w.actorId, proxy_for: proxyFor },
   };
 }
 
@@ -975,20 +1085,54 @@ export async function meetingsOverview(pool: Pool, principal: Principal) {
   };
 }
 
+// --------------------------------------------------------------- calendar
+
+/** Meetings between two dates, for the calendar. */
+export async function calendar(pool: Pool, principal: Principal, args: { from?: string; to?: string }) {
+  const w = await who(pool, principal);
+  const from = day(args.from, 'from') ?? new Date(Date.now() - 35 * DAY).toISOString().slice(0, 10);
+  const to = day(args.to, 'to') ?? new Date(Date.now() + 70 * DAY).toISOString().slice(0, 10);
+  const { rows } = await pool.query<{ id: string; body_id: string; body: string; body_kind: string; number: number; title: string; kind: string; status: string; starts_at: string; ends_at: string | null; location: string | null; link: string | null; items: number; my_rsvp: string | null }>(
+    `select m.id, m.body_id, b.name as body, b.kind as body_kind, m.number, m.title, m.kind, m.status, m.starts_at::text, m.ends_at::text, m.location, m.link,
+            (select count(*)::int from mtg_agenda_item i where i.meeting_id = m.id) as items,
+            (select rsvp from mtg_attendance t where t.meeting_id = m.id and t.actor_id = $2) as my_rsvp
+       from mtg_meeting m join mtg_body b on b.id = m.body_id
+      where m.tenant_id = $1 and m.starts_at >= $3::date and m.starts_at < ($4::date + 1) order by m.starts_at`, [w.tenantId, w.actorId, from, to]);
+  const { rows: deadlines } = await pool.query<{ id: string; body_id: string; number: number; title: string; body: string; deadline_at: string }>(
+    `select r.id, r.body_id, r.number, r.title, b.name as body, r.deadline_at::text from mtg_resolution r join mtg_body b on b.id = r.body_id where r.tenant_id = $1 and r.status = 'open' and r.deadline_at is not null and r.deadline_at >= $2::date and r.deadline_at < ($3::date + 1)`, [w.tenantId, from, to]);
+  const { rows: actions } = await pool.query<{ id: string; body_id: string; owner_id: string; number: number; title: string; body: string; due_on: string; owner: string }>(
+    `select a.id, a.body_id, a.owner_id, a.number, a.title, b.name as body, a.due_on::text, o.display_name as owner from mtg_action a join mtg_body b on b.id = a.body_id join actor o on o.id = a.owner_id where a.tenant_id = $1 and a.status = 'open' and a.due_on >= $2::date and a.due_on <= $3::date`, [w.tenantId, from, to]);
+  return {
+    from, to,
+    meetings: rows.filter((m) => canSee(w, m.body_id)),
+    deadlines: deadlines.filter((d) => canSee(w, d.body_id)),
+    actions: actions.filter((a) => a.owner_id === w.actorId || canSee(w, a.body_id)),
+  };
+}
+
+/** The .ics for one meeting, for a member to add it themselves. */
+export async function meetingInvite(pool: Pool, principal: Principal, meetingId: string) {
+  const w = await who(pool, principal);
+  const m = await loadMeeting(pool, w.tenantId, meetingId); requireSee(w, m.body_id);
+  const { rows: me } = await pool.query<{ display_name: string; email: string }>('select display_name, email from actor where id = $1', [w.actorId]);
+  const a = await invitationFor(pool, m, me[0]!, m.status === 'cancelled');
+  return { contentType: 'text/calendar; charset=utf-8', body: a.content, headers: { 'content-disposition': `attachment; filename="${a.filename}"` } };
+}
+
 // ------------------------------------------------------------------ sweep
 
 /** Reminders, written-resolution deadlines, signing follow-up. Runs with the worker's sweep. */
 export async function sweepMeetings(pool: Pool, now = new Date()): Promise<{ reminded: number; closed: number; signed: number; actions: number }> {
   let reminded = 0; let closed = 0; let signed = 0; let actions = 0;
   // Meeting reminders, once, inside the body's reminder window.
-  const { rows: due } = await pool.query<{ id: string; tenant_id: string; body_id: string; title: string; starts_at: Date; location: string | null; link: string | null }>(
-    `select m.id, m.tenant_id, m.body_id, m.title, m.starts_at, m.location, m.link from mtg_meeting m where m.status = 'called' and m.reminded_at is null and m.starts_at > $1 and m.starts_at < $1 + interval '7 days'`, [now]);
+  const { rows: due } = await pool.query<{ id: string; tenant_id: string; body_id: string; title: string; starts_at: Date; ends_at: Date | null; location: string | null; link: string | null; sequence: number; created_by: string | null }>(
+    `select m.id, m.tenant_id, m.body_id, m.title, m.starts_at, m.ends_at, m.location, m.link, m.sequence, m.created_by from mtg_meeting m where m.status = 'called' and m.reminded_at is null and m.starts_at > $1 and m.starts_at < $1 + interval '7 days'`, [now]);
   for (const m of due) {
     const s = await meetingSettings(pool, m.tenant_id);
     if (m.starts_at.getTime() - now.getTime() > s.reminderHours * 3600_000) continue;
     await pool.query('update mtg_meeting set reminded_at = $2 where id = $1 and reminded_at is null', [m.id, now]);
     for (const p of await allMembers(pool, m.body_id)) {
-      await mailer(pool, { kind: 'meeting_reminder', to: p.email, tenantId: m.tenant_id, idempotencyKey: `mtg-remind:${m.id}:${p.actor_id}`, subject: `Reminder: ${m.title}`, text: `Hello ${p.display_name},\n\n"${m.title}" starts ${m.starts_at.toUTCString()}${m.location ? ` at ${m.location}` : ''}.${m.link ? `\nJoin: ${m.link}` : ''}\n\n${appUrl()}/console?view=meetings&meeting=${m.id}\n` });
+      await mailer(pool, { kind: 'meeting_reminder', to: p.email, tenantId: m.tenant_id, idempotencyKey: `mtg-remind:${m.id}:${p.actor_id}`, attachments: [await invitationFor(pool, m, p)], subject: `Reminder: ${m.title}`, text: `Hello ${p.display_name},\n\n"${m.title}" starts ${m.starts_at.toUTCString()}${m.location ? ` at ${m.location}` : ''}.${m.link ? `\nJoin: ${m.link}` : ''}\n\n${appUrl()}/console?view=meetings&meeting=${m.id}\n` });
     }
     reminded += 1;
   }

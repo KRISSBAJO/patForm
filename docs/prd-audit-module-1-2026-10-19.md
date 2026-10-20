@@ -798,3 +798,24 @@ a written resolution, signing through Patform Sign). Not built: calendar
 invitations (.ics), proxies, recorded video, and a Nigerian register
 check (the CAC slot in `company-register.ts` still waits for a provider).
 
+### Added later the same day
+
+- Calendar invitations: the notice, the reminder and a cancellation carry
+  an `.ics` (RFC 5545, METHOD REQUEST/CANCEL, UID = meeting id, SEQUENCE
+  rises when a called meeting moves), so every calendar updates one entry
+  rather than growing duplicates. Members can also fetch it from the room
+  ("Add to calendar", `/api/meetings/meetings/<id>/invite.ics`).
+- Proxies: a body may allow them (`proxies_allowed`, `max_proxies`; off
+  for boards by default). A voting member gives their proxy for one
+  meeting to another voting member; it counts only while the holder is in
+  the room and the giver is not. Proxies add to the eligible votes, never
+  to the quorum, and a vote cast by proxy is marked so on the record and
+  in the minutes. The giver can withdraw it until the meeting closes.
+- The console area was rebuilt (`web/app/console/meetings.css`): an
+  executive band with what needs you, quick actions, a month calendar
+  (meetings by body, written-vote deadlines, action due dates; double-click
+  a day to draft a meeting on it, `/api/meetings/calendar`), a three-step
+  wizard to call a meeting (basics, agenda builder with running time,
+  review with the notice-period check and who is invited), and a room
+  with a status flow, quorum ring, presence, proxies and the record.
+

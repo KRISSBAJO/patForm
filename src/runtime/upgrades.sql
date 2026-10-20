@@ -2470,3 +2470,20 @@ alter table platform_email add constraint platform_email_kind_check
                   'meeting_notice', 'meeting_reminder', 'meeting_minutes', 'resolution_vote', 'action_assigned', 'action_reminder'));
 alter table gov_file drop constraint if exists gov_file_purpose_check;
 alter table gov_file add constraint gov_file_purpose_check check (purpose in ('contract', 'policy', 'signed', 'signing', 'minutes', 'paper'));
+
+-- Proxies: a voting member asks another to vote for them at one meeting.
+-- Allowed only where the body permits it (general meetings, typically).
+alter table mtg_body add column if not exists proxies_allowed boolean not null default false;
+alter table mtg_body add column if not exists max_proxies int not null default 2;
+create table if not exists mtg_proxy (
+  id         uuid primary key default gen_random_uuid(),
+  tenant_id  uuid not null references tenant(id),
+  meeting_id uuid not null references mtg_meeting(id) on delete cascade,
+  giver_id   uuid not null references actor(id),
+  holder_id  uuid not null references actor(id),
+  created_at timestamptz not null default now(),
+  revoked_at timestamptz
+);
+create unique index if not exists mtg_proxy_live on mtg_proxy (meeting_id, giver_id) where revoked_at is null;
+alter table mtg_vote add column if not exists by_proxy boolean not null default false;
+alter table mtg_meeting add column if not exists sequence int not null default 0;

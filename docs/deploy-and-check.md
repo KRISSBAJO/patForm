@@ -113,7 +113,9 @@ tab of that name inside the module's page in the console.
     officer, approve the minutes (the PDF opens). Send the passed
     resolution for signature: a Patform Sign envelope PS-n appears for the
     company; sign both; within a sweep the register shows "Signed" with a
-    fingerprint and the CSV downloads.
+    fingerprint and the CSV downloads. The notice email carries `invite.ics`;
+    accept it on a phone and the meeting appears in the calendar; move the
+    meeting and the calendar entry moves with it.
 
 ## Things that bit us, so you can spot them fast
 
