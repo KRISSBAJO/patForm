@@ -5543,3 +5543,9 @@ a.cs__navItem {
   .cs__shell--module .ig__hero + .pp2__overview { margin: 10px 0 18px !important; }
   .cs__shell--module .pp2__overview { grid-template-columns: 1fr; }
 }
+
+/* section marks in the module rail and the phone strip */
+.cs__secIcon { flex: 0 0 16px; color: color-mix(in srgb, var(--mod) 70%, var(--ink)); opacity: .85; }
+.cs__nav--module .cs__navItem[aria-current='page'] .cs__secIcon { color: var(--mod-deep); opacity: 1; }
+.cs__modStrip button .cs__secIcon { width: 14px; height: 14px; }
+.cs__modStrip button[aria-selected='true'] .cs__secIcon { color: #fff; }
