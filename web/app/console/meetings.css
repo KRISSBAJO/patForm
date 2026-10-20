@@ -312,3 +312,35 @@
 .hr__ready .mx__eyebrow { color: #a4432f; }
 .hr__ready ul { list-style: none; margin: 8px 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 6px 14px; }
 .hr__ready li { display: grid; font-size: 12.5px; } .hr__ready li strong { font-weight: 600; } .hr__ready li small { color: var(--mx-muted); }
+
+/* Expenses: records, budgets, bank card */
+.ex__records { display: grid; gap: 10px; padding: 12px 20px 20px; }
+.ex__record { border: 1px solid var(--mx-line); border-radius: 14px; background: #fff; padding: 14px 16px; display: grid; gap: 10px; }
+.ex__record.is-open { border-color: color-mix(in srgb, var(--mod, #5b4bb7) 45%, var(--mx-line)); box-shadow: 0 0 0 3px var(--mod-tint, #efedf9); }
+.ex__recordHead { display: flex; align-items: center; gap: 14px; }
+.ex__recordHead .mx__main strong { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ex__recordHead .mx__main small { display: block; }
+.ex__amount { text-align: right; flex: 0 0 auto; display: grid; }
+.ex__amount strong { font: 700 18px/1.1 var(--ui); letter-spacing: -.02em; color: var(--mx-ink); }
+.ex__amount small { font-size: 11px; color: var(--mx-muted); text-transform: uppercase; letter-spacing: .06em; }
+.ex__recordBtns { display: flex; flex-wrap: wrap; gap: 6px; }
+.ex__bank.is-ok { color: #1f7a4d; } .ex__bank.is-off { color: #a4432f; }
+.ex__inline { margin: 0; } .ex__inlineTitle { font-size: 14px; }
+.ex__inline label { display: block; margin-top: 8px; }
+.ex__inline input { width: 100%; max-width: 420px; }
+.ex__revealed { margin: 8px 0; font-size: 13px; }
+.ex__mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; letter-spacing: .02em; }
+.ex__split { display: grid; gap: 4px; margin-top: 6px; max-width: 420px; }
+.ex__budgets { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; padding: 12px 20px 20px; }
+.ex__budget { border: 1px solid var(--mx-line); border-radius: 14px; background: linear-gradient(180deg, #fff, var(--mx-soft)); padding: 14px 16px; display: grid; gap: 6px; }
+.ex__budgetHead { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.ex__budgetBig { display: flex; align-items: baseline; gap: 8px; margin: 4px 0; }
+.ex__budgetBig strong { font: 700 22px/1 var(--ui); letter-spacing: -.02em; }
+.ex__budgetBig small { color: var(--mx-muted); font-size: 12px; }
+.ex__bankCard { display: flex; gap: 16px; align-items: center; padding: 8px 20px 20px; }
+.ex__bankCard > div { display: grid; gap: 2px; }
+.ex__bankCard strong { font-size: 16px; }
+.ex__bankCard span { color: var(--mx-muted); font-size: 13px; }
+.mx .ex__table .mx__input { width: 100%; min-width: 80px; }
+.mx .ex__lines { padding: 0 0 4px; }
+@media (max-width: 760px) { .ex__recordHead { flex-wrap: wrap; } .ex__amount { text-align: left; } }

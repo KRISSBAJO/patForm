@@ -1,8 +1,9 @@
 'use client';
 
-import { ShellSync, type ModuleShell } from './module-shell';
+import './meetings.css';
+import { EmptyState, ShellSync, type ModuleShell } from './module-shell';
+import { Illustration } from './illustrations';
 import { useCallback, useEffect, useState } from 'react';
-import { Icon } from './Icon';
 import { postJson } from './stepup';
 
 /*
@@ -61,15 +62,21 @@ function useFeed<T>(path: string | null) {
 }
 
 const money = (v: string | number | null, c: string) => `${c} ${Number(v ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-const day = (v: string | null) => (v ? new Date(v).toLocaleDateString() : '');
-const list = { listStyle: 'none', margin: 0, padding: 0 } as const;
+const short = (v: string | number | null) => Number(v ?? 0).toLocaleString(undefined, { maximumFractionDigits: 0 });
+const day = (v: string | null) => (v ? new Date(v).toLocaleDateString([], { dateStyle: 'medium' }) : '');
+const initials = (n: string) => n.split(' ').map((p) => p[0]).join('').slice(0, 2).toUpperCase();
 
 const SETTLEMENT_WORDS: Record<Settlement['status'], string> = {
-  awaiting_payment: 'Approved, not paid yet', paid: 'Paid', failed: 'Payment failed — still owed', void: 'Void',
+  awaiting_payment: 'To pay', paid: 'Paid', failed: 'Payment failed', void: 'Void',
 };
 const ADVANCE_WORDS: Record<Advance['status'], string> = {
-  approved: 'Approved, not paid out', disbursed: 'Paid out, to be retired', awaiting_return: 'Balance to be returned', retired: 'Retired', void: 'Void',
+  approved: 'To pay out', disbursed: 'Held', awaiting_return: 'Balance due back', retired: 'Retired', void: 'Void',
 };
+const pillOf = (s: string) => ({ awaiting_payment: 'open', paid: 'passed', failed: 'failed', void: 'cancelled', approved: 'open', disbursed: 'called', awaiting_return: 'open', retired: 'passed', overdue: 'failed', enforced: 'called', advisory: 'draft' }[s] ?? 'draft');
+const Pill = ({ s, text }: { s: string; text?: string }) => <span className={`mx__pill mx__pill--${pillOf(s)}`}><i />{text ?? s.replace(/_/g, ' ')}</span>;
+const Field = ({ label, children, wide }: { label: string; children: React.ReactNode; wide?: boolean }) => <div className={`mx__field ${wide ? 'mx__field--wide' : ''}`}><label>{label}</label>{children}</div>;
+const Avatar = ({ name }: { name: string }) => <span className="mx__avatar mx__avatar--lg" style={{ marginLeft: 0 }}>{initials(name)}</span>;
+const Bar = ({ value, max, warn }: { value: number; max: number; warn?: boolean }) => <div className="mx__voteBar" style={{ height: 6 }}><span className="is-for" style={{ width: `${max > 0 ? Math.min(100, (value / max) * 100) : 0}%`, background: warn ? '#c0392b' : 'var(--mod, #7a3e9d)' }} /></div>;
 
 function bankWords(s: Settlement): { text: string; ok: boolean } {
   if (!s.bank_last4) return { text: 'No bank details given', ok: false };
@@ -83,33 +90,32 @@ function MyBankDetails() {
   const mine = useFeed<MyBank>('/api/expenses/bank');
   const [form, setForm] = useState({ accountName: '', bankName: '', bankCode: '', accountNumber: '' });
   const [editing, setEditing] = useState(false);
-  const [note, setNote] = useState<string | null>(null);
+  const [note, setNote] = useState<{ text: string; err?: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
   const save = async (e: React.FormEvent) => {
     e.preventDefault(); setBusy(true); setNote(null);
     try {
       const done = await postJson<{ unpaidClaimsAffected: number }>('/api/expenses/bank', form);
       setForm({ ...form, accountNumber: '' }); setEditing(false); await mine.reload();
-      setNote(done.unpaidClaimsAffected ? `Saved. Finance will check the new details before paying your ${done.unpaidClaimsAffected} unpaid claim(s).` : 'Saved.');
-    } catch (err) { setNote(err instanceof Error ? err.message : String(err)); }
+      setNote({ text: done.unpaidClaimsAffected ? `Saved. Finance will check the new details before paying your ${done.unpaidClaimsAffected} unpaid claim(s).` : 'Saved.' });
+    } catch (err) { setNote({ text: err instanceof Error ? err.message : String(err), err: true }); }
     finally { setBusy(false); }
   };
   const b = mine.data;
-  return <section className="ig__panel" aria-labelledby="mybank-heading">
-    <div className="ig__panelHead"><div><h3 id="mybank-heading">My bank details</h3><p>Where your expense claims are paid. Only the last four digits are ever shown; Finance checks the details before paying.</p></div>
-      {!editing && <button type="button" className="cs__btn cs__btn--primary" onClick={() => { setEditing(true); if (b) setForm({ accountName: b.accountName, bankName: b.bankName, bankCode: b.bankCode ?? '', accountNumber: '' }); }}>{b ? 'Change' : 'Add bank details'}</button>}
-    </div>
-    {note && <p className="ig__notice" role="status">{note}</p>}
-    {mine.error && <p className="ig__error" role="alert">{mine.error}</p>}
-    {!editing && <ul style={list}><li className="ig__row"><div className="ig__rowMain">{b ? <><strong>{b.accountName}</strong><span className="ig__status">{b.bankName}</span><p>{b.account}{b.bankCode ? ` · code ${b.bankCode}` : ''} · updated {day(b.updatedAt)}</p></> : <p>No bank details yet. Add them so Finance can pay your claims.</p>}</div></li></ul>}
-    {editing && <form className="ig__form" onSubmit={save}>
-      <div><label className="cs__label" htmlFor="mb-name">Name on the account</label><input id="mb-name" className="cs__input" required maxLength={120} value={form.accountName} onChange={(e) => setForm({ ...form, accountName: e.target.value })} /></div>
-      <div><label className="cs__label" htmlFor="mb-bank">Bank</label><input id="mb-bank" className="cs__input" required maxLength={120} value={form.bankName} onChange={(e) => setForm({ ...form, bankName: e.target.value })} /></div>
-      <div><label className="cs__label" htmlFor="mb-code">Bank or sort code (optional)</label><input id="mb-code" className="cs__input" maxLength={20} value={form.bankCode} onChange={(e) => setForm({ ...form, bankCode: e.target.value })} /></div>
-      <div><label className="cs__label" htmlFor="mb-number">Account number</label><input id="mb-number" className="cs__input" required inputMode="numeric" autoComplete="off" maxLength={40} value={form.accountNumber} onChange={(e) => setForm({ ...form, accountNumber: e.target.value })} /></div>
-      <div className="pp2__roleEdit"><button type="submit" className="cs__btn cs__btn--primary" disabled={busy}>{busy ? 'Saving…' : 'Save'}</button><button type="button" className="cs__btn" onClick={() => setEditing(false)}>Cancel</button></div>
-    </form>}
-  </section>;
+  return <div className="mx__card">
+    <div className="mx__cardHead"><h3>My bank details</h3>{!editing && <button type="button" className="mx__btn mx__btn--sm" onClick={() => { setEditing(true); if (b) setForm({ accountName: b.accountName, bankName: b.bankName, bankCode: b.bankCode ?? '', accountNumber: '' }); }}>{b ? 'Change' : 'Add bank details'}</button>}</div>
+    {note && <p className={`mx__notice ${note.err ? 'mx__notice--err' : ''}`} style={{ margin: '0 20px 12px' }} role="status">{note.text}</p>}
+    {mine.error && <p className="mx__notice mx__notice--err" style={{ margin: '0 20px 12px' }} role="alert">{mine.error}</p>}
+    {!editing && (b ? <div className="ex__bankCard"><Illustration name="verify" size={56} /><div><strong>{b.accountName}</strong><span>{b.bankName}{b.bankCode ? ` · code ${b.bankCode}` : ''}</span><span className="ex__mono">{b.account}</span><small className="mx__tiny">Updated {day(b.updatedAt)} · only the last four digits are ever shown · Finance checks the details before paying</small></div></div>
+      : <EmptyState icon="search" title="No bank details yet" text="Add them so Finance can pay your claims. Only the last four digits are ever shown." action={{ label: 'Add bank details', onClick: () => setEditing(true) }} />)}
+    {editing && <div className="mx__cardBody"><form className="mx__form" onSubmit={save}>
+      <Field label="Name on the account"><input required maxLength={120} value={form.accountName} onChange={(e) => setForm({ ...form, accountName: e.target.value })} /></Field>
+      <Field label="Bank"><input required maxLength={120} value={form.bankName} onChange={(e) => setForm({ ...form, bankName: e.target.value })} /></Field>
+      <Field label="Bank or sort code (optional)"><input maxLength={20} value={form.bankCode} onChange={(e) => setForm({ ...form, bankCode: e.target.value })} /></Field>
+      <Field label="Account number"><input required inputMode="numeric" autoComplete="off" maxLength={40} value={form.accountNumber} onChange={(e) => setForm({ ...form, accountNumber: e.target.value })} /></Field>
+      <div className="mx__field--wide mx__voteBtns" style={{ marginTop: 0 }}><button type="submit" className="mx__btn" disabled={busy}>{busy ? 'Saving…' : 'Save'}</button><button type="button" className="mx__btn mx__btn--ghost" onClick={() => setEditing(false)}>Cancel</button></div>
+    </form></div>}
+  </div>;
 }
 
 function LineReview({ settlementId, onDone }: { settlementId: string; onDone: (message: string) => void }) {
@@ -120,8 +126,8 @@ function LineReview({ settlementId, onDone }: { settlementId: string; onDone: (m
   useEffect(() => {
     if (lines.data) setEdits(Object.fromEntries(lines.data.lines.map((l) => [l.index, { approved: String(l.approved), reason: l.reason ?? '' }])));
   }, [lines.data]);
-  if (lines.error) return <p className="ig__error" role="alert">{lines.error}</p>;
-  if (!lines.data) return <p className="ig__rowMain">Loading lines…</p>;
+  if (lines.error) return <p className="mx__notice mx__notice--err" role="alert">{lines.error}</p>;
+  if (!lines.data) return <p className="mx__tiny">Loading lines…</p>;
   const cur = lines.data.currency ?? '';
   const save = async () => {
     setBusy(true); setError(null);
@@ -136,18 +142,18 @@ function LineReview({ settlementId, onDone }: { settlementId: string; onDone: (m
     finally { setBusy(false); }
   };
   return <div className="ex__lines">
-    {lines.data.rate !== 1 && <p className="ig__rowMain">Claimed in {cur} at {lines.data.rate} (rate kept from submission).</p>}
+    {lines.data.rate !== 1 && <p className="mx__tiny">Claimed in {cur} at {lines.data.rate} (rate kept from submission).</p>}
     <table className="ex__table">
       <thead><tr><th scope="col">Line</th><th scope="col">Claimed ({cur})</th><th scope="col">Approve ({cur})</th><th scope="col">Reason if less</th></tr></thead>
       <tbody>{lines.data.lines.map((l) => <tr key={l.index}>
         <td>{l.description}</td>
         <td>{l.requested.toFixed(2)}</td>
-        <td><label className="ex__sr" htmlFor={`ln-${settlementId}-${l.index}`}>Approve for {l.description}</label><input id={`ln-${settlementId}-${l.index}`} className="cs__input" inputMode="decimal" value={edits[l.index]?.approved ?? ''} onChange={(e) => setEdits({ ...edits, [l.index]: { ...edits[l.index]!, approved: e.target.value } })} /></td>
-        <td><label className="ex__sr" htmlFor={`lr-${settlementId}-${l.index}`}>Reason for {l.description}</label><input id={`lr-${settlementId}-${l.index}`} className="cs__input" maxLength={300} value={edits[l.index]?.reason ?? ''} onChange={(e) => setEdits({ ...edits, [l.index]: { ...edits[l.index]!, reason: e.target.value } })} /></td>
+        <td><label className="ex__sr" htmlFor={`ln-${settlementId}-${l.index}`}>Approve for {l.description}</label><input id={`ln-${settlementId}-${l.index}`} className="mx__input" inputMode="decimal" value={edits[l.index]?.approved ?? ''} onChange={(e) => setEdits({ ...edits, [l.index]: { ...edits[l.index]!, approved: e.target.value } })} /></td>
+        <td><label className="ex__sr" htmlFor={`lr-${settlementId}-${l.index}`}>Reason for {l.description}</label><input id={`lr-${settlementId}-${l.index}`} className="mx__input" maxLength={300} value={edits[l.index]?.reason ?? ''} onChange={(e) => setEdits({ ...edits, [l.index]: { ...edits[l.index]!, reason: e.target.value } })} /></td>
       </tr>)}</tbody>
     </table>
-    {error && <p className="pp2__problem" role="alert">{error}</p>}
-    <button type="button" className="cs__btn cs__btn--primary" disabled={busy} onClick={() => void save()}>{busy ? 'Saving…' : 'Save line decisions'}</button>
+    {error && <p className="mx__notice mx__notice--err" role="alert">{error}</p>}
+    <div><button type="button" className="mx__btn mx__btn--sm" disabled={busy} onClick={() => void save()}>{busy ? 'Saving…' : 'Save line decisions'}</button></div>
   </div>;
 }
 
@@ -162,7 +168,7 @@ export function ExpensesView({ canAdminister, canOperate, onOpenRecord, shell }:
   const settings = useFeed<Settings>(canOperate ? '/api/expenses/settings' : null);
   const rates = useFeed<Rate[]>(canOperate ? '/api/expenses/rates' : null);
   const [busy, setBusy] = useState<string | null>(null);
-  const [note, setNote] = useState<string | null>(null);
+  const [note, setNote] = useState<{ text: string; err?: boolean } | null>(null);
   const [acting, setActing] = useState<{ id: string; kind: 'pay' | 'fail' | 'void' | 'disburse' | 'return' | 'lines' | 'bank' } | null>(null);
   const [revealed, setRevealed] = useState<{ accountName: string; bankName: string; bankCode: string | null; accountNumber: string } | null>(null);
   const [reference, setReference] = useState('');
@@ -172,6 +178,7 @@ export function ExpensesView({ canAdminister, canOperate, onOpenRecord, shell }:
   const [categoriesText, setCategoriesText] = useState('');
   const [codesText, setCodesText] = useState('');
   const [showClosed, setShowClosed] = useState(false);
+  const [adding, setAdding] = useState<null | 'budget' | 'rate'>(null);
   const [budgetForm, setBudgetForm] = useState({ costCentre: '', periodStart: '', periodEnd: '', amount: '', mode: 'advisory' });
   const [rateForm, setRateForm] = useState({ from: '', rate: '', source: '', effectiveFrom: '' });
   const [exportRange, setExportRange] = useState({ from: '', to: '' });
@@ -183,15 +190,15 @@ export function ExpensesView({ canAdminister, canOperate, onOpenRecord, shell }:
     setCodesText(Object.entries(settings.data.accountCodes).map(([k, v]) => `${k}=${v}`).join('\n'));
   }, [settings.data]);
   useEffect(() => {
-    if (shell?.section && shell.section !== tab) { setTab(shell.section as Tab); setActing(null); setNote(null); }
+    if (shell?.section && shell.section !== tab) { setTab(shell.section as Tab); setActing(null); setNote(null); setAdding(null); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shell?.section]);
 
   const reloadAll = async () => { await Promise.all([summary.reload(), settlements.reload(), advances.reload(), budgets.reload(), exports.reload()]); };
   const act = async (id: string, work: () => Promise<string>) => {
     setBusy(id); setNote(null);
-    try { setNote(await work()); setActing(null); setRevealed(null); setReference(''); setReason(''); setAmount(''); await reloadAll(); }
-    catch (err) { setNote(err instanceof Error ? err.message : String(err)); }
+    try { setNote({ text: await work() }); setActing(null); setRevealed(null); setReference(''); setReason(''); setAmount(''); await reloadAll(); }
+    catch (err) { setNote({ text: err instanceof Error ? err.message : String(err), err: true }); }
     finally { setBusy(null); }
   };
 
@@ -199,14 +206,14 @@ export function ExpensesView({ canAdminister, canOperate, onOpenRecord, shell }:
   const cur = s?.currency ?? settings.data?.currency ?? '';
   const openSettlements = (settlements.data ?? []).filter((x) => showClosed || x.status === 'awaiting_payment' || x.status === 'failed');
   const openAdvances = (advances.data ?? []).filter((x) => showClosed || !['retired', 'void'].includes(x.status));
-  const tabs: { id: Tab; name: string; count: number | null; icon: 'table' | 'export' | 'trail' | 'account' | 'done' }[] = canOperate ? [
-    { id: 'claims', name: 'Claims to pay', count: (s?.awaitingPayment ?? 0) + (s?.failed ?? 0), icon: 'table' },
-    { id: 'advances', name: 'Advances', count: s?.advancesOpen ?? 0, icon: 'export' },
-    { id: 'budgets', name: 'Budgets', count: budgets.data?.length ?? 0, icon: 'done' },
-    { id: 'exports', name: 'Exports', count: s?.unexported ?? 0, icon: 'trail' },
-    { id: 'settings', name: 'Policy and rates', count: null, icon: 'trail' },
-    { id: 'mine', name: 'My bank details', count: null, icon: 'account' },
-  ] : [{ id: 'mine', name: 'My bank details', count: null, icon: 'account' }];
+  const tabs: { id: Tab; name: string; count: number | null }[] = canOperate ? [
+    { id: 'claims', name: 'Claims to pay', count: ((s?.awaitingPayment ?? 0) + (s?.failed ?? 0)) || null },
+    { id: 'advances', name: 'Advances', count: s?.advancesOpen || null },
+    { id: 'budgets', name: 'Budgets', count: budgets.data?.length || null },
+    { id: 'exports', name: 'Exports', count: s?.unexported || null },
+    { id: 'settings', name: 'Policy and rates', count: null },
+    { id: 'mine', name: 'My bank details', count: null },
+  ] : [{ id: 'mine', name: 'My bank details', count: null }];
   const error = ({ claims: settlements.error, advances: advances.error, budgets: budgets.error, exports: exports.error, settings: settings.error ?? rates.error, mine: null } as Record<Tab, string | null>)[tab] ?? summary.error;
 
   const actionForm = (id: string) => {
@@ -214,7 +221,7 @@ export function ExpensesView({ canAdminister, canOperate, onOpenRecord, shell }:
     const k = acting.kind;
     const needsRef = k === 'pay' || k === 'disburse' || k === 'return';
     const label = { pay: 'Record payment', fail: 'Mark payment failed', void: 'Void this claim', disburse: 'Record pay-out', return: 'Record money returned' }[k];
-    return <form className="ig__form" style={{ margin: '12px 0' }} onSubmit={(e) => {
+    return <form className="mx__ask ex__inline" onSubmit={(e) => {
       e.preventDefault();
       void act(id, async () => {
         if (k === 'pay') { await postJson(`/api/expenses/settlements/${id}`, { to: 'paid', reference }); return 'Payment recorded.'; }
@@ -224,28 +231,29 @@ export function ExpensesView({ canAdminister, canOperate, onOpenRecord, shell }:
         await postJson(`/api/expenses/advances/${id}/return`, { amount, reference }); return 'Return recorded.';
       });
     }}>
-      <div className="ig__formTitle"><strong>{label}</strong></div>
-      {k === 'return' && <div><label className="cs__label" htmlFor={`amt-${id}`}>Amount returned</label><input id={`amt-${id}`} className="cs__input" inputMode="decimal" required value={amount} onChange={(e) => setAmount(e.target.value)} /></div>}
+      <strong className="ex__inlineTitle">{label}</strong>
+      {k === 'return' && <><label htmlFor={`amt-${id}`}>Amount returned</label><input id={`amt-${id}`} inputMode="decimal" required value={amount} onChange={(e) => setAmount(e.target.value)} /></>}
       {needsRef
-        ? <div><label className="cs__label" htmlFor={`ref-${id}`}>{k === 'return' ? 'Receipt or transfer reference' : 'Payment reference (bank or payroll batch)'}</label><input id={`ref-${id}`} className="cs__input" required maxLength={120} value={reference} onChange={(e) => setReference(e.target.value)} /></div>
-        : <div><label className="cs__label" htmlFor={`why-${id}`}>Reason</label><input id={`why-${id}`} className="cs__input" required maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)} /></div>}
-      <div className="pp2__roleEdit" style={{ alignSelf: 'end' }}>
-        <button type="submit" className="cs__btn cs__btn--primary" disabled={busy === id}>{busy === id ? 'Saving…' : 'Save'}</button>
-        <button type="button" className="cs__btn" onClick={() => setActing(null)}>Cancel</button>
+        ? <><label htmlFor={`ref-${id}`}>{k === 'return' ? 'Receipt or transfer reference' : 'Payment reference (bank or payroll batch)'}</label><input id={`ref-${id}`} required maxLength={120} value={reference} onChange={(e) => setReference(e.target.value)} /></>
+        : <><label htmlFor={`why-${id}`}>Reason</label><input id={`why-${id}`} required maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)} /></>}
+      <div className="mx__voteBtns" style={{ marginTop: 0 }}>
+        <button type="submit" className={`mx__btn mx__btn--sm ${k === 'void' ? 'mx__btn--danger' : ''}`} disabled={busy === id}>{busy === id ? 'Saving…' : 'Save'}</button>
+        <button type="button" className="mx__btn mx__btn--ghost mx__btn--sm" onClick={() => setActing(null)}>Cancel</button>
       </div>
     </form>;
   };
 
   const bankCheck = (x: Settlement) => {
     if (!acting || acting.id !== x.id || acting.kind !== 'bank') return null;
-    return <div className="ig__form" style={{ margin: '12px 0' }}>
-      <div className="ig__formTitle"><strong>Check {x.claimant_name}&rsquo;s bank details</strong><p>Compare them with what you hold on file or the claimant&rsquo;s confirmation. Viewing them is recorded.</p></div>
+    return <div className="mx__ask ex__inline">
+      <strong className="ex__inlineTitle">Check {x.claimant_name}&rsquo;s bank details</strong>
+      <small className="mx__tiny">Compare them with what you hold on file or the claimant&rsquo;s confirmation. Viewing them is recorded.</small>
       {revealed
-        ? <div style={{ gridColumn: '1 / -1' }}><p className="ig__rowMain"><strong>{revealed.accountName}</strong> · {revealed.bankName}{revealed.bankCode ? ` · code ${revealed.bankCode}` : ''} · account <span className="ig__mono">{revealed.accountNumber}</span></p></div>
-        : <button type="button" className="cs__btn" disabled={busy === `${x.id}-reveal`} onClick={() => void (async () => { setBusy(`${x.id}-reveal`); setNote(null); try { setRevealed(await postJson(`/api/expenses/settlements/${x.id}/bank`, {})); } catch (err) { setNote(err instanceof Error ? err.message : String(err)); } finally { setBusy(null); } })()}>Show full details</button>}
-      <div className="pp2__roleEdit" style={{ alignSelf: 'end' }}>
-        <button type="button" className="cs__btn cs__btn--primary" disabled={!revealed || busy === x.id} onClick={() => void act(x.id, async () => { await postJson(`/api/expenses/settlements/${x.id}/verify-bank`, {}); return 'Bank details checked. You can record the payment.'; })}>These details are correct</button>
-        <button type="button" className="cs__btn" onClick={() => { setActing(null); setRevealed(null); }}>Cancel</button>
+        ? <p className="ex__revealed"><strong>{revealed.accountName}</strong> · {revealed.bankName}{revealed.bankCode ? ` · code ${revealed.bankCode}` : ''} · account <span className="ex__mono">{revealed.accountNumber}</span></p>
+        : <div><button type="button" className="mx__btn mx__btn--ghost mx__btn--sm" disabled={busy === `${x.id}-reveal`} onClick={() => void (async () => { setBusy(`${x.id}-reveal`); setNote(null); try { setRevealed(await postJson(`/api/expenses/settlements/${x.id}/bank`, {})); } catch (err) { setNote({ text: err instanceof Error ? err.message : String(err), err: true }); } finally { setBusy(null); } })()}>Show full details</button></div>}
+      <div className="mx__voteBtns" style={{ marginTop: 0 }}>
+        <button type="button" className="mx__btn mx__btn--sm" disabled={!revealed || busy === x.id} onClick={() => void act(x.id, async () => { await postJson(`/api/expenses/settlements/${x.id}/verify-bank`, {}); return 'Bank details checked. You can record the payment.'; })}>These details are correct</button>
+        <button type="button" className="mx__btn mx__btn--ghost mx__btn--sm" onClick={() => { setActing(null); setRevealed(null); }}>Cancel</button>
       </div>
     </div>;
   };
@@ -272,164 +280,153 @@ export function ExpensesView({ canAdminister, canOperate, onOpenRecord, shell }:
     const a = document.createElement('a'); a.href = url; a.download = filename; a.click(); URL.revokeObjectURL(url);
   };
 
-  return <div className="ig__workspace">
-    <header className="ig__hero">
-      <span className="ig__eyebrow">EXPENSES</span>
-      <h2>{canOperate ? 'What Finance owes, and who holds advances' : 'Your expenses'}</h2>
-      <p>{canOperate ? 'Approved is not paid. A claim shows as paid only when Finance records the payment reference, after checking the bank details.' : 'Keep your bank details up to date so Finance can pay your claims. Make a claim from the expense claim form.'}</p>
-    </header>
+  const num = (label: string, key: 'autoApproveLimit' | 'managerLimit' | 'lineLimit' | 'receiptThreshold' | 'advanceRetirementDays', hint?: string) => draft && <Field label={label}><input inputMode="decimal" disabled={!canAdminister} value={draft[key]} onChange={(e) => setDraft({ ...draft, [key]: Number(e.target.value) })} />{hint && <small className="mx__tiny">{hint}</small>}</Field>;
 
-    {s && <section className="pp2__overview" aria-label="Expenses at a glance" style={{ marginBottom: 18 }}>
-      <div><span>Approved, not paid</span><strong>{s.awaitingPayment}</strong><small>{money(s.awaitingAmount, cur)} owed · {s.bankUnchecked} bank checks to do</small></div>
-      <div><span>Payments failed</span><strong>{s.failed}</strong><small>Still owed to staff</small></div>
-      <div><span>Advances open</span><strong>{s.advancesOpen}</strong><small>{money(s.heldOnAdvances, cur)} held · {s.advancesOverdue} overdue</small></div>
-    </section>}
+  return <div className="mx">
+    <ShellSync sections={tabs} onSections={shell?.onSections} />
+    {!shell && <div className="mx__segs" style={{ marginBottom: 14 }}>{tabs.map((t) => <button key={t.id} type="button" className={`mx__seg ${tab === t.id ? 'is-on' : ''}`} onClick={() => { pickTab(t.id); setActing(null); setNote(null); }}>{t.name}{t.count ? ` · ${t.count}` : ''}</button>)}</div>}
 
-    <div className="ig__surface">
-      {!shell && <>
-      <div className="ig__tabs" role="tablist" aria-label="Expenses areas">
-        {tabs.map((item, index) => <button key={item.id} id={`ex-tab-${item.id}`} type="button" role="tab" aria-controls={`ex-panel-${item.id}`} aria-selected={tab === item.id} tabIndex={tab === item.id ? 0 : -1} className="ig__tab" onClick={() => { pickTab(item.id); setActing(null); setNote(null); }} onKeyDown={(event) => { const next = event.key === 'ArrowRight' ? (index + 1) % tabs.length : event.key === 'ArrowLeft' ? (index - 1 + tabs.length) % tabs.length : -1; if (next < 0) return; event.preventDefault(); const id = tabs[next]!.id; pickTab(id); setActing(null); document.getElementById(`ex-tab-${id}`)?.focus(); }}>
-          <Icon name={item.icon} /><span>{item.name}</span>{item.count !== null && <span className="ig__tabCount">{item.count}</span>}
-        </button>)}
-      </div>
-      </>}
-      <ShellSync sections={tabs} onSections={shell?.onSections} />
-
-      <section id={`ex-panel-${tab}`} role="tabpanel" aria-labelledby={`ex-tab-${tab}`} className="ig__panel">
-        {tab === 'mine' ? <MyBankDetails /> : <>
-        <div className="ig__panelHead">
-          <div>
-            <h3>{{ claims: 'Approved claims', advances: 'Cash advances', budgets: 'Budgets by cost centre', exports: 'Accounting export', settings: 'Expense policy', mine: '' }[tab]}</h3>
-            <p>{{
-              claims: 'Review lines if needed, check the bank details, then record each payment with its reference. A failed payment stays owed; a paid claim cannot be changed.',
-              advances: 'Record when an advance is paid out. The holder retires it with an expense claim that quotes its reference, or returns the balance.',
-              budgets: 'An enforced budget refuses a claim it cannot cover; an advisory one lets it through and marks it. Approved claims use the budget; rejected ones give it back.',
-              exports: 'Paid claims go out once, in a numbered batch, one row per approved line with its account code. Bank details are never included.',
-              settings: 'Every new claim copies these numbers when it is submitted, so a change here never re-routes a claim already in progress.',
-              mine: '',
-            }[tab]}</p>
+    <section className="mx__band">
+      <div className="mx__bandGrid">
+        <div>
+          <div className="mx__eyebrow">Expenses</div>
+          <h2 className="mx__bandTitle">{canOperate ? (s && s.awaitingPayment + s.failed ? `${money(s.awaitingAmount, cur)} owed to staff` : 'Nothing owed right now') : 'Your expenses'}</h2>
+          <p className="mx__bandSub">{canOperate ? 'Approved is not paid. A claim shows as paid only when Finance records the payment reference, after checking the bank details.' : 'Keep your bank details up to date so Finance can pay your claims. Make a claim from the expense claim form.'}</p>
+          <div className="mx__bandActions">
+            {canOperate && <button type="button" className="mx__btn mx__btn--light" onClick={() => pickTab('claims')}>Pay claims</button>}
+            {canOperate && <button type="button" className="mx__btn mx__btn--outline" onClick={() => pickTab('exports')}>Export to accounts</button>}
+            <button type="button" className={`mx__btn ${canOperate ? 'mx__btn--outline' : 'mx__btn--light'}`} onClick={() => pickTab('mine')}>My bank details</button>
           </div>
-          {(tab === 'claims' || tab === 'advances') && <label className="pp2__inlineLabel"><input type="checkbox" checked={showClosed} onChange={(e) => setShowClosed(e.target.checked)} /> Show paid and closed</label>}
         </div>
-        {note && <p className="ig__notice" role="status">{note}</p>}
-        {error && <p className="ig__error" role="alert">{error}</p>}
+        {canOperate && s && <>
+          <div className={`mx__kpi ${s.awaitingPayment ? 'mx__kpi--live' : ''}`}><span>To pay</span><strong>{s.awaitingPayment}</strong><small>{money(s.awaitingAmount, cur)} · {s.bankUnchecked} bank check{s.bankUnchecked === 1 ? '' : 's'} to do</small></div>
+          <div className={`mx__kpi ${s.failed ? 'mx__kpi--live' : ''}`}><span>Failed</span><strong>{s.failed}</strong><small>still owed · {s.paidLast30Days} paid in 30 days</small></div>
+          <div className="mx__kpi"><span>Advances held</span><strong>{s.advancesOpen}</strong><small>{money(s.heldOnAdvances, cur)} · {s.advancesOverdue} overdue</small></div>
+        </>}
+      </div>
+    </section>
 
-        {tab === 'claims' && <ul style={list}>
-          {openSettlements.map((x) => {
-            const bank = bankWords(x);
-            const open = x.status === 'awaiting_payment' || x.status === 'failed';
-            const cut = x.requested_amount !== null && x.approved_amount !== null && Number(x.approved_amount) < Number(x.requested_amount);
-            return <li key={x.id} className="ig__row" style={{ flexWrap: 'wrap' }}>
-              <div className="ig__rowMain">
-                <strong>{x.claimant_name}</strong>
-                <span className={`ig__status ${x.status === 'paid' ? '' : 'ig__status--off'}`}>{SETTLEMENT_WORDS[x.status]}</span>
-                <p>
-                  {money(x.amount, x.currency)} to pay
-                  {cut ? ` · ${money(x.approved_amount, x.currency)} approved of ${money(x.requested_amount, x.currency)} claimed` : ''}
-                  {x.original_currency && x.original_currency !== x.currency ? ` · claimed ${money(x.original_amount, x.original_currency)} at ${Number(x.fx_rate)}` : ''}
-                  {Number(x.advance_applied) > 0 ? ` · ${money(x.advance_applied, x.currency)} from advance ${x.advance_reference}` : ''}
-                </p>
-                <p>approved {day(x.created_at)}{x.reference ? ` · ref ${x.reference}` : ''}{x.paid_at ? ` · paid ${day(x.paid_at)}` : ''}{x.export_batch ? ` · export batch ${x.export_batch}` : ''}{x.note ? ` · ${x.note}` : ''}</p>
-                {open && <p className={bank.ok ? '' : 'ig__rowError'}>{bank.text}</p>}
-                {actionForm(x.id)}
-                {bankCheck(x)}
-                {acting?.id === x.id && acting.kind === 'lines' && <LineReview settlementId={x.id} onDone={(m) => { setNote(m); setActing(null); void reloadAll(); }} />}
+    {note && <p className={`mx__notice ${note.err ? 'mx__notice--err' : ''}`} style={{ marginTop: 16 }} role="status">{note.text}</p>}
+    {error && <p className="mx__notice mx__notice--err" style={{ marginTop: 16 }} role="alert">{error}</p>}
+
+    <div className="mx__stack" style={{ marginTop: 18 }}>
+      {tab === 'mine' && <MyBankDetails />}
+
+      {tab === 'claims' && <div className="mx__card">
+        <div className="mx__cardHead"><h3>Approved claims</h3><div className="mx__segs"><button type="button" className={`mx__seg ${!showClosed ? 'is-on' : ''}`} onClick={() => setShowClosed(false)}>To pay</button><button type="button" className={`mx__seg ${showClosed ? 'is-on' : ''}`} onClick={() => setShowClosed(true)}>All, with paid and closed</button></div></div>
+        <div className="ex__records">{openSettlements.map((x) => {
+          const bank = bankWords(x);
+          const open = x.status === 'awaiting_payment' || x.status === 'failed';
+          const cut = x.requested_amount !== null && x.approved_amount !== null && Number(x.approved_amount) < Number(x.requested_amount);
+          const active = acting?.id === x.id;
+          return <div key={x.id} className={`ex__record ${active ? 'is-open' : ''}`}>
+            <div className="ex__recordHead">
+              <Avatar name={x.claimant_name} />
+              <div className="mx__main">
+                <strong>{x.claimant_name} <Pill s={x.status} text={SETTLEMENT_WORDS[x.status]} /></strong>
+                <small>approved {day(x.created_at)}{x.reference ? ` · ref ${x.reference}` : ''}{x.paid_at ? ` · paid ${day(x.paid_at)}` : ''}{x.export_batch ? ` · export batch ${x.export_batch}` : ''}{x.note ? ` · ${x.note}` : ''}</small>
+                <small>{cut ? `${money(x.approved_amount, x.currency)} approved of ${money(x.requested_amount, x.currency)} claimed` : ''}{x.original_currency && x.original_currency !== x.currency ? `${cut ? ' · ' : ''}claimed ${money(x.original_amount, x.original_currency)} at ${Number(x.fx_rate)}` : ''}{Number(x.advance_applied) > 0 ? ` · ${money(x.advance_applied, x.currency)} from advance ${x.advance_reference}` : ''}</small>
+                {open && <small className={`ex__bank ${bank.ok ? 'is-ok' : 'is-off'}`}>{bank.text}</small>}
               </div>
-              <div className="pp2__roleEdit">
-                <button type="button" className="cs__btn" onClick={() => onOpenRecord(x.instance_id)}>Open claim</button>
-                {open && <>
-                  <button type="button" className="cs__btn" aria-expanded={acting?.id === x.id && acting.kind === 'lines'} onClick={() => setActing(acting?.id === x.id && acting.kind === 'lines' ? null : { id: x.id, kind: 'lines' })}>Review lines</button>
-                  {!bank.ok && x.bank_last4 && <button type="button" className="cs__btn" onClick={() => { setRevealed(null); setActing({ id: x.id, kind: 'bank' }); }}>Check bank details</button>}
-                  <button type="button" className="cs__btn cs__btn--primary" disabled={settings.data?.requireVerifiedBeneficiary !== false && !bank.ok} title={bank.ok ? undefined : 'Check the bank details first'} onClick={() => setActing({ id: x.id, kind: 'pay' })}>Record payment</button>
-                  {x.status === 'awaiting_payment' && <button type="button" className="cs__btn" onClick={() => setActing({ id: x.id, kind: 'fail' })}>Payment failed</button>}
-                  <button type="button" className="cs__btn" onClick={() => setActing({ id: x.id, kind: 'void' })}>Void</button>
-                </>}
-              </div>
-            </li>;
-          })}
-          {settlements.data && !openSettlements.length && <li className="ig__row"><div className="ig__rowMain"><p>Nothing waiting to be paid.</p></div></li>}
-        </ul>}
-
-        {tab === 'advances' && <ul style={list}>
-          {openAdvances.map((x) => <li key={x.id} className="ig__row" style={{ flexWrap: 'wrap' }}>
-            <div className="ig__rowMain">
-              <strong>{x.holder_name} · {x.reference}</strong>
-              <span className={`ig__status ${x.overdue ? 'ig__status--off' : ''}`}>{x.overdue ? 'Overdue' : ADVANCE_WORDS[x.status]}</span>
-              <p>{money(x.amount, x.currency)} advanced · {money(x.outstanding, x.currency)} still held · {money(x.spent, x.currency)} spent · {money(x.returned, x.currency)} returned{x.due_at ? ` · retire by ${day(x.due_at)}` : ''}</p>
-              {actionForm(x.id)}
+              <div className="ex__amount"><strong>{money(x.amount, x.currency)}</strong><small>{open ? 'to pay' : x.status}</small></div>
             </div>
-            <div className="pp2__roleEdit">
-              <button type="button" className="cs__btn" onClick={() => onOpenRecord(x.instance_id)}>Open request</button>
-              {x.status === 'approved' && <button type="button" className="cs__btn cs__btn--primary" onClick={() => setActing({ id: x.id, kind: 'disburse' })}>Record pay-out</button>}
-              {(x.status === 'disbursed' || x.status === 'awaiting_return') && <button type="button" className="cs__btn" onClick={() => setActing({ id: x.id, kind: 'return' })}>Money returned</button>}
+            <div className="ex__recordBtns">
+              <button type="button" className="mx__btn mx__btn--ghost mx__btn--sm" onClick={() => onOpenRecord(x.instance_id)}>Open claim</button>
+              {open && <>
+                <button type="button" className="mx__btn mx__btn--ghost mx__btn--sm" aria-expanded={active && acting.kind === 'lines'} onClick={() => setActing(active && acting.kind === 'lines' ? null : { id: x.id, kind: 'lines' })}>Review lines</button>
+                {!bank.ok && x.bank_last4 && <button type="button" className="mx__btn mx__btn--ghost mx__btn--sm" onClick={() => { setRevealed(null); setActing({ id: x.id, kind: 'bank' }); }}>Check bank details</button>}
+                <button type="button" className="mx__btn mx__btn--sm" disabled={settings.data?.requireVerifiedBeneficiary !== false && !bank.ok} title={bank.ok ? undefined : 'Check the bank details first'} onClick={() => setActing({ id: x.id, kind: 'pay' })}>Record payment</button>
+                {x.status === 'awaiting_payment' && <button type="button" className="mx__btn mx__btn--ghost mx__btn--sm" onClick={() => setActing({ id: x.id, kind: 'fail' })}>Payment failed</button>}
+                <button type="button" className="mx__btn mx__btn--ghost mx__btn--sm" onClick={() => setActing({ id: x.id, kind: 'void' })}>Void</button>
+              </>}
             </div>
-          </li>)}
-          {advances.data && !openAdvances.length && <li className="ig__row"><div className="ig__rowMain"><p>No open advances.</p></div></li>}
-        </ul>}
+            {actionForm(x.id)}
+            {bankCheck(x)}
+            {active && acting.kind === 'lines' && <LineReview settlementId={x.id} onDone={(m) => { setNote({ text: m }); setActing(null); void reloadAll(); }} />}
+          </div>;
+        })}
+        {settlements.data && !openSettlements.length && <EmptyState icon="inbox" title={showClosed ? 'No claims yet' : 'Nothing waiting to be paid'} text="Approved claims arrive here. Check the bank details, then record each payment with its reference." />}</div>
+      </div>}
 
-        {tab === 'budgets' && <>
-          {canAdminister && <form className="ig__form" onSubmit={(e) => { e.preventDefault(); void act('budget', async () => { await postJson('/api/expenses/budgets', budgetForm); setBudgetForm({ ...budgetForm, amount: '' }); return 'Budget saved.'; }); }}>
-            <div className="ig__formTitle"><strong>Set a budget</strong><p>Saving the same cost centre and start date again changes it.</p></div>
-            <div><label className="cs__label" htmlFor="bg-cc">Cost centre</label><input id="bg-cc" className="cs__input" required maxLength={60} value={budgetForm.costCentre} onChange={(e) => setBudgetForm({ ...budgetForm, costCentre: e.target.value })} /></div>
-            <div><label className="cs__label" htmlFor="bg-amt">Amount ({cur})</label><input id="bg-amt" className="cs__input" required inputMode="decimal" value={budgetForm.amount} onChange={(e) => setBudgetForm({ ...budgetForm, amount: e.target.value })} /></div>
-            <div><label className="cs__label" htmlFor="bg-from">From</label><input id="bg-from" type="date" className="cs__input" required value={budgetForm.periodStart} onChange={(e) => setBudgetForm({ ...budgetForm, periodStart: e.target.value })} /></div>
-            <div><label className="cs__label" htmlFor="bg-to">To</label><input id="bg-to" type="date" className="cs__input" required value={budgetForm.periodEnd} onChange={(e) => setBudgetForm({ ...budgetForm, periodEnd: e.target.value })} /></div>
-            <div><label className="cs__label" htmlFor="bg-mode">When it runs out</label><select id="bg-mode" className="cs__input" value={budgetForm.mode} onChange={(e) => setBudgetForm({ ...budgetForm, mode: e.target.value })}><option value="advisory">Warn, but let claims through</option><option value="enforced">Refuse claims it cannot cover</option></select></div>
-            <button type="submit" className="cs__btn cs__btn--primary" disabled={busy === 'budget'}>Save budget</button>
-          </form>}
-          <ul style={list}>
-            {(budgets.data ?? []).map((b) => <li key={b.id} className="ig__row"><div className="ig__rowMain">
-              <strong>{b.cost_centre}</strong><span className={`ig__status ${b.available < 0 ? 'ig__status--off' : ''}`}>{b.mode === 'enforced' ? 'Enforced' : 'Advisory'}</span>
-              <p>{day(b.period_start)} to {day(b.period_end)} · {money(b.amount, cur)} budget · {money(b.consumed, cur)} spent · {money(b.reserved, cur)} in progress · <strong>{money(b.available, cur)} left</strong></p>
-            </div></li>)}
-            {budgets.data && !budgets.data.length && <li className="ig__row"><div className="ig__rowMain"><p>No budgets yet. Claims are not checked against a budget until one is set.</p></div></li>}
-          </ul>
-        </>}
+      {tab === 'advances' && <div className="mx__card">
+        <div className="mx__cardHead"><h3>Cash advances</h3><div className="mx__segs"><button type="button" className={`mx__seg ${!showClosed ? 'is-on' : ''}`} onClick={() => setShowClosed(false)}>Open</button><button type="button" className={`mx__seg ${showClosed ? 'is-on' : ''}`} onClick={() => setShowClosed(true)}>All</button></div></div>
+        <div className="ex__records">{openAdvances.map((x) => <div key={x.id} className={`ex__record ${acting?.id === x.id ? 'is-open' : ''}`}>
+          <div className="ex__recordHead">
+            <Avatar name={x.holder_name} />
+            <div className="mx__main">
+              <strong>{x.holder_name} <Pill s={x.overdue ? 'overdue' : x.status} text={x.overdue ? 'Overdue' : ADVANCE_WORDS[x.status]} /></strong>
+              <small>{x.reference}{x.due_at ? ` · retire by ${day(x.due_at)}` : ''}{x.disbursed_at ? ` · paid out ${day(x.disbursed_at)}` : ''}</small>
+              <div className="ex__split"><Bar value={Number(x.spent) + Number(x.returned)} max={Number(x.amount)} warn={x.overdue} /><small className="mx__tiny">{money(x.spent, x.currency)} spent · {money(x.returned, x.currency)} returned · {money(x.outstanding, x.currency)} still held</small></div>
+            </div>
+            <div className="ex__amount"><strong>{money(x.amount, x.currency)}</strong><small>advanced</small></div>
+          </div>
+          <div className="ex__recordBtns">
+            <button type="button" className="mx__btn mx__btn--ghost mx__btn--sm" onClick={() => onOpenRecord(x.instance_id)}>Open request</button>
+            {x.status === 'approved' && <button type="button" className="mx__btn mx__btn--sm" onClick={() => setActing({ id: x.id, kind: 'disburse' })}>Record pay-out</button>}
+            {(x.status === 'disbursed' || x.status === 'awaiting_return') && <button type="button" className="mx__btn mx__btn--ghost mx__btn--sm" onClick={() => setActing({ id: x.id, kind: 'return' })}>Money returned</button>}
+          </div>
+          {actionForm(x.id)}
+        </div>)}
+        {advances.data && !openAdvances.length && <EmptyState icon="send" title="No open advances" text="When an advance request is approved it appears here. Record the pay-out; the holder retires it with a claim that quotes its reference." />}</div>
+      </div>}
 
-        {tab === 'exports' && <>
-          <form className="ig__form" onSubmit={(e) => { e.preventDefault(); void act('export', async () => { const out = await postJson<{ batchNo: number; claims: number; rows: number; total: number; currency: string; filename: string; csv: string }>('/api/expenses/exports', exportRange); download(out.filename, out.csv); return `Batch ${out.batchNo}: ${out.claims} claims, ${out.rows} rows, ${money(out.total, out.currency)}. The file has downloaded.`; }); }}>
-            <div className="ig__formTitle"><strong>Export paid claims not yet exported</strong><p>{s ? `${s.unexported} paid claim(s) waiting.` : ''} Leave the dates empty to take everything waiting.</p></div>
-            <div><label className="cs__label" htmlFor="xp-from">Paid from</label><input id="xp-from" type="date" className="cs__input" value={exportRange.from} onChange={(e) => setExportRange({ ...exportRange, from: e.target.value })} /></div>
-            <div><label className="cs__label" htmlFor="xp-to">Paid to</label><input id="xp-to" type="date" className="cs__input" value={exportRange.to} onChange={(e) => setExportRange({ ...exportRange, to: e.target.value })} /></div>
-            <button type="submit" className="cs__btn cs__btn--primary" disabled={busy === 'export' || !s?.unexported}>Export CSV</button>
-          </form>
-          <ul style={list}>
-            {(exports.data ?? []).map((b) => <li key={b.batch_no} className="ig__row"><div className="ig__rowMain">
-              <strong>Batch {b.batch_no}</strong><span className="ig__status">{b.claims} claims</span>
-              <p>{new Date(b.created_at).toLocaleString()} by {b.created_by ?? 'someone'} · {b.rows} rows · {money(b.total, b.currency)} · checksum <span className="ig__mono">{b.checksum.slice(0, 12)}…</span></p>
-            </div></li>)}
-          </ul>
-        </>}
+      {tab === 'budgets' && <>
+        <div className="mx__card">
+          <div className="mx__cardHead"><h3>Budgets by cost centre</h3>{canAdminister && <button type="button" className="mx__btn mx__btn--sm" onClick={() => setAdding(adding === 'budget' ? null : 'budget')}>{adding === 'budget' ? 'Close' : '+ Set a budget'}</button>}</div>
+          {adding === 'budget' && canAdminister && <div className="mx__cardBody"><form className="mx__form" onSubmit={(e) => { e.preventDefault(); void act('budget', async () => { await postJson('/api/expenses/budgets', budgetForm); setBudgetForm({ ...budgetForm, amount: '' }); setAdding(null); return 'Budget saved.'; }); }}>
+            <Field label="Cost centre"><input required maxLength={60} value={budgetForm.costCentre} onChange={(e) => setBudgetForm({ ...budgetForm, costCentre: e.target.value })} /></Field>
+            <Field label={`Amount (${cur})`}><input required inputMode="decimal" value={budgetForm.amount} onChange={(e) => setBudgetForm({ ...budgetForm, amount: e.target.value })} /></Field>
+            <Field label="From"><input type="date" required value={budgetForm.periodStart} onChange={(e) => setBudgetForm({ ...budgetForm, periodStart: e.target.value })} /></Field>
+            <Field label="To"><input type="date" required value={budgetForm.periodEnd} onChange={(e) => setBudgetForm({ ...budgetForm, periodEnd: e.target.value })} /></Field>
+            <Field label="When it runs out" wide><div className="mx__segs"><button type="button" className={`mx__seg ${budgetForm.mode === 'advisory' ? 'is-on' : ''}`} onClick={() => setBudgetForm({ ...budgetForm, mode: 'advisory' })}>Warn, but let claims through</button><button type="button" className={`mx__seg ${budgetForm.mode === 'enforced' ? 'is-on' : ''}`} onClick={() => setBudgetForm({ ...budgetForm, mode: 'enforced' })}>Refuse claims it cannot cover</button></div><small className="mx__tiny">Saving the same cost centre and start date again changes it.</small></Field>
+            <div className="mx__field--wide"><button type="submit" className="mx__btn" disabled={busy === 'budget'}>Save budget</button></div>
+          </form></div>}
+          <div className="ex__budgets">{(budgets.data ?? []).map((b) => { const total = Number(b.amount); const used = Number(b.consumed) + Number(b.reserved); return <div key={b.id} className="ex__budget">
+            <div className="ex__budgetHead"><strong>{b.cost_centre}</strong><Pill s={b.mode} text={b.mode === 'enforced' ? 'Enforced' : 'Advisory'} /></div>
+            <small className="mx__tiny">{day(b.period_start)} to {day(b.period_end)}</small>
+            <div className="ex__budgetBig"><strong style={{ color: b.available < 0 ? '#c0392b' : undefined }}>{money(b.available, cur)}</strong><small>left of {money(b.amount, cur)}</small></div>
+            <Bar value={used} max={total} warn={b.available < 0} />
+            <small className="mx__tiny">{short(b.consumed)} spent · {short(b.reserved)} in progress</small>
+          </div>; })}
+          {budgets.data && !budgets.data.length && <EmptyState icon="check" title="No budgets yet" text="Claims are not checked against a budget until one is set. An enforced budget refuses a claim it cannot cover; an advisory one lets it through and marks it." action={canAdminister ? { label: 'Set a budget', onClick: () => setAdding('budget') } : undefined} />}</div>
+        </div>
+      </>}
 
-        {tab === 'settings' && draft && <>
-          <form className="ig__form" onSubmit={saveSettings}>
-            <div className="ig__formTitle"><strong>Limits</strong><p>Amounts are in {cur}. Claims in other currencies are converted at the rate in force when they are submitted.</p></div>
-            <div><label className="cs__label" htmlFor="ex-auto">Approve automatically up to</label><input id="ex-auto" className="cs__input" inputMode="decimal" disabled={!canAdminister} value={draft.autoApproveLimit} onChange={(e) => setDraft({ ...draft, autoApproveLimit: Number(e.target.value) })} /></div>
-            <div><label className="cs__label" htmlFor="ex-mgr">Manager alone approves up to</label><input id="ex-mgr" className="cs__input" inputMode="decimal" disabled={!canAdminister} value={draft.managerLimit} onChange={(e) => setDraft({ ...draft, managerLimit: Number(e.target.value) })} /></div>
-            <div><label className="cs__label" htmlFor="ex-line">Any single item over this goes to Finance</label><input id="ex-line" className="cs__input" inputMode="decimal" disabled={!canAdminister} value={draft.lineLimit} onChange={(e) => setDraft({ ...draft, lineLimit: Number(e.target.value) })} /></div>
-            <div><label className="cs__label" htmlFor="ex-receipt">Receipt needed for claims over</label><input id="ex-receipt" className="cs__input" inputMode="decimal" disabled={!canAdminister} value={draft.receiptThreshold} onChange={(e) => setDraft({ ...draft, receiptThreshold: Number(e.target.value) })} /></div>
-            <div><label className="cs__label" htmlFor="ex-days">Days to retire an advance</label><input id="ex-days" className="cs__input" inputMode="numeric" disabled={!canAdminister} value={draft.advanceRetirementDays} onChange={(e) => setDraft({ ...draft, advanceRetirementDays: Number(e.target.value) })} /></div>
-            <div><label className="pp2__inlineLabel"><input type="checkbox" disabled={!canAdminister} checked={draft.requireVerifiedBeneficiary} onChange={(e) => setDraft({ ...draft, requireVerifiedBeneficiary: e.target.checked })} /> Bank details must be checked before paying</label></div>
-            <div style={{ gridColumn: '1 / -1' }}><label className="cs__label" htmlFor="ex-cats">Categories Finance accepts (comma separated)</label><input id="ex-cats" className="cs__input" disabled={!canAdminister} value={categoriesText} onChange={(e) => setCategoriesText(e.target.value)} /></div>
-            <div><label className="cs__label" htmlFor="ex-codes">Account code per category (one per line: travel=6100)</label><textarea id="ex-codes" className="cs__input" rows={4} disabled={!canAdminister} value={codesText} onChange={(e) => setCodesText(e.target.value)} /></div>
-            <div><label className="cs__label" htmlFor="ex-default">Account code for anything else</label><input id="ex-default" className="cs__input" maxLength={40} disabled={!canAdminister} value={draft.defaultAccountCode ?? ''} onChange={(e) => setDraft({ ...draft, defaultAccountCode: e.target.value })} /></div>
-            {canAdminister ? <button type="submit" className="cs__btn cs__btn--primary" disabled={busy === 'settings'}>{busy === 'settings' ? 'Saving…' : 'Save policy'}</button>
-              : <p className="ig__rowMain">Only owners and admins can change the policy.</p>}
-          </form>
-          {canAdminister && <form className="ig__form" onSubmit={(e) => { e.preventDefault(); void act('rate', async () => { await postJson('/api/expenses/rates', rateForm); setRateForm({ from: '', rate: '', source: '', effectiveFrom: '' }); await rates.reload(); return 'Rate added. New claims in that currency use it from its start date.'; }); }}>
-            <div className="ig__formTitle"><strong>Add an exchange rate into {cur}</strong><p>Rates are never edited: a new rate takes over from its start date, and claims already submitted keep theirs.</p></div>
-            <div><label className="cs__label" htmlFor="rt-from">Currency</label><input id="rt-from" className="cs__input" required maxLength={3} placeholder="USD" value={rateForm.from} onChange={(e) => setRateForm({ ...rateForm, from: e.target.value.toUpperCase() })} /></div>
-            <div><label className="cs__label" htmlFor="rt-rate">1 unit = how many {cur}</label><input id="rt-rate" className="cs__input" required inputMode="decimal" value={rateForm.rate} onChange={(e) => setRateForm({ ...rateForm, rate: e.target.value })} /></div>
-            <div><label className="cs__label" htmlFor="rt-src">Source</label><input id="rt-src" className="cs__input" required maxLength={120} placeholder="Central bank official rate" value={rateForm.source} onChange={(e) => setRateForm({ ...rateForm, source: e.target.value })} /></div>
-            <div><label className="cs__label" htmlFor="rt-eff">From</label><input id="rt-eff" type="date" className="cs__input" value={rateForm.effectiveFrom} onChange={(e) => setRateForm({ ...rateForm, effectiveFrom: e.target.value })} /></div>
-            <button type="submit" className="cs__btn cs__btn--primary" disabled={busy === 'rate'}>Add rate</button>
-          </form>}
-          <ul style={list}>
-            {(rates.data ?? []).map((r) => <li key={r.id} className="ig__row"><div className="ig__rowMain"><strong>1 {r.from_currency} = {Number(r.rate)} {r.to_currency}</strong><p>from {day(r.effective_from)} · {r.source}{r.entered_by ? ` · added by ${r.entered_by}` : ''}</p></div></li>)}
-          </ul>
-        </>}
-        </>}
-      </section>
+      {tab === 'exports' && <>
+        <div className="mx__card"><div className="mx__cardHead"><h3>Export paid claims</h3><small>{s ? `${s.unexported} paid claim${s.unexported === 1 ? '' : 's'} waiting` : ''}</small></div>
+          <div className="mx__cardBody"><form className="mx__form" onSubmit={(e) => { e.preventDefault(); void act('export', async () => { const out = await postJson<{ batchNo: number; claims: number; rows: number; total: number; currency: string; filename: string; csv: string }>('/api/expenses/exports', exportRange); download(out.filename, out.csv); return `Batch ${out.batchNo}: ${out.claims} claims, ${out.rows} rows, ${money(out.total, out.currency)}. The file has downloaded.`; }); }}>
+            <Field label="Paid from"><input type="date" value={exportRange.from} onChange={(e) => setExportRange({ ...exportRange, from: e.target.value })} /></Field>
+            <Field label="Paid to"><input type="date" value={exportRange.to} onChange={(e) => setExportRange({ ...exportRange, to: e.target.value })} /></Field>
+            <div className="mx__field--wide"><button type="submit" className="mx__btn" disabled={busy === 'export' || !s?.unexported}>Export CSV</button><small className="mx__tiny" style={{ marginLeft: 12 }}>Leave the dates empty to take everything waiting. One row per approved line with its account code; bank details are never included.</small></div>
+          </form></div></div>
+        <div className="mx__card"><div className="mx__cardHead"><h3>Batches</h3><small>each batch goes out once</small></div>
+          <ul className="mx__list" style={{ marginTop: 10 }}>{(exports.data ?? []).map((b) => <li key={b.batch_no}><div className="mx__date"><strong>{b.batch_no}</strong><small>batch</small></div><div className="mx__main"><strong>{b.claims} claim{b.claims === 1 ? '' : 's'} · {money(b.total, b.currency)}</strong><small>{new Date(b.created_at).toLocaleString()} by {b.created_by ?? 'someone'} · {b.rows} rows · checksum <span className="ex__mono">{b.checksum.slice(0, 12)}…</span></small></div></li>)}{exports.data && !exports.data.length && <li><EmptyState icon="register" title="No batches yet" text="Each export is numbered and checksummed so accounts can tie it back." /></li>}</ul></div>
+      </>}
+
+      {tab === 'settings' && draft && <>
+        <div className="mx__card"><div className="mx__cardHead"><h3>Expense policy</h3><small>amounts in {cur} · every new claim copies these numbers when submitted</small></div>
+          <div className="mx__cardBody"><form className="mx__form" onSubmit={saveSettings}>
+            {num('Approve automatically up to', 'autoApproveLimit')}
+            {num('Manager alone approves up to', 'managerLimit')}
+            {num('Any single item over this goes to Finance', 'lineLimit')}
+            {num('Receipt needed for claims over', 'receiptThreshold')}
+            {num('Days to retire an advance', 'advanceRetirementDays')}
+            <Field label="Before paying"><div className="mx__segs"><button type="button" className={`mx__seg ${draft.requireVerifiedBeneficiary ? 'is-on' : ''}`} disabled={!canAdminister} onClick={() => setDraft({ ...draft, requireVerifiedBeneficiary: true })}>Bank details must be checked</button><button type="button" className={`mx__seg ${!draft.requireVerifiedBeneficiary ? 'is-on' : ''}`} disabled={!canAdminister} onClick={() => setDraft({ ...draft, requireVerifiedBeneficiary: false })}>No check needed</button></div></Field>
+            <Field label="Categories Finance accepts (comma separated)" wide><input disabled={!canAdminister} value={categoriesText} onChange={(e) => setCategoriesText(e.target.value)} /></Field>
+            <Field label="Account code per category (one per line: travel=6100)"><textarea rows={4} disabled={!canAdminister} value={codesText} onChange={(e) => setCodesText(e.target.value)} /></Field>
+            <Field label="Account code for anything else"><input maxLength={40} disabled={!canAdminister} value={draft.defaultAccountCode ?? ''} onChange={(e) => setDraft({ ...draft, defaultAccountCode: e.target.value })} /></Field>
+            <div className="mx__field--wide">{canAdminister ? <button type="submit" className="mx__btn" disabled={busy === 'settings'}>{busy === 'settings' ? 'Saving…' : 'Save policy'}</button> : <small className="mx__tiny">Only owners and admins can change the policy.</small>}</div>
+          </form></div></div>
+        <div className="mx__card"><div className="mx__cardHead"><h3>Exchange rates into {cur}</h3>{canAdminister && <button type="button" className="mx__btn mx__btn--sm" onClick={() => setAdding(adding === 'rate' ? null : 'rate')}>{adding === 'rate' ? 'Close' : '+ Add a rate'}</button>}</div>
+          {adding === 'rate' && canAdminister && <div className="mx__cardBody"><form className="mx__form" onSubmit={(e) => { e.preventDefault(); void act('rate', async () => { await postJson('/api/expenses/rates', rateForm); setRateForm({ from: '', rate: '', source: '', effectiveFrom: '' }); setAdding(null); await rates.reload(); return 'Rate added. New claims in that currency use it from its start date.'; }); }}>
+            <Field label="Currency"><input required maxLength={3} placeholder="USD" value={rateForm.from} onChange={(e) => setRateForm({ ...rateForm, from: e.target.value.toUpperCase() })} /></Field>
+            <Field label={`1 unit = how many ${cur}`}><input required inputMode="decimal" value={rateForm.rate} onChange={(e) => setRateForm({ ...rateForm, rate: e.target.value })} /></Field>
+            <Field label="Source"><input required maxLength={120} placeholder="Central bank official rate" value={rateForm.source} onChange={(e) => setRateForm({ ...rateForm, source: e.target.value })} /></Field>
+            <Field label="From"><input type="date" value={rateForm.effectiveFrom} onChange={(e) => setRateForm({ ...rateForm, effectiveFrom: e.target.value })} /></Field>
+            <div className="mx__field--wide"><button type="submit" className="mx__btn" disabled={busy === 'rate'}>Add rate</button><small className="mx__tiny" style={{ marginLeft: 12 }}>Rates are never edited: a new rate takes over from its start date, and claims already submitted keep theirs.</small></div>
+          </form></div>}
+          <ul className="mx__list">{(rates.data ?? []).map((r) => <li key={r.id}><span className="mx__avatar" style={{ marginLeft: 0, fontSize: 10 }}>{r.from_currency}</span><div className="mx__main"><strong>1 {r.from_currency} = {Number(r.rate)} {r.to_currency}</strong><small>from {day(r.effective_from)} · {r.source}{r.entered_by ? ` · added by ${r.entered_by}` : ''}</small></div></li>)}{rates.data && !rates.data.length && <li><EmptyState icon="templates" title="No rates yet" text="Claims in other currencies need a rate into the workspace currency before they can be submitted." /></li>}</ul></div>
+      </>}
     </div>
   </div>;
 }
