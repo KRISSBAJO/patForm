@@ -144,29 +144,54 @@ function Calendar({ onOpen, onNew, pickedDay, setPickedDay }: { onOpen: (id: str
 
 /* ----------------------------------------------------------------- wizard */
 type AgendaDraft = { title: string; purpose: string; presenterId: string; durationMin: string };
+const PRESETS: Record<string, AgendaDraft[]> = {
+  board: [
+    { title: 'Apologies and declarations of interest', purpose: 'information', presenterId: '', durationMin: '5' },
+    { title: 'Minutes of the last meeting', purpose: 'decision', presenterId: '', durationMin: '5' },
+    { title: 'Matters arising and actions', purpose: 'discussion', presenterId: '', durationMin: '10' },
+    { title: 'CEO report', purpose: 'discussion', presenterId: '', durationMin: '20' },
+    { title: 'Finance report and management accounts', purpose: 'discussion', presenterId: '', durationMin: '20' },
+    { title: 'Any other business', purpose: 'discussion', presenterId: '', durationMin: '10' },
+  ],
+  agm: [
+    { title: 'Notice and quorum', purpose: 'information', presenterId: '', durationMin: '5' },
+    { title: 'Receive the annual report and accounts', purpose: 'resolution', presenterId: '', durationMin: '15' },
+    { title: 'Declare a dividend', purpose: 'resolution', presenterId: '', durationMin: '10' },
+    { title: 'Re-elect directors', purpose: 'resolution', presenterId: '', durationMin: '10' },
+    { title: 'Appoint auditors and fix their remuneration', purpose: 'resolution', presenterId: '', durationMin: '10' },
+  ],
+  exco: [
+    { title: 'Priorities this week', purpose: 'discussion', presenterId: '', durationMin: '15' },
+    { title: 'Pipeline and numbers', purpose: 'discussion', presenterId: '', durationMin: '15' },
+    { title: 'Decisions needed', purpose: 'decision', presenterId: '', durationMin: '15' },
+    { title: 'Actions review', purpose: 'information', presenterId: '', durationMin: '10' },
+  ],
+  blank: [],
+};
 function Wizard({ bodies, people, settings, initialDate, onDone, onCancel }: { bodies: Body[]; people: Member[]; settings: Settings['settings'] | null; initialDate?: string | null; onDone: (id: string, called: boolean) => void; onCancel: () => void }) {
   const [step, setStep] = useState(0);
-  const [f, setF] = useState({ bodyId: bodies[0]?.id ?? '', title: '', kind: 'ordinary', start: initialDate ? `${initialDate}T10:00` : toLocalInput(new Date(Date.now() + 8 * 86400000)), end: '', location: '', link: '' });
-  const [agenda, setAgenda] = useState<AgendaDraft[]>([{ title: 'Apologies and declarations of interest', purpose: 'information', presenterId: '', durationMin: '5' }, { title: 'Minutes of the last meeting', purpose: 'decision', presenterId: '', durationMin: '5' }]);
+  const [f, setF] = useState({ bodyId: bodies[0]?.id ?? '', title: '', kind: 'ordinary', start: initialDate ? `${initialDate}T10:00` : toLocalInput(new Date(Date.now() + 8 * 86400000)), duration: '90', location: '', link: '' });
+  const [agenda, setAgenda] = useState<AgendaDraft[]>(PRESETS.board!);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const bodyDetail = useFeed<{ members: { actor_id: string; display_name: string; role: string; voting: boolean }[] }>(f.bodyId ? `/api/meetings/bodies/${f.bodyId}` : null);
-  const body = bodies.find((b) => b.id === f.bodyId);
-  const total = agenda.reduce((n, a) => n + (Number(a.durationMin) || 0), 0);
-  const startDate = f.start ? new Date(f.start) : null;
-  const endGuess = startDate ? new Date(startDate.getTime() + total * 60000) : null;
-  const daysNotice = startDate ? Math.floor((startDate.getTime() - Date.now()) / 86400000) : 0;
-  const needs = settings?.noticeDays ?? 7;
-  const move = (i: number, d: -1 | 1) => setAgenda((x) => { const y = [...x]; const j = i + d; if (j < 0 || j >= y.length) return x; [y[i], y[j]] = [y[j]!, y[i]!]; return y; });
-  const set = (i: number, patch: Partial<AgendaDraft>) => setAgenda((x) => x.map((a, j) => (j === i ? { ...a, ...patch } : a)));
-  const okBasics = f.bodyId && f.title.trim() && f.start;
-  const okAgenda = agenda.some((a) => a.title.trim());
   const [createdId, setCreatedId] = useState<string | null>(null);
   const [shortNeeded, setShortNeeded] = useState<string | null>(null);
   const [shortReason, setShortReason] = useState('');
+  const bodyDetail = useFeed<{ members: { actor_id: string; display_name: string; role: string; voting: boolean }[] }>(f.bodyId ? `/api/meetings/bodies/${f.bodyId}` : null);
+  const body = bodies.find((b) => b.id === f.bodyId);
+  const agendaTime = agenda.reduce((n, a) => n + (Number(a.durationMin) || 0), 0);
+  const startDate = f.start ? new Date(f.start) : null;
+  const endDate = startDate ? new Date(startDate.getTime() + (Number(f.duration) || agendaTime || 60) * 60000) : null;
+  const daysNotice = startDate ? Math.floor((startDate.getTime() - Date.now()) / 86400000) : 0;
+  const needs = settings?.noticeDays ?? 7;
+  const members = bodyDetail.data?.members ?? [];
+  const move = (i: number, d: -1 | 1) => setAgenda((x) => { const y = [...x]; const j = i + d; if (j < 0 || j >= y.length) return x; [y[i], y[j]] = [y[j]!, y[i]!]; return y; });
+  const set = (i: number, patch: Partial<AgendaDraft>) => setAgenda((x) => x.map((a, j) => (j === i ? { ...a, ...patch } : a)));
+  const okBasics = Boolean(f.bodyId && f.title.trim() && f.start);
+  const okAgenda = agenda.some((a) => a.title.trim());
   const ensureCreated = async () => {
     if (createdId) return createdId;
-    const r = await postJson<{ id: string; number: number }>('/api/meetings/meetings', { bodyId: f.bodyId, title: f.title, kind: f.kind, startsAt: new Date(f.start).toISOString(), endsAt: f.end ? new Date(f.end).toISOString() : endGuess?.toISOString(), location: f.location, link: f.link, agenda: agenda.filter((a) => a.title.trim()) });
+    const r = await postJson<{ id: string; number: number }>('/api/meetings/meetings', { bodyId: f.bodyId, title: f.title, kind: f.kind, startsAt: new Date(f.start).toISOString(), endsAt: endDate?.toISOString(), location: f.location, link: f.link, agenda: agenda.filter((a) => a.title.trim()) });
     setCreatedId(r.id);
     return r.id;
   };
@@ -182,51 +207,59 @@ function Wizard({ bodies, people, settings, initialDate, onDone, onCancel }: { b
     } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
     finally { setBusy(false); }
   };
+  const preview = <aside className="mx__invite">
+    <div className="mx__inviteHead"><span className="mx__eyebrow" style={{ color: 'rgba(255,255,255,.8)' }}>Invitation preview</span><strong>{f.title.trim() || 'Meeting title'}</strong><small>{body?.name ?? 'Body'} · {f.kind}</small></div>
+    <div className="mx__inviteBody">
+      <div className="mx__inviteRow"><span className="mx__inviteDate"><strong>{startDate ? startDate.getDate() : '–'}</strong><small>{startDate ? startDate.toLocaleDateString([], { month: 'short' }) : ''}</small></span><div><strong>{startDate ? startDate.toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'long' }) : 'Date'}</strong><small>{startDate ? `${clock(startDate.toISOString())} – ${clock(endDate!.toISOString())}` : 'Time'}{f.location ? ` · ${f.location}` : ''}{f.link ? ' · video link' : ''}</small></div></div>
+      <div className="mx__inviteSection"><span>Agenda</span><ol>{agenda.filter((a) => a.title.trim()).map((a, i) => <li key={i}>{a.title}{a.purpose === 'resolution' ? <em> resolution</em> : a.purpose === 'decision' ? <em> decision</em> : null}</li>)}{!agenda.some((a) => a.title.trim()) && <li className="mx__tiny">No items yet</li>}</ol></div>
+      <div className="mx__inviteSection"><span>Invited</span><div className="mx__avatars" style={{ marginTop: 6 }}>{members.map((m) => <span key={m.actor_id} className="mx__avatar" title={m.display_name}>{initials(m.display_name)}</span>)}</div><small className="mx__tiny">{members.length} member{members.length === 1 ? '' : 's'} · each gets the notice and a calendar invitation (.ics)</small></div>
+      <div className={`mx__check ${daysNotice >= needs ? 'mx__check--ok' : 'mx__check--warn'}`} style={{ marginTop: 12 }}>{daysNotice >= needs ? `✓ ${daysNotice} days' notice — meets the ${needs}-day rule` : `⚠ ${daysNotice} days' notice; this body needs ${needs}. Sending will ask for a reason.`}</div>
+    </div>
+  </aside>;
   return <div className="mx__wizard">
-    <div className="mx__steps">{['Basics', 'Agenda', 'Review & call'].map((s, i) => <div key={s} className={`mx__step ${i === step ? 'is-on' : ''} ${i < step ? 'is-done' : ''}`}><i>{i < step ? '✓' : i + 1}</i>{s}</div>)}</div>
-    <div className="mx__wizBody">
-      {err && <p className="mx__notice mx__notice--err">{err}</p>}
-      {step === 0 && <div className="mx__form">
-        <Field label="Body"><select value={f.bodyId} onChange={(e) => setF({ ...f, bodyId: e.target.value })}>{bodies.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</select></Field>
-        <Field label="Kind of meeting"><div className="mx__segs">{[['ordinary', 'Ordinary'], ['extraordinary', 'Extraordinary'], ['annual', 'Annual']].map(([k, v]) => <button type="button" key={k} className={`mx__seg ${f.kind === k ? 'is-on' : ''}`} onClick={() => setF({ ...f, kind: k! })}>{v}</button>)}</div></Field>
-        <Field label="Title" wide><input placeholder="Q4 board meeting" value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} /></Field>
-        <Field label="Starts"><input type="datetime-local" value={f.start} onChange={(e) => setF({ ...f, start: e.target.value })} /></Field>
-        <Field label="Ends (optional — otherwise from the agenda)"><input type="datetime-local" value={f.end} onChange={(e) => setF({ ...f, end: e.target.value })} /></Field>
-        <Field label="Place"><input placeholder="Boardroom, 1 Marina" value={f.location} onChange={(e) => setF({ ...f, location: e.target.value })} /></Field>
-        <Field label="Video link"><input placeholder="https://…" value={f.link} onChange={(e) => setF({ ...f, link: e.target.value })} /></Field>
-      </div>}
-      {step === 1 && <>
-        <div className="mx__agendaRows">
-          {agenda.map((a, i) => <div className="mx__agendaRow" key={i}>
-            <span className="mx__no">{i + 1}</span>
-            <input className="mx__input" placeholder="Item" value={a.title} onChange={(e) => set(i, { title: e.target.value })} />
-            <select className="mx__input" value={a.purpose} onChange={(e) => set(i, { purpose: e.target.value })}>{Object.entries(PURPOSE).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
-            <select className="mx__input" value={a.presenterId} onChange={(e) => set(i, { presenterId: e.target.value })}><option value="">Presenter…</option>{people.map((p) => <option key={p.id} value={p.id}>{p.display_name}</option>)}</select>
-            <input className="mx__input" placeholder="min" inputMode="numeric" value={a.durationMin} onChange={(e) => set(i, { durationMin: e.target.value })} />
-            <div className="mx__rowBtns"><button type="button" aria-label="Move up" onClick={() => move(i, -1)}>↑</button><button type="button" aria-label="Move down" onClick={() => move(i, 1)}>↓</button><button type="button" aria-label="Remove" onClick={() => setAgenda((x) => x.filter((_, j) => j !== i))}>×</button></div>
-          </div>)}
-        </div>
-        <div className="mx__voteBtns"><button type="button" className="mx__btn mx__btn--ghost mx__btn--sm" onClick={() => setAgenda((x) => [...x, { title: '', purpose: 'discussion', presenterId: '', durationMin: '10' }])}>+ Add item</button><button type="button" className="mx__btn mx__btn--ghost mx__btn--sm" onClick={() => setAgenda((x) => [...x, { title: '', purpose: 'resolution', presenterId: '', durationMin: '15' }])}>+ Add a resolution item</button></div>
-        <div className="mx__total"><span>Items: <strong>{agenda.filter((a) => a.title.trim()).length}</strong></span><span>Running time: <strong>{total} min</strong></span>{endGuess && <span>Ends about <strong>{clock(endGuess.toISOString())}</strong></span>}</div>
-      </>}
-      {step === 2 && <div className="mx__review">
-        <div className="mx__reviewBox"><h4>Meeting</h4><p><strong>{f.title}</strong><br />{body?.name} · {f.kind}<br />{startDate ? when(startDate.toISOString()) : ''}{f.location ? ` · ${f.location}` : ''}{f.link ? ' · video link' : ''}</p>
-          <div className={`mx__check ${daysNotice >= needs ? 'mx__check--ok' : 'mx__check--warn'}`}>{daysNotice >= needs ? `✓ ${daysNotice} days' notice — meets the ${needs}-day rule.` : `⚠ ${daysNotice} days' notice; this body needs ${needs}. Calling it will ask for a short-notice reason.`}</div>
-          {shortNeeded && <div className="mx__ask" style={{ marginTop: 10 }}><label>{shortNeeded}</label><input placeholder="Reason for short notice" value={shortReason} onChange={(e) => setShortReason(e.target.value)} /><div className="mx__voteBtns" style={{ marginTop: 0 }}><button type="button" className="mx__btn mx__btn--sm" disabled={!shortReason.trim() || busy} onClick={() => void submit(true, shortReason.trim())}>Send at short notice</button><button type="button" className="mx__btn mx__btn--ghost mx__btn--sm" onClick={() => { if (createdId) onDone(createdId, false); else setShortNeeded(null); }}>Keep as draft</button></div></div>}
-          <div className="mx__check mx__check--ok">✓ Every member receives the notice, the agenda and a calendar invitation (.ics).</div>
-        </div>
-        <div className="mx__reviewBox"><h4>Who is invited</h4>
-          <div className="mx__avatars" style={{ marginBottom: 10 }}>{(bodyDetail.data?.members ?? []).map((m) => <span key={m.actor_id} className="mx__avatar mx__avatar--lg" title={m.display_name}>{initials(m.display_name)}</span>)}</div>
-          <p>{(bodyDetail.data?.members ?? []).map((m) => `${m.display_name} (${ROLE[m.role]})`).join(', ')}</p>
-          <h4 style={{ marginTop: 14 }}>Agenda</h4><p>{agenda.filter((a) => a.title.trim()).map((a, i) => `${i + 1}. ${a.title}${a.purpose === 'resolution' ? ' (resolution)' : ''}`).join(' · ')}</p>
-        </div>
-      </div>}
+    <div className="mx__steps">{['Basics', 'Agenda', 'Review & send'].map((s, i) => <div key={s} className={`mx__step ${i === step ? 'is-on' : ''} ${i < step ? 'is-done' : ''}`}><i>{i < step ? '✓' : i + 1}</i>{s}</div>)}</div>
+    <div className="mx__wizGrid">
+      <div className="mx__wizBody">
+        {err && <p className="mx__notice mx__notice--err">{err}</p>}
+        {step === 0 && <>
+          <div className="mx__field" style={{ marginBottom: 16 }}><label>Body</label><div className="mx__bodyPick">{bodies.map((b) => <button type="button" key={b.id} className={`mx__bodyPickBtn ${f.bodyId === b.id ? 'is-on' : ''}`} onClick={() => setF({ ...f, bodyId: b.id })}><strong>{b.name}</strong><small>{KIND[b.kind]} · {b.members} members</small></button>)}</div></div>
+          <div className="mx__form">
+            <Field label="Title" wide><input placeholder="Q4 board meeting" value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} autoFocus /></Field>
+            <Field label="Kind of meeting" wide><div className="mx__segs">{[['ordinary', 'Ordinary'], ['extraordinary', 'Extraordinary'], ['annual', 'Annual general meeting']].map(([k, v]) => <button type="button" key={k} className={`mx__seg ${f.kind === k ? 'is-on' : ''}`} onClick={() => setF({ ...f, kind: k! })}>{v}</button>)}</div></Field>
+            <Field label="Starts"><input type="datetime-local" value={f.start} onChange={(e) => setF({ ...f, start: e.target.value })} /></Field>
+            <Field label="Length"><div className="mx__segs">{[['30', '30 min'], ['60', '1 h'], ['90', '1½ h'], ['120', '2 h'], ['180', '3 h']].map(([k, v]) => <button type="button" key={k} className={`mx__seg ${f.duration === k ? 'is-on' : ''}`} onClick={() => setF({ ...f, duration: k! })}>{v}</button>)}</div></Field>
+            <Field label="Place"><div className="mx__segs" style={{ marginBottom: 6 }}>{['Boardroom', 'Head office', 'Video only'].map((pl) => <button type="button" key={pl} className={`mx__seg ${f.location === pl ? 'is-on' : ''}`} onClick={() => setF({ ...f, location: pl })}>{pl}</button>)}</div><input placeholder="Or type an address" value={f.location} onChange={(e) => setF({ ...f, location: e.target.value })} /></Field>
+            <Field label="Video link (optional)"><input placeholder="https://meet…" value={f.link} onChange={(e) => setF({ ...f, link: e.target.value })} /></Field>
+          </div>
+        </>}
+        {step === 1 && <>
+          <div className="mx__voteBtns" style={{ marginTop: 0, marginBottom: 12 }}><span className="mx__tiny">Start from:</span>{[['board', 'Board meeting'], ['agm', 'Annual general meeting'], ['exco', 'Management meeting'], ['blank', 'Blank']].map(([k, v]) => <button type="button" key={k} className="mx__seg" onClick={() => setAgenda(PRESETS[k!]!.map((a) => ({ ...a })))}>{v}</button>)}</div>
+          <div className="mx__agendaRows">
+            {agenda.map((a, i) => <div className="mx__agendaRow" key={i}>
+              <span className="mx__no">{i + 1}</span>
+              <input className="mx__input" placeholder="Item" value={a.title} onChange={(e) => set(i, { title: e.target.value })} />
+              <select className="mx__input" value={a.purpose} onChange={(e) => set(i, { purpose: e.target.value })}>{Object.entries(PURPOSE).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
+              <select className="mx__input" value={a.presenterId} onChange={(e) => set(i, { presenterId: e.target.value })}><option value="">Presenter…</option>{people.map((p) => <option key={p.id} value={p.id}>{p.display_name}</option>)}</select>
+              <input className="mx__input" placeholder="min" inputMode="numeric" value={a.durationMin} onChange={(e) => set(i, { durationMin: e.target.value })} />
+              <div className="mx__rowBtns"><button type="button" aria-label="Move up" onClick={() => move(i, -1)}>↑</button><button type="button" aria-label="Move down" onClick={() => move(i, 1)}>↓</button><button type="button" aria-label="Remove" onClick={() => setAgenda((x) => x.filter((_, j) => j !== i))}>×</button></div>
+            </div>)}
+          </div>
+          <div className="mx__voteBtns"><button type="button" className="mx__btn mx__btn--ghost mx__btn--sm" onClick={() => setAgenda((x) => [...x, { title: '', purpose: 'discussion', presenterId: '', durationMin: '10' }])}>+ Add item</button><button type="button" className="mx__btn mx__btn--ghost mx__btn--sm" onClick={() => setAgenda((x) => [...x, { title: '', purpose: 'resolution', presenterId: '', durationMin: '15' }])}>+ Add a resolution item</button></div>
+          <div className="mx__total"><span>Items: <strong>{agenda.filter((a) => a.title.trim()).length}</strong></span><span>Agenda time: <strong>{agendaTime} min</strong></span><span>Slot: <strong>{f.duration} min</strong>{agendaTime > Number(f.duration) ? <span style={{ color: '#8a3a34' }}> · over by {agendaTime - Number(f.duration)} min</span> : null}</span></div>
+        </>}
+        {step === 2 && <div className="mx__reviewBox">
+          <h4>Ready to send</h4>
+          <p>The notice goes to {members.length} member{members.length === 1 ? '' : 's'} with the agenda and a calendar invitation. They reply yes, no or maybe; you take attendance in the room.</p>
+          {shortNeeded && <div className="mx__ask" style={{ marginTop: 12 }}><label>{shortNeeded}</label><input placeholder="Reason for short notice" value={shortReason} onChange={(e) => setShortReason(e.target.value)} /><div className="mx__voteBtns" style={{ marginTop: 0 }}><button type="button" className="mx__btn mx__btn--sm" disabled={!shortReason.trim() || busy} onClick={() => void submit(true, shortReason.trim())}>Send at short notice</button><button type="button" className="mx__btn mx__btn--ghost mx__btn--sm" onClick={() => { if (createdId) onDone(createdId, false); else setShortNeeded(null); }}>Keep as draft</button></div></div>}
+        </div>}
+      </div>
+      {preview}
     </div>
     <div className="mx__wizFoot">
       <div><button type="button" className="mx__btn mx__btn--ghost" onClick={step === 0 ? onCancel : () => setStep(step - 1)}>{step === 0 ? 'Cancel' : '‹ Back'}</button></div>
       <div className="mx__voteBtns" style={{ marginTop: 0 }}>
         {step < 2 && <button type="button" className="mx__btn" disabled={step === 0 ? !okBasics : !okAgenda} onClick={() => setStep(step + 1)}>Next ›</button>}
-        {step === 2 && <><button type="button" className="mx__btn mx__btn--ghost" disabled={busy} onClick={() => void submit(false)}>Save as draft</button><button type="button" className="mx__btn" disabled={busy} onClick={() => void submit(true)}>{busy ? 'Working…' : 'Save and send the notice'}</button></>}
+        {step === 2 && <><button type="button" className="mx__btn mx__btn--ghost" disabled={busy} onClick={() => void submit(false)}>Save as draft</button><button type="button" className="mx__btn" disabled={busy} onClick={() => void submit(true)}>{busy ? 'Working…' : 'Send the notice'}</button></>}
       </div>
     </div>
   </div>;
@@ -518,7 +551,7 @@ export function MeetingsView({ shell }: { shell?: ModuleShell } = {}) {
       </div>
     </>}
 
-    {tab === 'calendar' && <Calendar onOpen={openM} onNew={(d) => (manageable.length ? startWizard(d) : setNote({ text: 'Only a chair, secretary or admin can call a meeting.', err: true }))} pickedDay={pickedDay} setPickedDay={setPickedDay} />}
+    {tab === 'calendar' && <Calendar onOpen={openM} onNew={(d) => { if (manageable.length) startWizard(d); else if (!bodies.data) return; else if (!myBodies.length) { setNote({ text: admin ? 'There is no board or committee yet. Create one first, then call its meeting.' : 'There is no board or committee yet. An owner or admin creates one.', err: !admin }); if (admin) pickTab('bodies'); } else setNote({ text: 'Only the chair, the secretary or an admin of a body can call its meeting.', err: true }); }} pickedDay={pickedDay} setPickedDay={setPickedDay} />}
 
     {tab === 'meetings' && (openMeeting
       ? <Room d={openMeeting} busy={busy} act={act} ask={ask} onBack={() => setOpenMeeting(null)} onResolution={openR} people={people} minutesDraft={minutesDraft} setMinutesDraft={setMinutesDraft} />

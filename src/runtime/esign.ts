@@ -319,10 +319,67 @@ export async function listEnvelopes(pool: Pool, principal: Principal) {
   const { rows } = await pool.query(
     `select e.id, e.number, e.title, e.status, e.routing, e.created_at, e.sent_at, e.completed_at, e.expires_at, e.final_sha256, e.contract_id, c.title as contract,
             (select count(*)::int from sign_recipient r where r.envelope_id = e.id and r.role = 'signer') as signers,
-            (select count(*)::int from sign_recipient r where r.envelope_id = e.id and r.role = 'signer' and r.status = 'signed') as signed
+            (select count(*)::int from sign_recipient r where r.envelope_id = e.id and r.role = 'signer' and r.status = 'signed') as signed,
+            (select coalesce(json_agg(json_build_object('name', r.name, 'status', r.status, 'order', r.routing_order) order by r.routing_order, r.created_at), '[]'::json)
+               from sign_recipient r where r.envelope_id = e.id and r.role = 'signer') as people,
+            (select display_name from actor where id = e.created_by) as sender
        from sign_envelope e left join contract c on c.id = e.contract_id
       where e.tenant_id = $1 and ($2 or e.created_by = $3 or c.owner_id = $3) order by e.created_at desc limit 200`, [w.tenantId, all, w.actorId]);
   return rows;
+}
+
+/** The sender's dashboard numbers. */
+export async function signSummary(pool: Pool, principal: Principal) {
+  const w = await govMember(pool, principal);
+  const all = govInTeam(w, 'legal', 'compliance');
+  const { rows } = await pool.query<{ out: number; drafts: number; done30: number; expiring: number; declined: number }>(
+    `select count(*) filter (where status = 'sent')::int as out,
+            count(*) filter (where status = 'draft')::int as drafts,
+            count(*) filter (where status = 'completed' and completed_at > now() - interval '30 days')::int as done30,
+            count(*) filter (where status = 'sent' and expires_at < now() + interval '7 days')::int as expiring,
+            count(*) filter (where status = 'declined')::int as declined
+       from sign_envelope e where e.tenant_id = $1 and ($2 or e.created_by = $3)`, [w.tenantId, all, w.actorId]);
+  const mine = await mySignatures(pool, principal);
+  return { ...rows[0]!, waitingForMe: mine.length };
+}
+
+/** Documents waiting for this person's own signature, with their personal link. Their own email, nobody else's. */
+export async function mySignatures(pool: Pool, principal: Principal) {
+  if (principal.kind !== 'actor') return [];
+  const { rows: me } = await pool.query<{ email: string }>('select email from actor where id = $1', [principal.actorId]);
+  if (!me[0]) return [];
+  const { rows } = await pool.query<{ recipient_id: string; token_sealed: string | null; status: string; id: string; number: number; title: string; sent_at: Date; expires_at: Date; workspace: string; sender: string | null }>(
+    `select r.id as recipient_id, r.token_sealed, r.status, e.id, e.number, e.title, e.sent_at, e.expires_at, t.name as workspace, (select display_name from actor where id = e.created_by) as sender
+       from sign_recipient r join sign_envelope e on e.id = r.envelope_id join tenant t on t.id = e.tenant_id
+      where lower(r.email) = lower($1) and r.role = 'signer' and r.status in ('sent', 'viewed') and e.status = 'sent' and e.expires_at > now() order by e.sent_at`, [me[0].email]);
+  return rows.map((r) => ({ envelopeId: r.id, number: r.number, title: r.title, sentAt: r.sent_at, expiresAt: r.expires_at, workspace: r.workspace, sender: r.sender, status: r.status,
+    url: r.token_sealed ? `${appUrl()}/sign/${unseal(r.token_sealed, `sign_recipient:${r.recipient_id}`).plaintext}` : null }));
+}
+
+// ----------------------------------------------------------- templates
+
+export async function listTemplates(pool: Pool, principal: Principal) {
+  const w = await govMember(pool, principal);
+  const { rows } = await pool.query(`select t.id, t.name, t.recipients, t.parties, t.routing, t.message, t.expires_in_days, t.created_at, a.display_name as created_by from sign_template t left join actor a on a.id = t.created_by where t.tenant_id = $1 order by t.name`, [w.tenantId]);
+  return rows;
+}
+export async function saveTemplate(pool: Pool, principal: Principal, body: Record<string, unknown>) {
+  const w = await govMember(pool, principal);
+  const name = text(body.name, 120); if (!name) throw new InvalidInput('give the template a name');
+  const recipients = readRecipients(body.recipients);
+  if (!recipients.length) throw new InvalidInput('a template needs at least one signer');
+  const parties = Array.isArray(body.parties) ? body.parties.slice(0, 10) : [];
+  const days = body.expiresInDays === undefined ? 30 : Math.trunc(Number(body.expiresInDays));
+  if (!(days >= 1 && days <= 365)) throw new InvalidInput('expiresInDays must be 1 to 365');
+  const { rows } = await pool.query<{ id: string }>(
+    `insert into sign_template (tenant_id, name, recipients, parties, routing, message, expires_in_days, created_by) values ($1, $2, $3, $4, $5, $6, $7, $8) returning id`,
+    [w.tenantId, name, JSON.stringify(recipients), JSON.stringify(parties), body.routing === 'parallel' ? 'parallel' : 'sequential', text(body.message, 2000) || null, days, w.actorId]);
+  return { id: rows[0]!.id };
+}
+export async function deleteTemplate(pool: Pool, principal: Principal, id: string) {
+  const w = await govMember(pool, principal);
+  const { rowCount } = await pool.query('delete from sign_template where id = $1 and tenant_id = $2', [id, w.tenantId]);
+  return { removed: Boolean(rowCount) };
 }
 
 export async function envelopeDetail(pool: Pool, principal: Principal, envelopeId: string) {

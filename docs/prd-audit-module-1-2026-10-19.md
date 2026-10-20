@@ -819,3 +819,23 @@ check (the CAC slot in `company-register.ts` still waits for a provider).
   review with the notice-period check and who is invited), and a room
   with a status flow, quorum ring, presence, proxies and the record.
 
+## Patform Sign console and the meeting wizard (20 October 2026)
+
+The Sign area is now a product of its own: a dashboard (out for
+signature, expiring in seven days, sealed in the last thirty, drafts,
+declined), **Waiting for me** (documents addressed to the signed-in
+person's own email, with their personal signing link — `GET
+/api/sign/mine`, which opens the sealed token for that person only),
+envelopes with filters, search, signer avatars and progress, reminders
+from the list, a three-step send flow (document → signers → place and
+send) with drag-and-drop upload, **signer sets** (`sign_template`:
+recurring recipients and company rules saved and loaded in one click,
+`/api/sign/templates`), an envelope page with a status flow, per-signer
+timeline, parties and the record, and **verify in the console** (the
+fingerprint is computed in the browser; the file is sent only to be
+checked). The meeting wizard gained a live invitation preview, body
+picker, length and place quick-picks, and agenda presets (board, AGM,
+management). Calling a meeting at short notice asks for the reason
+inline. An owner who sees "no board or committee yet" is sent to create
+one; the earlier message wrongly blamed their role.
+

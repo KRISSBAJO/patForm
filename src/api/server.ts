@@ -1181,6 +1181,11 @@ route('POST', gr('docusign/test'), async ({ pool, principal }) => gov.testDocusi
 // ---- Patform Sign, the sender's side (signers use the public routes before the session gate).
 const sr = (re: string) => new RegExp(`^/api/sign/${re}$`);
 route('GET', sr('envelopes'), async ({ pool, principal }) => esign.listEnvelopes(pool, principal));
+route('GET', sr('summary'), async ({ pool, principal }) => esign.signSummary(pool, principal));
+route('GET', sr('mine'), async ({ pool, principal }) => esign.mySignatures(pool, principal));
+route('GET', sr('templates'), async ({ pool, principal }) => esign.listTemplates(pool, principal));
+route('POST', sr('templates'), async ({ pool, principal }, b) => esign.saveTemplate(pool, principal, hb(b)));
+route('POST', sr(`templates/${A}/delete`), async ({ pool, principal, url }) => esign.deleteTemplate(pool, principal, hid(url, 4)));
 route('POST', sr('envelopes'), async ({ pool, principal }, b) => esign.createEnvelope(pool, principal, hb(b)));
 route('GET', sr(`envelopes/${A}`), async ({ pool, principal, url }) => esign.envelopeDetail(pool, principal, hid(url, 4)));
 route('GET', sr(`envelopes/${A}/document`), async ({ pool, principal, url }) => new RawBody(await esign.envelopeDocument(pool, principal, hid(url, 4)), 'application/pdf'));

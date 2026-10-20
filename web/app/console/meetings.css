@@ -225,3 +225,41 @@
   .mx__steps { grid-template-columns: 1fr; }
 }
 .mx__dot { display: none; width: 6px; height: 6px; border-radius: 50%; background: var(--mod, #5b4bb7); }
+
+/* shared by Sign: drop zone, verdict, signer rows, step list */
+.mx__drop { display: grid; gap: 4px; place-items: center; text-align: center; padding: 28px 20px; border: 2px dashed color-mix(in srgb, var(--mod, #5b4bb7) 40%, var(--mx-line)); border-radius: 14px; background: var(--mx-soft); cursor: pointer; transition: border-color .15s, background .15s; }
+.mx__drop:hover { border-color: var(--mod, #5b4bb7); background: #fff; }
+.mx__drop strong { font-size: 15px; } .mx__drop small { font-size: 12.5px; color: var(--mx-muted); }
+.mx__verdict { margin-top: 14px; padding: 16px 18px; border-radius: 14px; border: 1px solid var(--mx-line); }
+.mx__verdict strong { display: inline-block; padding: 4px 12px; border-radius: 999px; font: 700 12px var(--ui); letter-spacing: .08em; text-transform: uppercase; margin-bottom: 8px; }
+.mx__verdict.is-ok { background: #f1faf4; border-color: #bfe3cc; } .mx__verdict.is-ok strong { background: #14663f; color: #fff; }
+.mx__verdict.is-bad { background: #fdf0ee; border-color: #e4b3ae; } .mx__verdict.is-bad strong { background: #8a3a34; color: #fff; }
+.mx__verdict p { font-size: 13.5px; line-height: 1.5; }
+.mx__signerRow { display: grid; grid-template-columns: 34px minmax(0, 1.2fr) minmax(0, 1.4fr) 120px minmax(0, 1fr) minmax(0, .9fr) 120px minmax(0, .9fr) 64px auto; gap: 8px; align-items: center; padding: 10px; border-radius: 12px; background: var(--mx-soft); }
+.mx__signerRow .mx__input { height: 38px; min-width: 0; }
+.mx__howto { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; counter-reset: s; }
+.mx__howto li { position: relative; padding-left: 34px; font-size: 13.5px; line-height: 1.5; color: var(--mx-muted); counter-increment: s; }
+.mx__howto li::before { content: counter(s); position: absolute; left: 0; top: 1px; width: 24px; height: 24px; border-radius: 50%; background: var(--mod-tint, #efedf9); color: var(--mod-deep, #3d3280); font: 700 11px/24px var(--ui); text-align: center; }
+.mx__howto li strong { color: var(--mx-ink); }
+@media (max-width: 1100px) { .mx__signerRow { grid-template-columns: 34px 1fr 1fr 110px; } .mx__signerRow > :nth-child(n+5) { grid-column: span 1; } }
+
+/* the wizard: form on the left, the invitation as members will see it on the right */
+.mx__wizGrid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; }
+.mx__wizGrid .mx__wizBody { padding: 24px 26px; }
+.mx__invite { border-left: 1px solid var(--mx-line); background: var(--mx-soft); display: flex; flex-direction: column; }
+.mx__inviteHead { padding: 22px 22px 18px; background: linear-gradient(100deg, var(--mod-deep, #3d3280), var(--mod, #5b4bb7)); color: #fff; }
+.mx__inviteHead strong { display: block; margin-top: 8px; font: 700 18px/1.2 var(--ui); letter-spacing: -.02em; }
+.mx__inviteHead small { display: block; margin-top: 4px; font-size: 12.5px; opacity: .85; }
+.mx__inviteBody { padding: 18px 22px 22px; display: grid; gap: 16px; }
+.mx__inviteRow { display: flex; gap: 12px; align-items: center; }
+.mx__inviteRow > div strong { display: block; font: 600 14px var(--ui); } .mx__inviteRow > div small { display: block; font-size: 12px; color: var(--mx-muted); margin-top: 2px; }
+.mx__inviteDate { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 48px; height: 52px; border-radius: 12px; background: #fff; border: 1px solid var(--mx-line); color: var(--mod-deep, #3d3280); flex: 0 0 48px; }
+.mx__inviteDate strong { font: 700 18px/1 var(--ui); } .mx__inviteDate small { font: 700 10px var(--ui); text-transform: uppercase; letter-spacing: .06em; margin-top: 2px; }
+.mx__inviteSection > span { display: block; font: 700 10.5px var(--ui); letter-spacing: .1em; text-transform: uppercase; color: var(--mx-muted); margin-bottom: 6px; }
+.mx__inviteSection ol { margin: 0; padding-left: 18px; font-size: 13px; line-height: 1.55; }
+.mx__inviteSection ol em { font-style: normal; font: 700 10px var(--ui); letter-spacing: .06em; text-transform: uppercase; color: var(--mod-deep, #3d3280); background: var(--mod-tint, #efedf9); padding: 1px 6px; border-radius: 999px; margin-left: 6px; }
+.mx__bodyPick { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; }
+.mx__bodyPickBtn { text-align: left; display: grid; gap: 2px; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--mx-line); background: #fff; cursor: pointer; font: inherit; }
+.mx__bodyPickBtn strong { font: 600 14px var(--ui); } .mx__bodyPickBtn small { font-size: 12px; color: var(--mx-muted); }
+.mx__bodyPickBtn.is-on { border-color: var(--mod, #5b4bb7); box-shadow: inset 0 0 0 1px var(--mod, #5b4bb7); background: var(--mod-tint, #efedf9); }
+@media (max-width: 1000px) { .mx__wizGrid { grid-template-columns: 1fr; } .mx__invite { border-left: 0; border-top: 1px solid var(--mx-line); } }

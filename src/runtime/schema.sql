@@ -3552,3 +3552,18 @@ create table mtg_proxy (
 create unique index mtg_proxy_live on mtg_proxy (meeting_id, giver_id) where revoked_at is null;
 alter table mtg_vote add column if not exists by_proxy boolean not null default false;
 alter table mtg_meeting add column if not exists sequence int not null default 0;
+
+-- Patform Sign: saved signer sets, so a recurring document goes out in a click.
+create table sign_template (
+  id              uuid primary key default gen_random_uuid(),
+  tenant_id       uuid not null references tenant(id),
+  name            text not null,
+  recipients      jsonb not null default '[]',
+  parties         jsonb not null default '[]',
+  routing         text not null default 'sequential',
+  message         text,
+  expires_in_days int not null default 30,
+  created_by      uuid references actor(id),
+  created_at      timestamptz not null default now()
+);
+create index sign_template_by_tenant on sign_template (tenant_id);
