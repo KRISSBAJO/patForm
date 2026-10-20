@@ -4,6 +4,7 @@ import './meetings.css';
 import { EmptyState, ShellSync, type ModuleShell } from './module-shell';
 import { useCallback, useEffect, useState } from 'react';
 import { postJson } from './stepup';
+import { GoalsWorkspace, type GoalSummary } from './GoalsWorkspace';
 
 /*
  * Goals, appraisals and development (PRD Module 8). Everyone: reviews to
@@ -24,8 +25,8 @@ type Form = { stage: string; window: string; template: TemplateSnap; mine: { res
   self?: { responses: Record<string, Resp>; narrative: string | null; score: string | null } | null;
   peers?: { released: boolean; note?: string; mode?: string; count?: number; suppressed?: boolean; averages?: Record<string, number>; responses?: { reviewer: string; narrative: string | null; responses: Record<string, Resp> }[] };
   goals?: { title: string; success_criteria: string; weight: string; progress: number; status: string; evidence: string | null }[] };
-type Goal = { id: string; title: string; description: string | null; success_criteria: string; weight: string; target_date: string | null; status: string; progress: number; evidence: string | null; aligned_title: string | null; pending_changes: number };
-type TeamGoal = { id: string; title: string; success_criteria: string; weight: string; status: string; progress: number; owner: string; pending: { id: number; proposed: Record<string, unknown>; previous: Record<string, unknown>; reason: string }[] | null };
+type Goal = GoalSummary;
+type TeamGoal = GoalSummary;
 type Result = { participant_id: string; cycle: string; scale_min: string; scale_max: string; manager_score: string | null; calibrated_score: string | null; summary: string | null; published_at: string; acknowledged_at: string | null; acknowledgement: string | null; appeal_status: string; appeal_outcome: string | null };
 type Dev = { id: string; kind: string; title: string; due_date: string | null; status: string; evidence: string | null; owner: string | null };
 type Cycle = { id: string; name: string; kind: string; status: string; stages: Record<string, { opens: string; closes: string }>; peer_mode: string; min_cohort: number; template_name: string; template_version: string; participants: number; needs_reviewer: number };
@@ -220,27 +221,7 @@ export function AppraisalsView({ shell }: { shell?: ModuleShell } = {}) {
           </li>)}{reviews.data && !reviews.data.length && <li><EmptyState icon="vote" title="No reviews for you to write" text="When a cycle opens a self-assessment, peer feedback or manager review for you, it appears here with its window." /></li>}</ul></div>}
       </>}
 
-      {tab === 'goals' && <div className="mx__card"><div className="mx__cardHead"><h3>My goals</h3><button type="button" className="mx__btn mx__btn--sm" onClick={() => setAdding(adding === 'goal' ? null : 'goal')}>{adding === 'goal' ? 'Close' : '+ New goal'}</button></div>
-        {adding === 'goal' && <div className="mx__cardBody"><form className="mx__form" onSubmit={(e) => { e.preventDefault(); void act('goal', async () => { await postJson('/api/appraisals/goals', { title: f('gTitle'), successCriteria: f('gMeasure'), weight: f('gWeight') || 0, targetDate: f('gDate') || undefined }); setFields({}); setAdding(null); return 'Goal added as a draft. Your manager approves it.'; }); }}>
-          <Field label="Goal" wide><input required value={f('gTitle')} onChange={(e) => setF('gTitle', e.target.value)} /></Field>
-          <Field label="How success is measured" wide><input required value={f('gMeasure')} onChange={(e) => setF('gMeasure', e.target.value)} /></Field>
-          <Field label="Weight (0–100)"><input type="number" min={0} max={100} value={f('gWeight')} onChange={(e) => setF('gWeight', e.target.value)} /></Field>
-          <Field label="Target date"><input type="date" value={f('gDate')} onChange={(e) => setF('gDate', e.target.value)} /></Field>
-          <div className="mx__field--wide"><button type="submit" className="mx__btn" disabled={busy === 'goal'}>Add goal</button><small className="mx__tiny" style={{ marginLeft: 12 }}>Your manager approves it. Once approved, changes to what it means go back to them, with the old version kept.</small></div>
-        </form></div>}
-        <div className="ex__budgets">{(goals.data ?? []).map((g) => <div key={g.id} className="ex__budget apr__goal">
-          <div className="ex__budgetHead"><strong>{g.title}</strong><Pill s={g.status} text={g.pending_changes ? `${g.status} · change waiting` : undefined} /></div>
-          <small>{g.success_criteria}</small>
-          <div className="ex__budgetBig"><strong>{g.progress}%</strong><small>done · weight {Number(g.weight)}{g.target_date ? ` · by ${day(g.target_date)}` : ''}</small></div>
-          <Bar value={g.progress} max={100} />
-          {g.evidence && <small className="mx__tiny">{g.evidence}</small>}
-          {['draft', 'approved'].includes(g.status) && <div className="mx__voteBtns" style={{ marginTop: 6 }}>
-            <button type="button" className="mx__btn mx__btn--sm" onClick={() => ask(g.id, 'Progress (0–100), then a space and the evidence', async (r) => { const [p, ...ev] = r.split(' '); await postJson(`/api/appraisals/goals/${g.id}`, { progress: Number(p), evidence: ev.join(' ') || undefined }); return 'Progress recorded.'; })}>Update progress</button>
-            <button type="button" className="mx__btn mx__btn--ghost mx__btn--sm" onClick={() => ask(g.id, g.status === 'draft' ? 'New measure of success' : 'New measure of success, then " because " and why', async (r) => { const [m, why] = r.split(' because '); await postJson(`/api/appraisals/goals/${g.id}`, { successCriteria: m, reason: why }); return g.status === 'draft' ? 'Changed.' : 'Change sent to your manager.'; })}>Change measure</button>
-          </div>}
-        </div>)}
-        {goals.data && !goals.data.length && <EmptyState icon="check" title="No goals yet" text="Set a goal with how success is measured and a weight. Your manager approves it and it feeds your review." action={{ label: 'New goal', onClick: () => setAdding('goal') }} />}</div>
-      </div>}
+      {tab === 'goals' && <GoalsWorkspace mode="mine" goals={goals.data ?? []} startCreate={adding === 'goal'} onCreateClose={() => setAdding(adding === 'goal' ? null : 'goal')} onChanged={reloadAll} />}
 
       {tab === 'results' && <div className="mx__card"><div className="mx__cardHead"><h3>My results</h3><small>published reviews</small></div>
         <div className="ex__records">{(results.data ?? []).map((r) => <div key={r.participant_id} className="ex__record">
@@ -275,21 +256,7 @@ export function AppraisalsView({ shell }: { shell?: ModuleShell } = {}) {
         </li>)}{dev.data && !dev.data.length && <li><EmptyState icon="check" title="Nothing in your plan yet" text="Actions, training and check-ins agreed with your manager live here." action={{ label: 'Add one', onClick: () => setAdding('dev') }} /></li>}</ul>
       </div>}
 
-      {tab === 'team' && <div className="mx__card"><div className="mx__cardHead"><h3>Team goals</h3><small>people who report to you</small></div>
-        <div className="ex__records">{(team.data ?? []).map((g) => <div key={g.id} className="ex__record">
-          <div className="ex__recordHead">
-            <Avatar name={g.owner} />
-            <div className="mx__main"><strong>{g.title} <Pill s={g.status} /></strong><small>{g.owner} · {g.success_criteria} · weight {Number(g.weight)}</small><div className="ex__split"><Bar value={g.progress} max={100} /><small className="mx__tiny">{g.progress}% done</small></div></div>
-          </div>
-          {(g.pending ?? []).map((p) => <div key={p.id} className="hr__ready"><span className="mx__eyebrow">Change asked</span><ul><li><strong>{Object.entries(p.proposed).map(([k, v]) => `${k.replace('_', ' ')}: “${String((p.previous as Record<string, unknown>)[k] ?? '')}” → “${String(v ?? '')}”`).join('; ')}</strong><small>{p.reason}</small></li></ul>
-            <div className="mx__voteBtns" style={{ marginTop: 8 }}><button type="button" className="mx__btn mx__btn--sm" onClick={() => void act(String(p.id), async () => { await postJson(`/api/appraisals/goals/revisions/${p.id}/decide`, { decision: 'approve' }); return 'Change approved.'; })}>Approve change</button><button type="button" className="mx__btn mx__btn--ghost mx__btn--sm" onClick={() => void act(String(p.id), async () => { await postJson(`/api/appraisals/goals/revisions/${p.id}/decide`, { decision: 'reject' }); return 'Change rejected; the goal stays as it was.'; })}>Reject</button></div></div>)}
-          {(g.status === 'draft' || g.status === 'approved') && <div className="ex__recordBtns">
-            {g.status === 'draft' && <button type="button" className="mx__btn mx__btn--sm" onClick={() => void act(g.id, async () => { await postJson(`/api/appraisals/goals/${g.id}/approve`, {}); return 'Goal approved.'; })}>Approve goal</button>}
-            {g.status === 'approved' && <button type="button" className="mx__btn mx__btn--ghost mx__btn--sm" onClick={() => ask(g.id, 'Close as achieved, missed or withdrawn?', async (st) => { await postJson(`/api/appraisals/goals/${g.id}`, { status: st.trim().toLowerCase() }); return 'Goal closed.'; })}>Close goal</button>}
-          </div>}
-        </div>)}
-        {team.data && !team.data.length && <EmptyState icon="people" title="No goals from your team" text="Goals set by the people who report to you wait here for approval, and their changes come back to you." />}</div>
-      </div>}
+      {tab === 'team' && <GoalsWorkspace mode="team" goals={team.data ?? []} onChanged={reloadAll} />}
 
       {tab === 'cycles' && <div className="mx__card"><div className="mx__cardHead"><h3>Review cycles</h3><button type="button" className="mx__btn mx__btn--sm" disabled={!published.length} title={published.length ? undefined : 'Publish a template first'} onClick={() => setAdding(adding === 'cycle' ? null : 'cycle')}>{adding === 'cycle' ? 'Close' : published.length ? '+ New cycle' : 'Publish a template first'}</button></div>
         {adding === 'cycle' && <div className="mx__cardBody"><form className="mx__form" onSubmit={(e) => { e.preventDefault(); void act('cycle', async () => {

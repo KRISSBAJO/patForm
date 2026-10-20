@@ -671,6 +671,29 @@ export async function decideRecommendation(pool: Pool, principal: Principal, rec
 
 // ------------------------------------------------------------------- goals
 
+type GoalStepInput = { title: string; detail: string | null; weight: number; dueDate: string | null; assigneeId: string | null };
+function parseGoalSteps(raw: unknown): GoalStepInput[] {
+  if (raw === undefined) return [];
+  if (!Array.isArray(raw) || !raw.length || raw.length > 30) throw new InvalidInput('add between 1 and 30 steps');
+  const steps = raw.map((item, index) => {
+    const value = (item ?? {}) as Record<string, unknown>;
+    const title = text(value.title, 200);
+    const weight = num(value.weight);
+    if (!title) throw new InvalidInput(`step ${index + 1} needs a title`);
+    if (!(weight > 0 && weight <= 100)) throw new InvalidInput(`step ${index + 1} needs a weight between 1 and 100`);
+    return { title, detail: text(value.detail, 2000) || null, weight, dueDate: day(value.dueDate, 'step due date'), assigneeId: value.assigneeId ? id(value.assigneeId, 'step assignee') : null };
+  });
+  if (Math.abs(steps.reduce((total, step) => total + step.weight, 0) - 100) > 0.01) throw new InvalidInput('step weights must total 100%');
+  return steps;
+}
+async function goalAssignee(client: Client | Pool, tenantId: string, actorId: string) {
+  const { rows } = await client.query(`select 1 from actor where id = $1 and tenant_id = $2 and active`, [actorId, tenantId]);
+  if (!rows[0]) throw new InvalidInput('choose an active member of this workspace for the step');
+}
+async function goalEvent(client: Client | Pool, w: Who, goalId: string, kind: string, detail: Record<string, unknown>) {
+  await client.query(`insert into goal_event (tenant_id, goal_id, actor_id, kind, detail) values ($1,$2,$3,$4,$5)`, [w.tenantId, goalId, w.actorId, kind, JSON.stringify(detail)]);
+}
+
 async function canManage(client: Client | Pool, w: Who, ownerId: string): Promise<boolean> {
   if (w.hr) return true;
   return (await managerOf(client, { tenantId: w.tenantId, actorId: ownerId, at: new Date() }))?.id === w.actorId;
@@ -681,9 +704,13 @@ export async function listGoals(pool: Pool, principal: Principal, opts: { ownerI
   const ownerId = opts.ownerId ?? w.actorId;
   if (ownerId !== w.actorId && !(await canManage(pool, w, ownerId))) throw new InvalidInput('you can see your own goals and your reports\'');
   const { rows } = await pool.query(
-    `select g.id, g.title, g.description, g.success_criteria, g.weight, g.target_date::text, g.status, g.progress, g.evidence, g.cycle_id, g.aligned_to, a.title as aligned_title,
+    `select g.id, g.title, g.description, g.success_criteria, g.weight, g.target_date::text, g.status, g.progress, g.evidence, g.cycle_id, g.aligned_to, a.title as aligned_title, o.display_name as owner_name, g.owner_id,
+            (select count(*)::int from goal_step s where s.goal_id = g.id) as step_count,
+            (select count(*)::int from goal_step s where s.goal_id = g.id and s.status = 'done') as steps_done,
             (select count(*)::int from goal_revision r where r.goal_id = g.id and r.status = 'pending') as pending_changes
-       from goal g left join goal a on a.id = g.aligned_to where g.tenant_id = $1 and g.owner_id = $2 order by g.status = 'withdrawn', g.target_date nulls last`, [w.tenantId, ownerId]);
+       from goal g left join goal a on a.id = g.aligned_to join actor o on o.id = g.owner_id
+      where g.tenant_id = $1 and (g.owner_id = $2 ${opts.ownerId ? '' : 'or exists (select 1 from goal_step s where s.goal_id = g.id and s.assignee_id = $2)'})
+      order by g.status = 'withdrawn', g.target_date nulls last`, [w.tenantId, ownerId]);
   return rows;
 }
 
@@ -691,7 +718,9 @@ export async function listGoals(pool: Pool, principal: Principal, opts: { ownerI
 export async function teamGoals(pool: Pool, principal: Principal) {
   const w = await who(pool, principal);
   const { rows } = await pool.query(
-    `select g.id, g.title, g.success_criteria, g.weight, g.status, g.progress, a.display_name as owner,
+    `select g.id, g.title, g.success_criteria, g.weight, g.status, g.progress, g.target_date::text, a.display_name as owner,
+            (select count(*)::int from goal_step s where s.goal_id = g.id) as step_count,
+            (select count(*)::int from goal_step s where s.goal_id = g.id and s.status = 'done') as steps_done,
             (select json_agg(json_build_object('id', r.id, 'proposed', r.proposed, 'previous', r.previous, 'reason', r.reason)) from goal_revision r where r.goal_id = g.id and r.status = 'pending') as pending
        from goal g join actor a on a.id = g.owner_id
       where g.tenant_id = $1 and g.status <> 'withdrawn'
@@ -712,10 +741,20 @@ export async function createGoal(pool: Pool, principal: Principal, body: Record<
   const aligned = body.alignedTo ? id(body.alignedTo, 'alignedTo') : null;
   if (aligned) { const { rows } = await pool.query('select 1 from goal where id = $1 and tenant_id = $2', [aligned, w.tenantId]); if (!rows[0]) throw new InvalidInput('no such goal to align to'); }
   const cycleId = body.cycleId ? id(body.cycleId, 'cycleId') : null;
-  const { rows } = await pool.query<{ id: string }>(
-    `insert into goal (tenant_id, owner_id, cycle_id, aligned_to, title, description, success_criteria, weight, target_date) values ($1, $2, $3, $4, $5, $6, $7, $8, $9) returning id`,
-    [w.tenantId, ownerId, cycleId, aligned, title, text(body.description, 2000) || null, criteria, weight, day(body.targetDate, 'targetDate')]);
-  return { id: rows[0]!.id, status: 'draft' };
+  const steps = parseGoalSteps(body.steps);
+  return inTransaction(pool, async (client) => {
+    const { rows } = await client.query<{ id: string }>(
+      `insert into goal (tenant_id, owner_id, cycle_id, aligned_to, title, description, success_criteria, weight, target_date) values ($1, $2, $3, $4, $5, $6, $7, $8, $9) returning id`,
+      [w.tenantId, ownerId, cycleId, aligned, title, text(body.description, 2000) || null, criteria, weight, day(body.targetDate, 'targetDate')]);
+    const goalId = rows[0]!.id;
+    for (const step of steps) {
+      if (step.assigneeId) await goalAssignee(client, w.tenantId, step.assigneeId);
+      await client.query(`insert into goal_step (tenant_id, goal_id, title, detail, weight, due_date, assignee_id) values ($1,$2,$3,$4,$5,$6,$7)`,
+        [w.tenantId, goalId, step.title, step.detail, step.weight, step.dueDate, step.assigneeId ?? ownerId]);
+    }
+    await goalEvent(client, w, goalId, 'created', { title, steps: steps.length });
+    return { id: goalId, status: 'draft' };
+  });
 }
 
 export async function approveGoal(pool: Pool, principal: Principal, goalId: string) {
@@ -724,8 +763,9 @@ export async function approveGoal(pool: Pool, principal: Principal, goalId: stri
   if (!rows[0]) throw new InvalidInput('no such goal');
   if (rows[0].owner_id === w.actorId) throw new InvalidInput('your manager approves your goals');
   if (!(await canManage(pool, w, rows[0].owner_id))) throw new InvalidInput("only the person's manager or HR can approve their goals");
-  if (rows[0].status !== 'draft') throw new InvalidInput('only a draft goal needs approval');
+  if (!['draft', 'submitted'].includes(rows[0].status)) throw new InvalidInput('only a submitted goal needs approval');
   await pool.query(`update goal set status = 'approved', approved_by = $2, updated_at = now() where id = $1`, [goalId, w.actorId]);
+  await goalEvent(pool, w, goalId, 'approved', {});
   return { id: goalId, status: 'approved' };
 }
 
@@ -744,6 +784,8 @@ export async function updateGoal(pool: Pool, principal: Principal, goalId: strin
     const own = g.owner_id === w.actorId;
     if (!own && !(await canManage(client, w, g.owner_id))) throw new InvalidInput('not your goal');
     if (body.progress !== undefined || body.evidence !== undefined) {
+      const { rows: stepRows } = await client.query('select 1 from goal_step where goal_id = $1 limit 1', [goalId]);
+      if (stepRows[0]) throw new InvalidInput('update the steps; goal progress is calculated from their weights');
       const p = body.progress === undefined ? null : Math.trunc(num(body.progress));
       if (p !== null && !(p >= 0 && p <= 100)) throw new InvalidInput('progress must be 0 to 100');
       await client.query('update goal set progress = coalesce($2, progress), evidence = coalesce($3, evidence), updated_at = now() where id = $1', [goalId, p, text(body.evidence, 4000) || null]);
@@ -760,7 +802,7 @@ export async function updateGoal(pool: Pool, principal: Principal, goalId: strin
     if (body.weight !== undefined) { const n = num(body.weight); if (!(n >= 0 && n <= 100)) throw new InvalidInput('weight must be 0 to 100'); material.weight = n; }
     if (body.targetDate !== undefined) material.target_date = day(body.targetDate, 'targetDate');
     if (!Object.keys(material).length) return { id: goalId, revision: null };
-    if (g.status === 'draft') {
+    if (g.status === 'draft' || g.status === 'submitted') {
       const sets = Object.keys(material).map((k, i) => `${k} = $${i + 2}`);
       await client.query(`update goal set ${sets.join(', ')}, updated_at = now() where id = $1`, [goalId, ...Object.values(material)]);
       return { id: goalId, revision: null };
@@ -788,9 +830,162 @@ export async function decideGoalRevision(pool: Pool, principal: Principal, revis
     if (approve) {
       const keys = Object.keys(r.proposed).filter((k) => ['title', 'success_criteria', 'weight', 'target_date'].includes(k));
       if (keys.length) await client.query(`update goal set ${keys.map((k, i) => `${k} = $${i + 2}`).join(', ')}, updated_at = now() where id = $1`, [r.goal_id, ...keys.map((k) => r.proposed[k])]);
+      if (r.proposed.step_add) {
+        const step = r.proposed.step_add as GoalStepInput;
+        const weights = r.proposed.step_weights as { id: string; weight: number }[];
+        for (const item of weights) await client.query('update goal_step set weight = $2, updated_at = now() where id = $1 and goal_id = $3', [item.id, item.weight, r.goal_id]);
+        await client.query(`insert into goal_step (tenant_id, goal_id, title, detail, weight, due_date, assignee_id) values ($1,$2,$3,$4,$5,$6,$7)`,
+          [w.tenantId, r.goal_id, step.title, step.detail, step.weight, step.dueDate, step.assigneeId ?? r.owner_id]);
+        await recalculateGoalProgress(client, r.goal_id);
+      }
     }
     await client.query(`update goal_revision set status = $2, decided_by = $3, decided_at = now() where id = $1`, [revisionId, approve ? 'approved' : 'rejected', w.actorId]);
+    await goalEvent(client, w, r.goal_id, approve ? 'change_approved' : 'change_returned', { revisionId });
     return { id: revisionId, status: approve ? 'approved' : 'rejected' };
+  });
+}
+
+async function recalculateGoalProgress(client: Client, goalId: string) {
+  const { rows } = await client.query<{ progress: number }>(`select round(sum(weight * progress) / nullif(sum(weight), 0))::int as progress from goal_step where goal_id = $1`, [goalId]);
+  const progress = Number(rows[0]?.progress ?? 0);
+  await client.query('update goal set progress = $2, updated_at = now() where id = $1', [goalId, progress]);
+  return progress;
+}
+
+export async function goalDetail(pool: Pool, principal: Principal, goalId: string) {
+  const w = await who(pool, principal);
+  const { rows } = await pool.query<{ owner_id: string; status: string; title: string; progress: number; target_date: string | null }>(`select g.*, o.display_name as owner_name from goal g join actor o on o.id = g.owner_id where g.id = $1 and g.tenant_id = $2`, [goalId, w.tenantId]);
+  const goal = rows[0];
+  if (!goal) throw new InvalidInput('no such goal');
+  const assigned = await pool.query(`select 1 from goal_step where goal_id = $1 and assignee_id = $2 limit 1`, [goalId, w.actorId]);
+  if (goal.owner_id !== w.actorId && !assigned.rows[0] && !(await canManage(pool, w, goal.owner_id))) throw new InvalidInput('this goal is not assigned to you');
+  const [steps, events, files] = await Promise.all([
+    pool.query(`select s.id, s.title, s.detail, s.weight, s.due_date::text, s.assignee_id, a.display_name as assignee, s.progress, s.status, s.evidence, s.updated_at from goal_step s left join actor a on a.id = s.assignee_id where s.goal_id = $1 order by s.created_at, s.id`, [goalId]),
+    pool.query(`select e.id, e.kind, e.detail, e.created_at, a.display_name as actor from goal_event e left join actor a on a.id = e.actor_id where e.goal_id = $1 order by e.id desc limit 100`, [goalId]),
+    pool.query(`select id, step_id, filename, content_type, byte_size, created_at from goal_file where goal_id = $1 order by created_at desc`, [goalId]),
+  ]);
+  return { goal, steps: steps.rows, events: events.rows, files: files.rows, viewer: { own: goal.owner_id === w.actorId, manager: goal.owner_id !== w.actorId && await canManage(pool, w, goal.owner_id), actorId: w.actorId } };
+}
+
+export async function submitGoal(pool: Pool, principal: Principal, goalId: string) {
+  const w = await who(pool, principal);
+  return inTransaction(pool, async (client) => {
+    const { rows } = await client.query<{ owner_id: string; status: string }>('select owner_id, status from goal where id = $1 and tenant_id = $2 for update', [goalId, w.tenantId]);
+    if (!rows[0] || rows[0].owner_id !== w.actorId) throw new InvalidInput('only the owner submits this goal');
+    if (rows[0].status !== 'draft') throw new InvalidInput('only a draft can be submitted');
+    const { rows: steps } = await client.query<{ weight: string }>('select weight from goal_step where goal_id = $1', [goalId]);
+    if (!steps.length || Math.abs(steps.reduce((n, s) => n + Number(s.weight), 0) - 100) > 0.01) throw new InvalidInput('add steps whose weights total 100% before submitting');
+    const manager = await managerOf(client, { tenantId: w.tenantId, actorId: w.actorId, at: new Date() });
+    if (!manager && !w.hr) throw new InvalidInput('assign a manager in Organisation & authority before submitting');
+    await client.query(`update goal set status = 'submitted', updated_at = now() where id = $1`, [goalId]);
+    await goalEvent(client, w, goalId, 'submitted', {});
+    return { id: goalId, status: 'submitted' };
+  });
+}
+
+export async function decideGoal(pool: Pool, principal: Principal, goalId: string, body: Record<string, unknown>) {
+  const w = await who(pool, principal);
+  const decision = text(body.decision, 20);
+  const note = text(body.note, 2000);
+  if (!['approve', 'return'].includes(decision)) throw new InvalidInput('choose approve or return');
+  if (decision === 'return' && !note) throw new InvalidInput('say what needs to change');
+  return inTransaction(pool, async (client) => {
+    const { rows } = await client.query<{ owner_id: string; status: string }>('select owner_id, status from goal where id = $1 and tenant_id = $2 for update', [goalId, w.tenantId]);
+    const goal = rows[0];
+    if (!goal) throw new InvalidInput('no such goal');
+    if (goal.owner_id === w.actorId || !(await canManage(client, w, goal.owner_id))) throw new InvalidInput('the manager or HR decides this goal');
+    if (goal.status !== 'submitted') throw new InvalidInput('this goal is not awaiting approval');
+    const status = decision === 'approve' ? 'approved' : 'draft';
+    await client.query('update goal set status = $2, approved_by = $3, updated_at = now() where id = $1', [goalId, status, decision === 'approve' ? w.actorId : null]);
+    await goalEvent(client, w, goalId, decision === 'approve' ? 'approved' : 'returned', { note });
+    return { id: goalId, status };
+  });
+}
+
+export async function addGoalStep(pool: Pool, principal: Principal, goalId: string, body: Record<string, unknown>) {
+  const w = await who(pool, principal);
+  const title = text(body.title, 200); const detail = text(body.detail, 2000) || null;
+  const weight = num(body.weight); const dueDate = day(body.dueDate, 'step due date');
+  const assigneeId = body.assigneeId ? id(body.assigneeId, 'step assignee') : null;
+  if (!title || !(weight >= 1 && weight <= 100)) throw new InvalidInput('give the step a title and weight from 1 to 100');
+  return inTransaction(pool, async (client) => {
+    const { rows } = await client.query<{ owner_id: string; status: string }>('select owner_id, status from goal where id = $1 and tenant_id = $2 for update', [goalId, w.tenantId]);
+    const goal = rows[0];
+    if (!goal || (goal.owner_id !== w.actorId && !(await canManage(client, w, goal.owner_id)))) throw new InvalidInput('only the owner or manager can plan this goal');
+    if (!['draft', 'submitted', 'approved'].includes(goal.status)) throw new InvalidInput('this goal is closed to new steps');
+    if (goal.status === 'approved' && goal.owner_id !== w.actorId) throw new InvalidInput('the goal owner proposes changes to an approved plan');
+    if (assigneeId) await goalAssignee(client, w.tenantId, assigneeId);
+    const { rows: existing } = await client.query<{ id: string; weight: string }>('select id, weight from goal_step where goal_id = $1 order by created_at for update', [goalId]);
+    if (existing.length >= 30) throw new InvalidInput('a goal can have at most 30 steps');
+    if (!existing.length && weight !== 100) throw new InvalidInput('the first step must carry 100% of the goal');
+    if (existing.length && weight >= 100) throw new InvalidInput('leave some weight for the existing steps');
+    const total = existing.reduce((n, row) => n + Number(row.weight), 0);
+    const weights = existing.map((row, index) => ({ id: row.id, weight: index === existing.length - 1 ? 0 : Math.round((Number(row.weight) / (total || 1)) * (100 - weight) * 100) / 100 }));
+    if (weights.length) weights[weights.length - 1]!.weight = Math.round((100 - weight - weights.slice(0, -1).reduce((n, row) => n + row.weight, 0)) * 100) / 100;
+    const step = { title, detail, weight, dueDate, assigneeId };
+    if (goal.status === 'approved') {
+      const pending = await client.query('select 1 from goal_revision where goal_id = $1 and status = $2 limit 1', [goalId, 'pending']);
+      if (pending.rows[0]) throw new InvalidInput('wait for the current plan change to be decided before adding another step');
+      const reason = text(body.reason, 1000);
+      if (!reason) throw new InvalidInput('say why the approved plan needs another step');
+      const { rows: revision } = await client.query<{ id: string }>(`insert into goal_revision (goal_id, proposed, previous, reason, proposed_by) values ($1,$2,$3,$4,$5) returning id`,
+        [goalId, JSON.stringify({ step_add: step, step_weights: weights }), JSON.stringify({ steps: existing }), reason, w.actorId]);
+      await goalEvent(client, w, goalId, 'step_proposed', { title, weight, reason });
+      return { pending: true, revision: revision[0]!.id };
+    }
+    for (const row of weights) await client.query('update goal_step set weight = $2, updated_at = now() where id = $1', [row.id, row.weight]);
+    await client.query(`insert into goal_step (tenant_id, goal_id, title, detail, weight, due_date, assignee_id) values ($1,$2,$3,$4,$5,$6,$7)`, [w.tenantId, goalId, title, detail, weight, dueDate, assigneeId ?? goal.owner_id]);
+    await recalculateGoalProgress(client, goalId);
+    await goalEvent(client, w, goalId, 'step_added', { title, weight });
+    return { pending: false };
+  });
+}
+
+export async function updateGoalStep(pool: Pool, principal: Principal, goalId: string, stepId: string, body: Record<string, unknown>) {
+  const w = await who(pool, principal);
+  const progress = Math.trunc(num(body.progress));
+  const evidence = text(body.evidence, 4000);
+  const note = text(body.note, 2000);
+  const blocked = body.blocked === true;
+  if (!(progress >= 0 && progress <= 100)) throw new InvalidInput('step progress must be 0 to 100');
+  if (!note) throw new InvalidInput('write a short progress update');
+  if (progress === 100 && !evidence) throw new InvalidInput('describe the evidence for a completed step');
+  return inTransaction(pool, async (client) => {
+    const { rows: goals } = await client.query<{ owner_id: string; status: string }>('select owner_id, status from goal where id = $1 and tenant_id = $2 for update', [goalId, w.tenantId]);
+    const goal = goals[0];
+    if (!goal) throw new InvalidInput('no such goal');
+    if (goal.status !== 'approved') throw new InvalidInput('the manager must approve the goal before progress is recorded');
+    const { rows } = await client.query<{ title: string; assignee_id: string | null; progress: number }>('select title, assignee_id, progress from goal_step where id = $1 and goal_id = $2 for update', [stepId, goalId]);
+    const step = rows[0];
+    if (!step) throw new InvalidInput('no such step');
+    if (![goal.owner_id, step.assignee_id].includes(w.actorId) && !(await canManage(client, w, goal.owner_id))) throw new InvalidInput('only the assigned person, owner or manager can update this step');
+    const status = blocked ? 'blocked' : progress === 100 ? 'done' : progress === 0 ? 'todo' : 'in_progress';
+    await client.query(`update goal_step set progress = $2, status = $3, evidence = case when $4 = '' then evidence else $4 end, updated_at = now() where id = $1`, [stepId, progress, status, evidence]);
+    const overall = await recalculateGoalProgress(client, goalId);
+    await goalEvent(client, w, goalId, blocked ? 'step_blocked' : 'step_updated', { stepId, title: step.title, from: step.progress, progress, overall, note, evidence });
+    return { id: stepId, progress, overall, status };
+  });
+}
+
+export async function decideGoalCompletion(pool: Pool, principal: Principal, goalId: string, body: Record<string, unknown>) {
+  const w = await who(pool, principal);
+  const decision = text(body.decision, 20); const note = text(body.note, 2000);
+  if (!['request', 'approve', 'return'].includes(decision)) throw new InvalidInput('choose request, approve or return');
+  if (decision !== 'approve' && !note) throw new InvalidInput('say what is complete or what needs more work');
+  return inTransaction(pool, async (client) => {
+    const { rows } = await client.query<{ owner_id: string; status: string; progress: number }>('select owner_id, status, progress from goal where id = $1 and tenant_id = $2 for update', [goalId, w.tenantId]);
+    const goal = rows[0];
+    if (!goal) throw new InvalidInput('no such goal');
+    if (decision === 'request') {
+      if (goal.owner_id !== w.actorId || goal.status !== 'approved' || goal.progress !== 100) throw new InvalidInput('finish every weighted step before asking for completion review');
+      await client.query(`update goal set status = 'completion_requested', updated_at = now() where id = $1`, [goalId]);
+    } else {
+      if (goal.owner_id === w.actorId || !(await canManage(client, w, goal.owner_id))) throw new InvalidInput('the manager or HR reviews completion');
+      if (goal.status !== 'completion_requested') throw new InvalidInput('completion has not been requested');
+      await client.query('update goal set status = $2, updated_at = now() where id = $1', [goalId, decision === 'approve' ? 'achieved' : 'approved']);
+    }
+    await goalEvent(client, w, goalId, decision === 'request' ? 'completion_requested' : decision === 'approve' ? 'completion_approved' : 'completion_returned', { note });
+    return { id: goalId, status: decision === 'request' ? 'completion_requested' : decision === 'approve' ? 'achieved' : 'approved' };
   });
 }
 
@@ -863,7 +1058,7 @@ export async function appraisalSummary(pool: Pool, principal: Principal) {
   const assignments = await myAssignments(pool, principal);
   const { rows } = await pool.query<{ results: number; goals: number; dev: number }>(
     `select (select count(*)::int from review_result r join review_participant p on p.id = r.participant_id where p.actor_id = $1 and r.acknowledged_at is null) as results,
-            (select count(*)::int from goal where owner_id = $1 and status in ('draft', 'approved')) as goals,
+            (select count(*)::int from goal where owner_id = $1 and status in ('draft', 'submitted', 'approved', 'completion_requested')) as goals,
             (select count(*)::int from development_item where employee_id = $1 and status = 'open') as dev`, [w.actorId]);
   return { hr: w.hr, admin: w.admin, reviewsToDo: assignments.filter((a) => a.window === 'open' && a.status !== 'submitted').length, ...rows[0] };
 }

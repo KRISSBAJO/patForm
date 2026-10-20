@@ -2327,7 +2327,7 @@ create table if not exists goal (
   success_criteria text not null,
   weight           numeric(6, 2) not null default 0 check (weight >= 0 and weight <= 100),
   target_date      date,
-  status           text not null default 'draft' check (status in ('draft', 'approved', 'achieved', 'missed', 'withdrawn')),
+  status           text not null default 'draft' check (status in ('draft', 'submitted', 'approved', 'completion_requested', 'achieved', 'missed', 'withdrawn')),
   progress         int not null default 0 check (progress between 0 and 100),
   evidence         text,
   approved_by      uuid references actor(id),
@@ -2346,6 +2346,48 @@ create table if not exists goal_revision (
   created_at  timestamptz not null default now(),
   decided_at  timestamptz
 );
+
+create table if not exists goal_step (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null references tenant(id),
+  goal_id uuid not null references goal(id),
+  title text not null,
+  detail text,
+  weight numeric(6,2) not null check (weight >= 0 and weight <= 100),
+  due_date date,
+  assignee_id uuid references actor(id),
+  progress int not null default 0 check (progress between 0 and 100),
+  status text not null default 'todo' check (status in ('todo','in_progress','blocked','done')),
+  evidence text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists goal_step_by_goal on goal_step (goal_id, created_at);
+create index if not exists goal_step_by_assignee on goal_step (tenant_id, assignee_id);
+create table if not exists goal_event (
+  id bigserial primary key,
+  tenant_id uuid not null references tenant(id),
+  goal_id uuid not null references goal(id),
+  actor_id uuid references actor(id),
+  kind text not null,
+  detail jsonb not null default '{}',
+  created_at timestamptz not null default now()
+);
+create index if not exists goal_event_by_goal on goal_event (goal_id, id desc);
+create table if not exists goal_file (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null references tenant(id),
+  goal_id uuid not null references goal(id),
+  step_id uuid references goal_step(id),
+  filename text not null,
+  content_type text not null,
+  byte_size int not null,
+  sha256 text not null,
+  storage_key text not null,
+  uploaded_by uuid references actor(id),
+  created_at timestamptz not null default now()
+);
+create index if not exists goal_file_by_goal on goal_file (goal_id, created_at);
 
 create table if not exists development_item (
   id             uuid primary key default gen_random_uuid(),

@@ -36,6 +36,7 @@ import { searchCases, searchDocuments, searchHiring, searchHolidays, searchLeave
 import { addEmployeeEvent, adjustLeave, documentFileLink, listBranches, saveBranch, searchEmployees, setEmployeeBranch, employeeDetail, employeeFileLink, leaveCalendar, leaveLedger, myProfile, orgTree, removeEmployeeFile, setEmployeeFileVisibility, updateProfile, uploadDocumentFile, uploadEmployeeFile } from '../runtime/hr-records.js';
 import { acknowledgeDocument, addCaseNote, addCertification, cancelLeave, completeTask, createDocument, decideLeave, decideProbation, exceptTask, hrSummary, leaveToApprove, listCaseNotes, listCases, listCompensation, listDocuments, listEmployees, listHiring, listHolidays, listLeaveTypes, listReconciliations, listTeams, listTemplates, myDocuments, myLeave, myTasks, readHrSettings, requestLeave, resolveReconciliation, saveHoliday, saveLeaveType, saveTemplate, sendDocument, setCompensation, setEntitlement, setTeamMember, startOffboarding, startOnboarding, startProbationReview, startTransfer, updateEmployee, updateHrSettings, upcoming, urgentTermination } from '../runtime/hr.js';
 import * as apr from '../runtime/appraisals.js';
+import { goalFileLink, uploadGoalFile } from '../runtime/goal-files.js';
 import * as ops from '../runtime/ops.js';
 import * as gov from '../runtime/gov.js';
 import * as mtg from '../runtime/meetings.js';
@@ -1113,7 +1114,15 @@ route('POST', ar(`recommendations/${A}/decide`), async ({ pool, principal, url }
 route('GET', ar('goals'), async ({ pool, principal, url }) => apr.listGoals(pool, principal, { ownerId: url.searchParams.get('owner') ?? undefined }));
 route('GET', ar('goals/team'), async ({ pool, principal }) => apr.teamGoals(pool, principal));
 route('POST', ar('goals'), async ({ pool, principal }, b) => apr.createGoal(pool, principal, hb(b)));
+route('GET', ar(`goals/${A}`), async ({ pool, principal, url }) => apr.goalDetail(pool, principal, hid(url, 4)));
 route('POST', ar(`goals/${A}`), async ({ pool, principal, url }, b) => apr.updateGoal(pool, principal, hid(url, 4), hb(b)));
+route('POST', ar(`goals/${A}/submit`), async ({ pool, principal, url }) => apr.submitGoal(pool, principal, hid(url, 4)));
+route('POST', ar(`goals/${A}/decide`), async ({ pool, principal, url }, b) => apr.decideGoal(pool, principal, hid(url, 4), hb(b)));
+route('POST', ar(`goals/${A}/steps`), async ({ pool, principal, url }, b) => apr.addGoalStep(pool, principal, hid(url, 4), hb(b)));
+route('POST', ar(`goals/${A}/steps/${A}`), async ({ pool, principal, url }, b) => apr.updateGoalStep(pool, principal, hid(url, 4), hid(url, 6), hb(b)));
+route('POST', ar(`goals/${A}/completion`), async ({ pool, principal, url }, b) => apr.decideGoalCompletion(pool, principal, hid(url, 4), hb(b)));
+route('POST', ar(`goals/${A}/files`), async ({ pool, principal, url }, b) => uploadGoalFile(pool, principal, hid(url, 4), hb(b)));
+route('GET', ar(`goals/${A}/files/${A}`), async ({ pool, principal, url }) => goalFileLink(pool, principal, hid(url, 4), hid(url, 6)));
 route('POST', ar(`goals/${A}/approve`), async ({ pool, principal, url }) => apr.approveGoal(pool, principal, hid(url, 4)));
 route('POST', ar('goals/revisions/(\d+)/decide'), async ({ pool, principal, url }, b) => apr.decideGoalRevision(pool, principal, hid(url, 5), hb(b)));
 route('GET', ar('development'), async ({ pool, principal, url }) => apr.listDevelopment(pool, principal, { employeeId: url.searchParams.get('employee') ?? undefined }));
@@ -2311,7 +2320,7 @@ async function main(): Promise<void> {
         const match = routes.find((r) => r.method === req.method && r.pattern.test(url.pathname));
         if (!match) throw new HttpError(404, `no route for ${req.method} ${url.pathname}`);
 
-        const body = req.method === 'POST' ? await readBody(req, url.pathname.endsWith('/brand-assets') ? 4 * 1024 * 1024 + 1024 : url.pathname === '/api/gov/files' ? 28 * 1024 * 1024 : url.pathname.endsWith('/files') || url.pathname === '/api/ops/photos' ? 7 * 1024 * 1024 : Number.MAX_SAFE_INTEGER) : {};
+        const body = req.method === 'POST' ? await readBody(req, url.pathname.endsWith('/brand-assets') ? 4 * 1024 * 1024 + 1024 : url.pathname === '/api/gov/files' ? 28 * 1024 * 1024 : /^\/api\/appraisals\/goals\/[0-9a-f-]+\/files$/.test(url.pathname) ? 14 * 1024 * 1024 : url.pathname.endsWith('/files') || url.pathname === '/api/ops/photos' ? 7 * 1024 * 1024 : Number.MAX_SAFE_INTEGER) : {};
 
         /*
          * Actions that grant access or destroy data ask for a recent sign-in.

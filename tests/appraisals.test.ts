@@ -8,7 +8,7 @@ import {
   acknowledgeResult, addDevelopmentItem, addPeerReviewer, adjustScore, appealResult, approveGoal, assessmentForm, assignAppealReviewer, assignReviewer,
   calibrationView, completeDevelopmentItem, computeScore, createCycle, createGoal, cycleReport, decideAppeal, decideGoalRevision, decideRecommendation,
   launchCycle, listAppeals, listGoals, listRecommendations, myAssignments, myResults, publishCycle, publishTemplate, saveAssessment, saveTemplate,
-  teamGoals, updateGoal, validateTemplate, type TemplateSnapshot,
+  teamGoals, updateGoal, validateTemplate, addGoalStep, decideGoal, decideGoalCompletion, goalDetail, submitGoal, updateGoalStep, type TemplateSnapshot,
 } from '../src/runtime/appraisals.js';
 import type { Principal } from '../src/runtime/policy.js';
 
@@ -315,6 +315,63 @@ test('goals need manager approval, changes keep their history, and development i
     await assert.rejects(completeDevelopmentItem(pool, w.staff.p, d.id, {}), /what shows it is done/);
     await completeDevelopmentItem(pool, w.staff.p, d.id, { evidence: 'Certificate 2026-11' });
     await assert.rejects(addDevelopmentItem(pool, w.outsider.p, { employeeId: w.staff.id, title: 'x' }), /your own plan/);
+  } finally { await pool.end(); }
+});
+
+test('weighted goal plan goes through manager review, assigned work, evidence and completion review', { skip: !localDatabase }, async () => {
+  const pool = createPool(3); const engine = new Engine(pool);
+  try {
+    const w = await workspace(pool, engine);
+    await assert.rejects(createGoal(pool, w.staff.p, { title: 'Launch pilot', successCriteria: 'Pilot live', steps: [{ title: 'Prepare', weight: 40 }, { title: 'Release', weight: 40 }] }), /total 100/);
+    const g = await createGoal(pool, w.staff.p, { title: 'Launch pilot', successCriteria: 'Pilot live with 10 testers', targetDate: addDays(40), steps: [
+      { title: 'Prepare', weight: 40, dueDate: addDays(10), assigneeId: w.staff.id },
+      { title: 'Release', weight: 60, dueDate: addDays(30), assigneeId: w.staff2.id },
+    ] });
+    assert.equal((await listGoals(pool, w.staff2.p)).some((goal) => goal.id === g.id), true);
+    await assert.rejects(updateGoal(pool, w.staff.p, g.id, { progress: 50 }), /update the steps/);
+    await submitGoal(pool, w.staff.p, g.id);
+    await assert.rejects(updateGoalStep(pool, w.staff.p, g.id, (await goalDetail(pool, w.staff.p, g.id)).steps[0].id, { progress: 50, note: 'Worked' }), /manager must approve/);
+    await decideGoal(pool, w.manager.p, g.id, { decision: 'return', note: 'Clarify the launch date' });
+    assert.equal((await goalDetail(pool, w.staff.p, g.id)).goal.status, 'draft');
+    await submitGoal(pool, w.staff.p, g.id);
+    await decideGoal(pool, w.manager.p, g.id, { decision: 'approve' });
+    const detail = await goalDetail(pool, w.staff.p, g.id);
+    const prepare = detail.steps.find((step) => step.title === 'Prepare')!;
+    const release = detail.steps.find((step) => step.title === 'Release')!;
+    await assert.rejects(updateGoalStep(pool, w.staff2.p, g.id, prepare.id, { progress: 100, note: 'Done', evidence: 'Link' }), /assigned person/);
+    await assert.rejects(updateGoalStep(pool, w.staff.p, g.id, prepare.id, { progress: 100, note: 'Done' }), /describe the evidence/);
+    const first = await updateGoalStep(pool, w.staff.p, g.id, prepare.id, { progress: 100, note: 'Prepared materials', evidence: 'Checklist approved' });
+    assert.equal(first.overall, 40);
+    const second = await updateGoalStep(pool, w.staff2.p, g.id, release.id, { progress: 100, note: 'Released', evidence: 'Ten testers signed up' });
+    assert.equal(second.overall, 100);
+    await decideGoalCompletion(pool, w.staff.p, g.id, { decision: 'request', note: 'Both steps complete' });
+    await decideGoalCompletion(pool, w.manager.p, g.id, { decision: 'approve' });
+    const final = await goalDetail(pool, w.staff.p, g.id);
+    assert.equal(final.goal.status, 'achieved');
+    assert.ok(final.events.some((event) => event.kind === 'completion_approved'));
+    await assert.rejects(addGoalStep(pool, w.staff.p, g.id, { title: 'Too late', weight: 10 }), /closed to new steps/);
+  } finally { await pool.end(); }
+});
+
+test('new steps on an approved plan wait for the manager and rebalance weights', { skip: !localDatabase }, async () => {
+  const pool = createPool(3); const engine = new Engine(pool);
+  try {
+    const w = await workspace(pool, engine);
+    const g = await createGoal(pool, w.staff.p, { title: 'Improve service', successCriteria: 'Response within one day', steps: [
+      { title: 'Train', weight: 50, dueDate: addDays(10) }, { title: 'Measure', weight: 50, dueDate: addDays(20) },
+    ] });
+    await submitGoal(pool, w.staff.p, g.id);
+    await decideGoal(pool, w.manager.p, g.id, { decision: 'approve' });
+    await assert.rejects(addGoalStep(pool, w.manager.p, g.id, { title: 'Manager adds', weight: 20, reason: 'Need this' }), /owner proposes/);
+    const change = await addGoalStep(pool, w.staff.p, g.id, { title: 'Verify', weight: 20, dueDate: addDays(25), reason: 'Need a final quality check' });
+    assert.equal(change.pending, true);
+    await assert.rejects(addGoalStep(pool, w.staff.p, g.id, { title: 'Second pending', weight: 10, reason: 'Also needed' }), /wait for the current plan change/);
+    assert.equal((await goalDetail(pool, w.staff.p, g.id)).steps.length, 2);
+    await decideGoalRevision(pool, w.manager.p, String(change.revision), { decision: 'approve' });
+    const detail = await goalDetail(pool, w.staff.p, g.id);
+    assert.equal(detail.steps.length, 3);
+    assert.equal(detail.steps.reduce((sum, step) => sum + Number(step.weight), 0), 100);
+    assert.equal(Number(detail.steps.find((step) => step.title === 'Verify')!.weight), 20);
   } finally { await pool.end(); }
 });
 
