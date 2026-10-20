@@ -5475,10 +5475,12 @@ a.cs__navItem {
 .cs__nav { min-height: 0; overflow: visible; }
 .cs__railModules { position: relative; }
 .cs__navCount--quiet { background: var(--paper-2); color: var(--muted); }
-.cs__appMenu { position: absolute; left: calc(100% + 10px); top: -8px; width: 420px; max-width: calc(100vw - 100px); z-index: 50; background: #fff; color: var(--ink); border: 1px solid #dbe5df; border-radius: 16px; padding: 14px; box-shadow: 0 24px 60px -20px rgba(16, 45, 35, .35); }
+.cs__shell--launcher .cs__main { margin-left: 280px; }
+.cs__appMenu { position: fixed; left: 76px; top: 52px; bottom: 0; width: 280px; z-index: 42; overflow-y: auto; background: #fff; color: var(--ink); border-right: 1px solid #dbe5df; padding: 20px 14px; box-shadow: 14px 0 26px -26px rgba(16, 45, 35, .3); }
+.cs__side--expanded .cs__appMenu { left: 208px; }
 .cs__appMenuHead { display: flex; flex-direction: column; gap: 2px; padding: 2px 4px 12px; }
 .cs__appMenuHead strong { font: 700 14px var(--ui); } .cs__appMenuHead small { font: 12px var(--ui); color: var(--muted); }
-.cs__appGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.cs__appGrid { display: grid; grid-template-columns: 1fr; gap: 7px; }
 .cs__appTile { display: grid; grid-template-columns: 36px 1fr; grid-template-rows: auto auto; column-gap: 10px; align-items: center; text-align: left; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line); background: #fff; cursor: pointer; font: inherit; transition: transform .12s, box-shadow .12s, border-color .12s; }
 .cs__appTile:hover { transform: translateY(-1px); border-color: color-mix(in srgb, var(--mod) 40%, var(--line)); box-shadow: 0 10px 24px -16px var(--mod-deep); }
 .cs__appTile.is-on { background: var(--mod-tint); border-color: var(--mod); }
@@ -5500,7 +5502,9 @@ a.cs__navItem {
 .ig__activate .cs__btn { flex: none; }
 @media (max-width: 760px) {
   .cs__side { max-height: none; position: fixed; }
-  .cs__appMenu { position: static; width: auto; max-width: none; margin: 6px 0 10px; box-shadow: none; border-color: var(--line); }
+  .cs__shell--launcher .cs__main { margin-left: 0; }
+  .cs__shell--launcher .cs__railBottom { display: none; }
+  .cs__appMenu, .cs__side--expanded .cs__appMenu { position: static; width: auto; max-width: none; height: auto; margin: 6px 0 10px; padding: 10px; box-shadow: none; border: 1px solid var(--line); border-radius: 12px; }
   .cs__appGrid { grid-template-columns: 1fr; }
   .ig__activate { align-items: flex-start; flex-wrap: wrap; padding: 18px; }
   .ig__activate .cs__btn { width: 100%; }

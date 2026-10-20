@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { CONSOLE_MODULES, moduleIsEnabled, type ConsoleModule } from './module-catalog';
+import { CONSOLE_MODULES, moduleIsEnabled } from './module-catalog';
 import './home.css';
 
 type HomeFeed = {
@@ -13,13 +13,13 @@ type HomeFeed = {
 };
 
 export function HomeView({
-  name, workspace, modules, onView, onSelectModule, onOpenRecord,
+  name, workspace, modules, onView, onOpenModules, onOpenRecord,
 }: {
   name: string;
   workspace: string;
   modules: string[];
   onView: (view: string) => void;
-  onSelectModule: (module: ConsoleModule) => void;
+  onOpenModules: () => void;
   onOpenRecord: (id: string) => void;
 }) {
   const [feed, setFeed] = useState<HomeFeed | null>(null);
@@ -49,19 +49,14 @@ export function HomeView({
         <h2 id="wh-title">Welcome back, <em>{firstName}.</em></h2>
         <p>Your place to enter every part of Patform. Choose a module, then carry on where you left off.</p>
         <div className="wh__welcomeActions">
-          <button type="button" className="wh__primary" onClick={() => document.getElementById('wh-modules')?.scrollIntoView({ behavior: 'smooth' })}>Explore modules <span aria-hidden="true">↓</span></button>
+          <button type="button" className="wh__primary" onClick={onOpenModules}>Browse modules <span aria-hidden="true">→</span></button>
         </div>
       </div>
       <img src="/images/home-workspace-v1.webp" alt="" width="1536" height="1024" className="wh__art" />
       <span className="wh__heroFoot" aria-hidden="true">ONE WORKSPACE <span>✦</span> EVERY HANDOFF <span>✦</span> ONE HISTORY</span>
     </section>
 
-    <section className="wh__modules" id="wh-modules" aria-labelledby="wh-modules-title">
-      <div className="wh__sectionHead"><div><span className="wh__eyebrow">YOUR WORKSPACE</span><h3 id="wh-modules-title">Where would you like to go?</h3><p>{enabledCount} ready to use · Choose any module to open it or switch it on.</p></div></div>
-      <div className="wh__moduleGrid">
-        {CONSOLE_MODULES.map((module) => { const enabled = moduleIsEnabled(module, modules); return <button type="button" className={`wh__module${enabled ? '' : ' wh__module--inactive'}`} key={module.id} style={{ '--wh-accent': module.area.colour, '--wh-tint': module.area.tint } as React.CSSProperties} onClick={() => onSelectModule(module)}><span className="wh__moduleIcon" aria-hidden="true">{module.area.icon}</span><strong>{module.name}</strong><small>{module.blurb}</small><span className="wh__moduleState">{enabled ? 'Open module' : 'Switch on'}</span><span className="wh__moduleArrow" aria-hidden="true">↗</span></button>; })}
-      </div>
-    </section>
+    <section className="wh__modulePrompt" aria-label="Modules"><span className="wh__modulePromptMark" aria-hidden="true">✦</span><div><strong>{enabledCount} modules ready for your team</strong><p>Open any workspace from Modules in the sidebar. Other modules stay visible there when they are switched off.</p></div><button type="button" onClick={onOpenModules}>Choose a module <span aria-hidden="true">→</span></button></section>
 
     <section className="wh__shared" aria-labelledby="wh-shared-title">
       <div className="wh__sectionHead"><div><span className="wh__eyebrow">THE SPACE BEHIND THE WORK</span><h3 id="wh-shared-title">Shared across every module</h3><p>Set up your workspace once. The same people, access and connections follow you throughout.</p></div></div>
@@ -79,7 +74,7 @@ export function HomeView({
           : !feed ? <p className="wh__quiet">Gathering work from across your processes…</p>
           : waiting.length ? <div className="wh__attentionList">{waiting.slice(0, 3).map((item, index) => <button key={`${item.instanceId}-${index}`} type="button" onClick={() => onOpenRecord(item.instanceId)}><span className={`wh__itemDot${item.late ? ' wh__itemDot--late' : ''}`} /><span><strong>{item.summary || item.reference}</strong><small>{item.processName} · {item.reference}{item.late ? ' · Late' : ''}</small></span><span aria-hidden="true">↗</span></button>)}</div>
           : actionCount ? <div className="wh__attentionList">{feed.actions!.slice(0, 3).map((action) => <button key={action.id} type="button" onClick={() => onView('meetings')}><span className={`wh__itemDot${action.late ? ' wh__itemDot--late' : ''}`} /><span><strong>{action.title}</strong><small>Meeting action{action.late ? ' · Late' : ''}</small></span><span aria-hidden="true">↗</span></button>)}</div>
-          : <p className="wh__quiet">Nothing needs your decision right now. Choose a module above whenever you’re ready.</p>}
+          : <p className="wh__quiet">Nothing needs your decision right now. Choose a module from the sidebar whenever you’re ready.</p>}
       </section>
     </div>
   </div>;

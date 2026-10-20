@@ -562,7 +562,7 @@ export function Console() {
       </header>
 
       <ReauthDialog />
-      <div className={`cs__shell${area ? ' cs__shell--module' : ''}`} style={area ? ({ '--mod': area.colour, '--mod-deep': area.deep, '--mod-tint': area.tint } as React.CSSProperties) : undefined}>
+      <div className={`cs__shell${area ? ' cs__shell--module' : ''}${modulesOpen && !area ? ' cs__shell--launcher' : ''}`} style={area ? ({ '--mod': area.colour, '--mod-deep': area.deep, '--mod-tint': area.tint } as React.CSSProperties) : undefined}>
       {mobileNavOpen && <button type="button" className="cs__navBackdrop" aria-label="Close menu" onClick={() => setMobileNavOpen(false)} />}
       <aside id="console-navigation" className={`cs__side${railExpanded || area ? ' cs__side--expanded' : ''}${mobileNavOpen ? ' cs__side--open' : ''}${area ? ' cs__side--module' : ''}`} onClick={(event) => {
         if ((event.target as HTMLElement).closest('button, a')) setMobileNavOpen(false);
@@ -572,7 +572,7 @@ export function Console() {
         <nav className="cs__nav" aria-label="Console">
 <button type="button" className="cs__navItem" title="Home" aria-current={view === 'home' ? 'page' : undefined} onClick={() => { setActivationTarget(null); setView('home'); }}><NavIcon name="home"/><span className="cs__navText">Home</span></button>
 <div className="cs__railModules" ref={modulesRef}>
-  <button type="button" className="cs__navItem" title="Modules" aria-expanded={modulesOpen} aria-controls="console-modules-menu" aria-current={CONSOLE_MODULES.some((m) => m.view === view) || ['ask','records','dashboard','processes'].includes(view) ? 'page' : undefined} onClick={(event) => { event.stopPropagation(); setModulesOpen(!modulesOpen); setSettingsOpen(false); }}><NavIcon name="processes"/><span className="cs__navText">Modules</span><span className="cs__navCount cs__navCount--quiet">{CONSOLE_MODULES.length}</span></button>
+  <button type="button" className="cs__navItem" title="Modules" aria-expanded={modulesOpen} aria-controls="console-modules-menu" aria-current={modulesOpen || CONSOLE_MODULES.some((m) => m.view === view) || ['ask','records','dashboard','processes'].includes(view) ? 'page' : undefined} onClick={(event) => { event.stopPropagation(); setModulesOpen(!modulesOpen); setSettingsOpen(false); }}><NavIcon name="processes"/><span className="cs__navText">Modules</span><span className="cs__navCount cs__navCount--quiet">{CONSOLE_MODULES.length}</span></button>
   {modulesOpen && <div id="console-modules-menu" className="cs__appMenu" role="menu" aria-label="Modules">
     <div className="cs__appMenuHead"><strong>Choose a module</strong><small>Available here even when switched off</small></div>
     <div className="cs__appGrid">
@@ -666,7 +666,7 @@ export function Console() {
         <div className={`cs__body ${view === 'home' ? 'cs__body--home' : ''} ${view === 'security' ? 'cs__body--security' : ''} ${view === 'ask' ? 'cs__body--ask' : ''} ${view === 'record' ? 'cs__body--record' : ''} ${view === 'health' ? 'cs__body--health' : ''} ${view === 'dashboard' ? 'cs__body--dashboard' : ''} ${view === 'people' ? 'cs__body--people' : ''} ${view === 'records' ? 'cs__body--records' : ''} ${view === 'work' ? 'cs__body--work' : ''} ${view === 'processes' ? 'cs__body--processes' : ''} ${view === 'held' ? 'cs__body--held' : ''} ${view === 'integrations' ? 'cs__body--integrations' : ''} ${view === 'data' ? 'cs__body--data' : ''} ${view === 'modules' || view === 'organisation' || view === 'approvals' || view === 'expenses' || view === 'procurement' || view === 'hr' || view === 'appraisals' || view === 'operations' || view === 'compliance' || view === 'sign' || view === 'meetings' ? 'cs__body--integrations' : ''} ${view === 'meetings' || view === 'hr' || view === 'expenses' || view === 'procurement' || view === 'appraisals' || view === 'approvals' ? 'cs__body--wide' : ''}`}>
           <div className="cs__left">
             {view === 'home' ? (
-              <HomeView name={me.display_name} workspace={me.workspace_name} modules={session.modules ?? []} onView={(next) => setView(next as typeof view)} onSelectModule={openModule} onOpenRecord={(id) => void open(id)} />
+              <HomeView name={me.display_name} workspace={me.workspace_name} modules={session.modules ?? []} onView={(next) => setView(next as typeof view)} onOpenModules={() => setModulesOpen(true)} onOpenRecord={(id) => void open(id)} />
             ) : view === 'record' && record ? (
               <RecordPage
                 key={`${record.instanceId}:${work?.tasks.find((t) => t.instanceId === record.instanceId)?.taskKey ?? ''}`}
