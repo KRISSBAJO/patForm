@@ -363,3 +363,32 @@
 .pr__stats span { display: grid; line-height: 1.1; } .pr__stats strong { font-size: 15px; } .pr__stats small { font-size: 10.5px; color: var(--mx-muted); text-transform: uppercase; letter-spacing: .05em; }
 .mx__btn.is-on { box-shadow: inset 0 0 0 2px var(--mod-deep, #143f70); }
 @media (max-width: 900px) { .pr__lineRow { grid-template-columns: 1fr 1fr; } .pr__lineName { grid-column: 1 / -1; } }
+
+/* Appraisals: review sheet, scales, cycles, calibration */
+.apr__reviewBody { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 20px; }
+.apr__sheet { display: grid; gap: 14px; }
+.apr__section { border: 1px solid var(--mx-line); border-radius: 14px; padding: 14px 16px; background: #fff; display: grid; gap: 10px; }
+.apr__sectionHead { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.apr__sectionHead strong { font: 600 15px var(--font-display, serif); }
+.apr__crit { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 6px 0; border-top: 1px solid var(--mx-line); }
+.apr__crit:first-of-type { border-top: 0; }
+.apr__critTitle { display: grid; font-size: 13.5px; font-weight: 500; }
+.apr__scale .mx__seg { min-width: 38px; justify-content: center; }
+.apr__side { display: grid; gap: 12px; align-content: start; }
+.apr__sideBlock { padding: 12px 14px; border-radius: 12px; background: var(--mx-soft); border: 1px solid var(--mx-line); display: grid; gap: 6px; font-size: 13px; }
+.apr__sideGoal { display: grid; gap: 4px; padding-top: 6px; }
+.apr__sideScore { font: 700 28px/1 var(--ui); letter-spacing: -.02em; }
+.apr__ring { flex: 0 0 auto; display: grid; place-items: center; width: 64px; height: 64px; border-radius: 50%; background: var(--mod-tint, #e8f4f4); border: 3px solid var(--mod, #0e7c7b); line-height: 1; }
+.apr__ring strong { font: 700 20px var(--ui); color: var(--mod-deep, #0a5554); } .apr__ring small { font-size: 9.5px; color: var(--mx-muted); text-transform: uppercase; letter-spacing: .05em; }
+.apr__goal small:not(.mx__tiny) { color: var(--mx-muted); font-size: 12.5px; }
+.apr__timeline { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 6px; }
+.apr__tl { display: grid; line-height: 1.2; } .apr__tl strong { font-size: 12px; } .apr__tl small { font-size: 11.5px; color: var(--mx-muted); }
+.apr__stages { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
+.apr__stage { display: grid; gap: 6px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--mx-line); background: #fff; font-size: 13px; }
+.apr__stageDates { display: flex; align-items: center; gap: 8px; } .apr__stageDates span { color: var(--mx-muted); font-size: 12px; } .apr__stageDates input { min-width: 0; flex: 1; }
+.apr__cal td { vertical-align: top; } .apr__calPerson { display: flex; gap: 10px; align-items: flex-start; } .apr__calPerson > div { display: grid; gap: 2px; }
+.apr__calScore { font-size: 18px; }
+.apr__tplSection { padding: 10px 12px; border-radius: 12px; border: 1px solid var(--mx-line); background: #fff; display: grid; gap: 8px; }
+.apr__tplRow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; } .apr__tplRow > input:first-child { flex: 1 1 200px; }
+.mx .apr__tplSection input, .mx .apr__tplSection textarea, .mx .apr__stage input { font: inherit; padding: 8px 10px; border: 1px solid var(--mx-line); border-radius: 10px; background: #fff; }
+@media (max-width: 900px) { .apr__reviewBody { grid-template-columns: 1fr; } }
