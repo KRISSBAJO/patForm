@@ -668,3 +668,19 @@ TRUST_PROXY=2 on the API so the certificate records the signer's real IP.
 OBJECT_STORE=memory keeps files in memory for local trials (refused in
 production).
 
+
+## Landing page redesign (19 October 2026)
+
+`web/app/page.tsx` is now a shell around `web/components/landing.tsx`
+(client) with its own stylesheet `web/app/landing.css`. The page tells one
+story: a hiring request HR-2041 travelling through seven modules. Hero with
+an orbit of the modules around the record (packets travel the rings, events
+surface), a marquee of facts, a scroll-driven chapter section where a sticky
+record panel keeps up with the reader, tilting module cards, a Patform Sign
+scene where the signature draws itself and the seal stamps in, the controls
+list, counters, the morning screen, connector rows and a green closing
+block. Copy is one line per item on purpose. Only the closing block is
+coloured; everything else sits on paper. All motion is switched off under
+`prefers-reduced-motion` and the server renders the finished state. Nav
+links now point at #story, #modules, #sign, #controls. `ProcessDemo` is no
+longer used by the landing page but stays in the repo.

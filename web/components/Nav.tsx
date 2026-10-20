@@ -25,10 +25,11 @@ import { Burger, Mark } from './icons';
  */
 
 const LINKS = [
-  { href: '/#demo', label: 'How it works' },
+  { href: '/#story', label: 'The story' },
+  { href: '/#modules', label: 'Modules' },
+  { href: '/#sign', label: 'Patform Sign' },
+  { href: '/#controls', label: 'Controls' },
   { href: '/reliability', label: 'Reliability' },
-  { href: '/#packs', label: 'Process packs' },
-  { href: '/#ai', label: 'Where AI sits' },
 ];
 
 interface Session {

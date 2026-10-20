@@ -3,9 +3,9 @@ import './globals.css';
 import { Pwa } from '../components/pwa';
 
 export const metadata: Metadata = {
-  title: 'Patform — describe the process, launch the whole operation',
+  title: 'Patform — expenses, procurement, HR, appraisals, IT, contracts and e-signature on one engine',
   description:
-    'The intake form, the approvals, the reminders, the documents and the dashboard — created together from one description, then run together for as long as you need them.',
+    'Eight modules on one engine with one history: expenses, procurement, HR, goals and appraisals, assets and IT, contracts and compliance, and Patform Sign, a built-in e-signature with a certificate seal and trusted time stamp.',
   openGraph: {
     title: 'Patform',
     description: 'A process platform for operational teams.',
