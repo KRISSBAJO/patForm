@@ -259,6 +259,19 @@ function Ticker() {
 
 /* ----------------------------------------------------------------- story */
 
+function StoryRouteIcon({ step }: { step: number }) {
+  const paths = [
+    <><rect x="5" y="3" width="14" height="18" rx="2" /><path d="M9 7h6M9 11h6M9 15h4" /></>,
+    <><rect x="3" y="6" width="18" height="14" rx="2" /><path d="M3 10h18M15 15h3" /></>,
+    <><path d="M3 4h2l2 11h12l2-8H6" /><circle cx="9" cy="19" r="1" /><circle cx="18" cy="19" r="1" /></>,
+    <><rect x="4" y="4" width="16" height="12" rx="1.5" /><path d="M2 20h20M9 16v4M15 16v4" /></>,
+    <><circle cx="9" cy="8" r="2.5" /><path d="M3.5 19v-2a5.5 5.5 0 0 1 11 0v2M16 6a2.5 2.5 0 0 1 0 5M17 14a5 5 0 0 1 3.5 5" /></>,
+    <><path d="m4 17 11-11 3 3-11 11-4 1 1-4ZM13 8l3 3M4 21h16" /></>,
+    <><path d="M12 2 20 5v6c0 5-3.2 8.3-8 11-4.8-2.7-8-6-8-11V5l8-3Z" /><path d="m8.5 12 2.5 2.5 4.5-5" /></>,
+  ];
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[step]}</svg>;
+}
+
 function Story() {
   const [active, setActive] = useState(0);
   const refs = useRef<(HTMLElement | null)[]>([]);
@@ -308,12 +321,12 @@ function Story() {
               <div className="lp-story__route" aria-hidden="true">
                 <span className="mono lp-story__routeLabel">ROUTE</span>
                 <ol className="lp-rail">
-                  {CHAPTERS.map((c, i) => <li key={c.module} className={i < active ? 'is-done' : i === active ? 'is-now' : ''} style={nth(i)}><span>{String(i + 1).padStart(2, '0')}</span></li>)}
+                  {CHAPTERS.map((c, i) => <li key={c.module} className={i < active ? 'is-done' : i === active ? 'is-now' : ''} style={nth(i)}><StoryRouteIcon step={i} /></li>)}
                 </ol>
               </div>
               <div className="lp-story__work">
                 <div className="lp-story__module">
-                  <span className="lp-story__moduleMark" aria-hidden="true">{String(active + 1).padStart(2, '0')}</span>
+                  <span className="lp-story__moduleMark" aria-hidden="true"><StoryRouteIcon step={active} /></span>
                   <span><small className="mono">NOW IN</small><strong>{ch.module}</strong></span>
                 </div>
                 <div className="lp-record" key={active}>

@@ -231,12 +231,14 @@
 .lp-story__routeLabel { color: #6e8e78; font-size: 8px; letter-spacing: .12em; }
 .lp-rail { position: relative; display: grid; justify-items: center; align-content: space-between; flex: 1; width: 24px; min-height: 177px; margin: 7px 0 0; padding: 0; list-style: none; }
 .lp-rail::before { position: absolute; z-index: -1; top: 7px; bottom: 7px; left: 50%; width: 1px; background: #accbb4; content: ''; }
-.lp-rail li { display: grid; place-items: center; width: 19px; height: 19px; border: 1px solid #bcd1c0; border-radius: 50%; background: #eef5ee; color: #7b9b84; font: 500 7px var(--font-mono), monospace; transition: background .45s, color .45s, border-color .45s, transform .45s; }
+.lp-rail li { display: grid; place-items: center; width: 22px; height: 22px; border: 1px solid #bcd1c0; border-radius: 50%; background: #eef5ee; color: #7b9b84; transition: background .45s, color .45s, border-color .45s, transform .45s; }
+.lp-rail li svg { width: 13px; height: 13px; }
 .lp-rail li.is-done { background: #cce7d3; border-color: #8cb79a; color: #1b7147; }
 .lp-rail li.is-now { transform: scale(1.16); border-color: #176b47; background: #176b47; color: #fff; box-shadow: 0 0 0 5px #66b98430; }
 .lp-story__work { min-width: 0; }
 .lp-story__module { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
 .lp-story__moduleMark { display: grid; place-items: center; flex: none; width: 34px; height: 34px; border-radius: 9px; background: #1b6345; color: #f7fcf5; font: 500 11px var(--font-mono), monospace; box-shadow: 0 9px 17px -12px #145e3b; }
+.lp-story__moduleMark svg { width: 19px; height: 19px; }
 .lp-story__module small, .lp-story__module strong { display: block; }
 .lp-story__module small { color: #7b9382; font-size: 9px; letter-spacing: .12em; }
 .lp-story__module strong { margin-top: 2px; font-size: 14px; letter-spacing: -.02em; }
