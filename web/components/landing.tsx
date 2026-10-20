@@ -349,7 +349,7 @@ function Story() {
 /* --------------------------------------------------------------- modules */
 
 function ModuleArt({ kind }: { kind: (typeof MODULES)[number]['key'] }) {
-  return <img className="lp-mod__art" src={`/images/module-${kind}.webp`} alt="" width="443" height="443" loading="lazy" />;
+  return <img className="lp-mod__art" src={`/images/module-${kind}-v2.webp`} alt="" width="750" height="500" loading="lazy" />;
 }
 
 function Modules() {
