@@ -269,7 +269,9 @@
 .lp-mod__top { display: flex; justify-content: space-between; align-items: center; }
 .lp-mod__n { font-size: 11px; color: var(--muted); letter-spacing: 0.1em; }
 .lp-mod__top .chip { height: 24px; padding: 0 8px; font-size: 10.5px; }
-.lp-mod h3 { margin-top: 36px; font-size: 20px; line-height: 1.15; letter-spacing: -0.01em; }
+.lp-mod__art { display: block; width: 100%; height: 94px; margin-top: 14px; padding: 6px 14px; color: #286e4b; background: linear-gradient(135deg, #f2f8f2, #f9f5ed); border-radius: 10px; }
+.lp-mod__artFill rect, .lp-mod__artFill circle { fill: rgba(183, 219, 192, 0.18); }
+.lp-mod h3 { margin-top: 20px; font-size: 20px; line-height: 1.15; letter-spacing: -0.01em; }
 .lp-mod p { margin-top: 10px; font-size: 13.5px; line-height: 1.55; color: var(--muted-3); }
 .lp-mod__shine { position: absolute; inset: -40%; background: radial-gradient(circle at calc(var(--mx, 0.5) * 100%) calc(var(--my, 0.5) * 100%), rgba(143, 210, 169, 0.28), transparent 35%); opacity: 0; transition: opacity 0.3s; pointer-events: none; }
 .lp-mod:hover .lp-mod__shine { opacity: 1; }
@@ -277,6 +279,8 @@
 .lp-mod--sign p { color: var(--on-dark-3); }
 .lp-mod--sign .lp-mod__n { color: var(--lp-mint); }
 .lp-mod--sign .chip { background: rgba(255, 255, 255, 0.1); color: var(--lp-mint); border-color: transparent; }
+.lp-mod--sign .lp-mod__art { color: var(--lp-mint); background: rgba(143, 210, 169, 0.09); }
+.lp-mod--sign .lp-mod__artFill rect, .lp-mod--sign .lp-mod__artFill circle { fill: rgba(143, 210, 169, 0.05); }
 .lp-mod--core .lp-mod__inner { background: var(--green-pale); border-color: var(--green-border); }
 
 /* ----------------------------------------------------------------- sign */
@@ -428,7 +432,7 @@
   .lp-num { border-left: 0; border-top: 1px solid var(--line); }
   .lp-num:first-child { border-top: 0; }
   .lp-mod__inner { min-height: 0; }
-  .lp-mod h3 { margin-top: 22px; }
+  .lp-mod h3 { margin-top: 18px; }
   .lp-hero__copy h1 { font-size: clamp(34px, 11vw, 46px); }
   .lp-hero__proof { gap: 14px; }
   .lp-btn--lg { width: 100%; }

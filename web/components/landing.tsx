@@ -348,6 +348,21 @@ function Story() {
 
 /* --------------------------------------------------------------- modules */
 
+function ModuleArt({ kind }: { kind: (typeof MODULES)[number]['key'] }) {
+  const line = { fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
+  const art = {
+    core: <><rect x="22" y="12" width="62" height="66" rx="7" /><path d="M37 29h30M37 40h22M37 55h30" {...line} /><path d="M84 45h42m0 0-8-7m8 7-8 7" {...line} /><rect x="143" y="21" width="74" height="47" rx="8" /><circle cx="158" cy="35" r="4" /><path d="M169 35h31M157 50h43" {...line} /></>,
+    expenses: <><rect x="20" y="18" width="84" height="52" rx="9" /><path d="M35 35h34M35 49h51" {...line} /><circle cx="169" cy="44" r="30" /><path d="m154 45 10 10 19-23" {...line} /><path d="M105 44h24" {...line} /></>,
+    procurement: <><rect x="20" y="20" width="55" height="49" rx="7" /><rect x="92" y="13" width="55" height="56" rx="7" /><rect x="164" y="20" width="55" height="49" rx="7" /><path d="M33 36h27m-27 12h18m54-20h27m-27 13h27m-27 13h17m55-18h27m-27 12h19" {...line} /></>,
+    hr: <><circle cx="65" cy="30" r="14" /><path d="M37 69c0-18 11-28 28-28s28 10 28 28" {...line} /><rect x="123" y="16" width="96" height="56" rx="8" /><path d="M139 31h29m-29 13h55m-55 13h39" {...line} /><circle cx="200" cy="32" r="8" /></>,
+    appraisals: <><path d="M25 68h191" {...line} /><rect x="38" y="46" width="25" height="22" rx="4" /><rect x="79" y="34" width="25" height="34" rx="4" /><rect x="120" y="22" width="25" height="46" rx="4" /><path d="m162 48 16-16 12 8 25-25" {...line} /><circle cx="215" cy="15" r="4" /></>,
+    ops: <><rect x="26" y="16" width="113" height="62" rx="8" /><path d="M26 31h113M43 46h26m-26 14h62" {...line} /><rect x="158" y="23" width="58" height="44" rx="7" /><path d="m168 46 11 10 23-22" {...line} /></>,
+    gov: <><path d="M42 13h89l18 18v45H42z" {...line} /><path d="M131 13v18h18M58 42h72M58 55h53" {...line} /><circle cx="179" cy="50" r="25" /><path d="m167 50 9 9 17-19" {...line} /></>,
+    sign: <><rect x="28" y="13" width="115" height="63" rx="6" /><path d="M45 31h69M45 43h54M45 62c15-16 20 8 35-5 7-6 10 4 22-3" {...line} /><circle cx="183" cy="45" r="30" /><path d="m169 45 10 10 20-22" {...line} /></>,
+  }[kind];
+  return <svg className="lp-mod__art" viewBox="0 0 240 90" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><g className="lp-mod__artFill">{art}</g></svg>;
+}
+
 function Modules() {
   return (
     <section className="lp-modules" id="modules">
@@ -366,6 +381,7 @@ function Modules() {
                   <span className="lp-mod__n mono">{String(i + 1).padStart(2, '0')}</span>
                   {'tag' in m && m.tag ? <span className="chip chip--quiet">{m.tag}</span> : null}
                 </div>
+                <ModuleArt kind={m.key} />
                 <h3>{m.name}</h3>
                 <p>{m.fact}</p>
                 <span className="lp-mod__shine" aria-hidden="true" />
