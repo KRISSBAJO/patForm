@@ -72,6 +72,8 @@ const SECTION_PATHS: Record<string, string> = {
   settings: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM4 12h2M18 12h2M12 4v2M12 18v2M6.3 6.3l1.4 1.4M16.3 16.3l1.4 1.4M6.3 17.7l1.4-1.4M16.3 7.7l1.4-1.4',
   rules: 'M4 6h16M4 12h16M4 18h10',
   tasks: 'M9 6h11M9 12h11M9 18h11M4 6l1 1 2-2M4 12l1 1 2-2M4 18l1 1 2-2',
+  profile: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21c0-4 3.6-7 8-7s8 3 8 7',
+  org: 'M12 3v4M12 7H6v4M12 7h6v4M4 11h4v4H4zM10 11h4v4h-4zM16 11h4v4h-4zM6 15v3M12 15v3M18 15v3',
   leave: 'M3 10h18M5 5h14v15H5zM9 3v4M15 3v4M9 14l2 2 4-4',
   documents: 'M7 3h7l5 5v13H7zM14 3v5h5M10 13h6M10 17h6',
   read: 'M4 5h7a3 3 0 0 1 3 3v12a2 2 0 0 0-2-2H4zM20 5h-7a3 3 0 0 0-3 3v12a2 2 0 0 1 2-2h8z',

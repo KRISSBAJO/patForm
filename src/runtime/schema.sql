@@ -3567,3 +3567,108 @@ create table sign_template (
   created_at      timestamptz not null default now()
 );
 create index sign_template_by_tenant on sign_template (tenant_id);
+
+-- HR depth: fuller employee records, a timeline, files on people and documents,
+-- leave accrual and carry-over, manual leave adjustments.
+alter table employee_record add column if not exists phone text;
+alter table employee_record add column if not exists personal_email text;
+alter table employee_record add column if not exists date_of_birth date;
+alter table employee_record add column if not exists address text;
+alter table employee_record add column if not exists emergency_name text;
+alter table employee_record add column if not exists emergency_phone text;
+alter table employee_record add column if not exists emergency_relation text;
+alter table employee_record add column if not exists grade text;
+alter table employee_record add column if not exists work_pattern text;
+alter table employee_record add column if not exists bio text;
+
+create table if not exists employee_event (
+  id          uuid primary key default gen_random_uuid(),
+  tenant_id   uuid not null references tenant(id),
+  employee_id uuid not null references employee_record(id),
+  kind        text not null check (kind in ('note', 'recognition', 'warning', 'training', 'milestone', 'change')),
+  title       text not null,
+  detail      text,
+  visibility  text not null default 'hr' check (visibility in ('hr', 'manager', 'employee')),
+  occurred_on date not null default current_date,
+  created_by  uuid references actor(id),
+  created_at  timestamptz not null default now()
+);
+create index if not exists employee_event_employee on employee_event (employee_id, occurred_on desc);
+
+create table if not exists employee_file (
+  id           uuid primary key,
+  tenant_id    uuid not null references tenant(id),
+  employee_id  uuid not null references employee_record(id),
+  category     text not null check (category in ('contract', 'identity', 'certificate', 'letter', 'payslip', 'other')),
+  title        text not null,
+  filename     text not null,
+  content_type text not null,
+  byte_size    int not null,
+  sha256       text not null,
+  storage_key  text not null,
+  scan_status  text not null default 'unscanned' check (scan_status in ('unscanned', 'clean', 'quarantined')),
+  employee_can_see boolean not null default false,
+  uploaded_by  uuid references actor(id),
+  created_at   timestamptz not null default now()
+);
+create index if not exists employee_file_employee on employee_file (employee_id, created_at desc);
+
+alter table hr_document add column if not exists storage_key text;
+alter table hr_document add column if not exists filename text;
+alter table hr_document add column if not exists content_type text;
+alter table hr_document add column if not exists byte_size int;
+alter table hr_document add column if not exists sha256 text;
+alter table hr_document add column if not exists scan_status text not null default 'unscanned' check (scan_status in ('unscanned', 'clean', 'quarantined'));
+
+alter table leave_type add column if not exists accrual_mode text not null default 'upfront' check (accrual_mode in ('upfront', 'monthly'));
+alter table leave_type add column if not exists carry_over_max numeric(6, 2) not null default 0 check (carry_over_max >= 0);
+alter table leave_type add column if not exists prorate_first_year boolean not null default false;
+
+create table if not exists leave_adjustment (
+  id            uuid primary key default gen_random_uuid(),
+  tenant_id     uuid not null references tenant(id),
+  employee_id   uuid not null references employee_record(id),
+  leave_type_id uuid not null references leave_type(id),
+  year          int not null,
+  days          numeric(6, 2) not null,
+  reason        text not null,
+  entered_by    uuid references actor(id),
+  created_at    timestamptz not null default now()
+);
+create index if not exists leave_adjustment_employee on leave_adjustment (employee_id, leave_type_id, year);
+
+-- Branches: a company runs in more than one country. Each branch has its own
+-- country, currency, time zone, working week and public holidays; a leave
+-- type may apply to one branch or to all. The workspace keeps a default
+-- currency and country for anything not tied to a branch.
+create table if not exists hr_branch (
+  id           uuid primary key default gen_random_uuid(),
+  tenant_id    uuid not null references tenant(id),
+  name         text not null,
+  code         text,
+  country      text not null,
+  currency     text not null,
+  timezone     text not null default 'UTC',
+  address      text,
+  working_days jsonb not null default '[1,2,3,4,5]'::jsonb,
+  active       boolean not null default true,
+  created_by   uuid references actor(id),
+  created_at   timestamptz not null default now()
+);
+create unique index if not exists hr_branch_name_uq on hr_branch (tenant_id, lower(name));
+alter table employee_record add column if not exists branch_id uuid references hr_branch(id);
+alter table leave_type add column if not exists branch_id uuid references hr_branch(id);
+alter table public_holiday add column if not exists branch_id uuid references hr_branch(id);
+alter table public_holiday drop constraint if exists public_holiday_pkey;
+create unique index if not exists public_holiday_uq on public_holiday (tenant_id, day, coalesce(branch_id, '00000000-0000-0000-0000-000000000000'::uuid));
+alter table hr_settings add column if not exists default_currency text not null default 'USD';
+alter table hr_settings add column if not exists default_country text;
+alter table hr_settings add column if not exists working_days jsonb not null default '[1,2,3,4,5]'::jsonb;
+
+-- Pay is a package: base pay on a basis (year, month, week, day or hour)
+-- plus labelled components (allowances, bonuses, deductions), each dated.
+alter table employee_compensation drop constraint if exists employee_compensation_period_check;
+alter table employee_compensation add constraint employee_compensation_period_check check (period in ('year', 'month', 'week', 'day', 'hour', 'once'));
+alter table employee_compensation add column if not exists kind text not null default 'base' check (kind in ('base', 'allowance', 'bonus', 'deduction'));
+alter table employee_compensation add column if not exists label text;
+alter table employee_compensation add column if not exists ended_on date;

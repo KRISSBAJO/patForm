@@ -30,6 +30,7 @@ import { importDirectory } from '../runtime/directory-import.js';
 import { createLegalEntity, createOrgUnit, orgChart, reportingHistory, setManager, setMemberPlacement, updateOrgUnit } from '../runtime/org.js';
 import { addRate, advanceMovements, disburseAdvance, expenseSummary, exportPaid, listAdvances, listBudgets, listExports, listRates, listSettlements, moveSettlement, myBeneficiary, readExpenseSettings, recordAdvanceReturn, revealBeneficiary, reviewLines, saveBeneficiary, saveBudget, settlementLines, updateExpenseSettings, verifyBeneficiary } from '../runtime/expenses.js';
 import { addQuote, approveOrder, cancelOrder, createAgreement, createOrder, createVendor, enterInvoice, exportInvoices, listAgreements, listInvoices, listOrders, listQuotes, listRequisitions, listVendors, openQuotes, orderDetail, payInvoice, procurementSummary, readProcurementSettings, receiveGoods, returnGoods, revealVendorBank, reviewInvoice, reviseOrder, saveVendorBank, selectQuote, setQuoteDeadline, setVendorStatus, updateProcurementSettings, updateVendor, vendorHistory, verifyVendorBank } from '../runtime/procurement.js';
+import { addEmployeeEvent, adjustLeave, documentFileLink, listBranches, saveBranch, setEmployeeBranch, employeeDetail, employeeFileLink, leaveCalendar, leaveLedger, myProfile, orgTree, removeEmployeeFile, setEmployeeFileVisibility, updateProfile, uploadDocumentFile, uploadEmployeeFile } from '../runtime/hr-records.js';
 import { acknowledgeDocument, addCaseNote, addCertification, cancelLeave, completeTask, createDocument, decideLeave, decideProbation, exceptTask, hrSummary, leaveToApprove, listCaseNotes, listCases, listCompensation, listDocuments, listEmployees, listHiring, listHolidays, listLeaveTypes, listReconciliations, listTeams, listTemplates, myDocuments, myLeave, myTasks, readHrSettings, requestLeave, resolveReconciliation, saveHoliday, saveLeaveType, saveTemplate, sendDocument, setCompensation, setEntitlement, setTeamMember, startOffboarding, startOnboarding, startProbationReview, startTransfer, updateEmployee, updateHrSettings, upcoming, urgentTermination } from '../runtime/hr.js';
 import * as apr from '../runtime/appraisals.js';
 import * as ops from '../runtime/ops.js';
@@ -1027,6 +1028,23 @@ route('POST', /^\/api\/hr\/documents\/requests\/([0-9a-f-]{36})\/acknowledge$/, 
 route('GET', /^\/api\/hr\/reconciliation$/, async ({ pool, principal }) => listReconciliations(pool, principal));
 route('POST', /^\/api\/hr\/reconciliation\/([0-9a-f-]{36})$/, async ({ pool, principal, url }, b) => resolveReconciliation(pool, principal, hid(url, 4), hb(b)));
 route('GET', /^\/api\/hr\/upcoming$/, async ({ pool, principal, url }) => upcoming(pool, principal, Number(url.searchParams.get('days') ?? 60)));
+route('GET', /^\/api\/hr\/branches$/, async ({ pool, principal }) => listBranches(pool, principal));
+route('POST', /^\/api\/hr\/branches$/, async ({ pool, principal }, b) => saveBranch(pool, principal, hb(b)));
+route('POST', /^\/api\/hr\/employees\/([0-9a-f-]{36})\/branch$/, async ({ pool, principal, url }, b) => setEmployeeBranch(pool, principal, hid(url, 4), hb(b)));
+route('GET', /^\/api\/hr\/me$/, async ({ pool, principal }) => myProfile(pool, principal));
+route('GET', /^\/api\/hr\/org$/, async ({ pool, principal }) => orgTree(pool, principal));
+route('GET', /^\/api\/hr\/employees\/([0-9a-f-]{36})$/, async ({ pool, principal, url }) => employeeDetail(pool, principal, hid(url, 4)));
+route('POST', /^\/api\/hr\/employees\/([0-9a-f-]{36})\/profile$/, async ({ pool, principal, url }, b) => updateProfile(pool, principal, hid(url, 4), hb(b)));
+route('POST', /^\/api\/hr\/employees\/([0-9a-f-]{36})\/events$/, async ({ pool, principal, url }, b) => addEmployeeEvent(pool, principal, hid(url, 4), hb(b)));
+route('POST', /^\/api\/hr\/employees\/([0-9a-f-]{36})\/files$/, async ({ pool, principal, url }, b) => uploadEmployeeFile(pool, principal, hid(url, 4), hb(b)));
+route('GET', /^\/api\/hr\/files\/([0-9a-f-]{36})\/link$/, async ({ pool, principal, url }) => employeeFileLink(pool, principal, hid(url, 4)));
+route('POST', /^\/api\/hr\/files\/([0-9a-f-]{36})\/visibility$/, async ({ pool, principal, url }, b) => setEmployeeFileVisibility(pool, principal, hid(url, 4), hb(b)));
+route('POST', /^\/api\/hr\/files\/([0-9a-f-]{36})\/remove$/, async ({ pool, principal, url }) => removeEmployeeFile(pool, principal, hid(url, 4)));
+route('POST', /^\/api\/hr\/documents\/([0-9a-f-]{36})\/files$/, async ({ pool, principal, url }, b) => uploadDocumentFile(pool, principal, hid(url, 4), hb(b)));
+route('GET', /^\/api\/hr\/documents\/([0-9a-f-]{36})\/link$/, async ({ pool, principal, url }) => documentFileLink(pool, principal, hid(url, 4)));
+route('GET', /^\/api\/hr\/leave\/calendar$/, async ({ pool, principal, url }) => leaveCalendar(pool, principal, url.searchParams.get('month') ?? new Date().toISOString().slice(0, 7)));
+route('GET', /^\/api\/hr\/leave\/ledger$/, async ({ pool, principal, url }) => leaveLedger(pool, principal, url.searchParams.get('employee'), Number(url.searchParams.get('year') ?? new Date().getUTCFullYear())));
+route('POST', /^\/api\/hr\/leave\/adjust$/, async ({ pool, principal }, b) => adjustLeave(pool, principal, hb(b)));
 route('GET', /^\/api\/hr\/hiring$/, async ({ pool, principal }) => listHiring(pool, principal));
 
 // ---- Goals, appraisals and development (PRD Module 8). Who may see and do

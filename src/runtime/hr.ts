@@ -35,16 +35,33 @@ type Team = (typeof TASK_TEAMS)[number];
 const FIELDS = ['identity', 'employment_status', 'compensation', 'leave_balance', 'payroll_ref'] as const;
 type OwnedField = (typeof FIELDS)[number];
 
-const text = (v: unknown, max: number) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
-const num = (v: unknown) => { const n = typeof v === 'number' ? v : Number(String(v ?? '').replace(/[, ]/g, '')); return Number.isFinite(n) ? n : NaN; };
+export const text = (v: unknown, max: number) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
+export const num = (v: unknown) => { const n = typeof v === 'number' ? v : Number(String(v ?? '').replace(/[, ]/g, '')); return Number.isFinite(n) ? n : NaN; };
 const today = () => new Date().toISOString().slice(0, 10);
-function day(v: unknown, what: string, required = false): string | null {
+export function day(v: unknown, what: string, required = false): string | null {
   const s = text(v, 10);
   if (!s) { if (required) throw new InvalidInput(`${what} is required`); return null; }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(s) || Number.isNaN(new Date(`${s}T00:00:00Z`).getTime())) throw new InvalidInput(`${what} must be a date`);
   return s;
 }
-function id(v: unknown, what: string): string {
+export function currencyCode(v: unknown): string {
+  const c = text(v, 10).toUpperCase();
+  if (!/^[A-Z]{3}$/.test(c)) throw new InvalidInput('currency must be a three-letter ISO code, like USD, GBP, EUR or NGN');
+  return c;
+}
+export function countryCode(v: unknown): string {
+  const c = text(v, 10).toUpperCase();
+  if (!/^[A-Z]{2}$/.test(c)) throw new InvalidInput('country must be a two-letter ISO code, like US, GB, NG or KE');
+  return c;
+}
+/** Working days as ISO weekday numbers, Monday 1 to Sunday 7. */
+export function weekdays(v: unknown): number[] {
+  if (!Array.isArray(v) || !v.length) throw new InvalidInput('workingDays must list the days of the working week, Monday 1 to Sunday 7');
+  const out = [...new Set(v.map((x) => Math.trunc(num(x))))].filter((n) => n >= 1 && n <= 7).sort();
+  if (!out.length) throw new InvalidInput('workingDays must list the days of the working week, Monday 1 to Sunday 7');
+  return out;
+}
+export function id(v: unknown, what: string): string {
   const s = text(v, 36);
   if (!UUID.test(s)) throw new InvalidInput(`${what} must be an id`);
   return s;
@@ -52,9 +69,9 @@ function id(v: unknown, what: string): string {
 
 // ------------------------------------------------------------------ access
 
-interface Who { tenantId: string; actorId: string; email: string; role: WorkspaceRole; teams: Set<string>; hr: boolean; admin: boolean }
+export interface Who { tenantId: string; actorId: string; email: string; role: WorkspaceRole; teams: Set<string>; hr: boolean; admin: boolean }
 
-async function who(pool: Pool | Client, principal: Principal): Promise<Who> {
+export async function who(pool: Pool | Client, principal: Principal): Promise<Who> {
   if (principal.kind !== 'actor') throw new InvalidInput('signed-in members only');
   if (!(await enabledModules(pool as Pool, principal.tenantId)).has('hr')) {
     throw new InvalidInput('the HR module is switched off for this workspace — an owner can switch it on in Settings');
@@ -69,17 +86,18 @@ async function who(pool: Pool | Client, principal: Principal): Promise<Who> {
   if (admin) teams.add('hr');
   return { tenantId: principal.tenantId, actorId: principal.actorId, email: rows[0].email, role: rows[0].workspace_role, teams, hr: teams.has('hr'), admin };
 }
-function requireHr(w: Who) { if (!w.hr) throw new InvalidInput('only HR can do this'); }
-function requireHrAdmin(w: Who) { if (!w.hr || !w.admin) throw new InvalidInput('only an owner or admin in HR can do this'); }
+export function requireHr(w: Who) { if (!w.hr) throw new InvalidInput('only HR can do this'); }
+export function requireHrAdmin(w: Who) { if (!w.hr || !w.admin) throw new InvalidInput('only an owner or admin in HR can do this'); }
 
 // ---------------------------------------------------------------- settings
 
 export async function hrSettings(client: Client | Pool, tenantId: string) {
-  const { rows } = await client.query<{ field_owners: Record<string, string>; activation_role: WorkspaceRole; anniversary_notice_days: number }>(
-    'select field_owners, activation_role, anniversary_notice_days from hr_settings where tenant_id = $1', [tenantId]);
+  const { rows } = await client.query<{ field_owners: Record<string, string>; activation_role: WorkspaceRole; anniversary_notice_days: number; default_currency: string; default_country: string | null; working_days: number[] }>(
+    'select field_owners, activation_role, anniversary_notice_days, default_currency, default_country, working_days from hr_settings where tenant_id = $1', [tenantId]);
   const r = rows[0];
   const owners: Record<OwnedField, string> = { identity: 'patform', employment_status: 'patform', compensation: 'patform', leave_balance: 'patform', payroll_ref: 'patform', ...(r?.field_owners ?? {}) };
-  return { fieldOwners: owners, activationRole: r?.activation_role ?? 'read_only', anniversaryNoticeDays: r?.anniversary_notice_days ?? 14 };
+  return { fieldOwners: owners, activationRole: r?.activation_role ?? 'read_only', anniversaryNoticeDays: r?.anniversary_notice_days ?? 14,
+    defaultCurrency: r?.default_currency ?? 'USD', defaultCountry: r?.default_country ?? null, workingDays: r?.working_days ?? [1, 2, 3, 4, 5] };
 }
 
 export async function readHrSettings(pool: Pool, principal: Principal) {
@@ -104,13 +122,17 @@ export async function updateHrSettings(pool: Pool, principal: Principal, body: R
   if (!WORKSPACE_ROLES.includes(activationRole) || ['owner', 'pre_hire'].includes(activationRole)) throw new InvalidInput('the activation role must be an ordinary role');
   const notice = body.anniversaryNoticeDays === undefined ? cur.anniversaryNoticeDays : Math.trunc(num(body.anniversaryNoticeDays));
   if (!(notice >= 1 && notice <= 120)) throw new InvalidInput('anniversaryNoticeDays must be 1 to 120');
+  const currency = body.defaultCurrency === undefined ? cur.defaultCurrency : currencyCode(body.defaultCurrency);
+  const country = body.defaultCountry === undefined ? cur.defaultCountry : (text(body.defaultCountry, 10) ? countryCode(body.defaultCountry) : null);
+  const workingDays = body.workingDays === undefined ? cur.workingDays : weekdays(body.workingDays);
   await inTransaction(pool, async (client) => {
     await client.query(
-      `insert into hr_settings (tenant_id, field_owners, activation_role, anniversary_notice_days, updated_by, updated_at) values ($1, $2, $3, $4, $5, now())
+      `insert into hr_settings (tenant_id, field_owners, activation_role, anniversary_notice_days, default_currency, default_country, working_days, updated_by, updated_at) values ($1, $2, $3, $4, $5, $6, $7, $8, now())
        on conflict (tenant_id) do update set field_owners = excluded.field_owners, activation_role = excluded.activation_role,
-         anniversary_notice_days = excluded.anniversary_notice_days, updated_by = excluded.updated_by, updated_at = now()`,
-      [w.tenantId, JSON.stringify(owners), activationRole, notice, w.actorId]);
-    await recordWorkspaceAudit(client, { tenantId: w.tenantId, actorId: w.actorId, action: 'hr.settings_changed', detail: { ...owners, activationRole, notice } });
+         anniversary_notice_days = excluded.anniversary_notice_days, default_currency = excluded.default_currency, default_country = excluded.default_country,
+         working_days = excluded.working_days, updated_by = excluded.updated_by, updated_at = now()`,
+      [w.tenantId, JSON.stringify(owners), activationRole, notice, currency, country, JSON.stringify(workingDays), w.actorId]);
+    await recordWorkspaceAudit(client, { tenantId: w.tenantId, actorId: w.actorId, action: 'hr.settings_changed', detail: { ...owners, activationRole, notice, currency, country } });
   });
   return hrSettings(pool, w.tenantId);
 }
@@ -271,16 +293,16 @@ async function createTasks(client: Client, caseId: string, tasks: TemplateTask[]
 
 // --------------------------------------------------------------- employees
 
-async function employeeFor(client: Client | Pool, tenantId: string, employeeId: string) {
-  const { rows } = await client.query<{ id: string; actor_id: string | null; email: string; name: string; status: string; employment_type: string; location: string | null; start_date: string | null; end_date: string | null; probation_end: string | null }>(
-    `select id, actor_id, email, name, status, employment_type, location, start_date::text, end_date::text, probation_end::text from employee_record where id = $1 and tenant_id = $2`,
+export async function employeeFor(client: Client | Pool, tenantId: string, employeeId: string) {
+  const { rows } = await client.query<{ id: string; actor_id: string | null; email: string; name: string; status: string; employment_type: string; location: string | null; start_date: string | null; end_date: string | null; probation_end: string | null; branch_id: string | null }>(
+    `select id, actor_id, email, name, status, employment_type, location, start_date::text, end_date::text, probation_end::text, branch_id from employee_record where id = $1 and tenant_id = $2`,
     [employeeId, tenantId]);
   if (!rows[0]) throw new InvalidInput('no such employee');
   return rows[0];
 }
 
 /** An employee record for a member who has none yet (for leave and documents). */
-async function recordForActor(client: Client | Pool, tenantId: string, actorId: string) {
+export async function recordForActor(client: Client | Pool, tenantId: string, actorId: string) {
   const { rows } = await client.query<{ id: string }>('select id from employee_record where actor_id = $1', [actorId]);
   if (rows[0]) return rows[0].id;
   const { rows: a } = await client.query<{ email: string; display_name: string; workspace_role: string }>('select email, display_name, workspace_role from actor where id = $1', [actorId]);
@@ -294,11 +316,12 @@ async function recordForActor(client: Client | Pool, tenantId: string, actorId: 
 export async function listEmployees(pool: Pool, principal: Principal) {
   const w = await who(pool, principal); requireHr(w);
   const { rows } = await pool.query(
-    `select e.id, e.actor_id, e.email, e.name, e.employment_type, e.status, e.location, e.start_date, e.end_date, e.probation_end, e.payroll_ref, e.external_ref,
+    `select e.id, e.actor_id, e.email, e.name, e.employment_type, e.status, e.location, e.start_date, e.end_date, e.probation_end, e.payroll_ref, e.external_ref, e.branch_id, e.grade,
+            b.name as branch_name, b.country as branch_country, b.currency as branch_currency,
             a.workspace_role, a.active, a.position_title, u.name as unit_name,
             (select m.display_name from reporting_line r join actor m on m.id = r.manager_id
               where r.actor_id = e.actor_id and r.kind = 'primary' and r.effective_from <= now() and (r.effective_to is null or r.effective_to > now()) limit 1) as manager_name
-       from employee_record e left join actor a on a.id = e.actor_id left join org_unit u on u.id = a.org_unit_id
+       from employee_record e left join actor a on a.id = e.actor_id left join org_unit u on u.id = a.org_unit_id left join hr_branch b on b.id = e.branch_id
       where e.tenant_id = $1 order by e.status = 'left', e.name`, [w.tenantId]);
   return rows;
 }
@@ -308,7 +331,7 @@ export async function listEmployees(pool: Pool, principal: Principal) {
  * becomes a reconciliation task for HR, so the source system stays the
  * source and nobody's update is silently lost.
  */
-async function ownedElsewhere(client: Client, w: Who, employeeId: string, field: OwnedField, current: string | null, proposed: string | null): Promise<boolean> {
+export async function ownedElsewhere(client: Client, w: Who, employeeId: string, field: OwnedField, current: string | null, proposed: string | null): Promise<boolean> {
   const owner = (await hrSettings(client, w.tenantId)).fieldOwners[field];
   if (owner === 'patform') return false;
   await client.query(
@@ -356,19 +379,30 @@ export async function setCompensation(pool: Pool, principal: Principal, employee
   const w = await who(pool, principal); requireHrAdmin(w);
   const amount = num(body.amount);
   if (!(amount >= 0)) throw new InvalidInput('give the amount');
-  const currency = text(body.currency, 3).toUpperCase();
-  if (!/^[A-Z]{3}$/.test(currency)) throw new InvalidInput('currency must be a three-letter code');
   const period = text(body.period, 10) || 'year';
-  if (!['year', 'month', 'hour'].includes(period)) throw new InvalidInput('period must be year, month or hour');
+  if (!['year', 'month', 'week', 'day', 'hour', 'once'].includes(period)) throw new InvalidInput('period must be year, month, week, day, hour or once');
+  const kind = text(body.kind, 20) || 'base';
+  if (!['base', 'allowance', 'bonus', 'deduction'].includes(kind)) throw new InvalidInput('kind must be base, allowance, bonus or deduction');
+  const label = text(body.label, 80) || (kind === 'base' ? 'Base pay' : '');
+  if (!label) throw new InvalidInput(`give the ${kind} a name, like Housing allowance`);
+  const endedOn = day(body.endedOn, 'endedOn');
   const effectiveFrom = day(body.effectiveFrom, 'effectiveFrom', true)!;
   return inTransaction(pool, async (client) => {
     const e = await employeeFor(client, w.tenantId, employeeId);
+    let currency = text(body.currency, 10) ? currencyCode(body.currency) : '';
+    if (!currency && e.branch_id) { const { rows: b } = await client.query<{ currency: string }>('select currency from hr_branch where id = $1', [e.branch_id]); currency = b[0]?.currency ?? ''; }
+    if (!currency) currency = (await hrSettings(client, w.tenantId)).defaultCurrency;
     if (await ownedElsewhere(client, w, e.id, 'compensation', null, `${amount} ${currency}/${period} from ${effectiveFrom}`)) {
       return { queuedForReconciliation: true };
     }
-    await client.query(
-      `insert into employee_compensation (tenant_id, employee_id, amount, currency, period, effective_from, reason, entered_by) values ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [w.tenantId, e.id, amount, currency, period, effectiveFrom, text(body.reason, 300) || null, w.actorId]);
+    if (body.endId !== undefined) {
+      // Close a component: the line stays in the history with its end date.
+      await client.query('update employee_compensation set ended_on = $3 where tenant_id = $1 and id = $2', [w.tenantId, Math.trunc(num(body.endId)), endedOn ?? effectiveFrom]);
+    } else {
+      await client.query(
+        `insert into employee_compensation (tenant_id, employee_id, amount, currency, period, effective_from, reason, entered_by, kind, label, ended_on) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+        [w.tenantId, e.id, amount, currency, period, effectiveFrom, text(body.reason, 300) || null, w.actorId, kind, label, endedOn]);
+    }
     await recordWorkspaceAudit(client, { tenantId: w.tenantId, actorId: w.actorId, action: 'hr.compensation_set', targetId: e.id, detail: { effectiveFrom } });
     return { queuedForReconciliation: false };
   });
@@ -377,8 +411,8 @@ export async function setCompensation(pool: Pool, principal: Principal, employee
 export async function listCompensation(pool: Pool, principal: Principal, employeeId: string) {
   const w = await who(pool, principal); requireHr(w);
   const { rows } = await pool.query(
-    `select c.amount, c.currency, c.period, c.effective_from, c.reason, c.created_at, a.display_name as entered_by
-       from employee_compensation c left join actor a on a.id = c.entered_by where c.tenant_id = $1 and c.employee_id = $2 order by c.effective_from desc, c.id desc`,
+    `select c.id, c.kind, c.label, c.amount, c.currency, c.period, c.effective_from::text, c.ended_on::text, c.reason, c.created_at, a.display_name as entered_by
+       from employee_compensation c left join actor a on a.id = c.entered_by where c.tenant_id = $1 and c.employee_id = $2 order by c.kind = 'base' desc, c.effective_from desc, c.id desc`,
     [w.tenantId, employeeId]);
   return rows;
 }
@@ -418,6 +452,8 @@ export async function startOnboarding(pool: Pool, principal: Principal, body: Re
   const employmentType = text(body.employmentType, 20) || 'employee';
   if (!['employee', 'contractor', 'intern'].includes(employmentType)) throw new InvalidInput('employmentType must be employee, contractor or intern');
   const startDate = day(body.startDate, 'startDate', true)!;
+  const branchId = body.branchId ? id(body.branchId, 'branchId') : null;
+  if (branchId) { const { rows: b } = await pool.query('select 1 from hr_branch where id = $1 and tenant_id = $2 and active', [branchId, w.tenantId]); if (!b[0]) throw new InvalidInput('no such branch'); }
   const location = text(body.location, 120) || null;
   const probationEnd = day(body.probationEnd, 'probationEnd');
   const managerId = body.managerId ? id(body.managerId, 'managerId') : null;
@@ -451,11 +487,11 @@ export async function startOnboarding(pool: Pool, principal: Principal, body: Re
       await client.query(`insert into reporting_line (tenant_id, actor_id, manager_id, kind, effective_from, created_by) values ($1, $2, $3, 'primary', now(), $4)`, [w.tenantId, actorId, managerId, w.actorId]);
     }
     const { rows: rec } = await client.query<{ id: string }>(
-      `insert into employee_record (tenant_id, actor_id, email, name, employment_type, status, location, start_date, probation_end)
-       values ($1, $2, $3, $4, $5, 'pre_hire', $6, $7, $8)
+      `insert into employee_record (tenant_id, actor_id, email, name, employment_type, status, location, start_date, probation_end, branch_id, grade)
+       values ($1, $2, $3, $4, $5, 'pre_hire', $6, $7, $8, $9, $10)
        on conflict (tenant_id, email) do update set actor_id = excluded.actor_id, name = excluded.name, employment_type = excluded.employment_type,
-         status = 'pre_hire', location = excluded.location, start_date = excluded.start_date, probation_end = excluded.probation_end, updated_at = now()
-       returning id`, [w.tenantId, actorId, email, name, employmentType, location, startDate, probationEnd]);
+         status = 'pre_hire', location = excluded.location, start_date = excluded.start_date, probation_end = excluded.probation_end, branch_id = excluded.branch_id, grade = excluded.grade, updated_at = now()
+       returning id`, [w.tenantId, actorId, email, name, employmentType, location, startDate, probationEnd, branchId, text(body.grade, 40) || null]);
     const tasks = await pickTemplate(client, w.tenantId, 'onboarding', employmentType, location);
     const caseId = await newCase(client, w, { employeeId: rec[0]!.id, kind: 'onboarding', effective: startDate, summary: text(body.summary, 500) || null, hiringId });
     await createTasks(client, caseId, tasks, { start: startDate });
@@ -632,7 +668,7 @@ function blockers(t: TaskRow, all: TaskRow[]): string[] {
   return out;
 }
 
-async function currentManager(client: Client | Pool, tenantId: string, actorId: string | null) {
+export async function currentManager(client: Client | Pool, tenantId: string, actorId: string | null) {
   if (!actorId) return null;
   return (await managerOf(client, { tenantId, actorId, at: new Date() }))?.id ?? null;
 }
@@ -821,7 +857,7 @@ const DEFAULT_LEAVE = [
   { key: 'sick', name: 'Sick leave', days: 10, unlimited: false },
   { key: 'unpaid', name: 'Unpaid leave', days: 0, unlimited: true },
 ];
-async function ensureLeaveTypes(client: Client | Pool, tenantId: string) {
+export async function ensureLeaveTypes(client: Client | Pool, tenantId: string) {
   for (const t of DEFAULT_LEAVE) {
     await client.query('insert into leave_type (tenant_id, key, name, annual_days, unlimited) values ($1, $2, $3, $4, $5) on conflict (tenant_id, key) do nothing', [tenantId, t.key, t.name, t.days, t.unlimited]);
   }
@@ -830,7 +866,7 @@ async function ensureLeaveTypes(client: Client | Pool, tenantId: string) {
 export async function listLeaveTypes(pool: Pool, principal: Principal) {
   const w = await who(pool, principal);
   await ensureLeaveTypes(pool, w.tenantId);
-  const { rows } = await pool.query('select id, key, name, annual_days, unlimited, active from leave_type where tenant_id = $1 order by name', [w.tenantId]);
+  const { rows } = await pool.query('select t.id, t.key, t.name, t.annual_days, t.unlimited, t.active, t.accrual_mode, t.carry_over_max, t.prorate_first_year, t.branch_id, b.name as branch_name from leave_type t left join hr_branch b on b.id = t.branch_id where t.tenant_id = $1 order by t.name', [w.tenantId]);
   return rows;
 }
 
@@ -842,52 +878,109 @@ export async function saveLeaveType(pool: Pool, principal: Principal, body: Reco
   if (!name) throw new InvalidInput('give the leave type a name');
   const days = num(body.annualDays ?? 0);
   if (!(days >= 0 && days <= 366)) throw new InvalidInput('annualDays must be 0 to 366');
+  const accrual = body.accrualMode === 'monthly' ? 'monthly' : 'upfront';
+  const branchId = body.branchId ? id(body.branchId, 'branchId') : null;
+  if (branchId) { const { rows: b } = await pool.query('select 1 from hr_branch where id = $1 and tenant_id = $2', [branchId, w.tenantId]); if (!b[0]) throw new InvalidInput('no such branch'); }
+  const carry = num(body.carryOverMax ?? 0);
+  if (!(carry >= 0 && carry <= 366)) throw new InvalidInput('carryOverMax must be 0 to 366');
   await pool.query(
-    `insert into leave_type (tenant_id, key, name, annual_days, unlimited, active) values ($1, $2, $3, $4, $5, $6)
-     on conflict (tenant_id, key) do update set name = excluded.name, annual_days = excluded.annual_days, unlimited = excluded.unlimited, active = excluded.active`,
-    [w.tenantId, key, name, days, body.unlimited === true, body.active !== false]);
+    `insert into leave_type (tenant_id, key, name, annual_days, unlimited, active, accrual_mode, carry_over_max, prorate_first_year, branch_id) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+     on conflict (tenant_id, key) do update set name = excluded.name, annual_days = excluded.annual_days, unlimited = excluded.unlimited, active = excluded.active,
+       accrual_mode = excluded.accrual_mode, carry_over_max = excluded.carry_over_max, prorate_first_year = excluded.prorate_first_year, branch_id = excluded.branch_id`,
+    [w.tenantId, key, name, days, body.unlimited === true, body.active !== false, accrual, carry, body.prorateFirstYear === true, branchId]);
   return { key };
 }
 
 export async function listHolidays(pool: Pool, principal: Principal) {
   const w = await who(pool, principal);
-  const { rows } = await pool.query(`select day::text, name from public_holiday where tenant_id = $1 and day >= current_date - 30 order by day`, [w.tenantId]);
+  const { rows } = await pool.query(`select h.day::text, h.name, h.branch_id, b.name as branch_name from public_holiday h left join hr_branch b on b.id = h.branch_id where h.tenant_id = $1 and h.day >= current_date - 30 order by h.day`, [w.tenantId]);
   return rows;
 }
 
 export async function saveHoliday(pool: Pool, principal: Principal, body: Record<string, unknown>) {
   const w = await who(pool, principal); requireHr(w);
   const d = day(body.day, 'day', true)!;
-  if (body.remove === true) { await pool.query('delete from public_holiday where tenant_id = $1 and day = $2', [w.tenantId, d]); return { day: d, removed: true }; }
+  const branchId = body.branchId ? id(body.branchId, 'branchId') : null;
+  if (body.remove === true) { await pool.query('delete from public_holiday where tenant_id = $1 and day = $2 and branch_id is not distinct from $3', [w.tenantId, d, branchId]); return { day: d, removed: true }; }
   const name = text(body.name, 80);
   if (!name) throw new InvalidInput('name the holiday');
-  await pool.query('insert into public_holiday (tenant_id, day, name) values ($1, $2, $3) on conflict (tenant_id, day) do update set name = excluded.name', [w.tenantId, d, name]);
-  return { day: d, name };
+  if (branchId) { const { rows: b } = await pool.query('select 1 from hr_branch where id = $1 and tenant_id = $2', [branchId, w.tenantId]); if (!b[0]) throw new InvalidInput('no such branch'); }
+  await pool.query(`insert into public_holiday (tenant_id, day, name, branch_id) values ($1, $2, $3, $4)
+    on conflict (tenant_id, day, coalesce(branch_id, '00000000-0000-0000-0000-000000000000'::uuid)) do update set name = excluded.name`, [w.tenantId, d, name, branchId]);
+  return { day: d, name, branchId };
 }
 
 /** Working days in a range: weekdays that are not public holidays. */
-async function workingDays(client: Client | Pool, tenantId: string, start: string, end: string): Promise<number> {
-  const { rows } = await client.query<{ day: string }>('select day::text from public_holiday where tenant_id = $1 and day between $2 and $3', [tenantId, start, end]);
+export async function workingDays(client: Client | Pool, tenantId: string, start: string, end: string, branchId: string | null = null): Promise<number> {
+  const { rows } = await client.query<{ day: string }>(
+    'select day::text from public_holiday where tenant_id = $1 and day between $2 and $3 and (branch_id is null or branch_id = $4)', [tenantId, start, end, branchId]);
   const holidays = new Set(rows.map((r) => r.day));
+  let week = (await hrSettings(client, tenantId)).workingDays;
+  if (branchId) {
+    const { rows: b } = await client.query<{ working_days: number[] }>('select working_days from hr_branch where id = $1', [branchId]);
+    if (b[0]) week = b[0].working_days;
+  }
   let n = 0;
   for (let d = new Date(`${start}T00:00:00Z`); d <= new Date(`${end}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + 1)) {
-    const wd = d.getUTCDay();
-    if (wd !== 0 && wd !== 6 && !holidays.has(d.toISOString().slice(0, 10))) n++;
+    const iso = d.getUTCDay() === 0 ? 7 : d.getUTCDay();
+    if (week.includes(iso) && !holidays.has(d.toISOString().slice(0, 10))) n++;
   }
   return n;
 }
 
-async function balances(client: Client | Pool, tenantId: string, employeeId: string, year: number) {
+export interface Balance { typeId: string; key: string; name: string; unlimited: boolean; accrualMode: 'upfront' | 'monthly'; entitled: number; accrued: number; carriedOver: number; adjusted: number; taken: number; pending: number; left: number | null }
+
+const half = (n: number) => Math.round(n * 2) / 2;
+
+/**
+ * One year's balance per leave type. The entitlement is the year's days
+ * (explicit, or the type's default), prorated for a first year when the type
+ * says so; a monthly type releases it a twelfth at a time; carry-over brings
+ * in last year's unused days up to the cap; adjustments are HR's manual
+ * corrections with a reason. What is left is what can still be asked for.
+ */
+export async function balances(client: Client | Pool, tenantId: string, employeeId: string, year: number, at: Date = new Date()): Promise<Balance[]> {
   await ensureLeaveTypes(client, tenantId);
-  const { rows } = await client.query<{ id: string; key: string; name: string; annual_days: string; unlimited: boolean; entitled: string | null; taken: string; pending: string }>(
-    `select t.id, t.key, t.name, t.annual_days, t.unlimited,
+  const { rows: emp } = await client.query<{ start_date: string | null; branch_id: string | null }>('select start_date::text, branch_id from employee_record where id = $1', [employeeId]);
+  const branchId = emp[0]?.branch_id ?? null;
+  const started = emp[0]?.start_date ?? null;
+  const startYear = started ? Number(started.slice(0, 4)) : null;
+  const startMonth = started ? Number(started.slice(5, 7)) : 1;
+  const { rows } = await client.query<{ id: string; key: string; name: string; annual_days: string; unlimited: boolean; accrual_mode: 'upfront' | 'monthly'; carry_over_max: string; prorate_first_year: boolean; entitled: string | null; prev_entitled: string | null; taken: string; pending: string; prev_taken: string; adjusted: string; prev_adjusted: string }>(
+    `select t.id, t.key, t.name, t.annual_days, t.unlimited, t.accrual_mode, t.carry_over_max, t.prorate_first_year,
             (select days from leave_entitlement x where x.employee_id = $2 and x.leave_type_id = t.id and x.year = $3) as entitled,
+            (select days from leave_entitlement x where x.employee_id = $2 and x.leave_type_id = t.id and x.year = $3 - 1) as prev_entitled,
             coalesce((select sum(days) from leave_request r where r.employee_id = $2 and r.leave_type_id = t.id and r.status = 'approved' and extract(year from r.start_date) = $3), 0) as taken,
-            coalesce((select sum(days) from leave_request r where r.employee_id = $2 and r.leave_type_id = t.id and r.status = 'requested' and extract(year from r.start_date) = $3), 0) as pending
-       from leave_type t where t.tenant_id = $1 and t.active order by t.name`, [tenantId, employeeId, year]);
+            coalesce((select sum(days) from leave_request r where r.employee_id = $2 and r.leave_type_id = t.id and r.status = 'requested' and extract(year from r.start_date) = $3), 0) as pending,
+            coalesce((select sum(days) from leave_request r where r.employee_id = $2 and r.leave_type_id = t.id and r.status = 'approved' and extract(year from r.start_date) = $3 - 1), 0) as prev_taken,
+            coalesce((select sum(days) from leave_adjustment j where j.employee_id = $2 and j.leave_type_id = t.id and j.year = $3), 0) as adjusted,
+            coalesce((select sum(days) from leave_adjustment j where j.employee_id = $2 and j.leave_type_id = t.id and j.year = $3 - 1), 0) as prev_adjusted
+       from leave_type t where t.tenant_id = $1 and t.active and (t.branch_id is null or t.branch_id = $4) order by t.name`, [tenantId, employeeId, year, branchId]);
+  const nowYear = at.getUTCFullYear(); const nowMonth = at.getUTCMonth() + 1;
   return rows.map((r) => {
-    const entitled = r.entitled === null ? Number(r.annual_days) : Number(r.entitled);
-    return { typeId: r.id, key: r.key, name: r.name, unlimited: r.unlimited, entitled, taken: Number(r.taken), pending: Number(r.pending), left: r.unlimited ? null : entitled - Number(r.taken) - Number(r.pending) };
+    const base = (y: number, explicit: string | null) => {
+      let days = explicit === null ? Number(r.annual_days) : Number(explicit);
+      if (r.prorate_first_year && startYear === y && explicit === null) days = half(days * (13 - startMonth) / 12);
+      return days;
+    };
+    const entitled = base(year, r.entitled);
+    // Monthly accrual: the share of the year's months that have begun, counted from the start month in a first year.
+    let accrued = entitled;
+    if (r.accrual_mode === 'monthly') {
+      const firstMonth = startYear === year ? startMonth : 1;
+      const monthsInYear = 13 - firstMonth;
+      const monthsSoFar = year < nowYear ? monthsInYear : year > nowYear ? 0 : Math.max(0, nowMonth - firstMonth + 1);
+      accrued = half(entitled * Math.min(monthsSoFar, monthsInYear) / monthsInYear);
+    }
+    let carriedOver = 0;
+    const cap = Number(r.carry_over_max);
+    if (cap > 0 && !r.unlimited && (startYear === null || startYear < year)) {
+      const prevLeft = base(year - 1, r.prev_entitled) + Number(r.prev_adjusted) - Number(r.prev_taken);
+      carriedOver = Math.min(cap, Math.max(0, prevLeft));
+    }
+    const adjusted = Number(r.adjusted); const taken = Number(r.taken); const pending = Number(r.pending);
+    const left = r.unlimited ? null : accrued + carriedOver + adjusted - taken - pending;
+    return { typeId: r.id, key: r.key, name: r.name, unlimited: r.unlimited, accrualMode: r.accrual_mode, entitled, accrued, carriedOver, adjusted, taken, pending, left };
   });
 }
 
@@ -921,9 +1014,12 @@ export async function requestLeave(pool: Pool, principal: Principal, body: Recor
     const employeeId = await recordForActor(client, w.tenantId, w.actorId);
     await client.query('select id from employee_record where id = $1 for update', [employeeId]);
     await ensureLeaveTypes(client, w.tenantId);
-    const { rows: t } = await client.query<{ id: string; name: string; unlimited: boolean }>('select id, name, unlimited from leave_type where tenant_id = $1 and key = $2 and active', [w.tenantId, typeKey]);
+    const { rows: br } = await client.query<{ branch_id: string | null }>('select branch_id from employee_record where id = $1', [employeeId]);
+    const branchId = br[0]?.branch_id ?? null;
+    const { rows: t } = await client.query<{ id: string; name: string; unlimited: boolean }>(
+      'select id, name, unlimited from leave_type where tenant_id = $1 and key = $2 and active and (branch_id is null or branch_id = $3) order by branch_id nulls last limit 1', [w.tenantId, typeKey, branchId]);
     if (!t[0]) throw new InvalidInput('choose a leave type');
-    const days = await workingDays(client, w.tenantId, start, end);
+    const days = await workingDays(client, w.tenantId, start, end, branchId);
     if (!days) throw new InvalidInput('those dates are all weekends or public holidays');
     const { rows: clash } = await client.query<{ start_date: string; end_date: string }>(
       `select start_date::text, end_date::text from leave_request where employee_id = $1 and status in ('requested', 'approved') and start_date <= $3 and end_date >= $2 limit 1`, [employeeId, start, end]);
@@ -1048,7 +1144,7 @@ export async function sendDocument(pool: Pool, principal: Principal, documentId:
 export async function listDocuments(pool: Pool, principal: Principal) {
   const w = await who(pool, principal); requireHr(w);
   const { rows } = await pool.query(
-    `select d.id, d.title, d.version, d.kind, d.document_ref, d.created_at,
+    `select d.id, d.title, d.version, d.kind, d.document_ref, d.created_at, d.filename, d.byte_size, d.scan_status,
             count(r.*)::int as sent, count(r.*) filter (where r.status = 'acknowledged')::int as acknowledged,
             count(r.*) filter (where r.status = 'sent' and r.due_date < current_date)::int as overdue
        from hr_document d left join document_request r on r.document_id = d.id where d.tenant_id = $1 group by d.id order by d.created_at desc`, [w.tenantId]);
@@ -1059,7 +1155,7 @@ export async function myDocuments(pool: Pool, principal: Principal) {
   const w = await who(pool, principal);
   const employeeId = await recordForActor(pool, w.tenantId, w.actorId);
   const { rows } = await pool.query(
-    `select r.id, d.title, d.version, d.kind, d.document_ref, r.due_date::text, r.status, r.statement, r.acknowledged_at
+    `select r.id, d.id as document_id, d.title, d.version, d.kind, d.document_ref, (d.storage_key is not null) as has_file, r.due_date::text, r.status, r.statement, r.acknowledged_at
        from document_request r join hr_document d on d.id = r.document_id where r.employee_id = $1 order by r.status = 'sent' desc, r.created_at desc`, [employeeId]);
   return rows;
 }
