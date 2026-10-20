@@ -338,6 +338,10 @@ function Story() {
               <span className="lp-chapter__n mono">{String(i + 1).padStart(2, '0')} / {String(CHAPTERS.length).padStart(2, '0')} · {c.module}</span>
               <h3>{c.title}</h3>
               <p>{c.copy}</p>
+              <div className="lp-chapter__mobileRecord">
+                <strong>HR-2041 · {c.record.state}</strong>
+                <span>{c.log}</span>
+              </div>
             </article>
           ))}
         </div>
@@ -365,7 +369,7 @@ function Modules() {
         <InView className="lp-modGrid">
           {MODULES.map((m, i) => (
             <Tilt key={m.key} className={`lp-mod lp-mod--${m.key}`} style={nth(i)}>
-              <div className="lp-mod__inner">
+              <Link href={`/modules/${m.key}`} className="lp-mod__inner" aria-label={`Explore ${m.name}`}>
                 <div className="lp-mod__top">
                   <span className="lp-mod__n mono">{String(i + 1).padStart(2, '0')}</span>
                   {'tag' in m && m.tag ? <span className="chip chip--quiet">{m.tag}</span> : null}
@@ -373,8 +377,9 @@ function Modules() {
                 <ModuleArt kind={m.key} />
                 <h3>{m.name}</h3>
                 <p>{m.fact}</p>
+                <span className="lp-mod__action">Explore module <ArrowRight size={14} /></span>
                 <span className="lp-mod__shine" aria-hidden="true" />
-              </div>
+              </Link>
             </Tilt>
           ))}
         </InView>
