@@ -11,7 +11,7 @@
 import './meetings.css';
 import { useCallback, useEffect, useState } from 'react';
 import { postJson } from './stepup';
-import { ShellSync, type ModuleShell } from './module-shell';
+import { EmptyState, ShellSync, type ModuleShell } from './module-shell';
 import { PdfPages, PageBox } from '../../components/pdf-pages';
 
 type Envelope = { id: string; number: number; title: string; status: string; routing: string; created_at: string; sent_at: string | null; completed_at: string | null; expires_at: string; final_sha256: string | null; contract: string | null; signers: number; signed: number; people: { name: string; status: string; order: number }[]; sender: string | null };
@@ -199,7 +199,7 @@ export function SignCenter({ startContract, onClose, shell }: { startContract?: 
     <div className="mx__main"><strong>PS-{m.number} · {m.title}</strong><small>{m.sender ? `from ${m.sender} · ` : ''}{m.workspace} · sent {day(m.sentAt)} · {daysLeft(m.expiresAt)} day{daysLeft(m.expiresAt) === 1 ? '' : 's'} left</small></div>
     {m.url ? <a className="mx__btn mx__btn--sm" href={m.url} target="_blank" rel="noreferrer">Sign now</a> : <span className="mx__tiny">Use the link in your email</span>}
   </li>;
-  const empty = (t: string, s: string) => <li><div className="mx__empty" style={{ width: '100%' }}><strong>{t}</strong>{s}</div></li>;
+  const empty = (t: string, s: string, action?: { label: string; onClick: () => void; secondary?: boolean }, icon?: 'inbox' | 'send' | 'vote' | 'check' | 'people' | 'search' | 'register') => <li><EmptyState icon={icon} title={t} text={s} action={action} /></li>;
 
   return <div className="mx">
     <ShellSync sections={sections} onSections={shell?.onSections} />
@@ -234,26 +234,26 @@ export function SignCenter({ startContract, onClose, shell }: { startContract?: 
         <div className="mx__stack">
           {mine.length > 0 && <div className="mx__card"><div className="mx__cardHead"><h3>Waiting for your signature</h3></div><ul className="mx__list" style={{ marginTop: 10 }}>{mine.map(mineRow)}</ul></div>}
           {expiring.length > 0 && <div className="mx__card"><div className="mx__cardHead"><h3>Expiring soon</h3><small>remind or extend before they lapse</small></div><ul className="mx__list" style={{ marginTop: 10 }}>{expiring.map(envRow)}</ul></div>}
-          <div className="mx__card"><div className="mx__cardHead"><h3>Out for signature</h3><small>{(list ?? []).filter((e) => e.status === 'sent').length}</small></div><ul className="mx__list" style={{ marginTop: 10 }}>{(list ?? []).filter((e) => e.status === 'sent').slice(0, 6).map(envRow)}{list && !list.some((e) => e.status === 'sent') && empty('Nothing out right now', 'Send a document and follow it here.')}</ul></div>
+          <div className="mx__card"><div className="mx__cardHead"><h3>Out for signature</h3><small>{(list ?? []).filter((e) => e.status === 'sent').length}</small></div><ul className="mx__list" style={{ marginTop: 10 }}>{(list ?? []).filter((e) => e.status === 'sent').slice(0, 6).map(envRow)}{list && !list.some((e) => e.status === 'sent') && empty('Nothing out right now', 'Send a document; every signer, reminder and seal shows here as it happens.', { label: '+ Send a document', onClick: startCompose }, 'send')}</ul></div>
         </div>
         <div className="mx__stack">
-          <div className="mx__card"><div className="mx__cardHead"><h3>Recently sealed</h3></div><ul className="mx__list" style={{ marginTop: 10 }}>{recent.map(envRow)}{list && !recent.length && empty('No sealed documents yet', 'Completed envelopes appear here with their fingerprint.')}</ul></div>
+          <div className="mx__card"><div className="mx__cardHead"><h3>Recently sealed</h3></div><ul className="mx__list" style={{ marginTop: 10 }}>{recent.map(envRow)}{list && !recent.length && empty('No sealed documents yet', 'When everyone has signed, the sealed copy and its fingerprint appear here.', undefined, 'register')}</ul></div>
           <div className="mx__card"><div className="mx__cardHead"><h3>How it works</h3></div><div className="mx__cardBody"><ol className="mx__howto"><li><strong>Place the boxes.</strong> Signers in order or at once; a company can sign through any two of three directors.</li><li><strong>They prove it is them.</strong> A one-time code by email or text, then consent in words that are kept.</li><li><strong>The copy proves itself.</strong> Certificate page, digital seal, trusted time stamp, public verify page.</li></ol></div></div>
         </div>
       </div>
     </>}
 
-    {mode === 'mine' && <div className="mx__card"><div className="mx__cardHead"><h3>Waiting for your signature</h3><small>Your personal links, same as in your email</small></div><ul className="mx__list" style={{ marginTop: 10 }}>{mine.map(mineRow)}{!mine.length && empty('Nothing waiting for you', 'When someone sends you a document, it appears here with a Sign now button.')}</ul></div>}
+    {mode === 'mine' && <div className="mx__card"><div className="mx__cardHead"><h3>Waiting for your signature</h3><small>Your personal links, same as in your email</small></div><ul className="mx__list" style={{ marginTop: 10 }}>{mine.map(mineRow)}{!mine.length && empty('Nothing waiting for you', 'When someone sends you a document to sign, it appears here with a Sign now button — the same link as in your email.', undefined, 'vote')}</ul></div>}
 
     {mode === 'list' && <div className="mx__card">
       <div className="mx__cardHead"><h3>Envelopes</h3><div className="mx__voteBtns" style={{ marginTop: 0 }}><input className="mx__input" style={{ height: 36, width: 220 }} placeholder="Search title, number, signer" value={q} onChange={(e) => setQ(e.target.value)} /><button type="button" className="mx__btn mx__btn--sm" onClick={startCompose}>+ Send a document</button>{onClose && <button type="button" className="mx__btn mx__btn--ghost mx__btn--sm" onClick={onClose}>Close</button>}</div></div>
       <div className="mx__segs" style={{ padding: '12px 20px 4px' }}>{([['all', 'All'], ['sent', 'Out'], ['draft', 'Drafts'], ['completed', 'Sealed'], ['declined', 'Declined'], ['other', 'Cancelled / expired']] as const).map(([k, v]) => <button key={k} type="button" className={`mx__seg ${filter === k ? 'is-on' : ''}`} onClick={() => setFilter(k)}>{v}</button>)}</div>
-      <ul className="mx__list" style={{ marginTop: 6 }}>{filtered.map(envRow)}{list && !filtered.length && empty('Nothing here', q ? 'No envelope matches that search.' : 'Nothing sent for signature yet.')}</ul>
+      <ul className="mx__list" style={{ marginTop: 6 }}>{filtered.map(envRow)}{list && !filtered.length && empty(q ? 'No match' : 'Nothing sent for signature yet', q ? 'No envelope matches that search. Try a signer\'s name or the PS number.' : 'Upload a PDF, add the signers, place their boxes and send. They sign from a link; you follow it here.', q ? undefined : { label: '+ Send a document', onClick: startCompose }, q ? 'search' : 'send')}</ul>
     </div>}
 
     {mode === 'templates' && <div className="mx__card">
       <div className="mx__cardHead"><h3>Signer sets</h3><small>Save the people who sign a recurring document; load them in one click when sending.</small></div>
-      <ul className="mx__list" style={{ marginTop: 10 }}>{templates.map((t) => <li key={t.id}><People people={t.recipients.filter((r) => r.role === 'signer').map((r) => ({ name: r.name, status: 'waiting' }))} /><div className="mx__main"><strong>{t.name}</strong><small>{t.recipients.length} recipient{t.recipients.length === 1 ? '' : 's'} · {t.routing === 'parallel' ? 'all at once' : 'in order'} · expires after {t.expires_in_days} days{t.created_by ? ` · by ${t.created_by}` : ''}</small></div><button type="button" className="mx__btn mx__btn--sm" onClick={() => applyTemplate(t)}>Use</button><button type="button" className="mx__btn mx__btn--ghost mx__btn--sm" disabled={busy} onClick={() => void act(async () => { await postJson(`/api/sign/templates/${t.id}/delete`, {}); return 'Signer set removed.'; })}>Remove</button></li>)}{!templates.length && empty('No signer sets yet', 'When sending, choose “Save these signers as a set”.')}</ul>
+      <ul className="mx__list" style={{ marginTop: 10 }}>{templates.map((t) => <li key={t.id}><People people={t.recipients.filter((r) => r.role === 'signer').map((r) => ({ name: r.name, status: 'waiting' }))} /><div className="mx__main"><strong>{t.name}</strong><small>{t.recipients.length} recipient{t.recipients.length === 1 ? '' : 's'} · {t.routing === 'parallel' ? 'all at once' : 'in order'} · expires after {t.expires_in_days} days{t.created_by ? ` · by ${t.created_by}` : ''}</small></div><button type="button" className="mx__btn mx__btn--sm" onClick={() => applyTemplate(t)}>Use</button><button type="button" className="mx__btn mx__btn--ghost mx__btn--sm" disabled={busy} onClick={() => void act(async () => { await postJson(`/api/sign/templates/${t.id}/delete`, {}); return 'Signer set removed.'; })}>Remove</button></li>)}{!templates.length && empty('No signer sets yet', 'Save the people who sign a recurring document once; next time, load them in one click.', { label: 'Send a document and save its signers', onClick: startCompose, secondary: true }, 'people')}</ul>
     </div>}
 
     {mode === 'verify' && <Verify />}
