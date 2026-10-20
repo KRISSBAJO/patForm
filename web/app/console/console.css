@@ -5549,3 +5549,16 @@ a.cs__navItem {
 .cs__nav--module .cs__navItem[aria-current='page'] .cs__secIcon { color: var(--mod-deep); opacity: 1; }
 .cs__modStrip button .cs__secIcon { width: 14px; height: 14px; }
 .cs__modStrip button[aria-selected='true'] .cs__secIcon { color: #fff; }
+
+/* summary cards that are not on the band: breathe, and look like cards */
+.cs__shell--module .ig__workspace .ig__hero { margin-bottom: 18px; }
+.cs__shell--module .ig__workspace .ig__hero:has(+ .pp2__overview) { margin-bottom: 0; }
+.cs__shell--module .ig__panel > .pp2__overview, .cs__shell--module .ig__panel .pp2__overview { margin: 20px 24px 26px !important; }
+.cs__shell--module .pp2__overview > * { position: relative; padding: 22px 22px 20px 24px; background: linear-gradient(180deg, #fff, color-mix(in srgb, var(--mod-tint) 55%, #fff)); transition: transform .15s, box-shadow .15s; }
+.cs__shell--module .pp2__overview > *::before { content: ''; position: absolute; left: 0; top: 16px; bottom: 16px; width: 4px; border-radius: 0 4px 4px 0; background: var(--mod); }
+.cs__shell--module .pp2__overview > *:hover { transform: translateY(-2px); box-shadow: 0 18px 36px -20px var(--mod-deep); }
+.cs__shell--module .pp2__overview strong { font-size: clamp(24px, 2.2vw, 32px); line-height: 1.05; overflow-wrap: anywhere; }
+.cs__shell--module .pp2__overview small { margin-top: 10px; }
+/* an empty list inside a module reads as a quiet state, not a stray line */
+.cs__shell--module .ig__panel > ul > li.ig__row:only-child, .cs__shell--module .ig__panel > p.ig__rowMain:only-child { justify-content: center; padding: 44px 28px; }
+.cs__shell--module .ig__panel > ul > li.ig__row:only-child .ig__rowMain > p, .cs__shell--module .ig__panel > p.ig__rowMain:only-child { text-align: center; font-size: 14px; color: var(--muted); }
