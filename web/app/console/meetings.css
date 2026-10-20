@@ -344,3 +344,22 @@
 .mx .ex__table .mx__input { width: 100%; min-width: 80px; }
 .mx .ex__lines { padding: 0 0 4px; }
 @media (max-width: 760px) { .ex__recordHead { flex-wrap: wrap; } .ex__amount { text-align: left; } }
+
+/* Procurement: expandable panels, quotes, suppliers */
+.pr__panel { border-top: 1px solid var(--mx-line); padding-top: 12px; display: grid; gap: 12px; }
+.pr__panelHead { display: flex; align-items: center; gap: 10px; }
+.pr__panelHead strong { font: 600 14px var(--font-display, serif); }
+.pr__quotes { margin: 0; }
+.pr__quotes li.is-chosen { background: var(--mod-tint, #eaf1fa); border-radius: 10px; }
+.pr__form { padding: 12px 14px; border-radius: 12px; background: var(--mx-soft); border: 1px solid var(--mx-line); }
+.pr__total { margin-left: auto; font-size: 13px; }
+.pr__lineRow { display: grid; grid-template-columns: minmax(160px, 1.4fr) auto 90px auto 90px auto 1fr; gap: 8px; align-items: center; }
+.pr__lineRow label { font-size: 11px; color: var(--mx-muted); text-transform: uppercase; letter-spacing: .05em; }
+.pr__lineName { display: grid; font-size: 13px; font-weight: 600; } .pr__lineName small { font-weight: 500; }
+.pr__num { width: 90px; }
+.pr__vendor { grid-template-columns: 38px 1fr; }
+.pr__vendor.is-open { border-color: var(--mod, #1f5fa8); }
+.pr__stats { display: flex; gap: 16px; margin: 8px 0 6px; }
+.pr__stats span { display: grid; line-height: 1.1; } .pr__stats strong { font-size: 15px; } .pr__stats small { font-size: 10.5px; color: var(--mx-muted); text-transform: uppercase; letter-spacing: .05em; }
+.mx__btn.is-on { box-shadow: inset 0 0 0 2px var(--mod-deep, #143f70); }
+@media (max-width: 900px) { .pr__lineRow { grid-template-columns: 1fr 1fr; } .pr__lineName { grid-column: 1 / -1; } }
