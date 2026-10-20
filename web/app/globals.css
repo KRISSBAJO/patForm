@@ -2184,6 +2184,81 @@ html {
   }
 }
 
+/* ------------------------------------------------------- concise footer */
+.footer {
+  padding: 36px 0 34px;
+  background: #f7f7f3;
+  border-top: 1px solid #dce1db;
+}
+
+.footer__main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 34px;
+}
+
+.footer__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  flex: 0 0 auto;
+  color: #145d42;
+  font-family: var(--font-display), Georgia, serif;
+  font-size: 30px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.footer__nav, .footer__utility {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 13px 25px;
+}
+
+.footer__nav a, .footer__utility a {
+  color: #415249;
+  font-size: 13px;
+  text-decoration: none;
+}
+
+.footer__nav a:hover, .footer__utility a:hover {
+  color: #10583d;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.footer__bottom {
+  display: grid;
+  grid-template-columns: auto minmax(260px, 1fr);
+  gap: 15px 28px;
+  align-items: baseline;
+  margin-top: 31px;
+  padding-top: 20px;
+  border-top: 1px solid #dce1db;
+}
+
+.footer__bottom p {
+  margin: 0;
+  color: #5d7064;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.footer__bottom .footer__compliance { text-align: right; }
+.footer__utility { grid-column: 1 / -1; gap: 8px 18px; }
+.footer__utility a { color: #66766a; font-size: 11.5px; }
+
+@media (max-width: 800px) {
+  .footer { padding: 34px 0 30px; }
+  .footer__main { display: block; }
+  .footer__nav { margin-top: 26px; gap: 14px 20px; }
+  .footer__bottom { grid-template-columns: 1fr; gap: 10px; }
+  .footer__bottom .footer__compliance { text-align: left; }
+  .footer__utility { grid-column: 1; margin-top: 8px; }
+}
+
 /* ------------------------------------------------- the narrow-screen menu */
 /*
  * The burger button existed and opened nothing, on the one width where the
