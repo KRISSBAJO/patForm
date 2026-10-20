@@ -300,30 +300,45 @@ function Story() {
       <div className="shell lp-story__grid">
         <div className="lp-story__panelWrap">
           <div className="lp-story__panel" data-step={active}>
-            <div className="lp-story__bar">
-              <span className="lp-dot" /><span className="lp-dot" /><span className="lp-dot" />
-              <span className="mono lp-story__crumb">{ch.module}</span>
+            <div className="lp-story__cap">
+              <span className="mono"><i aria-hidden="true" />ONE CONNECTED RECORD</span>
+              <span className="mono">{String(active + 1).padStart(2, '0')} / {String(CHAPTERS.length).padStart(2, '0')}</span>
             </div>
-            <ol className="lp-rail" aria-hidden="true">
-              {CHAPTERS.map((c, i) => <li key={c.module} className={i < active ? 'is-done' : i === active ? 'is-now' : ''} style={nth(i)}><span /></li>)}
-            </ol>
-            <div className="lp-record" key={active}>
-              <div className="lp-record__head">
-                <span className="mono">HR-2041</span>
-                <span className={`badge badge--${active === CHAPTERS.length - 1 ? 'neutral' : active >= 5 ? 'ok' : 'waiting'}`}>{ch.record.state.toUpperCase()}</span>
+            <div className="lp-story__body">
+              <div className="lp-story__route" aria-hidden="true">
+                <span className="mono lp-story__routeLabel">ROUTE</span>
+                <ol className="lp-rail">
+                  {CHAPTERS.map((c, i) => <li key={c.module} className={i < active ? 'is-done' : i === active ? 'is-now' : ''} style={nth(i)}><span>{String(i + 1).padStart(2, '0')}</span></li>)}
+                </ol>
               </div>
-              <strong className="lp-record__title">Hiring request · Senior analyst</strong>
-              <span className="lp-record__line">{ch.record.line}</span>
+              <div className="lp-story__work">
+                <div className="lp-story__module">
+                  <span className="lp-story__moduleMark" aria-hidden="true">{String(active + 1).padStart(2, '0')}</span>
+                  <span><small className="mono">NOW IN</small><strong>{ch.module}</strong></span>
+                </div>
+                <div className="lp-record" key={active}>
+                  <div className="lp-record__head">
+                    <span className="mono">HR-2041 <i aria-hidden="true">/</i> REQUEST</span>
+                    <span className="lp-record__state">{ch.record.state}</span>
+                  </div>
+                  <strong className="lp-record__title">Hiring request <span>Senior analyst</span></strong>
+                  <span className="lp-record__line">{ch.record.line}</span>
+                </div>
+              </div>
             </div>
-            <ul className="lp-log" aria-live="polite">
-              {CHAPTERS.slice(0, active + 1).map((c, i) => (
-                <li key={c.module} className={i === active ? 'is-new' : ''}>
-                  <span className="lp-log__dot" aria-hidden="true" />
-                  <span className="lp-log__who">{c.module}</span>
-                  <span className="lp-log__what">{c.log}</span>
-                </li>
-              ))}
-            </ul>
+            <div className="lp-story__trace">
+              <div className="lp-story__traceHead"><span className="mono">ACTIVITY TRACE</span><span className="mono">{active + 1} {active === 0 ? 'EVENT' : 'EVENTS'} RECORDED</span></div>
+              <ul className="lp-log" aria-live="polite">
+                {CHAPTERS.slice(Math.max(0, active - 2), active + 1).map((c, i, visible) => (
+                  <li key={c.module} className={i === visible.length - 1 ? 'is-new' : ''}>
+                    <span className="lp-log__dot" aria-hidden="true" />
+                    <span className="lp-log__who">{c.module}</span>
+                    <span className="lp-log__what">{c.log}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div className="lp-story__foot"><span>ONE RECORD</span><span aria-hidden="true">→</span><span>EVERY HANDOFF</span><span aria-hidden="true">→</span><span>ONE HISTORY</span></div>
           </div>
         </div>
 
