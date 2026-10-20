@@ -34,6 +34,7 @@ import { acknowledgeDocument, addCaseNote, addCertification, cancelLeave, comple
 import * as apr from '../runtime/appraisals.js';
 import * as ops from '../runtime/ops.js';
 import * as gov from '../runtime/gov.js';
+import * as mtg from '../runtime/meetings.js';
 import * as life from '../runtime/tenant-lifecycle.js';
 import * as esign from '../runtime/esign.js';
 import { opsPhotoLink, uploadOpsPhoto } from '../runtime/ops-files.js';
@@ -1557,6 +1558,45 @@ route('POST', /^\/api\/auth\/reauthenticate\/passkey\/finish$/, async ({ pool, a
   if (!response || typeof response !== 'object') throw new HttpError(400, 'a passkey response is required');
   return finishAssertion(pool, { actorId, sessionId: session.sessionId, response: response as Record<string, unknown> });
 });
+
+// ---- Meetings and resolutions. Who may see and do what is decided in runtime/meetings.ts.
+const mr = (re: string) => new RegExp(`^/api/meetings/${re}$`);
+route('GET', mr('overview'), async ({ pool, principal }) => mtg.meetingsOverview(pool, principal));
+route('GET', mr('settings'), async ({ pool, principal }) => mtg.readMeetingSettings(pool, principal));
+route('POST', mr('settings'), async ({ pool, principal }, b) => mtg.updateMeetingSettings(pool, principal, hb(b)));
+route('GET', mr('bodies'), async ({ pool, principal }) => mtg.listBodies(pool, principal));
+route('POST', mr('bodies'), async ({ pool, principal }, b) => mtg.saveBody(pool, principal, hb(b)));
+route('GET', mr(`bodies/${A}`), async ({ pool, principal, url }) => mtg.bodyDetail(pool, principal, hid(url, 4)));
+route('POST', mr(`bodies/${A}/members`), async ({ pool, principal, url }, b) => mtg.setBodyMember(pool, principal, hid(url, 4), hb(b)));
+route('GET', mr(`bodies/${A}/register`), async ({ pool, principal, url }) => {
+  const rows = await mtg.resolutionRegister(pool, principal, hid(url, 4));
+  if (url.searchParams.get('format') === 'csv') return { contentType: 'text/csv', body: mtg.registerCsv(rows as Record<string, unknown>[]), headers: { 'content-disposition': 'attachment; filename="resolution-register.csv"' } };
+  return rows;
+});
+route('GET', mr('meetings'), async ({ pool, principal, url }) => mtg.listMeetings(pool, principal, { bodyId: url.searchParams.get('body') ?? undefined, scope: url.searchParams.get('scope') ?? undefined }));
+route('POST', mr('meetings'), async ({ pool, principal }, b) => mtg.createMeeting(pool, principal, hb(b)));
+route('GET', mr(`meetings/${A}`), async ({ pool, principal, url }) => mtg.meetingDetail(pool, principal, hid(url, 4)));
+route('POST', mr(`meetings/${A}`), async ({ pool, principal, url }, b) => mtg.updateMeeting(pool, principal, hid(url, 4), hb(b)));
+route('POST', mr(`meetings/${A}/call`), async ({ pool, principal, url }, b) => mtg.callMeeting(pool, principal, hid(url, 4), hb(b)));
+route('POST', mr(`meetings/${A}/rsvp`), async ({ pool, principal, url }, b) => mtg.rsvp(pool, principal, hid(url, 4), hb(b)));
+route('POST', mr(`meetings/${A}/cancel`), async ({ pool, principal, url }, b) => mtg.cancelMeeting(pool, principal, hid(url, 4), hb(b)));
+route('POST', mr(`meetings/${A}/presence`), async ({ pool, principal, url }, b) => mtg.setPresence(pool, principal, hid(url, 4), hb(b)));
+route('POST', mr(`meetings/${A}/start`), async ({ pool, principal, url }, b) => mtg.startMeeting(pool, principal, hid(url, 4), hb(b)));
+route('POST', mr(`meetings/${A}/minutes`), async ({ pool, principal, url }, b) => mtg.recordMinutes(pool, principal, hid(url, 4), hb(b)));
+route('POST', mr(`meetings/${A}/close`), async ({ pool, principal, url }) => mtg.closeMeeting(pool, principal, hid(url, 4)));
+route('POST', mr(`meetings/${A}/approve-minutes`), async ({ pool, principal, url }) => mtg.approveMinutes(pool, principal, hid(url, 4)));
+route('GET', mr(`meetings/${A}/minutes.pdf`), async ({ pool, principal, url }) => mtg.minutesDocument(pool, principal, hid(url, 4)));
+route('GET', mr('resolutions'), async ({ pool, principal, url }) => mtg.listResolutions(pool, principal, { bodyId: url.searchParams.get('body') ?? undefined, status: url.searchParams.get('status') ?? undefined }));
+route('POST', mr('resolutions'), async ({ pool, principal }, b) => mtg.createResolution(pool, principal, hb(b)));
+route('GET', mr(`resolutions/${A}`), async ({ pool, principal, url }) => mtg.resolutionDetail(pool, principal, hid(url, 4)));
+route('POST', mr(`resolutions/${A}/open`), async ({ pool, principal, url }, b) => mtg.openResolution(pool, principal, hid(url, 4), hb(b)));
+route('POST', mr(`resolutions/${A}/vote`), async ({ pool, principal, url }, b) => mtg.castVote(pool, principal, hid(url, 4), hb(b)));
+route('POST', mr(`resolutions/${A}/close`), async ({ pool, principal, url }) => mtg.closeResolution(pool, principal, hid(url, 4)));
+route('POST', mr(`resolutions/${A}/withdraw`), async ({ pool, principal, url }, b) => mtg.withdrawResolution(pool, principal, hid(url, 4), hb(b)));
+route('POST', mr(`resolutions/${A}/sign`), async ({ pool, principal, url }) => mtg.sendResolutionForSignature(pool, principal, hid(url, 4)));
+route('GET', mr('actions'), async ({ pool, principal, url }) => mtg.listActions(pool, principal, { scope: url.searchParams.get('scope') ?? undefined, bodyId: url.searchParams.get('body') ?? undefined }));
+route('POST', mr('actions'), async ({ pool, principal }, b) => mtg.createAction(pool, principal, hb(b)));
+route('POST', mr(`actions/${A}/close`), async ({ pool, principal, url }, b) => mtg.completeAction(pool, principal, hid(url, 4), hb(b)));
 
 // The phone screen: what needs me, across every module, in one call. See runtime/go.ts.
 route('GET', /^\/api\/go$/, async ({ pool, engine, principal, actorId }) => goHome(pool, engine, principal, actorId));

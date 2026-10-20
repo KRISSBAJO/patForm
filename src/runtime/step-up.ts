@@ -160,6 +160,10 @@ export const STEP_UP: { method: string; test: RegExp; when?: (body: unknown) => 
   { method: 'POST', test: /^\/api\/members\/[0-9a-f-]{36}\/reactivate$/, what: 'let somebody back in' },
   { method: 'POST', test: /^\/api\/account\/mfa\/begin$/, what: 'set up a new authenticator' },
   { method: 'POST', test: /^\/api\/account\/passkeys\/begin$/, what: 'add a passkey' },
+  { method: 'POST', test: /^\/api\/meetings\/bodies$/, what: 'change a board or committee' },
+  { method: 'POST', test: /^\/api\/meetings\/bodies\/[0-9a-f-]{36}\/members$/, what: 'change who sits on a board or committee' },
+  { method: 'POST', test: /^\/api\/meetings\/meetings\/[0-9a-f-]{36}\/approve-minutes$/, what: 'approve minutes' },
+  { method: 'POST', test: /^\/api\/meetings\/resolutions\/[0-9a-f-]{36}\/sign$/, what: 'send a resolution for signature' },
   { method: 'POST', test: /^\/api\/account\/passkeys\/[0-9a-f-]{36}\/remove$/, what: 'remove a passkey' },
   {
     method: 'POST',

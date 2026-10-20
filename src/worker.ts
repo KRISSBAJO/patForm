@@ -5,6 +5,7 @@ import { runScheduledRetention, sweepExpiredTokens } from './runtime/retention.j
 import { sweepGov, syncEnvelopes } from './runtime/gov.js';
 import { runClosures, runExports } from './runtime/tenant-lifecycle.js';
 import { sweepSignatures } from './runtime/esign.js';
+import { sweepMeetings } from './runtime/meetings.js';
 import { sweepHeld } from './runtime/held.js';
 import { applyDueChanges } from './runtime/hr.js';
 import { deliverConnectors, generateMaintenance, reconcileAccess, sweepTickets } from './runtime/ops.js';
@@ -128,6 +129,9 @@ async function main(): Promise<void> {
         // DocuSign status and signed copies; workspace exports and approved closures.
         await syncEnvelopes(pool).catch((err) => console.error('envelope sync failed:', err instanceof Error ? err.message : err));
         await sweepSignatures(pool).catch((err) => console.error('signature sweep failed:', err instanceof Error ? err.message : err));
+        // Meetings: reminders, written resolutions past their deadline, signed resolutions, action reminders.
+        const mtg = await sweepMeetings(pool, now).catch((err) => { console.error('meetings sweep failed:', err instanceof Error ? err.message : err); return null; });
+        if (mtg && (mtg.reminded || mtg.closed || mtg.signed || mtg.actions)) console.log(`  ${now.toISOString()}  meetings: ${mtg.reminded} reminded, ${mtg.closed} written votes closed, ${mtg.signed} signed, ${mtg.actions} action reminders`);
         await runExports(pool).catch((err) => console.error('exports failed:', err instanceof Error ? err.message : err));
         const closed = await runClosures(pool).catch((err) => { console.error('closure failed:', err instanceof Error ? err.message : err); return 0; });
         if (closed) console.log(`  ${now.toISOString()}  closed ${closed} workspace(s)`);

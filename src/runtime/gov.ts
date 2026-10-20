@@ -1182,8 +1182,8 @@ function sniffDoc(bytes: Buffer, filename: string): string | null {
 
 export async function uploadGovFile(pool: Pool, principal: Principal, body: Record<string, unknown>) {
   const w = await member(pool, principal);
-  const purpose = body.purpose === 'policy' ? 'policy' : body.purpose === 'contract' ? 'contract' : body.purpose === 'signing' ? 'signing' : null;
-  if (!purpose) throw new InvalidInput('purpose must be contract, policy or signing');
+  const purpose = body.purpose === 'policy' ? 'policy' : body.purpose === 'contract' ? 'contract' : body.purpose === 'signing' ? 'signing' : body.purpose === 'paper' ? 'paper' : null;
+  if (!purpose) throw new InvalidInput('purpose must be contract, policy, signing or paper');
   if (purpose === 'signing' && !/\.pdf$/i.test(text(body.filename, 200))) throw new InvalidInput('Patform Sign signs PDFs; upload a PDF');
   if (purpose === 'policy') requireTeam(w, 'compliance');
   const filename = text(body.filename, 200); const base64 = typeof body.base64 === 'string' ? body.base64 : '';

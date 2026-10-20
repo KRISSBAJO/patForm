@@ -20,6 +20,7 @@ interface Home {
   tasks: { processKey: string; processName: string; instanceId: string; reference: string; taskKey: string; taskName: string; late: boolean; summary: string }[];
   late: number;
   capture: { processKey: string; name: string; publicId: string; fieldKey: string; fieldLabel: string }[];
+  actions?: { id: string; number: number; title: string; body: string; due_on: string | null; late: boolean }[];
   start: { processKey: string; name: string; publicId: string }[];
   leave: null | {
     toApprove: { id: string; who: string; type: string; start: string; end: string; days: number; reason: string | null }[];
@@ -326,7 +327,7 @@ export function Go() {
     if (refresh) void load();
   };
 
-  const needs = (home?.approvals.length ?? 0) + (home?.tasks.length ?? 0) + (home?.leave?.toApprove.length ?? 0);
+  const needs = (home?.approvals.length ?? 0) + (home?.tasks.length ?? 0) + (home?.leave?.toApprove.length ?? 0) + (home?.actions?.length ?? 0);
   const first = me?.actor.display_name.split(' ')[0] ?? '';
   const moduleLinks = [
     { key: 'expenses', label: 'Expenses', view: 'expenses' },
@@ -335,6 +336,7 @@ export function Go() {
     { key: 'appraisals', label: 'Appraisals', view: 'appraisals' },
     { key: 'assets', label: 'Assets & IT', view: 'operations' },
     { key: 'contracts', label: 'Contracts & compliance', view: 'compliance' },
+    { key: 'meetings', label: 'Meetings', view: 'meetings' },
   ].filter((module) => me?.modules?.includes(module.key));
   const switchTab = (next: GoTab) => { setTab(next); window.scrollTo({ top: 0, behavior: 'smooth' }); };
   const refresh = async () => { setRefreshing(true); await load(); setRefreshing(false); };
@@ -378,6 +380,7 @@ export function Go() {
             {home.approvals.length > 0 && <section className="go__section"><div className="go__sectionHead"><h2>Decisions <span>{home.approvals.length}</span></h2></div>{home.approvals.map((a) => <Approval key={`${a.instanceId}-${a.approvalKey}`} a={a} onDone={done} />)}</section>}
             {home.leave && home.leave.toApprove.length > 0 && <section className="go__section"><div className="go__sectionHead"><h2>Leave requests <span>{home.leave.toApprove.length}</span></h2></div>{home.leave.toApprove.map((r) => <LeaveToApprove key={r.id} r={r} onDone={done} />)}</section>}
             {home.tasks.length > 0 && <section className="go__section"><div className="go__sectionHead"><h2>Tasks <span>{home.tasks.length}</span></h2></div>{home.tasks.map((t) => <a className={`go__card go__card--link ${t.late ? 'is-late' : ''}`} key={`${t.instanceId}-${t.taskKey}`} href={`/console?record=${t.instanceId}`}><header><span className="go__ref mono">{t.reference}</span>{t.late && <span className="go__age is-late">OVERDUE</span>}</header><h3>{t.taskName}</h3><p>{t.summary} · {t.processName}</p><span className="go__cardArrow">Open record <GoIcon name="arrow" /></span></a>)}</section>}
+            {(home.actions?.length ?? 0) > 0 && <section className="go__section"><div className="go__sectionHead"><h2>Agreed in a meeting <span>{home.actions!.length}</span></h2></div>{home.actions!.map((a) => <article className={`go__card ${a.late ? 'is-late' : ''}`} key={a.id}><header><span className="go__ref mono">A-{a.number}</span>{a.due_on && <span className={`go__age ${a.late ? 'is-late' : ''}`}>{a.late ? 'OVERDUE · ' : 'due '}{a.due_on}</span>}</header><h3>{a.title}</h3><p>{a.body}</p><div className="go__row"><button type="button" className="go__btn go__btn--primary" onClick={() => void (async () => { try { await postJson(`/api/meetings/actions/${a.id}/close`, {}); done(`A-${a.number} done.`, true); } catch (err) { done(err instanceof Error ? err.message : 'That did not work.'); } })()}>Done</button><a className="go__link" href="/console?view=meetings">Open</a></div></article>)}</section>}
           </div>}
 
           {tab === 'create' && <div className="go__pane" id="go-main"><div className="go__pageHeading"><span className="go__eyebrow">GET SOMETHING MOVING</span><h1>Start from your phone</h1><p>Open a form, add evidence, or request time away.</p></div>

@@ -103,6 +103,17 @@ tab of that name inside the module's page in the console.
     that asks you to confirm it is you (a budget): the dialog offers the
     fingerprint first. `APP_URL` must be the exact https origin the phone
     uses, or passkeys refuse with "another site".
+14. **Meetings**: switch on Meetings; Boards & committees → create a board
+    with a company name; add yourself as chair and a colleague as
+    secretary (signatory). Draft a meeting with an agenda, call it (a date
+    under 7 days away asks for a short-notice reason; the notice email
+    arrives with the agenda), reply, mark two people present, start it,
+    draft a resolution on an item, put it to the vote, vote, close the
+    vote, write minutes on every item, close the meeting; as the other
+    officer, approve the minutes (the PDF opens). Send the passed
+    resolution for signature: a Patform Sign envelope PS-n appears for the
+    company; sign both; within a sweep the register shows "Signed" with a
+    fingerprint and the CSV downloads.
 
 ## Things that bit us, so you can spot them fast
 

@@ -5,6 +5,7 @@ import type { Blueprint } from '../blueprint/index.js';
 import { processesFor, type WorkSummary } from './console-queries.js';
 import { enabledModules } from './modules.js';
 import { leaveToApprove, myLeave } from './hr.js';
+import { myMeetingActions } from './meetings.js';
 import { flattenFields } from '../blueprint/index.js';
 
 /**
@@ -57,6 +58,7 @@ export interface GoHome {
   tasks: GoTask[];
   late: number;
   capture: CaptureTarget[];
+  actions: { id: string; number: number; title: string; body: string; due_on: string | null; late: boolean }[];
   start: { processKey: string; name: string; publicId: string }[];
   leave: null | {
     toApprove: { id: string; who: string; type: string; start: string; end: string; days: number; reason: string | null }[];
@@ -138,5 +140,7 @@ export async function goHome(pool: Pool, engine: Engine, principal: Principal, a
     leave = { toApprove, mine };
   }
 
-  return { approvals, tasks, late: approvals.filter((a) => a.late).length + tasks.filter((t) => t.late).length, capture, start, leave };
+  let actions: GoHome['actions'] = [];
+  if (modules.has('meetings')) { try { actions = await myMeetingActions(pool, principal); } catch { /* no bodies yet */ } }
+  return { approvals, tasks, late: approvals.filter((a) => a.late).length + tasks.filter((t) => t.late).length + actions.filter((a) => a.late).length, capture, start, leave, actions };
 }

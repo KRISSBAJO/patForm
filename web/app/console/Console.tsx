@@ -7,6 +7,7 @@ import { DashboardView, HealthView, HeldView, RecordsView, SecurityView } from '
 import { NotificationsPanel } from './Notifications';
 import { PasskeysPanel } from './Passkeys';
 import { SignCenter } from './SignCenter';
+import { MeetingsView } from './Meetings';
 import { MODULE_AREAS, ModuleRail, ModuleStrip, type Section } from './module-shell';
 import { PeopleView, ProcessesView } from './Manage';
 import { InviteView } from './Invite';
@@ -159,6 +160,7 @@ export function Console() {
     | 'operations'
     | 'compliance'
     | 'sign'
+    | 'meetings'
     | 'held'
   >('work');
   const recordOrigin = useRef<'work' | 'records' | 'ask' | 'processes' | 'expenses' | 'procurement'>('work');
@@ -199,9 +201,9 @@ export function Console() {
       if (info.actor.workspace_role === 'auditor' && info.modules?.includes('contracts')) setView('compliance');
       // Phone shortcuts can open an enabled module directly in the full console.
       const requestedView = new URLSearchParams(window.location.search).get('view');
-      const moduleViews: Record<string, string> = { expenses: 'expenses', procurement: 'procurement', hr: 'hr', appraisals: 'appraisals', assets: 'operations', contracts: 'compliance' };
+      const moduleViews: Record<string, string> = { expenses: 'expenses', procurement: 'procurement', hr: 'hr', appraisals: 'appraisals', assets: 'operations', contracts: 'compliance', meetings: 'meetings' };
       if (requestedView && Object.entries(moduleViews).some(([module, page]) => page === requestedView && info.modules?.includes(module))) {
-        setView(requestedView as 'expenses' | 'procurement' | 'hr' | 'appraisals' | 'operations' | 'compliance');
+        setView(requestedView as 'expenses' | 'procurement' | 'hr' | 'appraisals' | 'operations' | 'compliance' | 'meetings');
       } else if (requestedView === 'sign' && info.modules?.includes('contracts')) setView('sign');
       const requested = new URLSearchParams(window.location.search).get('process');
       setProcessKey((current) =>
@@ -554,6 +556,7 @@ export function Console() {
 {session.modules?.includes('assets') && <button type="button" className="cs__navItem" title="Assets & IT" aria-current={view === 'operations' ? 'page' : undefined} onClick={() => setView('operations')}><NavIcon name="health"/><span className="cs__navText">Assets &amp; IT</span></button>}
 {session.modules?.includes('contracts') && <button type="button" className="cs__navItem" title="Compliance" aria-current={view === 'compliance' ? 'page' : undefined} onClick={() => setView('compliance')}><NavIcon name="held"/><span className="cs__navText">Compliance</span></button>}
 {session.modules?.includes('contracts') && <button type="button" className="cs__navItem" title="Patform Sign" aria-current={view === 'sign' ? 'page' : undefined} onClick={() => setView('sign')}><NavIcon name="records"/><span className="cs__navText">Patform Sign</span></button>}
+{session.modules?.includes('meetings') && <button type="button" className="cs__navItem" title="Meetings" aria-current={view === 'meetings' ? 'page' : undefined} onClick={() => setView('meetings')}><NavIcon name="dashboard"/><span className="cs__navText">Meetings</span></button>}
 {session.modules?.includes('procurement') && <button type="button" className="cs__navItem" title="Procurement" aria-current={view === 'procurement' ? 'page' : undefined} onClick={() => setView('procurement')}><NavIcon name="processes"/><span className="cs__navText">Procurement</span></button>}
 <a className="cs__navItem" href="/builder" title="Builder"><NavIcon name="builder"/><span className="cs__navText">Builder</span></a>
 </nav>
@@ -610,7 +613,7 @@ export function Console() {
                                             ? 'Assets & IT'
                                             : view === 'compliance'
                                               ? 'Contracts & compliance'
-                                              : view === 'sign' ? 'Patform Sign' : 'My work'}
+                                              : view === 'sign' ? 'Patform Sign' : view === 'meetings' ? 'Meetings' : 'My work'}
           </h1>
           {/* The process pill is context for the record views. On People,
               Processes and Your account it named a process the page has
@@ -624,13 +627,13 @@ export function Console() {
             <button type="button" className="cs__btn cs__btn--create" onClick={() => { sessionStorage.removeItem('patform:new-process-description'); window.location.href = '/builder/ai'; }}>
               <span className="cs__createMark" aria-hidden="true">✦</span> Build with AI
             </button>
-          ) : view !== 'security' && <button type="button" className="cs__btn" onClick={() => { if (view === 'integrations' || view === 'data' || view === 'modules' || view === 'organisation' || view === 'expenses' || view === 'procurement' || view === 'hr' || view === 'appraisals' || view === 'operations' || view === 'compliance' || view === 'sign') setSettingsRevision(value => value + 1); void load(); }}>
+          ) : view !== 'security' && <button type="button" className="cs__btn" onClick={() => { if (view === 'integrations' || view === 'data' || view === 'modules' || view === 'organisation' || view === 'expenses' || view === 'procurement' || view === 'hr' || view === 'appraisals' || view === 'operations' || view === 'compliance' || view === 'sign' || view === 'meetings') setSettingsRevision(value => value + 1); void load(); }}>
             Refresh
           </button>}
         </div>
 
         {area && <ModuleStrip sections={moduleSections} current={moduleSection} onPick={setModuleSection} />}
-        <div className={`cs__body ${view === 'security' ? 'cs__body--security' : ''} ${view === 'ask' ? 'cs__body--ask' : ''} ${view === 'record' ? 'cs__body--record' : ''} ${view === 'health' ? 'cs__body--health' : ''} ${view === 'dashboard' ? 'cs__body--dashboard' : ''} ${view === 'people' ? 'cs__body--people' : ''} ${view === 'records' ? 'cs__body--records' : ''} ${view === 'work' ? 'cs__body--work' : ''} ${view === 'processes' ? 'cs__body--processes' : ''} ${view === 'held' ? 'cs__body--held' : ''} ${view === 'integrations' ? 'cs__body--integrations' : ''} ${view === 'data' ? 'cs__body--data' : ''} ${view === 'modules' || view === 'organisation' || view === 'expenses' || view === 'procurement' || view === 'hr' || view === 'appraisals' || view === 'operations' || view === 'compliance' || view === 'sign' ? 'cs__body--integrations' : ''}`}>
+        <div className={`cs__body ${view === 'security' ? 'cs__body--security' : ''} ${view === 'ask' ? 'cs__body--ask' : ''} ${view === 'record' ? 'cs__body--record' : ''} ${view === 'health' ? 'cs__body--health' : ''} ${view === 'dashboard' ? 'cs__body--dashboard' : ''} ${view === 'people' ? 'cs__body--people' : ''} ${view === 'records' ? 'cs__body--records' : ''} ${view === 'work' ? 'cs__body--work' : ''} ${view === 'processes' ? 'cs__body--processes' : ''} ${view === 'held' ? 'cs__body--held' : ''} ${view === 'integrations' ? 'cs__body--integrations' : ''} ${view === 'data' ? 'cs__body--data' : ''} ${view === 'modules' || view === 'organisation' || view === 'expenses' || view === 'procurement' || view === 'hr' || view === 'appraisals' || view === 'operations' || view === 'compliance' || view === 'sign' || view === 'meetings' ? 'cs__body--integrations' : ''}`}>
           <div className="cs__left">
             {view === 'record' && record ? (
               <RecordPage
@@ -662,6 +665,8 @@ export function Console() {
               <ComplianceView key={settingsRevision} shell={shell} />
             ) : view === 'sign' ? (
               <SignCenter key={settingsRevision} shell={shell} />
+            ) : view === 'meetings' ? (
+              <MeetingsView key={settingsRevision} shell={shell} />
             ) : view === 'procurement' ? (
               <ProcurementView key={settingsRevision} shell={shell} canAdminister={['owner', 'admin'].includes(me.workspace_role)} canOperate={['owner', 'admin', 'operator'].includes(me.workspace_role)} onOpenRecord={(id) => void open(id)} />
             ) : view === 'expenses' ? (

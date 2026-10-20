@@ -749,3 +749,52 @@ Contracts module): Envelopes, Send a document, Verify a copy. The
 "Signatures" tab inside Compliance is gone; "Send with Patform Sign" on an
 approved contract still opens the sender inline on that contract.
 
+## Meetings and resolutions (20 October 2026)
+
+A new module, `meetings` (`src/runtime/meetings.ts`, tables `mtg_*`,
+console area `web/app/console/Meetings.tsx`, routes `/api/meetings/*`).
+
+- Bodies: boards, committees, management teams and general meetings, each
+  with members (chair, secretary, member, observer), a quorum rule
+  (fraction or count of voting members), a decision rule (simple majority,
+  two-thirds, unanimous; chair's casting vote on a tie), an optional
+  company name and register number, how many signatures a resolution
+  needs, and whether written resolutions are allowed. One chair at a time.
+- Meetings: drafted with an agenda (purpose, presenter, time, papers), then
+  called. Calling needs the workspace's notice period
+  (`noticeDays`, default 7) or a recorded reason for short notice, and
+  sends the notice with the agenda to every member; members reply yes, no
+  (with apologies) or maybe. A reminder goes out `reminderHours` before.
+  The secretary marks who is present; the meeting starts only with a
+  quorum, or with a recorded note, in which case no resolution can be put
+  to it. Minutes are written per agenda item while it runs; close the
+  meeting; someone other than the writer approves the minutes, which
+  produces the minutes PDF (stored as a `gov_file` of purpose `minutes`),
+  freezes the text, and emails members with the file's fingerprint.
+- Resolutions: in a meeting (only present voting members vote; the chair
+  or secretary may record a present member's vote and the record says so)
+  or written (every voting member is emailed; an unanswered vote is not a
+  yes; the deadline settles it in the worker's sweep). A running vote shows
+  a member only their own vote; the tally appears when it closes. Special
+  resolutions need two-thirds.
+- Signing: a passed resolution's PDF is generated and sent through Patform
+  Sign to the body's signatories — as the company, "N of M", with the
+  register check when a number is set. The signed copy returns to the
+  register with its fingerprint. Needs the Contracts module (where Sign
+  lives). If the generated PDF is still being malware-checked the send is
+  retried by the sweep.
+- Actions: agreed during a meeting with an owner and a date; the owner is
+  emailed, sees them on `/go` and in Meetings, is reminded
+  `actionReminderDays` before and when overdue; only the owner, the chair
+  or the secretary closes one.
+- Register: per body, every decided resolution with votes, date, meeting,
+  envelope and signed-copy fingerprint; CSV download; viewing is logged.
+- Everything is an `mtg_event` row (append-only, same trigger as the
+  compliance tables). Changing a body or its members, approving minutes
+  and sending for signature are step-ups.
+
+Tests: `tests/meetings.test.ts` (decision rules, a whole board meeting,
+a written resolution, signing through Patform Sign). Not built: calendar
+invitations (.ics), proxies, recorded video, and a Nigerian register
+check (the CAC slot in `company-register.ts` still waits for a provider).
+

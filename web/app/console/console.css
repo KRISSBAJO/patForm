@@ -5389,3 +5389,76 @@ a.cs__navItem {
   .cs__modStrip { display: flex; }
   .cs__shell--module .cs__head h1::before { display: none; }
 }
+
+/* ------------------------------------------------------------ meetings */
+.mt__room { padding: 22px 28px 28px; }
+.mt__roomHead { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; }
+.mt__roomHead h3 { margin: 6px 0 2px; font: 600 13px var(--ui); letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+.mt__big { margin: 0 0 6px; font: 600 24px/1.15 var(--ui); letter-spacing: -.02em; color: var(--ink); }
+.mt__roomBar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 16px 0 20px; padding: 12px 14px; border-radius: 12px; background: var(--paper-3); border: 1px solid var(--card-line); }
+.mt__roomGrid { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 28px; }
+.mt__agenda h4, .mt__side h4, .mt__roomGrid section > h4 { margin: 0 0 10px; font: 700 11px var(--ui); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.mt__side h4 + * { margin-bottom: 18px; }
+.mt__timeline { list-style: none; margin: 0; padding: 0; position: relative; }
+.mt__timeline::before { content: ''; position: absolute; left: 15px; top: 8px; bottom: 8px; width: 2px; background: var(--card-line); }
+.mt__item { position: relative; display: grid; grid-template-columns: 32px 1fr; gap: 12px; padding: 0 0 22px; }
+.mt__itemNo { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: #fff; border: 2px solid var(--mod, var(--green)); color: var(--mod-deep, var(--green-deep)); font: 700 12px var(--ui); position: relative; z-index: 1; }
+.mt__item--resolution .mt__itemNo { background: var(--mod, var(--green)); color: #fff; }
+.mt__itemBody { min-width: 0; padding-top: 5px; }
+.mt__itemHead { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 14.5px; color: var(--ink); }
+.mt__tag { padding: 2px 8px; border-radius: 999px; background: var(--mod-tint, var(--green-pale)); color: var(--mod-deep, var(--green-deep)); font: 600 11px var(--ui); }
+.mt__resCard { margin-top: 10px; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--card-line); background: #fff; }
+.mt__resHead { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 8px; font-size: 13.5px; }
+.mt__pill { display: inline-flex; align-items: center; padding: 3px 8px; border-radius: 999px; background: var(--paper-2); color: var(--muted-3); font: 700 10.5px var(--ui); letter-spacing: .02em; white-space: nowrap; margin-left: 8px; vertical-align: middle; }
+.mt__pill--in_progress, .mt__pill--open { background: #fff3d6; color: #7a4206; }
+.mt__pill--called, .mt__pill--signing { background: #e6effa; color: #143f70; }
+.mt__pill--passed, .mt__pill--signed, .mt__pill--minutes_approved, .mt__pill--done { background: #eaf7ee; color: var(--green-deep); }
+.mt__pill--failed, .mt__pill--cancelled, .mt__pill--withdrawn { background: #f8e9e7; color: #8a3a34; }
+.mt__votes { margin: 6px 0 8px; }
+.mt__voteBar { display: flex; height: 10px; border-radius: 5px; overflow: hidden; background: var(--paper-2); }
+.mt__voteBar span { display: block; height: 100%; transition: width .5s cubic-bezier(.22,1,.36,1); }
+.is-for { background: var(--green); } .is-against { background: #b0463f; } .is-abstain { background: #c9c2b2; }
+.mt__voteKey { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 6px; font: 12px var(--ui); color: var(--muted-3); }
+.mt__voteKey i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 5px; vertical-align: 1px; }
+.mt__voteEligible { margin-left: auto; color: var(--muted); }
+.mt__voteDot { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 10px; }
+.mt__actionLine { margin: 8px 0 0; font: 13px var(--ui); color: var(--ink-soft); }
+.mt__minutes { margin-top: 10px; display: grid; gap: 8px; }
+.mt__minutes textarea { resize: vertical; min-height: 64px; font: 13.5px/1.5 var(--ui); padding: 8px 10px; }
+.mt__minutesRead { margin: 8px 0 0; padding: 10px 12px; border-left: 3px solid var(--mod, var(--green)); background: var(--paper-3); font: 13.5px/1.55 var(--ui); color: var(--ink-soft); white-space: pre-wrap; }
+.mt__people { display: grid; gap: 6px; }
+.mt__person { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--card-line); background: #fff; opacity: .72; }
+.mt__person.is-present { opacity: 1; border-color: color-mix(in srgb, var(--mod, var(--green)) 35%, var(--card-line)); }
+.mt__avatar { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; background: var(--mod-tint, var(--green-pale)); color: var(--mod-deep, var(--green-deep)); font: 700 11px var(--ui); flex: 0 0 30px; }
+.mt__personText { min-width: 0; flex: 1; display: flex; flex-direction: column; }
+.mt__personText strong { font: 600 13px var(--ui); color: var(--ink); }
+.mt__personText small { font: 11.5px var(--ui); color: var(--muted); }
+.mt__presence { border: 1px solid var(--line-strong); background: #fff; border-radius: 999px; padding: 5px 10px; font: 600 11.5px var(--ui); cursor: pointer; color: var(--ink); }
+.mt__presence.is-on { background: var(--mod, var(--green)); border-color: var(--mod, var(--green)); color: #fff; }
+.mt__log { display: grid; gap: 4px; font: 12px/1.45 var(--ui); color: var(--muted-3); max-height: 320px; overflow: auto; }
+.mt__log li { display: grid; grid-template-columns: 112px 1fr; gap: 8px; }
+.mt__log span { color: var(--muted); font-family: var(--font-mono), monospace; font-size: 10.5px; }
+.mt__ring { position: relative; width: 64px; text-align: center; flex: 0 0 auto; }
+.mt__ringTrack { fill: none; stroke: var(--paper-2); stroke-width: 6; }
+.mt__ringFill { fill: none; stroke: #b0463f; stroke-width: 6; stroke-linecap: round; transform: rotate(-90deg); transform-origin: 50% 50%; transition: stroke-dashoffset .6s cubic-bezier(.22,1,.36,1), stroke .3s; }
+.mt__ring.is-met .mt__ringFill { stroke: var(--green); }
+.mt__ringText { position: absolute; left: 0; right: 0; top: 14px; line-height: 1; }
+.mt__ringText strong { display: block; font: 700 18px var(--ui); color: var(--ink); }
+.mt__ringText small { font: 10px var(--ui); color: var(--muted); }
+.mt__ringLabel { display: block; margin-top: 2px; font: 700 10px var(--ui); letter-spacing: .06em; text-transform: uppercase; color: #8a3a34; }
+.mt__ring.is-met .mt__ringLabel { color: var(--green-deep); }
+.mt__resolved { margin: 10px 0 14px; padding: 16px 20px; border-left: 4px solid var(--mod, var(--green)); background: var(--paper-3); font: 500 15px/1.6 var(--font-display), serif; color: var(--ink); }
+.mt__meetingRow .mt__date { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 52px; height: 52px; border-radius: 12px; background: var(--mod-tint, var(--green-pale)); color: var(--mod-deep, var(--green-deep)); flex: 0 0 52px; margin-right: 14px; }
+.mt__date strong { font: 700 18px/1 var(--ui); } .mt__date small { font: 600 10.5px var(--ui); text-transform: uppercase; letter-spacing: .06em; }
+.mt__meetingRow .ig__rowMain { flex: 1; }
+.mt__late { background: #fdf4f3; }
+.mt__overview section { padding: 0 0 8px; }
+.mt__overview h4 { margin: 18px 28px 4px; font: 700 11px var(--ui); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.mt__agendaEdit { list-style: none; margin: 8px 0 10px; padding: 0; display: grid; gap: 8px; }
+.mt__agendaEdit li { display: grid; grid-template-columns: 32px minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr) 70px 36px; gap: 8px; align-items: center; }
+.mt__bodies { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; padding: 0 28px 20px; }
+.mt__bodyCard { text-align: left; display: grid; gap: 4px; padding: 14px 16px; border-radius: 12px; border: 1px solid var(--card-line); background: #fff; font: inherit; cursor: pointer; }
+.mt__bodyCard strong { font: 600 15px var(--ui); color: var(--ink); } .mt__bodyCard small { font: 12px var(--ui); color: var(--muted); }
+.mt__bodyCard.is-open { border-color: var(--mod, var(--green)); box-shadow: inset 0 0 0 1px var(--mod, var(--green)); }
+.mt__table { width: 100%; }
+@media (max-width: 900px) { .mt__roomGrid { grid-template-columns: 1fr; } .mt__agendaEdit li { grid-template-columns: 32px 1fr 1fr; } .mt__room { padding: 16px; } }

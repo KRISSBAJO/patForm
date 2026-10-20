@@ -23,7 +23,8 @@ import { logIfEnabled } from './trace.js';
 import { blockedRecipients } from './delivery.js';
 
 export type PlatformMailKind = 'invitation' | 'verify_email' | 'password_reset' | 'delivery_alert' | 'task_assigned' | 'record_shared' | 'scheduled_report'
-  | 'signature_request' | 'signature_code' | 'signature_completed' | 'signature_declined' | 'signature_reminder' | 'signature_not_needed';
+  | 'signature_request' | 'signature_code' | 'signature_completed' | 'signature_declined' | 'signature_reminder' | 'signature_not_needed'
+  | 'meeting_notice' | 'meeting_reminder' | 'meeting_minutes' | 'resolution_vote' | 'action_assigned' | 'action_reminder';
 
 /**
  * Where the links point.

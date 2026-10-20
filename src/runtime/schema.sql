@@ -1088,7 +1088,9 @@ create table platform_email (
   id           bigserial primary key,
   tenant_id    uuid references tenant(id),
   actor_id     uuid references actor(id),
-  kind         text not null check (kind in ('invitation', 'verify_email', 'password_reset', 'delivery_alert', 'task_assigned', 'record_shared', 'scheduled_report')),
+  kind         text not null check (kind in ('invitation', 'verify_email', 'password_reset', 'delivery_alert', 'task_assigned', 'record_shared', 'scheduled_report',
+                  'signature_request', 'signature_code', 'signature_completed', 'signature_declined', 'signature_reminder', 'signature_not_needed',
+                  'meeting_notice', 'meeting_reminder', 'meeting_minutes', 'resolution_vote', 'action_assigned', 'action_reminder')),
   recipient    text not null,
   subject      text not null,
   status       text not null default 'queued'
@@ -3043,7 +3045,7 @@ create trigger control_test_no_change before update or delete on control_test fo
 create table if not exists gov_file (
   id                uuid primary key,
   tenant_id         uuid not null references tenant(id),
-  purpose           text not null check (purpose in ('contract', 'policy', 'signed', 'signing')),
+  purpose           text not null check (purpose in ('contract', 'policy', 'signed', 'signing', 'minutes', 'paper')),
   contract_id       uuid references contract(id),
   policy_version_id uuid references policy_version(id),
   filename          text not null,
@@ -3173,12 +3175,13 @@ $$ language plpgsql;
 -- commercial contracts need, not a qualified one.
 
 alter table gov_file drop constraint if exists gov_file_purpose_check;
-alter table gov_file add constraint gov_file_purpose_check check (purpose in ('contract', 'policy', 'signed', 'signing'));
+alter table gov_file add constraint gov_file_purpose_check check (purpose in ('contract', 'policy', 'signed', 'signing', 'minutes', 'paper'));
 
 alter table platform_email drop constraint if exists platform_email_kind_check;
 alter table platform_email add constraint platform_email_kind_check
   check (kind in ('invitation', 'verify_email', 'password_reset', 'delivery_alert', 'task_assigned', 'record_shared', 'scheduled_report',
-                  'signature_request', 'signature_code', 'signature_completed', 'signature_declined', 'signature_reminder', 'signature_not_needed'));
+                  'signature_request', 'signature_code', 'signature_completed', 'signature_declined', 'signature_reminder', 'signature_not_needed',
+                  'meeting_notice', 'meeting_reminder', 'meeting_minutes', 'resolution_vote', 'action_assigned', 'action_reminder'));
 
 create table if not exists sign_envelope (
   id               uuid primary key default gen_random_uuid(),
@@ -3313,7 +3316,8 @@ alter table sign_envelope add column if not exists seal jsonb;
 alter table platform_email drop constraint if exists platform_email_kind_check;
 alter table platform_email add constraint platform_email_kind_check
   check (kind in ('invitation', 'verify_email', 'password_reset', 'delivery_alert', 'task_assigned', 'record_shared', 'scheduled_report',
-                  'signature_request', 'signature_code', 'signature_completed', 'signature_declined', 'signature_reminder', 'signature_not_needed'));
+                  'signature_request', 'signature_code', 'signature_completed', 'signature_declined', 'signature_reminder', 'signature_not_needed',
+                  'meeting_notice', 'meeting_reminder', 'meeting_minutes', 'resolution_vote', 'action_assigned', 'action_reminder'));
 
 -- Patform Sign: what the company register said about a company and its
 -- signatories when the envelope was made (a snapshot, with the time).
@@ -3348,3 +3352,186 @@ create table passkey_challenge (
   expires_at timestamptz not null,
   created_at timestamptz not null default now()
 );
+
+-- =====================================================================
+-- Meetings and resolutions (runtime/meetings.ts): boards, committees and
+-- management meetings, their notices, attendance, quorum, minutes,
+-- resolutions with votes, written resolutions, action items, and a
+-- register. mtg_event is the append-only record of what happened.
+-- =====================================================================
+create table mtg_settings (
+  tenant_id  uuid primary key references tenant(id),
+  settings   jsonb not null default '{}',
+  updated_by uuid references actor(id),
+  updated_at timestamptz not null default now()
+);
+create table mtg_body (
+  id            uuid primary key default gen_random_uuid(),
+  tenant_id     uuid not null references tenant(id),
+  name          text not null,
+  kind          text not null default 'committee' check (kind in ('board', 'committee', 'management', 'general')),
+  quorum_rule   jsonb not null default '{"type":"fraction","value":0.5}',
+  decision_rule jsonb not null default '{"type":"simple_majority","chairCasting":true}',
+  company_name  text,
+  register      jsonb,
+  signatures_required int not null default 1,
+  written_resolutions boolean not null default true,
+  active        boolean not null default true,
+  created_by    uuid references actor(id),
+  created_at    timestamptz not null default now()
+);
+create index mtg_body_by_tenant on mtg_body (tenant_id);
+create table mtg_body_member (
+  id         uuid primary key default gen_random_uuid(),
+  tenant_id  uuid not null references tenant(id),
+  body_id    uuid not null references mtg_body(id) on delete cascade,
+  actor_id   uuid not null references actor(id),
+  role       text not null default 'member' check (role in ('chair', 'secretary', 'member', 'observer')),
+  voting     boolean not null default true,
+  signatory  boolean not null default false,
+  since      date not null default current_date,
+  until      date,
+  created_at timestamptz not null default now()
+);
+create unique index mtg_body_member_live on mtg_body_member (body_id, actor_id) where until is null;
+create table mtg_meeting (
+  id             uuid primary key default gen_random_uuid(),
+  tenant_id      uuid not null references tenant(id),
+  body_id        uuid not null references mtg_body(id),
+  number         int not null,
+  title          text not null,
+  kind           text not null default 'ordinary' check (kind in ('ordinary', 'extraordinary', 'annual')),
+  status         text not null default 'draft' check (status in ('draft', 'called', 'in_progress', 'minutes_draft', 'minutes_approved', 'cancelled')),
+  starts_at      timestamptz not null,
+  ends_at        timestamptz,
+  location       text,
+  link           text,
+  short_notice_reason text,
+  notice_sent_at timestamptz,
+  reminded_at    timestamptz,
+  started_at     timestamptz,
+  closed_at      timestamptz,
+  quorum_met     boolean,
+  quorum_note    text,
+  chaired_by     uuid references actor(id),
+  minutes_author uuid references actor(id),
+  minutes_approved_by uuid references actor(id),
+  minutes_approved_at timestamptz,
+  minutes_file_id uuid references gov_file(id),
+  cancel_reason  text,
+  created_by     uuid references actor(id),
+  created_at     timestamptz not null default now(),
+  unique (body_id, number)
+);
+create index mtg_meeting_by_tenant on mtg_meeting (tenant_id, starts_at desc);
+create table mtg_agenda_item (
+  id           uuid primary key default gen_random_uuid(),
+  tenant_id    uuid not null references tenant(id),
+  meeting_id   uuid not null references mtg_meeting(id) on delete cascade,
+  position     int not null,
+  title        text not null,
+  purpose      text not null default 'discussion' check (purpose in ('information', 'discussion', 'decision', 'resolution')),
+  presenter_id uuid references actor(id),
+  duration_min int,
+  papers       jsonb not null default '[]',
+  minutes      text,
+  outcome      text,
+  created_at   timestamptz not null default now()
+);
+create index mtg_agenda_by_meeting on mtg_agenda_item (meeting_id, position);
+create table mtg_attendance (
+  id         uuid primary key default gen_random_uuid(),
+  tenant_id  uuid not null references tenant(id),
+  meeting_id uuid not null references mtg_meeting(id) on delete cascade,
+  actor_id   uuid not null references actor(id),
+  rsvp       text check (rsvp in ('yes', 'no', 'maybe')),
+  apologies  text,
+  present    boolean,
+  joined_at  timestamptz,
+  left_at    timestamptz,
+  unique (meeting_id, actor_id)
+);
+create table mtg_resolution (
+  id             uuid primary key default gen_random_uuid(),
+  tenant_id      uuid not null references tenant(id),
+  body_id        uuid not null references mtg_body(id),
+  meeting_id     uuid references mtg_meeting(id),
+  agenda_item_id uuid references mtg_agenda_item(id),
+  number         int not null,
+  title          text not null,
+  body_text      text not null,
+  kind           text not null default 'ordinary' check (kind in ('ordinary', 'special')),
+  status         text not null default 'draft' check (status in ('draft', 'open', 'passed', 'failed', 'withdrawn', 'signing', 'signed')),
+  decision_rule  jsonb not null,
+  proposed_by    uuid references actor(id),
+  seconded_by    uuid references actor(id),
+  opened_at      timestamptz,
+  deadline_at    timestamptz,
+  closed_at      timestamptz,
+  eligible       int,
+  votes_for      int not null default 0,
+  votes_against  int not null default 0,
+  votes_abstain  int not null default 0,
+  result_note    text,
+  envelope_id    uuid references sign_envelope(id),
+  signing_file_id uuid references gov_file(id),
+  signed_file_id uuid references gov_file(id),
+  signing_error  text,
+  created_by     uuid references actor(id),
+  created_at     timestamptz not null default now(),
+  unique (body_id, number)
+);
+create index mtg_resolution_by_tenant on mtg_resolution (tenant_id, status);
+create table mtg_vote (
+  id            uuid primary key default gen_random_uuid(),
+  tenant_id     uuid not null references tenant(id),
+  resolution_id uuid not null references mtg_resolution(id) on delete cascade,
+  actor_id      uuid not null references actor(id),
+  vote          text not null check (vote in ('for', 'against', 'abstain')),
+  recorded_by   uuid references actor(id),
+  note          text,
+  cast_at       timestamptz not null default now(),
+  unique (resolution_id, actor_id)
+);
+create table mtg_action (
+  id             uuid primary key default gen_random_uuid(),
+  tenant_id      uuid not null references tenant(id),
+  body_id        uuid not null references mtg_body(id),
+  meeting_id     uuid references mtg_meeting(id),
+  agenda_item_id uuid references mtg_agenda_item(id),
+  number         int not null,
+  title          text not null,
+  owner_id       uuid not null references actor(id),
+  due_on         date,
+  status         text not null default 'open' check (status in ('open', 'done', 'cancelled')),
+  done_note      text,
+  done_at        timestamptz,
+  reminded_on    date,
+  created_by     uuid references actor(id),
+  created_at     timestamptz not null default now()
+);
+create index mtg_action_by_owner on mtg_action (owner_id, status);
+create index mtg_action_by_tenant on mtg_action (tenant_id, status, due_on);
+create table mtg_event (
+  id            bigserial primary key,
+  tenant_id     uuid not null references tenant(id),
+  body_id       uuid references mtg_body(id),
+  meeting_id    uuid references mtg_meeting(id),
+  resolution_id uuid references mtg_resolution(id),
+  actor_id      uuid references actor(id),
+  kind          text not null,
+  detail        jsonb not null default '{}',
+  occurred_at   timestamptz not null default now()
+);
+create index mtg_event_by_meeting on mtg_event (meeting_id, id);
+create index mtg_event_by_resolution on mtg_event (resolution_id, id);
+drop trigger if exists mtg_event_no_change on mtg_event;
+create trigger mtg_event_no_change before update or delete on mtg_event for each row execute function gov_is_append_only();
+
+alter table platform_email drop constraint if exists platform_email_kind_check;
+alter table platform_email add constraint platform_email_kind_check
+  check (kind in ('invitation', 'verify_email', 'password_reset', 'delivery_alert', 'task_assigned', 'record_shared', 'scheduled_report',
+                  'signature_request', 'signature_code', 'signature_completed', 'signature_declined', 'signature_reminder', 'signature_not_needed',
+                  'meeting_notice', 'meeting_reminder', 'meeting_minutes', 'resolution_vote', 'action_assigned', 'action_reminder'));
+alter table gov_file drop constraint if exists gov_file_purpose_check;
+alter table gov_file add constraint gov_file_purpose_check check (purpose in ('contract', 'policy', 'signed', 'signing', 'minutes', 'paper'));

@@ -78,6 +78,13 @@ export const MODULES: readonly ModuleDefinition[] = [
     categories: ['Legal', 'Compliance'],
     status: 'available',
   },
+  {
+    key: 'meetings',
+    name: 'Meetings and resolutions',
+    summary: 'Boards, committees and management meetings: notices, papers, attendance and quorum, minutes, resolutions with votes, written resolutions signed through Patform Sign, action items and a register.',
+    categories: [],
+    status: 'available',
+  },
 ];
 
 const BY_KEY = new Map(MODULES.map((m) => [m.key, m]));
