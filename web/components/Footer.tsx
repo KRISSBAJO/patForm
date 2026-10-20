@@ -11,9 +11,9 @@ import { Mark } from './icons';
  * home page that exists and says what the label says.
  */
 const COLUMNS = [
-  { head: 'Platform', links: [['/#demo', 'How it works'], ['/#packs', 'Process packs'], ['/reliability', 'Reliability'], ['/signup', 'Create a workspace']] },
+  { head: 'Platform', links: [['/#story', 'How it works'], ['/#modules', 'Modules'], ['/reliability', 'Reliability'], ['/signup', 'Create a workspace']] },
   { head: 'Developers', links: [['/developers#api', 'API'], ['/developers#webhooks', 'Webhooks'], ['/developers#export', 'Data export']] },
-  { head: 'Company', links: [['/#lighthouse', 'Lighthouse program'], ['/console', 'Sign in']] },
+  { head: 'Company', links: [['/#start', 'Lighthouse program'], ['/console', 'Sign in']] },
   { head: 'Trust', links: [['/security', 'Security'], ['/privacy', 'Privacy'], ['/subprocessors', 'Subprocessors']] },
 ] as const;
 
@@ -48,8 +48,8 @@ export function Footer() {
 
         {/* On a phone the four columns collapse to one honest row of links. */}
         <div className="footer__links">
-          <a href="/#demo">How it works</a>
-          <a href="/#packs">Process packs</a>
+          <a href="/#story">How it works</a>
+          <a href="/#modules">Modules</a>
           <a href="/reliability">Reliability</a>
           <a href="/security">Security</a>
           <a href="/privacy">Privacy</a>

@@ -235,7 +235,7 @@ function Hero() {
           </div>
           <div className="lp-hero__proof lp-fade" style={nth(8)}>
             <span><strong>0</strong> per-envelope fees</span>
-            <span><strong>316</strong> automated tests</span>
+            <span><strong>300+</strong> automated tests</span>
             <span><strong>1</strong> history for everything</span>
           </div>
         </div>
@@ -459,7 +459,7 @@ function Numbers() {
       <div className="shell lp-numbers__grid">
         {[
           { v: 8, suffix: '', label: 'modules, one engine' },
-          { v: 316, suffix: '', label: 'automated tests' },
+          { v: 300, suffix: '+', label: 'automated tests' },
           { v: 0, suffix: '', label: 'per-envelope fees' },
           { v: 100, suffix: '%', label: 'of decisions on record' },
         ].map((n, i) => (
