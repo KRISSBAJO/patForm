@@ -186,7 +186,7 @@ alter table platform_email drop constraint if exists platform_email_kind_check;
 alter table platform_email add constraint platform_email_kind_check
   check (kind in ('invitation', 'verify_email', 'password_reset', 'delivery_alert', 'task_assigned', 'record_shared', 'scheduled_report',
                   'signature_request', 'signature_code', 'signature_completed', 'signature_declined', 'signature_reminder', 'signature_not_needed',
-                  'meeting_notice', 'meeting_reminder', 'meeting_minutes', 'resolution_vote', 'action_assigned', 'action_reminder'));
+                  'meeting_notice', 'meeting_reminder', 'meeting_minutes', 'resolution_vote', 'action_assigned', 'action_reminder', 'approval_reminder', 'approval_escalated', 'approval_requested'));
 
 -- The Records page's filters with a name, shared by the workspace; and, when
 -- scheduled, emailed to whoever scheduled it, rendered under their roles.
@@ -2120,7 +2120,7 @@ alter table platform_email drop constraint if exists platform_email_kind_check;
 alter table platform_email add constraint platform_email_kind_check
   check (kind in ('invitation', 'verify_email', 'password_reset', 'delivery_alert', 'task_assigned', 'record_shared', 'scheduled_report',
                   'signature_request', 'signature_code', 'signature_completed', 'signature_declined', 'signature_reminder', 'signature_not_needed',
-                  'meeting_notice', 'meeting_reminder', 'meeting_minutes', 'resolution_vote', 'action_assigned', 'action_reminder'));
+                  'meeting_notice', 'meeting_reminder', 'meeting_minutes', 'resolution_vote', 'action_assigned', 'action_reminder', 'approval_reminder', 'approval_escalated', 'approval_requested'));
 
 create table if not exists sign_envelope (
   id               uuid primary key default gen_random_uuid(),
@@ -2256,7 +2256,7 @@ alter table platform_email drop constraint if exists platform_email_kind_check;
 alter table platform_email add constraint platform_email_kind_check
   check (kind in ('invitation', 'verify_email', 'password_reset', 'delivery_alert', 'task_assigned', 'record_shared', 'scheduled_report',
                   'signature_request', 'signature_code', 'signature_completed', 'signature_declined', 'signature_reminder', 'signature_not_needed',
-                  'meeting_notice', 'meeting_reminder', 'meeting_minutes', 'resolution_vote', 'action_assigned', 'action_reminder'));
+                  'meeting_notice', 'meeting_reminder', 'meeting_minutes', 'resolution_vote', 'action_assigned', 'action_reminder', 'approval_reminder', 'approval_escalated', 'approval_requested'));
 
 -- Patform Sign: what the company register said about a company and its
 -- signatories when the envelope was made (a snapshot, with the time).
@@ -2467,7 +2467,7 @@ alter table platform_email drop constraint if exists platform_email_kind_check;
 alter table platform_email add constraint platform_email_kind_check
   check (kind in ('invitation', 'verify_email', 'password_reset', 'delivery_alert', 'task_assigned', 'record_shared', 'scheduled_report',
                   'signature_request', 'signature_code', 'signature_completed', 'signature_declined', 'signature_reminder', 'signature_not_needed',
-                  'meeting_notice', 'meeting_reminder', 'meeting_minutes', 'resolution_vote', 'action_assigned', 'action_reminder'));
+                  'meeting_notice', 'meeting_reminder', 'meeting_minutes', 'resolution_vote', 'action_assigned', 'action_reminder', 'approval_reminder', 'approval_escalated', 'approval_requested'));
 alter table gov_file drop constraint if exists gov_file_purpose_check;
 alter table gov_file add constraint gov_file_purpose_check check (purpose in ('contract', 'policy', 'signed', 'signing', 'minutes', 'paper'));
 
@@ -2662,3 +2662,78 @@ create table if not exists expense_payment_run (
 );
 alter table expense_settlement add column if not exists payment_run_id uuid references expense_payment_run(id);
 create index if not exists expense_settlement_run on expense_settlement (payment_run_id);
+
+-- Approval policies: who approves what, in what order, up to what amount,
+-- with what evidence, and what happens when they are slow or say no. Data,
+-- not code: an administrator edits it; the one engine consults it for any
+-- approval a process marks as policy-driven.
+create table if not exists approval_policy (
+  id           uuid primary key default gen_random_uuid(),
+  tenant_id    uuid not null references tenant(id),
+  process_key  text not null,
+  name         text not null,
+  description  text,
+  branch_id    uuid references hr_branch(id),
+  steps        jsonb not null default '[]'::jsonb,
+  cost_centre_owners jsonb not null default '{}'::jsonb,
+  template_key text,
+  active       boolean not null default true,
+  version      int not null default 1,
+  created_by   uuid references actor(id),
+  updated_by   uuid references actor(id),
+  created_at   timestamptz not null default now(),
+  updated_at   timestamptz not null default now()
+);
+create index if not exists approval_policy_lookup on approval_policy (tenant_id, process_key, active);
+
+-- One row per step a record goes through, so the chain, its clock and its
+-- escalation are on the record and the sweep knows what to remind.
+create table if not exists approval_step_run (
+  id             bigserial primary key,
+  tenant_id      uuid not null references tenant(id),
+  instance_id    uuid not null references instance(id) on delete cascade,
+  approval_key   text not null,
+  request_id     bigint references approval_request(id) on delete set null,
+  policy_id      uuid references approval_policy(id),
+  policy_version int not null default 1,
+  step_index     int not null,
+  step_key       text not null,
+  step_name      text not null,
+  step           jsonb not null,
+  status         text not null default 'pending' check (status in ('pending', 'approved', 'rejected', 'returned', 'skipped')),
+  started_at     timestamptz not null,
+  remind_at      timestamptz,
+  reminded_at    timestamptz,
+  escalate_at    timestamptz,
+  escalated_at   timestamptz,
+  escalated_to   text[],
+  decided_at     timestamptz,
+  decided_by     text
+);
+create index if not exists approval_step_run_open on approval_step_run (tenant_id, status) where status = 'pending';
+create index if not exists approval_step_run_instance on approval_step_run (instance_id, approval_key, step_index);
+
+-- Evidence attached by an approver before deciding: a note is on the vote; a file is here.
+create table if not exists approval_evidence (
+  id           uuid primary key,
+  tenant_id    uuid not null references tenant(id),
+  instance_id  uuid not null references instance(id) on delete cascade,
+  approval_key text not null,
+  actor        text not null,
+  filename     text not null,
+  content_type text not null,
+  byte_size    int not null,
+  sha256       text not null,
+  storage_key  text not null,
+  scan_status  text not null default 'unscanned' check (scan_status in ('unscanned', 'clean', 'quarantined')),
+  created_at   timestamptz not null default now()
+);
+create index if not exists approval_evidence_lookup on approval_evidence (instance_id, approval_key, actor);
+alter table approval_vote add column if not exists evidence_ids uuid[] not null default '{}';
+
+-- Policy steps after the first are opened when the step before is decided,
+-- not by an action run, so the link to a run is optional; one run still
+-- opens at most one request.
+alter table approval_request alter column action_run_id drop not null;
+alter table approval_request drop constraint if exists approval_request_action_run_id_key;
+create unique index if not exists approval_request_run_uq on approval_request (action_run_id) where action_run_id is not null;

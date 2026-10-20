@@ -524,3 +524,20 @@
 .ex__barTrack { height: 10px; border-radius: 999px; background: var(--mx-soft); overflow: hidden; } .ex__barTrack span { display: block; height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--mod-deep, #7a4206), var(--mod, #b4620a)); }
 .ex__barValue { font-weight: 600; white-space: nowrap; } .ex__barValue small { color: var(--mx-muted); font-weight: 500; margin-left: 6px; }
 .ex__allowance { margin: 14px 20px 0; padding: 14px 16px; border-radius: 12px; background: var(--mod-tint, #fbf3e8); display: grid; gap: 2px; } .ex__allowance strong { font: 700 26px/1.1 var(--ui); letter-spacing: -.02em; color: var(--mod-deep, #7a4206); } .ex__allowance small { color: var(--mx-muted); }
+
+/* Approval policies: steps, parties, simulator, templates */
+.ap__steps { display: grid; padding: 4px 20px 20px; }
+.ap__step { display: grid; grid-template-columns: 34px 1fr; gap: 12px; padding: 12px 0; }
+.ap__stepNo { display: grid; justify-items: center; align-content: start; } .ap__stepNo span { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; background: var(--mod, #5b4bb7); color: #fff; font: 700 13px var(--ui); } .ap__stepNo i { flex: 1; width: 2px; min-height: 40px; height: 100%; background: var(--mx-line); margin-top: 6px; }
+.ap__stepBody { border: 1px solid var(--mx-line); border-radius: 14px; background: #fff; padding: 12px 14px; display: grid; gap: 8px; }
+.ap__stepHead { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; } .ap__stepHead strong { font: 600 15px var(--font-display, serif); }
+.ap__facts { display: grid; gap: 4px; font-size: 13px; } .ap__facts span { display: grid; grid-template-columns: 84px 1fr; gap: 10px; } .ap__facts b { font: 600 11px var(--ui); color: var(--mx-muted); text-transform: uppercase; letter-spacing: .05em; padding-top: 2px; }
+.ap__parties { display: grid; gap: 6px; justify-items: start; } .ap__parties .ap__party { justify-self: stretch; } .ap__party { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.ap__party select, .ap__party input { height: 36px; padding: 0 10px; border-radius: 10px; border: 1px solid var(--mx-line); background: #fff; font: 13.5px var(--ui); min-width: 160px; flex: 1; }
+.ap__simList { margin: 12px 0 0; padding-left: 20px; display: grid; gap: 6px; font-size: 13.5px; } .ap__simList li small { display: block; color: var(--mx-muted); } .ap__simList li.is-skipped { opacity: .5; }
+.ap__template h3 { margin: 10px 0 4px; font: 600 17px var(--font-display, serif); } .ap__template p { margin: 0 0 6px; font-size: 13.5px; color: var(--mx-muted); } .ap__template .mx__btn { margin-top: 10px; }
+.ap__tplSteps { margin: 10px 0 0; padding-left: 20px; font-size: 13px; display: grid; gap: 4px; } .ap__tplSteps small { color: var(--mx-muted); }
+.ex__record.is-off { opacity: .6; }
+.mx__list li.is-late .mx__main strong { color: #a4432f; }
+
+.mx__table tr.is-click { cursor: pointer; } .mx__table tr.is-click:hover td { background: var(--mx-soft); }

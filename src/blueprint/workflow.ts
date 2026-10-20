@@ -90,6 +90,13 @@ export const Approval = z
      * could describe the control that stops it.
      */
     notTheSubmitter: z.boolean().default(false),
+    /**
+     * Policy-driven: the workspace's approval policy for this process decides
+     * the chain of steps, who takes each, the limits, the evidence, the
+     * reminders and the escalation. The approvers listed here are the
+     * fallback when no policy is active. One engine, one editor, every module.
+     */
+    policy: z.boolean().default(false),
     /** Fields the approver needs to decide; drives the approval queue summary. */
     contextFields: z.array(Key).optional(),
     dueInHours: z.number().positive().optional(),

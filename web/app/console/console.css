@@ -5482,15 +5482,28 @@ a.cs__navItem {
 .cs__appTile { display: grid; grid-template-columns: 36px 1fr; grid-template-rows: auto auto; column-gap: 10px; align-items: center; text-align: left; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line); background: #fff; cursor: pointer; font: inherit; transition: transform .12s, box-shadow .12s, border-color .12s; }
 .cs__appTile:hover { transform: translateY(-1px); border-color: color-mix(in srgb, var(--mod) 40%, var(--line)); box-shadow: 0 10px 24px -16px var(--mod-deep); }
 .cs__appTile.is-on { background: var(--mod-tint); border-color: var(--mod); }
+.cs__appTile.is-off { border-style: dashed; background: #f8faf8; }
+.cs__appTile.is-off .cs__appIcon { opacity: .62; }
 .cs__appIcon { grid-row: span 2; display: grid; place-items: center; width: 36px; height: 36px; border-radius: 10px; background: var(--mod); color: #fff; }
 .cs__appTile strong { font: 600 13px var(--ui); color: var(--ink); }
 .cs__appTile small { font: 11.5px/1.3 var(--ui); color: var(--muted); }
 .cs__appMenuFoot { margin-top: 10px; width: 100%; border: 0; background: transparent; padding: 8px 4px 2px; text-align: left; font: 600 12.5px var(--ui); color: var(--green-deep); cursor: pointer; }
 .cs__appMenuFoot:hover { text-decoration: underline; }
+.cs__formsNav { display: grid; gap: 2px; margin: 8px 0 0; padding-top: 9px; border-top: 1px solid var(--line); }
+.cs__formsNav > span { display: none; }
+.cs__side--expanded .cs__formsNav > span { display: block; padding: 4px 10px; color: var(--muted); font: 700 9px var(--ui); letter-spacing: .1em; }
+.ig__activate { display: flex; align-items: center; gap: 18px; margin: 0 0 18px; padding: 21px 23px; border: 1px solid #bcd8c6; border-radius: 16px; background: #eef7f0; }
+.ig__activateIcon { display: grid; flex: none; place-items: center; width: 48px; height: 48px; border-radius: 12px; background: #dcefe2; color: #176941; }
+.ig__activateCopy { flex: 1; min-width: 0; }
+.ig__activate h3 { margin: 4px 0 5px; font: 600 22px/1.2 var(--font-display), Georgia, serif; color: #163b28; }
+.ig__activate p { margin: 0 0 4px; color: #4b6855; font-size: 13px; line-height: 1.5; }
+.ig__activate .cs__btn { flex: none; }
 @media (max-width: 760px) {
   .cs__side { max-height: none; position: fixed; }
   .cs__appMenu { position: static; width: auto; max-width: none; margin: 6px 0 10px; box-shadow: none; border-color: var(--line); }
   .cs__appGrid { grid-template-columns: 1fr; }
+  .ig__activate { align-items: flex-start; flex-wrap: wrap; padding: 18px; }
+  .ig__activate .cs__btn { width: 100%; }
 }
 
 /* ---------------------------------------------- every module, one design
@@ -5588,3 +5601,7 @@ a.cs__navItem {
 .cs__shell--module .ig__panelHead h3 { position: relative; padding-left: 14px; font: 600 20px/1.2 var(--font-display), Georgia, serif; letter-spacing: -.012em; }
 .cs__shell--module .ig__panelHead h3::before { content: ''; position: absolute; left: 0; top: 3px; bottom: 3px; width: 3px; border-radius: 2px; background: linear-gradient(180deg, var(--mod), color-mix(in srgb, var(--mod) 35%, #fff)); margin: 0; display: block; }
 .cs__shell--module .ig__formTitle strong { font: 600 17px var(--font-display), Georgia, serif; letter-spacing: -.01em; }
+
+.rc__step { font: 500 13px var(--ui); color: var(--muted); }
+.rc__guidance { margin: 6px 0 0; padding: 8px 12px; border-left: 3px solid var(--accent, #5b4bb7); background: var(--panel-soft, #f6f5fb); font-size: 13px; }
+.rc__evidence { margin-top: 10px; display: grid; gap: 6px; font-size: 13px; } .rc__evidence ul { margin: 0; padding-left: 18px; } .rc__evidence small { color: var(--muted); } .rc__evidenceStatus { display: block; }

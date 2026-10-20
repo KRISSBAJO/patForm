@@ -35,6 +35,8 @@ export interface WorkSummary {
     summary: string;
     /** How far a sequence or a quorum has got. Null when one decision settles it. */
     progress: { have: number; need: number; against?: number; of?: number } | null;
+    /** When an approval policy opened this step: what the approver must bring and where the chain is. */
+    policyStep?: { name: string; index: number; of: number; evidence: 'none' | 'note' | 'file'; guidance: string | null; escalated: boolean } | null;
   }[];
   tasks: {
     instanceId: string;
@@ -174,6 +176,14 @@ export async function myWork(
       return true;
     });
 
+    const { rows: stepRows } = await client.query<{ instance_id: string; approval_key: string; step_name: string; step_index: number; step: { evidence: 'none' | 'note' | 'file'; guidance?: string }; escalated_at: Date | null; policy_id: string; policy_version: number }>(
+      `select r.instance_id, r.approval_key, r.step_name, r.step_index, r.step, r.escalated_at, r.policy_id, r.policy_version from approval_step_run r where r.tenant_id = $1 and r.status = 'pending' and r.instance_id = any($2::uuid[])`,
+      [tenantId, approvalRows.map((r) => r.instance_id)]);
+    const stepOf = (instanceId: string, approvalKey: string) => {
+      const s = stepRows.find((r) => r.instance_id === instanceId && r.approval_key === approvalKey);
+      if (!s) return null;
+      return { name: s.step_name, index: s.step_index + 1, of: s.step_index + 1, evidence: s.step.evidence, guidance: s.step.guidance ?? null, escalated: !!s.escalated_at };
+    };
     const now = Date.now();
     const approvals = approvalRows.map((row) => ({
       instanceId: row.instance_id,
@@ -184,6 +194,7 @@ export async function myWork(
       signatureRequired: bp.workflow.approvals.find((a) => a.key === row.approval_key)?.signatureRequired ?? false,
       state: row.state,
       stateName: stateName(row.state),
+      policyStep: stepOf(row.instance_id, row.approval_key),
       waitingHours: Math.round((now - row.created_at.getTime()) / 3_600_000),
       dueAt: row.due_at?.toISOString() ?? null,
       late: Boolean(row.due_at && row.due_at.getTime() < now),

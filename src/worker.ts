@@ -3,6 +3,7 @@ import { deliverBatch } from './runtime/webhooks.js';
 import { Engine, newWorkerId } from './runtime/engine.js';
 import { runScheduledRetention, sweepExpiredTokens } from './runtime/retention.js';
 import { sweepGov, syncEnvelopes } from './runtime/gov.js';
+import { sweepApprovals } from './runtime/approvals.js';
 import { runClosures, runExports } from './runtime/tenant-lifecycle.js';
 import { sweepSignatures } from './runtime/esign.js';
 import { sweepMeetings } from './runtime/meetings.js';
@@ -123,6 +124,9 @@ async function main(): Promise<void> {
         await reconcileAccess(pool);
         // Contracts and compliance: renewal and obligation tasks, escalation;
         // then scheduled retention, which legal holds can stop.
+        // Approval policies: reminders and escalations for steps that have waited too long.
+        const apr = await sweepApprovals(pool, now);
+        if (apr.reminded || apr.escalated) console.log(`  ${now.toISOString()}  approvals: ${apr.reminded} reminded, ${apr.escalated} escalated`);
         const gov = await sweepGov(pool);
         if (gov.renewals || gov.tasks) console.log(`  ${now.toISOString()}  created ${gov.renewals} renewal and ${gov.tasks} obligation task(s)`);
         const purged = await runScheduledRetention(pool, now);

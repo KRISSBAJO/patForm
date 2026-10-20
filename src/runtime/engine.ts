@@ -22,6 +22,7 @@ import { inTransaction, isUniqueViolation, type Client, type Pool } from './db.j
 import { InvalidInput } from './errors.js';
 import { managerOf } from './org.js';
 import { authorityOf, covers } from './authority.js';
+import { continuePolicyChain, evidenceCount, startPolicyChain, stepRunFor } from './approvals.js';
 import { BudgetExceeded, applyFinancePolicy, recordFinanceOutcome, releaseFinanceHolds, reserveBudget } from './expenses.js';
 import { ensurePublicForm } from './form-links.js';
 import { requireIntakeOpen } from './intake-control.js';
@@ -351,7 +352,7 @@ export class Engine {
     signatureName?: string;
     signatureConfirmed?: boolean;
     now: Date;
-  }): Promise<{ applied: boolean; progress?: { have: number; need: number; against?: number; of?: number } }> {
+  }): Promise<{ applied: boolean; progress?: { have: number; need: number; against?: number; of?: number }; chain?: { step: number; of: number; stepName?: string } }> {
     return inTransaction(this.pool, async (client) => {
       const instance = await loadInstance(client, args.instanceId, { lock: true });
       const bp = await loadBlueprint(client, instance.process_version_id);
@@ -373,6 +374,8 @@ export class Engine {
       if (!pending.length) return { applied: false };
       const request = pending[0]!;
       const declared = bp.workflow.approvals.find((a) => a.key === args.approvalKey);
+      // A step of an approval policy: it brings its own evidence rule and separation of duties.
+      const stepRun = await stepRunFor(client, request.id);
 
       /*
        * Who may decide now, and how many approvals settle it.
@@ -414,8 +417,12 @@ export class Engine {
         // bar on nobody bars nobody — the compiler refuses that combination
         // at publish, so a published version cannot reach this with the
         // control silently off.
-        barredApprover: declared?.notTheSubmitter ? submitterOf(bp, instance) : null,
+        barredApprover: declared?.notTheSubmitter || stepRun?.step.notTheSubmitter ? submitterOf(bp, instance) : null,
       }, this.pool);
+      if (stepRun && args.decision === 'approved') {
+        if (stepRun.step.evidence === 'note' && !args.reason?.trim()) throw new InvalidInput(`${stepRun.step_name}: write a note saying what you checked before approving`);
+        if (stepRun.step.evidence === 'file' && !(await evidenceCount(client, instance.id, args.approvalKey, describePrincipal(args.principal)))) throw new InvalidInput(`${stepRun.step_name}: attach the evidence before approving`);
+      }
 
       /*
        * ORG-05: being named is not the same as being allowed this amount.
@@ -534,15 +541,26 @@ export class Engine {
       );
       if (!rowCount) return { applied: false };
 
+      // In a policy chain the process only hears the final answer: the next
+      // step opens here, and a rejection may go back to the requester.
+      let outcome: 'approved' | 'rejected' | 'changes_requested' = args.decision;
+      let chain: { step: number; of: number; stepName?: string } | undefined;
+      if (stepRun && declared) {
+        const next = await continuePolicyChain(client, { instance, bp, approval: declared, run: stepRun, decision: args.decision, actor: describePrincipal(args.principal), now: args.now });
+        chain = next.stepName ? { step: next.step, of: next.of, stepName: next.stepName } : { step: next.step, of: next.of };
+        if (!next.fire) return { applied: true, chain };
+        outcome = next.fire;
+      }
+
       const transition = bp.workflow.transitions.find(
         (t) =>
           t.from === instance.state &&
           t.trigger.on === 'approval_decided' &&
           t.trigger.approval === args.approvalKey &&
-          t.trigger.decision === args.decision &&
+          t.trigger.decision === outcome &&
           passesGuard(t, instance, args.now, describePrincipal(args.principal)),
       );
-      if (!transition) return { applied: false };
+      if (!transition) return { applied: false, chain };
 
       await applyTransition(client, {
         bp,
@@ -551,16 +569,17 @@ export class Engine {
         eventType: 'approval_decided',
         payload: {
           approval: args.approvalKey,
-          decision: args.decision,
+          decision: outcome,
           reason: args.reason ?? null,
           authority: authorityNote,
           // Everybody whose decision settled it, not only the last.
           by: [...votes.map((v) => v.actor), actor],
+          ...(chain ? { policyChain: chain } : {}),
         },
         actor: describePrincipal(args.principal),
         now: args.now,
       });
-      return { applied: true };
+      return { applied: true, chain };
     });
   }
 
@@ -1829,6 +1848,9 @@ async function performEffect(
 
     case 'request_approval': {
       const approval = bp.workflow.approvals.find((a) => a.key === action.approval)!;
+      // Policy-driven: the workspace's approval policy decides the chain. With
+      // no active policy the approvers declared here take it, as before.
+      if (approval.policy && (await startPolicyChain(client, { instance, bp, approval, runId, now }))) return;
       const approvers: string[] = [];
       const routing: { party: Party; resolved: string[] }[] = [];
       for (const p of approval.approvers) {
@@ -2054,7 +2076,7 @@ function renderDocument(
  * field existed still fall back to the guess, because they are immutable and
  * changing what they mean retroactively is worse than the guess.
  */
-function submitterOf(bp: Blueprint, instance: InstanceRow): string | null {
+export function submitterOf(bp: Blueprint, instance: InstanceRow): string | null {
   const key = bp.data.submitterField ?? bp.data.fields.find((f) => f.type === 'email')?.key;
   if (!key) return null;
   const value = instance.data[key];
@@ -2194,7 +2216,7 @@ async function countElectorate(
   return voters.size;
 }
 
-async function resolveParty(client: Client, party: Party, instance: InstanceRow, bp: Blueprint, now: Date): Promise<string[]> {
+export async function resolveParty(client: Client, party: Party, instance: InstanceRow, bp: Blueprint, now: Date): Promise<string[]> {
   if ('user' in party) return [party.user];
   if ('field' in party) {
     const value = instance.data[party.field];
@@ -2221,7 +2243,7 @@ async function resolveParty(client: Client, party: Party, instance: InstanceRow,
  * the `submitted` event, or failing that the member whose email is in the
  * submitter field. Null for a stranger on a public form, who has no manager.
  */
-async function submitterActor(client: Client, bp: Blueprint, instance: InstanceRow): Promise<string | null> {
+export async function submitterActor(client: Client, bp: Blueprint, instance: InstanceRow): Promise<string | null> {
   const { rows } = await client.query<{ actor: string }>(
     `select actor from event where instance_id = $1 and type = 'submitted' order by seq limit 1`,
     [instance.id],
@@ -2238,7 +2260,7 @@ async function submitterActor(client: Client, bp: Blueprint, instance: InstanceR
 }
 
 /** The amount an approval's authority is measured against; a missing or malformed value is zero. */
-function amountOf(instance: InstanceRow, field: string): number {
+export function amountOf(instance: InstanceRow, field: string): number {
   const raw = instance.data[field];
   const n = typeof raw === 'number' ? raw : Number(String(raw ?? '').replace(/[, ]/g, ''));
   return Number.isFinite(n) ? Math.max(0, n) : 0;

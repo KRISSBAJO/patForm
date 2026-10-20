@@ -16,6 +16,7 @@ import { DataView } from './Data';
 import { IntegrationsView } from './Integrations';
 import { ModulesView } from './Modules';
 import { OrganisationView } from './Organisation';
+import { ApprovalsView } from './Approvals';
 import { ExpensesView } from './Expenses';
 import { ProcurementView } from './Procurement';
 import { HRView } from './HR';
@@ -26,6 +27,7 @@ import { RecordTrail } from './Trail';
 import { RecordPage } from './Record';
 import { WorkList } from './WorkList';
 import { HomeView } from './Home';
+import { CONSOLE_MODULES, moduleIsEnabled, type ConsoleModule } from './module-catalog';
 import { ReauthDialog } from './stepup';
 import { PasswordInput } from './PasswordInput';
 import { Icon } from './Icon';
@@ -126,6 +128,7 @@ export function Console() {
   const settingsRef = useRef<HTMLDivElement>(null);
   const modulesRef = useRef<HTMLDivElement>(null);
   const [modulesOpen, setModulesOpen] = useState(false);
+  const [activationTarget, setActivationTarget] = useState<ConsoleModule | null>(null);
   const headerRef = useRef<HTMLElement>(null);
   useEffect(() => {
     const close = (event: MouseEvent) => { if (!headerRef.current?.contains(event.target as Node)) { setAccountOpen(false); setProcessPickerOpen(false); } if (!settingsRef.current?.contains(event.target as Node)) setSettingsOpen(false); if (!modulesRef.current?.contains(event.target as Node)) setModulesOpen(false); };
@@ -157,6 +160,7 @@ export function Console() {
     | 'data'
     | 'modules'
     | 'organisation'
+    | 'approvals'
     | 'expenses'
     | 'procurement'
     | 'hr'
@@ -383,6 +387,8 @@ export function Console() {
           const left = progress.need - progress.have;
           return `Approval recorded — ${progress.have} of ${progress.need}. It needs ${left === 1 ? 'one more person' : `${left} more people`}.`;
         }
+        const chain = (result as { chain?: { step: number; of: number; stepName?: string } })?.chain;
+        if (chain) return decision === 'approved' ? (chain.stepName ? `Approved. It now goes to ${chain.stepName}, step ${chain.step} of ${chain.of}.` : 'Approved. Every step is done.') : decision === 'changes_requested' ? 'Sent back to the requester to fix.' : 'Rejected. The record is closed.';
         return decision === 'approved' ? 'Approved. The process moved on.' : 'Rejected. The record is closed.';
       },
     );
@@ -487,6 +493,17 @@ export function Console() {
     setRecord(null);
     setView('work');
   };
+  const openModule = (module: ConsoleModule) => {
+    setModulesOpen(false);
+    setMobileNavOpen(false);
+    if (!moduleIsEnabled(module, session.modules ?? [])) {
+      setActivationTarget(module);
+      setView('modules');
+      return;
+    }
+    setActivationTarget(null);
+    setView(module.view as typeof view);
+  };
 
   return (
     <div className="cs">
@@ -551,44 +568,31 @@ export function Console() {
         if ((event.target as HTMLElement).closest('button, a')) setMobileNavOpen(false);
       }}>
         <div className="cs__mobileNavHead"><strong>{area ? area.name : 'Menu'}</strong><button type="button" aria-label="Close menu" onClick={() => setMobileNavOpen(false)}>×</button></div>
-        {area ? <ModuleRail area={area} sections={moduleSections} current={moduleSection} onPick={setModuleSection} onBack={() => setView('work')} /> : <>
+        {area ? <ModuleRail area={area} sections={moduleSections} current={moduleSection} onPick={setModuleSection} onBack={() => setView('home')} /> : <>
         <nav className="cs__nav" aria-label="Console">
-{([{key:'home',label:'Home',icon:'home'},{key:'work',label:'My work',icon:'work'},{key:'ask',label:'Ask',icon:'ask'},{key:'records',label:'Records',icon:'records'},{key:'dashboard',label:'Dashboard',icon:'dashboard'},{key:'processes',label:'Processes',icon:'processes'},{key:'people',label:'People',icon:'people'}] as const).map(item => <button type="button" key={item.key} className="cs__navItem" title={item.label} aria-current={view === item.key || (item.key === 'people' && view === 'invite') ? 'page' : undefined} onClick={() => setView(item.key)}><NavIcon name={item.icon}/><span className="cs__navText">{item.label}</span>{item.key === 'work' && counts.needsYou > 0 && <span className="cs__navCount">{counts.needsYou}</span>}</button>)}
-{(() => {
-  const mods = ([
-    { on: 'expenses', view: 'expenses', area: MODULE_AREAS.expenses },
-    { on: 'procurement', view: 'procurement', area: MODULE_AREAS.procurement },
-    { on: 'hr', view: 'hr', area: MODULE_AREAS.hr },
-    { on: 'appraisals', view: 'appraisals', area: MODULE_AREAS.appraisals },
-    { on: 'assets', view: 'operations', area: MODULE_AREAS.operations },
-    { on: 'contracts', view: 'compliance', area: MODULE_AREAS.compliance },
-    { on: 'contracts', view: 'sign', area: MODULE_AREAS.sign },
-    { on: 'meetings', view: 'meetings', area: MODULE_AREAS.meetings },
-  ] as const).filter((m) => session.modules?.includes(m.on) && m.area);
-  if (!mods.length) return null;
-  const inModule = mods.some((m) => m.view === view);
-  return <div className="cs__railModules" ref={modulesRef}>
-    <button type="button" className="cs__navItem" title="Modules" aria-expanded={modulesOpen} aria-controls="console-modules-menu" aria-current={inModule ? 'page' : undefined} onClick={(event) => { event.stopPropagation(); setModulesOpen(!modulesOpen); setSettingsOpen(false); }}><NavIcon name="processes"/><span className="cs__navText">Modules</span><span className="cs__navCount cs__navCount--quiet">{mods.length}</span></button>
-    {modulesOpen && <div id="console-modules-menu" className="cs__appMenu" role="menu" aria-label="Modules">
-      <div className="cs__appMenuHead"><strong>Modules</strong><small>Switched on for this workspace</small></div>
-      <div className="cs__appGrid">
-        {mods.map((m) => <button type="button" key={m.view} role="menuitem" className={`cs__appTile ${view === m.view ? 'is-on' : ''}`} style={{ '--mod': m.area!.colour, '--mod-tint': m.area!.tint, '--mod-deep': m.area!.deep } as React.CSSProperties} onClick={() => { setView(m.view as typeof view); setModulesOpen(false); setMobileNavOpen(false); }}>
-          <span className="cs__appIcon">{m.area!.icon}</span><strong>{m.area!.name}</strong><small>{m.area!.blurb}</small>
-        </button>)}
-      </div>
-      {['owner', 'admin'].includes(me.workspace_role) && <button type="button" className="cs__appMenuFoot" onClick={() => { setView('modules'); setModulesOpen(false); }}>Switch modules on or off →</button>}
-    </div>}
-  </div>;
-})()}
+<button type="button" className="cs__navItem" title="Home" aria-current={view === 'home' ? 'page' : undefined} onClick={() => setView('home')}><NavIcon name="home"/><span className="cs__navText">Home</span></button>
+<div className="cs__railModules" ref={modulesRef}>
+  <button type="button" className="cs__navItem" title="Modules" aria-expanded={modulesOpen} aria-controls="console-modules-menu" aria-current={CONSOLE_MODULES.some((m) => m.view === view) || ['ask','records','dashboard','processes'].includes(view) ? 'page' : undefined} onClick={(event) => { event.stopPropagation(); setModulesOpen(!modulesOpen); setSettingsOpen(false); }}><NavIcon name="processes"/><span className="cs__navText">Modules</span><span className="cs__navCount cs__navCount--quiet">{CONSOLE_MODULES.length}</span></button>
+  {modulesOpen && <div id="console-modules-menu" className="cs__appMenu" role="menu" aria-label="Modules">
+    <div className="cs__appMenuHead"><strong>Choose a module</strong><small>Available here even when switched off</small></div>
+    <div className="cs__appGrid">
+      {CONSOLE_MODULES.map((m) => { const enabled = moduleIsEnabled(m, session.modules ?? []); return <button type="button" key={m.id} role="menuitem" className={`cs__appTile ${view === m.view ? 'is-on' : ''} ${enabled ? '' : 'is-off'}`} style={{ '--mod': m.area.colour, '--mod-tint': m.area.tint, '--mod-deep': m.area.deep } as React.CSSProperties} onClick={() => openModule(m)}>
+        <span className="cs__appIcon">{m.area.icon}</span><strong>{m.name}</strong><small>{enabled ? m.blurb : 'Off · Switch on to use'}</small>
+      </button>; })}
+    </div>
+  </div>}
+  {['work','ask','records','dashboard','processes'].includes(view) && <div className="cs__formsNav" aria-label="Forms & workflow"><span>FORMS & WORKFLOW</span>{([{key:'work',label:'My work',icon:'work'},{key:'ask',label:'Ask',icon:'ask'},{key:'records',label:'Records',icon:'records'},{key:'dashboard',label:'Dashboard',icon:'dashboard'},{key:'processes',label:'Processes',icon:'processes'}] as const).map(item => <button type="button" key={item.key} className="cs__navItem" title={item.label} aria-current={view === item.key ? 'page' : undefined} onClick={() => setView(item.key)}><NavIcon name={item.icon}/><span className="cs__navText">{item.label}</span>{item.key === 'work' && counts.needsYou > 0 && <span className="cs__navCount">{counts.needsYou}</span>}</button>)}</div>}
+</div>
+<button type="button" className="cs__navItem" title="People" aria-current={view === 'people' || view === 'invite' ? 'page' : undefined} onClick={() => setView('people')}><NavIcon name="people"/><span className="cs__navText">People</span></button>
 <a className="cs__navItem" href="/builder" title="Builder"><NavIcon name="builder"/><span className="cs__navText">Builder</span></a>
 </nav>
+        </>}
 <div className="cs__railBottom">
 <div className="cs__railSettings" ref={settingsRef}><button type="button" className="cs__navItem" title="Settings" aria-expanded={settingsOpen} aria-controls="console-settings-menu" aria-current={['health','held','integrations','data','modules','organisation'].includes(view) ? 'page' : undefined} onClick={event => { event.stopPropagation(); setSettingsOpen(!settingsOpen); }}><NavIcon name="integrations"/><span className="cs__navText">Settings</span></button>
-{settingsOpen && <nav id="console-settings-menu" className="cs__settingsMenu" aria-label="Workspace settings">{([{key:'health',label:'Automation health',icon:'health'},{key:'held',label:'Held submissions',icon:'held'},{key:'integrations',label:'Integrations',icon:'integrations'},{key:'data',label:'Import & data',icon:'data'},{key:'modules',label:'Modules & workspace',icon:'processes'},{key:'organisation',label:'Organisation & authority',icon:'people'}] as const).map(item => <button type="button" key={item.key} aria-current={view === item.key ? 'page' : undefined} onClick={() => { setView(item.key); setSettingsOpen(false); }}><NavIcon name={item.icon}/><span>{item.label}</span>{item.key === 'held' && heldCount > 0 && <span className="cs__navCount">{heldCount}</span>}</button>)}</nav>}
+{settingsOpen && <nav id="console-settings-menu" className="cs__settingsMenu" aria-label="Workspace settings">{([{key:'health',label:'Automation health',icon:'health'},{key:'held',label:'Held submissions',icon:'held'},{key:'integrations',label:'Integrations',icon:'integrations'},{key:'data',label:'Import & data',icon:'data'},{key:'modules',label:'Modules & workspace',icon:'processes'},{key:'organisation',label:'Organisation & authority',icon:'people'},{key:'approvals',label:'Approval policies',icon:'work'}] as const).map(item => <button type="button" key={item.key} aria-current={view === item.key ? 'page' : undefined} onClick={() => { setView(item.key); setSettingsOpen(false); }}><NavIcon name={item.icon}/><span>{item.label}</span>{item.key === 'held' && heldCount > 0 && <span className="cs__navCount">{heldCount}</span>}</button>)}</nav>}
 </div>
 <button type="button" className="cs__navItem cs__railExpand" title={railExpanded ? 'Collapse sidebar' : 'Expand sidebar'} aria-label={railExpanded ? 'Collapse sidebar' : 'Expand sidebar'} aria-expanded={railExpanded} onClick={() => setRailExpanded(!railExpanded)}><span aria-hidden="true">{railExpanded ? '‹' : '›'}</span><span className="cs__navText">{railExpanded ? 'Collapse' : 'Expand'}</span></button>
 </div>
-        </>}
       </aside>
 
       <main className="cs__main" id="console-main" tabIndex={-1}>
@@ -625,6 +629,8 @@ export function Console() {
                                 ? 'Modules & workspace'
                                 : view === 'organisation'
                                   ? 'Organisation & authority'
+                                  : view === 'approvals'
+                                    ? 'Approval policies'
                                   : view === 'expenses'
                                     ? 'Expenses'
                                     : view === 'procurement'
@@ -651,16 +657,16 @@ export function Console() {
             <button type="button" className="cs__btn cs__btn--create" onClick={() => { sessionStorage.removeItem('patform:new-process-description'); window.location.href = '/builder/ai'; }}>
               <span className="cs__createMark" aria-hidden="true">✦</span> Build with AI
             </button>
-          ) : view !== 'security' && view !== 'home' && <button type="button" className="cs__btn" onClick={() => { if (view === 'integrations' || view === 'data' || view === 'modules' || view === 'organisation' || view === 'expenses' || view === 'procurement' || view === 'hr' || view === 'appraisals' || view === 'operations' || view === 'compliance' || view === 'sign' || view === 'meetings') setSettingsRevision(value => value + 1); void load(); }}>
+          ) : view !== 'security' && view !== 'home' && <button type="button" className="cs__btn" onClick={() => { if (view === 'integrations' || view === 'data' || view === 'modules' || view === 'organisation' || view === 'approvals' || view === 'expenses' || view === 'procurement' || view === 'hr' || view === 'appraisals' || view === 'operations' || view === 'compliance' || view === 'sign' || view === 'meetings') setSettingsRevision(value => value + 1); void load(); }}>
             Refresh
           </button>}
         </div>
 
         {area && <ModuleStrip sections={moduleSections} current={moduleSection} onPick={setModuleSection} />}
-        <div className={`cs__body ${view === 'home' ? 'cs__body--home' : ''} ${view === 'security' ? 'cs__body--security' : ''} ${view === 'ask' ? 'cs__body--ask' : ''} ${view === 'record' ? 'cs__body--record' : ''} ${view === 'health' ? 'cs__body--health' : ''} ${view === 'dashboard' ? 'cs__body--dashboard' : ''} ${view === 'people' ? 'cs__body--people' : ''} ${view === 'records' ? 'cs__body--records' : ''} ${view === 'work' ? 'cs__body--work' : ''} ${view === 'processes' ? 'cs__body--processes' : ''} ${view === 'held' ? 'cs__body--held' : ''} ${view === 'integrations' ? 'cs__body--integrations' : ''} ${view === 'data' ? 'cs__body--data' : ''} ${view === 'modules' || view === 'organisation' || view === 'expenses' || view === 'procurement' || view === 'hr' || view === 'appraisals' || view === 'operations' || view === 'compliance' || view === 'sign' || view === 'meetings' ? 'cs__body--integrations' : ''} ${view === 'meetings' || view === 'hr' || view === 'expenses' || view === 'procurement' || view === 'appraisals' ? 'cs__body--wide' : ''}`}>
+        <div className={`cs__body ${view === 'home' ? 'cs__body--home' : ''} ${view === 'security' ? 'cs__body--security' : ''} ${view === 'ask' ? 'cs__body--ask' : ''} ${view === 'record' ? 'cs__body--record' : ''} ${view === 'health' ? 'cs__body--health' : ''} ${view === 'dashboard' ? 'cs__body--dashboard' : ''} ${view === 'people' ? 'cs__body--people' : ''} ${view === 'records' ? 'cs__body--records' : ''} ${view === 'work' ? 'cs__body--work' : ''} ${view === 'processes' ? 'cs__body--processes' : ''} ${view === 'held' ? 'cs__body--held' : ''} ${view === 'integrations' ? 'cs__body--integrations' : ''} ${view === 'data' ? 'cs__body--data' : ''} ${view === 'modules' || view === 'organisation' || view === 'approvals' || view === 'expenses' || view === 'procurement' || view === 'hr' || view === 'appraisals' || view === 'operations' || view === 'compliance' || view === 'sign' || view === 'meetings' ? 'cs__body--integrations' : ''} ${view === 'meetings' || view === 'hr' || view === 'expenses' || view === 'procurement' || view === 'appraisals' || view === 'approvals' ? 'cs__body--wide' : ''}`}>
           <div className="cs__left">
             {view === 'home' ? (
-              <HomeView name={me.display_name} workspace={me.workspace_name} modules={session.modules ?? []} processes={session.processes} canAdminister={['owner', 'admin'].includes(me.workspace_role)} onView={(next) => setView(next as typeof view)} onProcess={(key) => { setProcessKey(key); setView('dashboard'); }} onOpenRecord={(id) => void open(id)} />
+              <HomeView name={me.display_name} workspace={me.workspace_name} modules={session.modules ?? []} onView={(next) => setView(next as typeof view)} onSelectModule={openModule} onOpenRecord={(id) => void open(id)} />
             ) : view === 'record' && record ? (
               <RecordPage
                 key={`${record.instanceId}:${work?.tasks.find((t) => t.instanceId === record.instanceId)?.taskKey ?? ''}`}
@@ -680,7 +686,7 @@ export function Console() {
             ) : view === 'data' ? (
               <DataView key={settingsRevision} processes={session.processes} />
             ) : view === 'modules' ? (
-              <ModulesView canAdminister={['owner', 'admin'].includes(me.workspace_role)} onChanged={() => void load()} />
+              <ModulesView canAdminister={['owner', 'admin'].includes(me.workspace_role)} focusModule={activationTarget} onOpenModule={() => { if (activationTarget) { setView(activationTarget.view as typeof view); setActivationTarget(null); } }} onChanged={() => { void refreshSession(); void load(); }} />
             ) : view === 'hr' ? (
               <HRView key={settingsRevision} shell={shell} />
             ) : view === 'appraisals' ? (
@@ -697,6 +703,8 @@ export function Console() {
               <ProcurementView key={settingsRevision} shell={shell} canAdminister={['owner', 'admin'].includes(me.workspace_role)} canOperate={['owner', 'admin', 'operator'].includes(me.workspace_role)} onOpenRecord={(id) => void open(id)} />
             ) : view === 'expenses' ? (
               <ExpensesView key={settingsRevision} shell={shell} canAdminister={['owner', 'admin'].includes(me.workspace_role)} canOperate={['owner', 'admin', 'operator'].includes(me.workspace_role)} onOpenRecord={(id) => void open(id)} />
+            ) : view === 'approvals' ? (
+              <ApprovalsView key={settingsRevision} canAdminister={['owner', 'admin', 'builder'].includes(me.workspace_role)} onOpenRecord={(id) => void open(id)} />
             ) : view === 'organisation' ? (
               <OrganisationView key={settingsRevision} canAdminister={['owner', 'admin', 'builder'].includes(me.workspace_role)} processes={session.processes.map((p) => ({ process_key: p.process_key, name: p.name }))} myId={me.id} />
             ) : view === 'people' ? (

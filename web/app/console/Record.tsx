@@ -59,6 +59,7 @@ export interface PendingApproval {
   late: boolean;
   summary: string;
   progress?: { have: number; need: number; against?: number; of?: number } | null;
+  policyStep?: { name: string; index: number; of: number; evidence: 'none' | 'note' | 'file'; guidance: string | null; escalated: boolean } | null;
 }
 
 export interface PendingTask {
@@ -124,6 +125,28 @@ export function RecordPage({
   const [signatureName, setSignatureName] = useState('');
   const [signatureConfirmed, setSignatureConfirmed] = useState(false);
   const [decisionMode, setDecisionMode] = useState<'approved' | 'rejected' | 'changes_requested' | null>(null);
+  const [evidence, setEvidence] = useState<{ id: string; filename: string; by: string | null; byte_size: number }[]>([]);
+  const [evidenceStatus, setEvidenceStatus] = useState<string | null>(null);
+  const needsNote = approval?.policyStep?.evidence === 'note';
+  const needsFile = approval?.policyStep?.evidence === 'file';
+  useEffect(() => {
+    if (!approval?.policyStep || approval.policyStep.evidence !== 'file') { setEvidence([]); return; }
+    let on = true;
+    void fetch(`/api/records/${record.instanceId}/approvals/${approval.approvalKey}/evidence`, { credentials: 'same-origin' }).then((r) => r.json()).then((rows) => { if (on && Array.isArray(rows)) setEvidence(rows); }).catch(() => undefined);
+    return () => { on = false; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [record.instanceId, approval?.approvalKey, approval?.policyStep?.evidence, evidenceStatus]);
+  const uploadEvidence = async (file: File | null) => {
+    if (!file || !approval) return;
+    setEvidenceStatus('Uploading…');
+    try {
+      const base64 = await new Promise<string>((resolve, reject) => { const r = new FileReader(); r.onload = () => resolve(String(r.result).split(',')[1] ?? ''); r.onerror = () => reject(new Error('could not read the file')); r.readAsDataURL(file); });
+      const res = await fetch(`/api/records/${record.instanceId}/approvals/${approval.approvalKey}/evidence/files`, { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ filename: file.name, base64 }) });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.reason ?? body.error ?? `HTTP ${res.status}`);
+      setEvidenceStatus(`Attached ${file.name}.`);
+    } catch (err) { setEvidenceStatus(err instanceof Error ? err.message : String(err)); }
+  };
   const [completionAnswers, setCompletionAnswers] = useState<Record<string, string>>({});
   const [taskFileStatus, setTaskFileStatus] = useState<Record<string, string>>({});
   const [taskFiles, setTaskFiles] = useState<Record<string, string[]>>({});
@@ -397,10 +420,17 @@ export function RecordPage({
       {approval && (
         <section className="rc__decision" data-late={approval.late ? 'true' : undefined}>
           <div className="rc__decisionText">
-            <h3>{approval.approvalName}</h3>
+            <h3>{approval.approvalName}{approval.policyStep && <span className="rc__step"> · step {approval.policyStep.index}{approval.policyStep.of > approval.policyStep.index ? ` of ${approval.policyStep.of}` : ''}: {approval.policyStep.name}{approval.policyStep.escalated ? ' · escalated to you' : ''}</span>}</h3>
             <p>
               Waiting {approval.waitingHours}h{approval.late ? ' — past its service level' : ''}. {approval.summary}
             </p>
+            {approval.policyStep?.guidance && <p className="rc__guidance">{approval.policyStep.guidance}</p>}
+            {needsFile && <div className="rc__evidence">
+              <strong>Evidence to attach before approving</strong>
+              <ul>{evidence.map((e) => <li key={e.id}>{e.filename}<small> · {(e.byte_size / 1024).toFixed(0)} KB{e.by ? ` · ${e.by}` : ''}</small></li>)}{!evidence.length && <li><small>Nothing attached yet.</small></li>}</ul>
+              <label className="cs__btn">Attach a file<input type="file" style={{ display: 'none' }} accept=".pdf,.docx,.xlsx,.png,.jpg,.jpeg" onChange={(e) => void uploadEvidence(e.target.files?.[0] ?? null)} /></label>
+              {evidenceStatus && <small className="rc__evidenceStatus"> {evidenceStatus}</small>}
+            </div>}
             {approval.progress && approval.progress.of !== undefined ? (
               <p className="rc__progress">
                 A vote among {approval.progress.of}: {approval.progress.have} for, {approval.progress.against ?? 0}{' '}
@@ -417,6 +447,10 @@ export function RecordPage({
 
           {decisionMode ? (
             <div className="rc__reason">
+              {decisionMode === 'approved' && needsNote && <>
+                <label className="rc__reasonLabel" htmlFor="approve-note">What did you check before approving? This note stays on the record.</label>
+                <textarea id="approve-note" className="rc__reasonBox" rows={3} value={reason} onChange={(e) => setReason(e.target.value)} />
+              </>}
               {decisionMode !== 'approved' && <>
                 <label className="rc__reasonLabel" htmlFor="reject-reason">
                   {decisionMode === 'changes_requested' ? 'What must be corrected? The applicant may be told.' : voting ? 'Why are you voting against?' : 'Why are you rejecting this? The applicant may be told.'}
@@ -436,8 +470,8 @@ export function RecordPage({
                 <button
                   type="button"
                   className={`cs__btn ${decisionMode === 'approved' ? 'cs__btn--primary' : 'cs__btn--danger'}`}
-                  disabled={working || (decisionMode !== 'approved' && !reason.trim()) || (approval.signatureRequired && (signatureName.trim().length < 2 || !signatureConfirmed))}
-                  onClick={() => onDecide(record.instanceId, approval.approvalKey, decisionMode, decisionMode === 'approved' ? 'Approved in the console' : reason.trim(), signatureName.trim(), signatureConfirmed)}
+                  disabled={working || (decisionMode !== 'approved' && !reason.trim()) || (decisionMode === 'approved' && needsNote && !reason.trim()) || (decisionMode === 'approved' && needsFile && !evidence.length) || (approval.signatureRequired && (signatureName.trim().length < 2 || !signatureConfirmed))}
+                  onClick={() => onDecide(record.instanceId, approval.approvalKey, decisionMode, decisionMode === 'approved' ? (reason.trim() || 'Approved in the console') : reason.trim(), signatureName.trim(), signatureConfirmed)}
                 >
                   <Icon name={decisionMode === 'approved' ? 'approve' : 'reject'} />
                   {decisionMode === 'approved' ? 'Sign and approve' : decisionMode === 'changes_requested' ? 'Sign and send back' : approval.signatureRequired ? 'Sign and reject' : voting ? 'Vote against' : 'Confirm rejection'}
@@ -459,7 +493,8 @@ export function RecordPage({
                 type="button"
                 className="cs__btn cs__btn--primary"
                 disabled={working}
-                onClick={() => approval.signatureRequired ? setDecisionMode('approved') : onDecide(record.instanceId, approval.approvalKey, 'approved', 'Approved in the console')}
+                onClick={() => approval.signatureRequired || needsNote ? setDecisionMode('approved') : onDecide(record.instanceId, approval.approvalKey, 'approved', 'Approved in the console')}
+                title={needsFile && !evidence.length ? 'Attach the evidence first' : undefined}
               >
                 <Icon name="approve" />
                 {voting ? 'Vote for' : 'Approve'}

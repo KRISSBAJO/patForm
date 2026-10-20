@@ -1,0 +1,755 @@
+{
+  "schemaVersion": "0.1",
+  "key": "approval_request",
+  "name": "Approval request",
+  "description": "A general request for approval: a purchase, a spend, a change, anything that needs a yes. The workspace’s approval policy decides the chain of steps, who takes each, the limits, the evidence, the reminders and the escalation. Without a policy, the submitter’s manager decides.",
+  "intent": {
+    "outcome": "Requests are decided by the right people, in the right order, within the agreed time, with the evidence on the record.",
+    "owner": "admin",
+    "respondents": "Any member of staff.",
+    "expectedVolume": {
+      "count": 100,
+      "per": "month"
+    },
+    "sensitivityCeiling": "confidential",
+    "completionState": "approved",
+    "retentionDays": 2555
+  },
+  "roles": [
+    {
+      "key": "admin",
+      "name": "Administrator",
+      "kind": "internal",
+      "capabilities": [
+        "view",
+        "edit",
+        "operate",
+        "report",
+        "administer"
+      ],
+      "editableFields": [
+        "cost_centre",
+        "category"
+      ]
+    },
+    {
+      "key": "line_manager",
+      "name": "Line manager",
+      "kind": "internal",
+      "capabilities": [
+        "view",
+        "approve"
+      ]
+    },
+    {
+      "key": "finance_approver",
+      "name": "Finance approver",
+      "kind": "internal",
+      "capabilities": [
+        "view",
+        "approve",
+        "report"
+      ]
+    },
+    {
+      "key": "requester",
+      "name": "Requester",
+      "kind": "respondent",
+      "capabilities": [
+        "submit",
+        "view"
+      ],
+      "editableFields": [
+        "title",
+        "description",
+        "amount",
+        "needed_by",
+        "attachment_reference"
+      ]
+    }
+  ],
+  "data": {
+    "identity": [
+      "employee_email",
+      "title",
+      "needed_by"
+    ],
+    "submitterField": "employee_email",
+    "fields": [
+      {
+        "key": "requester_name",
+        "type": "short_text",
+        "label": "Your name",
+        "required": true,
+        "classification": "confidential"
+      },
+      {
+        "key": "employee_email",
+        "type": "email",
+        "label": "Your work email",
+        "required": true,
+        "classification": "internal"
+      },
+      {
+        "key": "title",
+        "type": "short_text",
+        "label": "What you are asking for",
+        "required": true,
+        "classification": "internal",
+        "constraints": {
+          "minLength": 5,
+          "message": "A few words, like \"Two laptops for the Abuja office\"."
+        }
+      },
+      {
+        "key": "category",
+        "type": "dropdown",
+        "label": "Kind of request",
+        "required": true,
+        "classification": "internal",
+        "choices": [
+          {
+            "value": "purchase",
+            "label": "Purchase"
+          },
+          {
+            "value": "expense",
+            "label": "Expense"
+          },
+          {
+            "value": "travel",
+            "label": "Travel"
+          },
+          {
+            "value": "hiring",
+            "label": "Hiring"
+          },
+          {
+            "value": "pay_change",
+            "label": "Pay change"
+          },
+          {
+            "value": "contract",
+            "label": "Contract"
+          },
+          {
+            "value": "policy_exception",
+            "label": "Policy exception"
+          },
+          {
+            "value": "other",
+            "label": "Other"
+          }
+        ]
+      },
+      {
+        "key": "cost_centre",
+        "type": "dropdown",
+        "label": "Cost centre",
+        "required": true,
+        "classification": "internal",
+        "choices": [
+          {
+            "value": "eng",
+            "label": "Engineering"
+          },
+          {
+            "value": "sales",
+            "label": "Sales"
+          },
+          {
+            "value": "ops",
+            "label": "Operations"
+          },
+          {
+            "value": "admin",
+            "label": "Administration"
+          }
+        ]
+      },
+      {
+        "key": "amount",
+        "type": "currency",
+        "label": "Amount, if money is involved",
+        "required": false,
+        "classification": "confidential",
+        "constraints": {
+          "min": 0,
+          "message": "Enter the amount, or leave it empty."
+        }
+      },
+      {
+        "key": "needed_by",
+        "type": "date",
+        "label": "Needed by",
+        "required": false,
+        "classification": "internal",
+        "constraints": {
+          "minDaysFromToday": 0,
+          "maxDaysFromToday": 365,
+          "message": "Choose a date within the next year."
+        }
+      },
+      {
+        "key": "description",
+        "type": "long_text",
+        "label": "Why, and what it involves",
+        "required": true,
+        "classification": "internal",
+        "constraints": {
+          "minLength": 20,
+          "message": "Give the approver enough to decide: what, why, and what happens if it is not approved."
+        }
+      },
+      {
+        "key": "attachment_reference",
+        "type": "short_text",
+        "label": "Where the quote, business case or evidence is",
+        "required": false,
+        "classification": "internal"
+      }
+    ]
+  },
+  "experience": {
+    "showProgress": false,
+    "saveAndResume": true,
+    "locales": [
+      "en"
+    ],
+    "confirmation": {
+      "message": "Your request is on its way to the people who decide it. You will hear from us at each step, and the record shows where it is.",
+      "showStatusLink": true
+    },
+    "pages": [
+      {
+        "key": "request",
+        "title": "Ask for approval",
+        "sections": [
+          {
+            "key": "who",
+            "fields": [
+              "requester_name",
+              "employee_email"
+            ],
+            "widths": {
+              "requester_name": "half",
+              "employee_email": "half"
+            }
+          },
+          {
+            "key": "what",
+            "fields": [
+              "title",
+              "category",
+              "cost_centre",
+              "amount",
+              "needed_by",
+              "description",
+              "attachment_reference"
+            ],
+            "widths": {
+              "category": "half",
+              "cost_centre": "half",
+              "amount": "half",
+              "needed_by": "half"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "workflow": {
+    "tasks": [],
+    "states": [
+      {
+        "key": "draft",
+        "name": "Draft",
+        "type": "initial"
+      },
+      {
+        "key": "under_review",
+        "name": "Being decided",
+        "type": "waiting",
+        "publicLabel": "With the approvers"
+      },
+      {
+        "key": "returned",
+        "name": "Sent back to you",
+        "type": "waiting",
+        "slaHours": 336,
+        "publicLabel": "We need something from you"
+      },
+      {
+        "key": "approved",
+        "name": "Approved",
+        "type": "terminal",
+        "outcome": "success",
+        "publicLabel": "Approved"
+      },
+      {
+        "key": "rejected",
+        "name": "Not approved",
+        "type": "terminal",
+        "outcome": "rejected",
+        "publicLabel": "Not approved"
+      },
+      {
+        "key": "abandoned",
+        "name": "Closed without an update",
+        "type": "terminal",
+        "outcome": "expired",
+        "publicLabel": "Closed"
+      }
+    ],
+    "approvals": [
+      {
+        "key": "policy_approval",
+        "name": "Approval",
+        "approvers": [
+          {
+            "manager": "submitter",
+            "fallback": "line_manager"
+          }
+        ],
+        "mode": "single",
+        "allowRequestChanges": true,
+        "reasonRequired": true,
+        "notTheSubmitter": true,
+        "policy": true,
+        "contextFields": [
+          "requester_name",
+          "title",
+          "category",
+          "amount",
+          "cost_centre",
+          "description"
+        ],
+        "dueInHours": 72
+      }
+    ],
+    "transitions": [
+      {
+        "key": "submitted",
+        "from": "draft",
+        "to": "under_review",
+        "trigger": {
+          "on": "submission"
+        },
+        "actions": [
+          {
+            "do": "request_approval",
+            "key": "ask",
+            "approval": "policy_approval"
+          },
+          {
+            "do": "send_email",
+            "key": "tell_received",
+            "template": "request_received"
+          }
+        ]
+      },
+      {
+        "key": "approved",
+        "from": "under_review",
+        "to": "approved",
+        "trigger": {
+          "on": "approval_decided",
+          "approval": "policy_approval",
+          "decision": "approved"
+        },
+        "actions": [
+          {
+            "do": "send_email",
+            "key": "tell_approved",
+            "template": "request_approved"
+          }
+        ]
+      },
+      {
+        "key": "rejected",
+        "from": "under_review",
+        "to": "rejected",
+        "trigger": {
+          "on": "approval_decided",
+          "approval": "policy_approval",
+          "decision": "rejected"
+        },
+        "actions": [
+          {
+            "do": "send_email",
+            "key": "tell_rejected",
+            "template": "request_rejected"
+          }
+        ]
+      },
+      {
+        "key": "sent_back",
+        "from": "under_review",
+        "to": "returned",
+        "trigger": {
+          "on": "approval_decided",
+          "approval": "policy_approval",
+          "decision": "changes_requested"
+        },
+        "actions": [
+          {
+            "do": "send_email",
+            "key": "tell_returned",
+            "template": "request_returned"
+          }
+        ]
+      },
+      {
+        "key": "resubmitted",
+        "from": "returned",
+        "to": "under_review",
+        "trigger": {
+          "on": "record_updated"
+        },
+        "actions": [
+          {
+            "do": "request_approval",
+            "key": "ask_again",
+            "approval": "policy_approval"
+          }
+        ]
+      },
+      {
+        "key": "never_came_back",
+        "from": "returned",
+        "to": "abandoned",
+        "trigger": {
+          "on": "timer",
+          "afterHoursInState": 336
+        },
+        "actions": []
+      }
+    ]
+  },
+  "communications": {
+    "fromName": "Finance",
+    "sms": [],
+    "email": [
+      {
+        "key": "request_received",
+        "name": "Request received",
+        "class": "transactional",
+        "to": [
+          {
+            "submitter": true
+          }
+        ],
+        "cc": [],
+        "subject": "We have your request: {{title}}",
+        "body": "Hello {{requester_name}},\n\nYour request \"{{title}}\" is with the people who decide it. You will hear from us at each step."
+      },
+      {
+        "key": "request_approved",
+        "name": "Request approved",
+        "class": "transactional",
+        "to": [
+          {
+            "submitter": true
+          }
+        ],
+        "cc": [],
+        "subject": "Approved: {{title}}",
+        "body": "Hello {{requester_name}},\n\nYour request \"{{title}}\" has been approved."
+      },
+      {
+        "key": "request_rejected",
+        "name": "Request rejected",
+        "class": "transactional",
+        "to": [
+          {
+            "submitter": true
+          }
+        ],
+        "cc": [],
+        "subject": "Not approved: {{title}}",
+        "body": "Hello {{requester_name}},\n\nYour request \"{{title}}\" was not approved.\n\nReason: {{decision_reason}}"
+      },
+      {
+        "key": "request_returned",
+        "name": "Request sent back",
+        "class": "transactional",
+        "to": [
+          {
+            "submitter": true
+          }
+        ],
+        "cc": [],
+        "subject": "Something needed: {{title}}",
+        "body": "Hello {{requester_name}},\n\nYour request \"{{title}}\" has been sent back to you.\n\n{{decision_reason}}\n\nUpdate it and it will go back for decision."
+      }
+    ]
+  },
+  "outputs": {
+    "webhookEvents": [],
+    "exportFields": [
+      "employee_email",
+      "title",
+      "category",
+      "cost_centre",
+      "needed_by"
+    ],
+    "documents": [],
+    "dashboard": {
+      "metrics": [
+        {
+          "key": "requests",
+          "name": "Requests",
+          "kind": "intake"
+        },
+        {
+          "key": "approved",
+          "name": "Approved",
+          "kind": "completion_rate"
+        },
+        {
+          "key": "time",
+          "name": "Days to decision",
+          "kind": "cycle_time"
+        }
+      ]
+    }
+  },
+  "tests": [
+    {
+      "key": "manager_approves",
+      "kind": "happy_path",
+      "name": "Without a policy the manager decides",
+      "steps": [
+        {
+          "step": "submit",
+          "answers": {
+            "requester_name": "Sam Trent",
+            "employee_email": "sam@example.com",
+            "title": "Two laptops for the Abuja office",
+            "category": "purchase",
+            "cost_centre": "ops",
+            "amount": 2400,
+            "needed_by": "2026-12-01",
+            "description": "Two field officers start in December and need laptops to run the survey app offline."
+          }
+        },
+        {
+          "step": "decide",
+          "approval": "policy_approval",
+          "as": "line_manager",
+          "decision": "approved",
+          "reason": "Agreed."
+        }
+      ],
+      "expect": {
+        "state": "approved",
+        "emails": [
+          "request_received",
+          "request_approved"
+        ],
+        "instanceCount": 1
+      }
+    },
+    {
+      "key": "manager_sends_back",
+      "kind": "happy_path",
+      "name": "A request sent back goes to the requester",
+      "steps": [
+        {
+          "step": "submit",
+          "answers": {
+            "requester_name": "Sam Trent",
+            "employee_email": "sam@example.com",
+            "title": "Three laptops for the Abuja office",
+            "category": "purchase",
+            "cost_centre": "ops",
+            "amount": 2400,
+            "needed_by": "2026-12-01",
+            "description": "Two field officers start in December and need laptops to run the survey app offline."
+          }
+        },
+        {
+          "step": "decide",
+          "approval": "policy_approval",
+          "as": "line_manager",
+          "decision": "changes_requested",
+          "reason": "Attach the quote."
+        }
+      ],
+      "expect": {
+        "state": "returned",
+        "emails": [
+          "request_received",
+          "request_returned"
+        ],
+        "instanceCount": 1
+      }
+    },
+    {
+      "key": "rejected",
+      "kind": "rejection",
+      "name": "A rejected request ends",
+      "steps": [
+        {
+          "step": "submit",
+          "answers": {
+            "requester_name": "Sam Trent",
+            "employee_email": "sam@example.com",
+            "title": "A boat for the Lagos office",
+            "category": "purchase",
+            "cost_centre": "ops",
+            "amount": 2400,
+            "needed_by": "2026-12-01",
+            "description": "Two field officers start in December and need laptops to run the survey app offline."
+          }
+        },
+        {
+          "step": "decide",
+          "approval": "policy_approval",
+          "as": "line_manager",
+          "decision": "rejected",
+          "reason": "Not needed."
+        }
+      ],
+      "expect": {
+        "state": "rejected",
+        "emails": [
+          "request_received",
+          "request_rejected"
+        ]
+      }
+    },
+    {
+      "key": "no_description",
+      "kind": "missing_data",
+      "name": "A request without a reason never reaches an approver",
+      "steps": [
+        {
+          "step": "submit",
+          "answers": {
+            "requester_name": "Sam Trent",
+            "employee_email": "sam@example.com",
+            "title": "Something with no reason",
+            "category": "purchase",
+            "cost_centre": "ops",
+            "amount": 2400,
+            "needed_by": "2026-12-01"
+          }
+        }
+      ],
+      "expect": {
+        "state": "draft",
+        "instanceCount": 0
+      }
+    },
+    {
+      "key": "self_approval",
+      "kind": "permission",
+      "name": "The requester cannot approve their own request",
+      "steps": [
+        {
+          "step": "submit",
+          "answers": {
+            "requester_name": "Sam Trent",
+            "employee_email": "sam@example.com",
+            "title": "A standing desk",
+            "category": "purchase",
+            "cost_centre": "ops",
+            "amount": 2400,
+            "needed_by": "2026-12-01",
+            "description": "Two field officers start in December and need laptops to run the survey app offline."
+          }
+        },
+        {
+          "step": "attempt",
+          "as": "requester",
+          "action": "approve",
+          "expectDenied": true
+        },
+        {
+          "step": "attempt",
+          "as": "line_manager",
+          "action": "approve",
+          "expectDenied": false
+        }
+      ],
+      "expect": {
+        "state": "under_review"
+      }
+    },
+    {
+      "key": "never_came_back",
+      "kind": "timeout",
+      "name": "A request sent back and never updated is abandoned after two weeks",
+      "steps": [
+        {
+          "step": "submit",
+          "answers": {
+            "requester_name": "Sam Trent",
+            "employee_email": "sam@example.com",
+            "title": "A projector for the training room",
+            "category": "purchase",
+            "cost_centre": "ops",
+            "amount": 2400,
+            "needed_by": "2026-12-01",
+            "description": "Two field officers start in December and need laptops to run the survey app offline."
+          }
+        },
+        {
+          "step": "decide",
+          "approval": "policy_approval",
+          "as": "line_manager",
+          "decision": "changes_requested",
+          "reason": "Which room?"
+        },
+        {
+          "step": "advance_hours",
+          "hours": 336
+        }
+      ],
+      "expect": {
+        "state": "abandoned",
+        "emails": [
+          "request_received",
+          "request_returned"
+        ]
+      }
+    },
+    {
+      "key": "duplicate",
+      "kind": "duplicate",
+      "name": "The same request sent twice opens one record",
+      "steps": [
+        {
+          "step": "submit",
+          "answers": {
+            "requester_name": "Sam Trent",
+            "employee_email": "sam@example.com",
+            "title": "A second monitor",
+            "category": "purchase",
+            "cost_centre": "ops",
+            "amount": 2400,
+            "needed_by": "2026-12-01",
+            "description": "Two field officers start in December and need laptops to run the survey app offline."
+          }
+        },
+        {
+          "step": "submit",
+          "answers": {
+            "requester_name": "Sam Trent",
+            "employee_email": "sam@example.com",
+            "title": "A second monitor",
+            "category": "purchase",
+            "cost_centre": "ops",
+            "amount": 2400,
+            "needed_by": "2026-12-01",
+            "description": "Two field officers start in December and need laptops to run the survey app offline."
+          }
+        }
+      ],
+      "expect": {
+        "instanceCount": 1
+      }
+    }
+  ]
+}
