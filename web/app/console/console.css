@@ -5492,3 +5492,54 @@ a.cs__navItem {
   .cs__appMenu { position: static; width: auto; max-width: none; margin: 6px 0 10px; box-shadow: none; border-color: var(--line); }
   .cs__appGrid { grid-template-columns: 1fr; }
 }
+
+/* ---------------------------------------------- every module, one design
+ * The hero is the module's band in its own colour; a summary that follows
+ * it sits on the band as glass cards; surfaces, rows, forms and status
+ * chips take the module colour. Meetings draws its own band and is
+ * excluded where it matters.
+ */
+.cs__shell--module .ig__workspace .ig__hero { position: relative; overflow: hidden; margin: 0; padding: 26px 28px 28px; border-radius: 20px; background: linear-gradient(135deg, var(--mod-deep) 0%, var(--mod) 68%, color-mix(in srgb, var(--mod) 72%, #fff) 100%); color: #fff; box-shadow: 0 24px 50px -30px var(--mod-deep); }
+.cs__shell--module .ig__workspace .ig__hero::after { content: ''; position: absolute; right: -90px; top: -130px; width: 320px; height: 320px; border-radius: 50%; background: rgba(255, 255, 255, .09); }
+.cs__shell--module .ig__workspace .ig__hero::before { content: ''; position: absolute; left: 42%; bottom: -170px; width: 280px; height: 280px; border-radius: 50%; background: rgba(255, 255, 255, .06); }
+.cs__shell--module .ig__workspace .ig__hero > * { position: relative; }
+.cs__shell--module .ig__workspace .ig__eyebrow { display: inline-block; color: rgba(255, 255, 255, .82); font: 700 10.5px var(--ui); letter-spacing: .14em; }
+.cs__shell--module .ig__workspace .ig__hero h2 { margin: 8px 0 6px; color: #fff; font: 600 clamp(22px, 2.2vw, 30px)/1.1 var(--ui); letter-spacing: -.03em; }
+.cs__shell--module .ig__workspace .ig__hero p { color: rgba(255, 255, 255, .86); font: 14px/1.5 var(--ui); max-width: 62ch; }
+.cs__shell--module .ig__hero + .pp2__overview { margin: -14px 20px 22px !important; }
+.cs__shell--module .ig__hero:has(+ .pp2__overview) { padding-bottom: 60px; }
+.cs__shell--module .pp2__overview { gap: 12px; border: 0; background: transparent; box-shadow: none; overflow: visible; }
+.cs__shell--module .pp2__overview > * { border-radius: 14px; border: 1px solid #e6e3f0; background: #fff; box-shadow: 0 14px 32px -20px rgba(21, 22, 42, .45); min-height: 112px; }
+.cs__shell--module .pp2__overview > :first-child { background: #fff; }
+.cs__shell--module .pp2__overview > * + * { border-left: 1px solid #e6e3f0; }
+.cs__shell--module .pp2__overview span { font: 700 10.5px var(--ui); letter-spacing: .08em; text-transform: uppercase; color: var(--mod-deep); }
+.cs__shell--module .pp2__overview strong { color: var(--ink); font: 700 clamp(26px, 2.4vw, 34px)/1 var(--ui); letter-spacing: -.03em; margin-top: 10px; }
+.cs__shell--module .pp2__overview small { color: var(--muted); font-size: 12px; }
+.cs__shell--module .ig__surface { border-radius: 18px; border-color: #e6e3f0; box-shadow: 0 10px 30px -18px rgba(21, 22, 42, .35); }
+.cs__shell--module .ig__panelHead { padding: 24px 28px 20px; }
+.cs__shell--module .ig__panelHead h3 { font-size: 19px; letter-spacing: -.025em; }
+.cs__shell--module .ig__panelHead h3::before { content: ''; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--mod); margin-right: 10px; vertical-align: 2px; }
+.cs__shell--module .ig__row { transition: background .12s; }
+.cs__shell--module .ig__row:hover { background: color-mix(in srgb, var(--mod-tint) 60%, #fff); }
+.cs__shell--module .ig__rowMain > strong { font-size: 14.5px; }
+.cs__shell--module .ig__status { background: var(--mod-tint); color: var(--mod-deep); border-radius: 999px; padding: 4px 9px; }
+.cs__shell--module .ig__status--off { background: var(--paper-2); color: var(--muted-3); }
+.cs__shell--module .ig__form { background: color-mix(in srgb, var(--mod-tint) 55%, #fff); border-color: color-mix(in srgb, var(--mod) 22%, #fff); border-radius: 14px; }
+.cs__shell--module .ig__formTitle strong { font-size: 15px; }
+.cs__shell--module .cs__input:focus-visible, .cs__shell--module .ig__form input:focus-visible, .cs__shell--module .ig__form select:focus-visible { outline: 2px solid var(--mod); outline-offset: 1px; }
+.cs__shell--module .ig__tabs { background: var(--paper-3); }
+.cs__shell--module .ig__tab:hover { color: var(--mod-deep); background: var(--mod-tint); }
+.cs__shell--module .ig__tabCount { background: var(--mod); color: #fff; }
+.cs__shell--module .ig__notice { background: var(--mod-tint); color: var(--mod-deep); border: 1px solid color-mix(in srgb, var(--mod) 25%, transparent); border-radius: 12px; }
+.cs__shell--module .cs__btn { border-radius: 10px; }
+.cs__shell--module .cs__btn:not(.cs__btn--primary):hover { border-color: var(--mod); color: var(--mod-deep); }
+.cs__shell--module .ex__table thead th, .cs__shell--module .vw__table thead th { color: var(--mod-deep); background: var(--mod-tint); }
+/* the module rail head gets the bigger mark */
+.cs__modIcon { width: 40px; height: 40px; flex-basis: 40px; border-radius: 11px; background: rgba(255, 255, 255, .18); }
+.cs__modIcon svg { width: 22px; height: 22px; }
+.cs__appIcon svg { width: 20px; height: 20px; }
+@media (max-width: 760px) {
+  .cs__shell--module .ig__workspace .ig__hero { padding: 20px 18px 24px; border-radius: 16px; }
+  .cs__shell--module .ig__hero + .pp2__overview { margin: 10px 0 18px !important; }
+  .cs__shell--module .pp2__overview { grid-template-columns: 1fr; }
+}
