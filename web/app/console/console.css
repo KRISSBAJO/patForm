@@ -5499,9 +5499,8 @@ a.cs__navItem {
  * chips take the module colour. Meetings draws its own band and is
  * excluded where it matters.
  */
-.cs__shell--module .ig__workspace .ig__hero { position: relative; overflow: hidden; margin: 0; padding: 26px 28px 28px; border-radius: 20px; background: linear-gradient(135deg, var(--mod-deep) 0%, var(--mod) 68%, color-mix(in srgb, var(--mod) 72%, #fff) 100%); color: #fff; box-shadow: 0 24px 50px -30px var(--mod-deep); }
-.cs__shell--module .ig__workspace .ig__hero::after { content: ''; position: absolute; right: -90px; top: -130px; width: 320px; height: 320px; border-radius: 50%; background: rgba(255, 255, 255, .09); }
-.cs__shell--module .ig__workspace .ig__hero::before { content: ''; position: absolute; left: 42%; bottom: -170px; width: 280px; height: 280px; border-radius: 50%; background: rgba(255, 255, 255, .06); }
+.cs__shell--module .ig__workspace .ig__hero { position: relative; overflow: hidden; margin: 0; padding: 26px 28px 28px; border-radius: 18px; background: linear-gradient(100deg, var(--mod-deep) 0%, var(--mod) 100%); color: #fff; box-shadow: 0 18px 40px -28px var(--mod-deep); }
+.cs__shell--module .ig__workspace .ig__hero::after, .cs__shell--module .ig__workspace .ig__hero::before { content: none; }
 .cs__shell--module .ig__workspace .ig__hero > * { position: relative; }
 .cs__shell--module .ig__workspace .ig__eyebrow { display: inline-block; color: rgba(255, 255, 255, .82); font: 700 10.5px var(--ui); letter-spacing: .14em; }
 .cs__shell--module .ig__workspace .ig__hero h2 { margin: 8px 0 6px; color: #fff; font: 600 clamp(22px, 2.2vw, 30px)/1.1 var(--ui); letter-spacing: -.03em; }
@@ -5562,3 +5561,9 @@ a.cs__navItem {
 /* an empty list inside a module reads as a quiet state, not a stray line */
 .cs__shell--module .ig__panel > ul > li.ig__row:only-child, .cs__shell--module .ig__panel > p.ig__rowMain:only-child { justify-content: center; padding: 44px 28px; }
 .cs__shell--module .ig__panel > ul > li.ig__row:only-child .ig__rowMain > p, .cs__shell--module .ig__panel > p.ig__rowMain:only-child { text-align: center; font-size: 14px; color: var(--muted); }
+
+/* Patform Sign's sender sits on a white surface like every other module */
+.cs__shell--module .ig__form--plain { margin: 0; padding: 24px 28px 28px; background: #fff; border: 1px solid #e6e3f0; border-radius: 18px; box-shadow: 0 10px 30px -18px rgba(21, 22, 42, .35); }
+/* a form at the top of a panel gets room, and reads as a card inside the surface */
+.cs__shell--module .ig__panel > .ig__form:first-child, .cs__shell--module .ig__panel > .ig__notice + .ig__form, .cs__shell--module .ig__panel > form.ig__form { margin-top: 22px; }
+.cs__shell--module .ig__panel > .ig__notice { margin: 22px 28px 0; }
