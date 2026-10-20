@@ -257,6 +257,24 @@ function Ticker() {
   );
 }
 
+function PeopleInterlude() {
+  return (
+    <section className="lp-people" aria-labelledby="lp-people-title">
+      <div className="shell">
+        <div className="lp-people__frame">
+          <div className="lp-people__image" role="img" aria-label="Three colleagues reviewing a hiring request together" />
+          <div className="lp-people__copy">
+            <span className="eyebrow">Behind every record</span>
+            <h2 id="lp-people-title">People make the decisions. Patform carries the work.</h2>
+            <p>From the first request to the final signature, everyone works from the same history.</p>
+          </div>
+          <span className="lp-people__caption mono">One request · one connected journey</span>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 /* ----------------------------------------------------------------- story */
 
 function Story() {
@@ -575,6 +593,7 @@ export function Landing() {
       <Progress />
       <Hero />
       <Ticker />
+      <PeopleInterlude />
       <Story />
       <Modules />
       <Sign />
