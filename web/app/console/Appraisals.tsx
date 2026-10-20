@@ -1,5 +1,6 @@
 'use client';
 
+import { ShellSync, type ModuleShell } from './module-shell';
 import { useCallback, useEffect, useState } from 'react';
 import { Icon } from './Icon';
 import { postJson } from './stepup';
@@ -66,11 +67,12 @@ const parseCriteria = (textValue: string): Criterion[] => textValue.split('\n').
   return m ? { key: `c${i + 1}`, title: m[1]!, weight: Number(m[2]) } : { key: `c${i + 1}`, title: l };
 });
 
-export function AppraisalsView() {
+export function AppraisalsView({ shell }: { shell?: ModuleShell } = {}) {
   const summary = useFeed<Summary>('/api/appraisals/summary');
   const s = summary.data;
   const hr = s?.hr === true;
   const [tab, setTab] = useState<Tab>('reviews');
+  const pickTab = (id: Tab) => { setTab(id); shell?.onSection?.(id); };
   const reviews = useFeed<Assignment[]>(s ? '/api/appraisals/reviews/mine' : null);
   const goals = useFeed<Goal[]>(s ? '/api/appraisals/goals' : null);
   const results = useFeed<Result[]>(s ? '/api/appraisals/results/mine' : null);
@@ -92,6 +94,10 @@ export function AppraisalsView() {
   const [sections, setSections] = useState<{ title: string; kind: Section['kind']; weight: string; criteria: string }[]>([{ title: 'Objectives', kind: 'objectives', weight: '60', criteria: 'Delivered agreed objectives' }, { title: 'Behaviours', kind: 'competencies', weight: '40', criteria: 'Teamwork : 50\nOwnership : 50' }, { title: 'Comments', kind: 'narrative', weight: '0', criteria: '' }]);
   const [asking, setAsking] = useState<{ id: string; label: string; run: (answer: string) => Promise<string> } | null>(null);
   const [answer, setAnswer] = useState('');
+  useEffect(() => {
+    if (shell?.section && shell.section !== tab) { setTab(shell.section as Tab); setNote(null); setFields({}); setAsking(null); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shell?.section]);
   const [incomplete, setIncomplete] = useState<string | null>(null);
   const f = (k: string) => fields[k] ?? '';
   const setF = (k: string, v: string) => setFields((x) => ({ ...x, [k]: v }));
@@ -174,11 +180,14 @@ export function AppraisalsView() {
     </header>
 
     <div className="ig__surface">
+      {!shell && <>
       <div className="ig__tabs" role="tablist" aria-label="Appraisal areas">
-        {tabs.map((item, index) => <button key={item.id} id={`apr-tab-${item.id}`} type="button" role="tab" aria-controls={`apr-panel-${item.id}`} aria-selected={tab === item.id} tabIndex={tab === item.id ? 0 : -1} className="ig__tab" onClick={() => { setTab(item.id); setNote(null); setFields({}); setAsking(null); }} onKeyDown={(event) => { const next = event.key === 'ArrowRight' ? (index + 1) % tabs.length : event.key === 'ArrowLeft' ? (index - 1 + tabs.length) % tabs.length : -1; if (next < 0) return; event.preventDefault(); const id = tabs[next]!.id; setTab(id); document.getElementById(`apr-tab-${id}`)?.focus(); }}>
+        {tabs.map((item, index) => <button key={item.id} id={`apr-tab-${item.id}`} type="button" role="tab" aria-controls={`apr-panel-${item.id}`} aria-selected={tab === item.id} tabIndex={tab === item.id ? 0 : -1} className="ig__tab" onClick={() => { pickTab(item.id); setNote(null); setFields({}); setAsking(null); }} onKeyDown={(event) => { const next = event.key === 'ArrowRight' ? (index + 1) % tabs.length : event.key === 'ArrowLeft' ? (index - 1 + tabs.length) % tabs.length : -1; if (next < 0) return; event.preventDefault(); const id = tabs[next]!.id; pickTab(id); document.getElementById(`apr-tab-${id}`)?.focus(); }}>
           <Icon name={item.icon} /><span>{item.name}</span>{item.count !== null && <span className="ig__tabCount">{item.count}</span>}
         </button>)}
       </div>
+      </>}
+      <ShellSync sections={tabs} onSections={shell?.onSections} />
       <section id={`apr-panel-${tab}`} role="tabpanel" aria-labelledby={`apr-tab-${tab}`} className="ig__panel">
         {note && <p className="ig__notice" role="status">{note}</p>}
         {asking && <form className="ig__form" onSubmit={(e) => { e.preventDefault(); const a = answer.trim(); if (!a) return; const job = asking; setAsking(null); setAnswer(''); void act(job.id, () => job.run(a)); }}>
@@ -286,7 +295,7 @@ export function AppraisalsView() {
             <p>{Object.entries(c.stages).map(([k, w]) => `${STAGE[k] ?? 'Calibration'} ${day(w.opens)}–${day(w.closes)}`).join(' · ')}</p></div>
             <div className="pp2__roleEdit">
               {c.status === 'draft' && s.admin && <button type="button" className="cs__btn cs__btn--primary" onClick={() => void act(c.id, async () => { const r = await postJson<{ eligible: number; excluded: number }>(`/api/appraisals/cycles/${c.id}/launch`, {}); return `Launched: ${r.eligible} people in, ${r.excluded} left out (each with the reason).`; })}>Launch</button>}
-              {c.status === 'active' && <button type="button" className="cs__btn" onClick={() => { setCycleId(c.id); setTab('calibration'); }}>Calibrate</button>}
+              {c.status === 'active' && <button type="button" className="cs__btn" onClick={() => { setCycleId(c.id); pickTab('calibration'); }}>Calibrate</button>}
               {c.status === 'active' && s.admin && <button type="button" className="cs__btn" onClick={() => void act(c.id, async () => {
                 try { const r = await postJson<{ published: number }>(`/api/appraisals/cycles/${c.id}/publish`, {}); return `Published ${r.published} results. Recommendations are waiting for HR.`; }
                 catch (err) { if (err instanceof Error && /publish without them/.test(err.message)) setIncomplete(c.id); throw err; } })}>Publish results</button>}

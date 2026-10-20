@@ -1,5 +1,6 @@
 'use client';
 
+import { ShellSync, type ModuleShell } from './module-shell';
 import { useCallback, useEffect, useState } from 'react';
 import { Icon } from './Icon';
 import { postJson } from './stepup';
@@ -150,8 +151,9 @@ function LineReview({ settlementId, onDone }: { settlementId: string; onDone: (m
   </div>;
 }
 
-export function ExpensesView({ canAdminister, canOperate, onOpenRecord }: { canAdminister: boolean; canOperate: boolean; onOpenRecord: (instanceId: string) => void }) {
+export function ExpensesView({ canAdminister, canOperate, onOpenRecord, shell }: { canAdminister: boolean; canOperate: boolean; onOpenRecord: (instanceId: string) => void; shell?: ModuleShell }) {
   const [tab, setTab] = useState<Tab>(canOperate ? 'claims' : 'mine');
+  const pickTab = (id: Tab) => { setTab(id); shell?.onSection?.(id); };
   const summary = useFeed<Summary>(canOperate ? '/api/expenses/summary' : null);
   const settlements = useFeed<Settlement[]>(canOperate ? '/api/expenses/settlements' : null);
   const advances = useFeed<Advance[]>(canOperate ? '/api/expenses/advances' : null);
@@ -180,6 +182,10 @@ export function ExpensesView({ canAdminister, canOperate, onOpenRecord }: { canA
     setCategoriesText(settings.data.categories.join(', '));
     setCodesText(Object.entries(settings.data.accountCodes).map(([k, v]) => `${k}=${v}`).join('\n'));
   }, [settings.data]);
+  useEffect(() => {
+    if (shell?.section && shell.section !== tab) { setTab(shell.section as Tab); setActing(null); setNote(null); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shell?.section]);
 
   const reloadAll = async () => { await Promise.all([summary.reload(), settlements.reload(), advances.reload(), budgets.reload(), exports.reload()]); };
   const act = async (id: string, work: () => Promise<string>) => {
@@ -280,11 +286,14 @@ export function ExpensesView({ canAdminister, canOperate, onOpenRecord }: { canA
     </section>}
 
     <div className="ig__surface">
+      {!shell && <>
       <div className="ig__tabs" role="tablist" aria-label="Expenses areas">
-        {tabs.map((item, index) => <button key={item.id} id={`ex-tab-${item.id}`} type="button" role="tab" aria-controls={`ex-panel-${item.id}`} aria-selected={tab === item.id} tabIndex={tab === item.id ? 0 : -1} className="ig__tab" onClick={() => { setTab(item.id); setActing(null); setNote(null); }} onKeyDown={(event) => { const next = event.key === 'ArrowRight' ? (index + 1) % tabs.length : event.key === 'ArrowLeft' ? (index - 1 + tabs.length) % tabs.length : -1; if (next < 0) return; event.preventDefault(); const id = tabs[next]!.id; setTab(id); setActing(null); document.getElementById(`ex-tab-${id}`)?.focus(); }}>
+        {tabs.map((item, index) => <button key={item.id} id={`ex-tab-${item.id}`} type="button" role="tab" aria-controls={`ex-panel-${item.id}`} aria-selected={tab === item.id} tabIndex={tab === item.id ? 0 : -1} className="ig__tab" onClick={() => { pickTab(item.id); setActing(null); setNote(null); }} onKeyDown={(event) => { const next = event.key === 'ArrowRight' ? (index + 1) % tabs.length : event.key === 'ArrowLeft' ? (index - 1 + tabs.length) % tabs.length : -1; if (next < 0) return; event.preventDefault(); const id = tabs[next]!.id; pickTab(id); setActing(null); document.getElementById(`ex-tab-${id}`)?.focus(); }}>
           <Icon name={item.icon} /><span>{item.name}</span>{item.count !== null && <span className="ig__tabCount">{item.count}</span>}
         </button>)}
       </div>
+      </>}
+      <ShellSync sections={tabs} onSections={shell?.onSections} />
 
       <section id={`ex-panel-${tab}`} role="tabpanel" aria-labelledby={`ex-tab-${tab}`} className="ig__panel">
         {tab === 'mine' ? <MyBankDetails /> : <>

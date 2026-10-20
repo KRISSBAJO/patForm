@@ -1,5 +1,6 @@
 'use client';
 
+import { ShellSync, type ModuleShell } from './module-shell';
 import { useCallback, useEffect, useState } from 'react';
 import { Icon } from './Icon';
 import { postJson } from './stepup';
@@ -62,13 +63,14 @@ async function uploadDoc(purpose: 'contract' | 'policy', file: File): Promise<{ 
 const fileRef = /^gov-file:([0-9a-f-]{36})$/;
 const empty = (t: string) => <li className="ig__row"><div className="ig__rowMain"><p>{t}</p></div></li>;
 
-export function ComplianceView() {
+export function ComplianceView({ shell }: { shell?: ModuleShell } = {}) {
   const dash = useFeed<Dash>('/api/gov/dashboard');
   const d = dash.data;
   const auditor = d?.auditor === true;
   const me = d?.me;
   const team = (...t: string[]) => !!me && (me.admin || t.some((x) => me.teams.includes(x)));
   const [tab, setTab] = useState<Tab>('overview');
+  const pickTab = (id: Tab) => { setTab(id); shell?.onSection?.(id); };
   const tasks = useFeed<Task[]>(d && !auditor ? `/api/gov/tasks${team('compliance', 'legal') ? '?scope=all' : ''}` : null);
   const acks = useFeed<Ack[]>(d && !auditor ? '/api/gov/acknowledgements/mine' : null);
   const findings = useFeed<{ id: string; number: number; title: string; detail: string; severity: string; status: string; target_date: string | null; management_response: string | null; engagement: string }[]>(d && !auditor ? '/api/gov/findings/mine' : null);
@@ -89,6 +91,10 @@ export function ComplianceView() {
   const [form, setForm] = useState<Record<string, string>>({});
   const [asking, setAsking] = useState<{ id: string; label: string; run: (answer: string) => Promise<string> } | null>(null);
   const [answer, setAnswer] = useState('');
+  useEffect(() => {
+    if (shell?.section && shell.section !== tab) { setTab(shell.section as Tab); setNote(null); setForm({}); setAsking(null); setOpenContract(null); setOpenEngagement(null); setOpenRecord(null); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shell?.section]);
   const f = (k: string) => form[k] ?? '';
   const setF = (k: string, v: string) => setForm((x) => ({ ...x, [k]: v }));
 
@@ -224,11 +230,14 @@ export function ComplianceView() {
       <p>{auditor ? 'Read-only, for the dates you were given. Everything you open is logged.' : 'Approvals belong to a contract version; a material change sends it back for review. Renewal tasks are dated from the notice deadline. Recording controls here is not a certification.'}</p>
     </header>
     <div className="ig__surface">
+      {!shell && <>
       <div className="ig__tabs" role="tablist" aria-label="Compliance areas">
-        {tabs.map((item, index) => <button key={item.id} id={`gov-tab-${item.id}`} type="button" role="tab" aria-controls={`gov-panel-${item.id}`} aria-selected={current === item.id} tabIndex={current === item.id ? 0 : -1} className="ig__tab" onClick={() => { setTab(item.id); setNote(null); setForm({}); setAsking(null); setOpenContract(null); setOpenEngagement(null); setOpenRecord(null); }} onKeyDown={(event) => { const next = event.key === 'ArrowRight' ? (index + 1) % tabs.length : event.key === 'ArrowLeft' ? (index - 1 + tabs.length) % tabs.length : -1; if (next < 0) return; event.preventDefault(); const idn = tabs[next]!.id; setTab(idn); document.getElementById(`gov-tab-${idn}`)?.focus(); }}>
+        {tabs.map((item, index) => <button key={item.id} id={`gov-tab-${item.id}`} type="button" role="tab" aria-controls={`gov-panel-${item.id}`} aria-selected={current === item.id} tabIndex={current === item.id ? 0 : -1} className="ig__tab" onClick={() => { pickTab(item.id); setNote(null); setForm({}); setAsking(null); setOpenContract(null); setOpenEngagement(null); setOpenRecord(null); }} onKeyDown={(event) => { const next = event.key === 'ArrowRight' ? (index + 1) % tabs.length : event.key === 'ArrowLeft' ? (index - 1 + tabs.length) % tabs.length : -1; if (next < 0) return; event.preventDefault(); const idn = tabs[next]!.id; pickTab(idn); document.getElementById(`gov-tab-${idn}`)?.focus(); }}>
           <Icon name={item.icon} /><span>{item.name}</span>{item.count !== null && <span className="ig__tabCount">{item.count}</span>}
         </button>)}
       </div>
+      </>}
+      <ShellSync sections={tabs} onSections={shell?.onSections} />
       <section id={`gov-panel-${current}`} role="tabpanel" aria-labelledby={`gov-tab-${current}`} className="ig__panel">
         {note && <p className="ig__notice" role="status">{note}</p>}
         {asking && <form className="ig__form" onSubmit={(e) => { e.preventDefault(); const a = answer.trim(); if (!a) return; const job = asking; setAsking(null); setAnswer(''); void act(job.id, () => job.run(a)); }}>
@@ -245,7 +254,7 @@ export function ComplianceView() {
             <div><span>Controls</span><strong>{d.controls?.overdue ?? 0} overdue</strong><small>{d.controls?.ineffective ?? 0} ineffective</small></div>
           </section>
           <ul style={list}>
-            {(d.expiring ?? []).map((c) => <li key={c.id} className="ig__row"><div className="ig__rowMain"><strong>#{c.number} {c.title}</strong><span className="ig__status ig__status--off">ends {day(c.end_date)}</span><p>{c.notice_deadline ? `Notice deadline ${day(c.notice_deadline)}` : 'No notice period recorded'}</p></div><button type="button" className="cs__btn" onClick={() => { setTab('contracts'); void showContract(c.id); }}>Open</button></li>)}
+            {(d.expiring ?? []).map((c) => <li key={c.id} className="ig__row"><div className="ig__rowMain"><strong>#{c.number} {c.title}</strong><span className="ig__status ig__status--off">ends {day(c.end_date)}</span><p>{c.notice_deadline ? `Notice deadline ${day(c.notice_deadline)}` : 'No notice period recorded'}</p></div><button type="button" className="cs__btn" onClick={() => { pickTab('contracts'); void showContract(c.id); }}>Open</button></li>)}
             {(d.remediation ?? []).map((r) => <li key={r.id} className="ig__row"><div className="ig__rowMain"><strong>Finding #{r.number} {r.title}</strong><span className="ig__status ig__status--off">{r.severity} · target {day(r.target_date)}</span><p>{r.engagement}</p></div></li>)}
             {(d.policies ?? []).map((p, i) => <li key={i} className="ig__row"><div className="ig__rowMain"><strong>{p.policy} v{p.version}</strong><span className="ig__status">{p.acknowledged} of {p.audience} acknowledged</span><p>Due {day(p.due_on)}</p></div></li>)}
             {d.holds && <li className="ig__row"><div className="ig__rowMain"><strong>Legal holds</strong><span className="ig__status">{d.holds.active} active · {d.holds.released} released, waiting for review</span></div></li>}

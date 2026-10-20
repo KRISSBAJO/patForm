@@ -6,6 +6,7 @@ import { Ask } from './Ask';
 import { DashboardView, HealthView, HeldView, RecordsView, SecurityView } from './Views';
 import { NotificationsPanel } from './Notifications';
 import { PasskeysPanel } from './Passkeys';
+import { MODULE_AREAS, ModuleRail, ModuleStrip, type Section } from './module-shell';
 import { PeopleView, ProcessesView } from './Manage';
 import { InviteView } from './Invite';
 import { BootScreen } from '../../components/boot-screen';
@@ -117,6 +118,8 @@ export function Console() {
   const [accountOpen, setAccountOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [railExpanded, setRailExpanded] = useState(false);
+  const [moduleSection, setModuleSection] = useState<string | null>(null);
+  const [moduleSections, setModuleSections] = useState<Section[]>([]);
   const settingsRef = useRef<HTMLDivElement>(null);
   const headerRef = useRef<HTMLElement>(null);
   useEffect(() => {
@@ -243,7 +246,10 @@ export function Console() {
     try { window.localStorage.setItem(storageKey, JSON.stringify(next)); } catch { /* Private browsing can refuse storage. */ }
   }, [session, processKey]);
 
-  useEffect(() => { setProcessPickerOpen(false); }, [view]);
+  useEffect(() => { setProcessPickerOpen(false); setModuleSection(null); setModuleSections([]); }, [view]);
+  const area = MODULE_AREAS[view];
+  const shell = { section: moduleSection ?? undefined, onSection: setModuleSection, onSections: setModuleSections };
+  const sectionName = moduleSections.find((x) => x.id === (moduleSection ?? moduleSections[0]?.id))?.name;
 
   /*
    * A record in the address bar is opened on arrival, and the browser's back
@@ -531,12 +537,13 @@ export function Console() {
       </header>
 
       <ReauthDialog />
-      <div className="cs__shell">
+      <div className={`cs__shell${area ? ' cs__shell--module' : ''}`} style={area ? ({ '--mod': area.colour, '--mod-deep': area.deep, '--mod-tint': area.tint } as React.CSSProperties) : undefined}>
       {mobileNavOpen && <button type="button" className="cs__navBackdrop" aria-label="Close menu" onClick={() => setMobileNavOpen(false)} />}
-      <aside id="console-navigation" className={`cs__side${railExpanded ? ' cs__side--expanded' : ''}${mobileNavOpen ? ' cs__side--open' : ''}`} onClick={(event) => {
+      <aside id="console-navigation" className={`cs__side${railExpanded || area ? ' cs__side--expanded' : ''}${mobileNavOpen ? ' cs__side--open' : ''}${area ? ' cs__side--module' : ''}`} onClick={(event) => {
         if ((event.target as HTMLElement).closest('button, a')) setMobileNavOpen(false);
       }}>
-        <div className="cs__mobileNavHead"><strong>Menu</strong><button type="button" aria-label="Close menu" onClick={() => setMobileNavOpen(false)}>×</button></div>
+        <div className="cs__mobileNavHead"><strong>{area ? area.name : 'Menu'}</strong><button type="button" aria-label="Close menu" onClick={() => setMobileNavOpen(false)}>×</button></div>
+        {area ? <ModuleRail area={area} sections={moduleSections} current={moduleSection} onPick={setModuleSection} onBack={() => setView('work')} /> : <>
         <nav className="cs__nav" aria-label="Console">
 {([{key:'work',label:'My work',icon:'work'},{key:'ask',label:'Ask',icon:'ask'},{key:'records',label:'Records',icon:'records'},{key:'dashboard',label:'Dashboard',icon:'dashboard'},{key:'processes',label:'Processes',icon:'processes'},{key:'people',label:'People',icon:'people'}] as const).map(item => <button type="button" key={item.key} className="cs__navItem" title={item.label} aria-current={view === item.key || (item.key === 'people' && view === 'invite') ? 'page' : undefined} onClick={() => setView(item.key)}><NavIcon name={item.icon}/><span className="cs__navText">{item.label}</span>{item.key === 'work' && counts.needsYou > 0 && <span className="cs__navCount">{counts.needsYou}</span>}</button>)}
 {session.modules?.includes('expenses') && <button type="button" className="cs__navItem" title="Expenses" aria-current={view === 'expenses' ? 'page' : undefined} onClick={() => setView('expenses')}><NavIcon name="data"/><span className="cs__navText">Expenses</span></button>}
@@ -553,6 +560,7 @@ export function Console() {
 </div>
 <button type="button" className="cs__navItem cs__railExpand" title={railExpanded ? 'Collapse sidebar' : 'Expand sidebar'} aria-label={railExpanded ? 'Collapse sidebar' : 'Expand sidebar'} aria-expanded={railExpanded} onClick={() => setRailExpanded(!railExpanded)}><span aria-hidden="true">{railExpanded ? '‹' : '›'}</span><span className="cs__navText">{railExpanded ? 'Collapse' : 'Expand'}</span></button>
 </div>
+        </>}
       </aside>
 
       <main className="cs__main" id="console-main" tabIndex={-1}>
@@ -604,6 +612,7 @@ export function Console() {
           {/* The process pill is context for the record views. On People,
               Processes and Your account it named a process the page has
               nothing to do with. */}
+          {area && sectionName && <span className="cs__version cs__version--mod">{sectionName}</span>}
           {['work', 'record', 'ask', 'records', 'dashboard'].includes(view) && (view === 'record' ? record : work) && (
             <span className="cs__version">{view === 'record' && record ? record.processName : work?.processName}</span>
           )}
@@ -617,6 +626,7 @@ export function Console() {
           </button>}
         </div>
 
+        {area && <ModuleStrip sections={moduleSections} current={moduleSection} onPick={setModuleSection} />}
         <div className={`cs__body ${view === 'security' ? 'cs__body--security' : ''} ${view === 'ask' ? 'cs__body--ask' : ''} ${view === 'record' ? 'cs__body--record' : ''} ${view === 'health' ? 'cs__body--health' : ''} ${view === 'dashboard' ? 'cs__body--dashboard' : ''} ${view === 'people' ? 'cs__body--people' : ''} ${view === 'records' ? 'cs__body--records' : ''} ${view === 'work' ? 'cs__body--work' : ''} ${view === 'processes' ? 'cs__body--processes' : ''} ${view === 'held' ? 'cs__body--held' : ''} ${view === 'integrations' ? 'cs__body--integrations' : ''} ${view === 'data' ? 'cs__body--data' : ''} ${view === 'modules' || view === 'organisation' || view === 'expenses' || view === 'procurement' || view === 'hr' || view === 'appraisals' || view === 'operations' || view === 'compliance' ? 'cs__body--integrations' : ''}`}>
           <div className="cs__left">
             {view === 'record' && record ? (
@@ -640,17 +650,17 @@ export function Console() {
             ) : view === 'modules' ? (
               <ModulesView canAdminister={['owner', 'admin'].includes(me.workspace_role)} onChanged={() => void load()} />
             ) : view === 'hr' ? (
-              <HRView key={settingsRevision} />
+              <HRView key={settingsRevision} shell={shell} />
             ) : view === 'appraisals' ? (
-              <AppraisalsView key={settingsRevision} />
+              <AppraisalsView key={settingsRevision} shell={shell} />
             ) : view === 'operations' ? (
-              <OperationsView key={settingsRevision} />
+              <OperationsView key={settingsRevision} shell={shell} />
             ) : view === 'compliance' ? (
-              <ComplianceView key={settingsRevision} />
+              <ComplianceView key={settingsRevision} shell={shell} />
             ) : view === 'procurement' ? (
-              <ProcurementView key={settingsRevision} canAdminister={['owner', 'admin'].includes(me.workspace_role)} canOperate={['owner', 'admin', 'operator'].includes(me.workspace_role)} onOpenRecord={(id) => void open(id)} />
+              <ProcurementView key={settingsRevision} shell={shell} canAdminister={['owner', 'admin'].includes(me.workspace_role)} canOperate={['owner', 'admin', 'operator'].includes(me.workspace_role)} onOpenRecord={(id) => void open(id)} />
             ) : view === 'expenses' ? (
-              <ExpensesView key={settingsRevision} canAdminister={['owner', 'admin'].includes(me.workspace_role)} canOperate={['owner', 'admin', 'operator'].includes(me.workspace_role)} onOpenRecord={(id) => void open(id)} />
+              <ExpensesView key={settingsRevision} shell={shell} canAdminister={['owner', 'admin'].includes(me.workspace_role)} canOperate={['owner', 'admin', 'operator'].includes(me.workspace_role)} onOpenRecord={(id) => void open(id)} />
             ) : view === 'organisation' ? (
               <OrganisationView key={settingsRevision} canAdminister={['owner', 'admin', 'builder'].includes(me.workspace_role)} processes={session.processes.map((p) => ({ process_key: p.process_key, name: p.name }))} myId={me.id} />
             ) : view === 'people' ? (

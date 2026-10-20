@@ -1,5 +1,6 @@
 'use client';
 
+import { ShellSync, type ModuleShell } from './module-shell';
 import { useCallback, useEffect, useState } from 'react';
 import { Icon } from './Icon';
 import { postJson } from './stepup';
@@ -49,11 +50,12 @@ function Field({ id, label, children }: { id: string; label: string; children: R
   return <div><label className="cs__label" htmlFor={id}>{label}</label>{children}</div>;
 }
 
-export function HRView({ onChanged }: { onChanged?: () => void }) {
+export function HRView({ onChanged, shell }: { onChanged?: () => void; shell?: ModuleShell }) {
   const summary = useFeed<Summary>('/api/hr/summary');
   const s = summary.data;
   const hr = s?.hr === true;
   const [tab, setTab] = useState<Tab>('tasks');
+  const pickTab = (id: Tab) => { setTab(id); shell?.onSection?.(id); };
   const tasks = useFeed<MyTask[]>('/api/hr/tasks/mine');
   const leave = useFeed<MyLeave>(s && s.role !== 'pre_hire' ? '/api/hr/leave/mine' : null);
   const docs = useFeed<MyDoc[]>(s ? '/api/hr/documents/mine' : null);
@@ -74,6 +76,10 @@ export function HRView({ onChanged }: { onChanged?: () => void }) {
   const [starting, setStarting] = useState<null | 'onboarding' | 'offboarding' | 'transfer' | 'urgent' | 'probation'>(null);
   const [asking, setAsking] = useState<{ id: string; label: string; run: (answer: string) => Promise<string> } | null>(null);
   const [answer, setAnswer] = useState('');
+  useEffect(() => {
+    if (shell?.section && shell.section !== tab) { setTab(shell.section as Tab); setNote(null); setStarting(null); setForm({}); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shell?.section]);
   const [pay, setPay] = useState<Record<string, { amount: string; currency: string; period: string; effective_from: string }[]>>({});
   const f = (k: string) => form[k] ?? '';
   const setF = (k: string, v: string) => setForm((x) => ({ ...x, [k]: v }));
@@ -144,11 +150,14 @@ export function HRView({ onChanged }: { onChanged?: () => void }) {
     </section>}
 
     <div className="ig__surface">
+      {!shell && <>
       <div className="ig__tabs" role="tablist" aria-label="HR areas">
-        {tabs.map((item, index) => <button key={item.id} id={`hr-tab-${item.id}`} type="button" role="tab" aria-controls={`hr-panel-${item.id}`} aria-selected={tab === item.id} tabIndex={tab === item.id ? 0 : -1} className="ig__tab" onClick={() => { setTab(item.id); setNote(null); setStarting(null); setForm({}); }} onKeyDown={(event) => { const next = event.key === 'ArrowRight' ? (index + 1) % tabs.length : event.key === 'ArrowLeft' ? (index - 1 + tabs.length) % tabs.length : -1; if (next < 0) return; event.preventDefault(); const id = tabs[next]!.id; setTab(id); document.getElementById(`hr-tab-${id}`)?.focus(); }}>
+        {tabs.map((item, index) => <button key={item.id} id={`hr-tab-${item.id}`} type="button" role="tab" aria-controls={`hr-panel-${item.id}`} aria-selected={tab === item.id} tabIndex={tab === item.id ? 0 : -1} className="ig__tab" onClick={() => { pickTab(item.id); setNote(null); setStarting(null); setForm({}); }} onKeyDown={(event) => { const next = event.key === 'ArrowRight' ? (index + 1) % tabs.length : event.key === 'ArrowLeft' ? (index - 1 + tabs.length) % tabs.length : -1; if (next < 0) return; event.preventDefault(); const id = tabs[next]!.id; pickTab(id); document.getElementById(`hr-tab-${id}`)?.focus(); }}>
           <Icon name={item.icon} /><span>{item.name}</span>{item.count !== null && <span className="ig__tabCount">{item.count}</span>}
         </button>)}
       </div>
+      </>}
+      <ShellSync sections={tabs} onSections={shell?.onSections} />
       <section id={`hr-panel-${tab}`} role="tabpanel" aria-labelledby={`hr-tab-${tab}`} className="ig__panel">
         {note && <p className="ig__notice" role="status">{note}</p>}
         {asking && <form className="ig__form" onSubmit={(e) => { e.preventDefault(); const a = answer.trim(); if (!a) return; const job = asking; setAsking(null); setAnswer(''); void act(job.id, () => job.run(a)); }}>

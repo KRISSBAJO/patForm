@@ -1,5 +1,6 @@
 'use client';
 
+import { ShellSync, type ModuleShell } from './module-shell';
 import { useCallback, useEffect, useState } from 'react';
 import { Icon } from './Icon';
 import { postJson } from './stepup';
@@ -78,11 +79,12 @@ async function uploadPhotos(target: Record<string, string>, files: FileList | nu
 }
 const empty = (text: string) => <li className="ig__row"><div className="ig__rowMain"><p>{text}</p></div></li>;
 
-export function OperationsView() {
+export function OperationsView({ shell }: { shell?: ModuleShell } = {}) {
   const summary = useFeed<Summary>('/api/ops/summary');
   const s = summary.data;
   const staff = s?.staff === true;
   const [tab, setTab] = useState<Tab>('requests');
+  const pickTab = (id: Tab) => { setTab(id); shell?.onSection?.(id); };
   const services = useFeed<Service[]>(s ? '/api/ops/services' : null);
   const mine = useFeed<Ticket[]>(s ? '/api/ops/tickets?scope=mine' : null);
   const toApprove = useFeed<Ticket[]>(s ? '/api/ops/tickets?scope=approve' : null);
@@ -102,6 +104,10 @@ export function OperationsView() {
   const [form, setForm] = useState<Record<string, string>>({});
   const [asking, setAsking] = useState<{ id: string; label: string; run: (answer: string) => Promise<string> } | null>(null);
   const [answer, setAnswer] = useState('');
+  useEffect(() => {
+    if (shell?.section && shell.section !== tab) { setTab(shell.section as Tab); setNote(null); setForm({}); setAsking(null); setOpenTicket(null); setOpenAsset(null); setOpenJob(null); setStarting(null); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shell?.section]);
   const [openTicket, setOpenTicket] = useState<TicketDetail | null>(null);
   const [openAsset, setOpenAsset] = useState<AssetDetail | null>(null);
   const [openJob, setOpenJob] = useState<Job | null>(null);
@@ -190,11 +196,14 @@ export function OperationsView() {
     </header>
 
     <div className="ig__surface">
+      {!shell && <>
       <div className="ig__tabs" role="tablist" aria-label="Assets and IT areas">
-        {tabs.map((item, index) => <button key={item.id} id={`ops-tab-${item.id}`} type="button" role="tab" aria-controls={`ops-panel-${item.id}`} aria-selected={tab === item.id} tabIndex={tab === item.id ? 0 : -1} className="ig__tab" onClick={() => { setTab(item.id); setNote(null); setForm({}); setAsking(null); setOpenTicket(null); setOpenAsset(null); setOpenJob(null); setStarting(null); }} onKeyDown={(event) => { const next = event.key === 'ArrowRight' ? (index + 1) % tabs.length : event.key === 'ArrowLeft' ? (index - 1 + tabs.length) % tabs.length : -1; if (next < 0) return; event.preventDefault(); const id = tabs[next]!.id; setTab(id); document.getElementById(`ops-tab-${id}`)?.focus(); }}>
+        {tabs.map((item, index) => <button key={item.id} id={`ops-tab-${item.id}`} type="button" role="tab" aria-controls={`ops-panel-${item.id}`} aria-selected={tab === item.id} tabIndex={tab === item.id ? 0 : -1} className="ig__tab" onClick={() => { pickTab(item.id); setNote(null); setForm({}); setAsking(null); setOpenTicket(null); setOpenAsset(null); setOpenJob(null); setStarting(null); }} onKeyDown={(event) => { const next = event.key === 'ArrowRight' ? (index + 1) % tabs.length : event.key === 'ArrowLeft' ? (index - 1 + tabs.length) % tabs.length : -1; if (next < 0) return; event.preventDefault(); const id = tabs[next]!.id; pickTab(id); document.getElementById(`ops-tab-${id}`)?.focus(); }}>
           <Icon name={item.icon} /><span>{item.name}</span>{item.count !== null && <span className="ig__tabCount">{item.count}</span>}
         </button>)}
       </div>
+      </>}
+      <ShellSync sections={tabs} onSections={shell?.onSections} />
       <section id={`ops-panel-${tab}`} role="tabpanel" aria-labelledby={`ops-tab-${tab}`} className="ig__panel">
         {note && <p className="ig__notice" role="status">{note}</p>}
         {asking && <form className="ig__form" onSubmit={(e) => { e.preventDefault(); const a = answer.trim(); if (!a) return; const job = asking; setAsking(null); setAnswer(''); void act(job.id, () => job.run(a)); }}>

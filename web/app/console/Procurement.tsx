@@ -1,5 +1,6 @@
 'use client';
 
+import { ShellSync, type ModuleShell } from './module-shell';
 import { useCallback, useEffect, useState } from 'react';
 import { Icon } from './Icon';
 import { postJson } from './stepup';
@@ -52,8 +53,9 @@ function Field({ id, label, children }: { id: string; label: string; children: R
   return <div><label className="cs__label" htmlFor={id}>{label}</label>{children}</div>;
 }
 
-export function ProcurementView({ canAdminister, canOperate, onOpenRecord }: { canAdminister: boolean; canOperate: boolean; onOpenRecord: (instanceId: string) => void }) {
+export function ProcurementView({ canAdminister, canOperate, onOpenRecord, shell }: { canAdminister: boolean; canOperate: boolean; onOpenRecord: (instanceId: string) => void; shell?: ModuleShell }) {
   const [tab, setTab] = useState<Tab>('requests');
+  const pickTab = (id: Tab) => { setTab(id); shell?.onSection?.(id); };
   const on = canOperate;
   const summary = useFeed<Summary>(on ? '/api/procurement/summary' : null);
   const reqs = useFeed<Req[]>(on ? '/api/procurement/requests' : null);
@@ -79,6 +81,10 @@ export function ProcurementView({ canAdminister, canOperate, onOpenRecord }: { c
   const [answer, setAnswer] = useState('');
   useEffect(() => { if (rules.data) setRuleDraft(rules.data); }, [rules.data]);
 
+  useEffect(() => {
+    if (shell?.section && shell.section !== tab) { setTab(shell.section as Tab); setOpen(null); setNote(null); setForm({}); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shell?.section]);
   const cur = summary.data?.currency ?? rules.data?.currency ?? '';
   const f = (k: string) => form[k] ?? '';
   const setF = (k: string, v: string) => setForm((x) => ({ ...x, [k]: v }));
@@ -143,11 +149,14 @@ export function ProcurementView({ canAdminister, canOperate, onOpenRecord }: { c
     </section>}
 
     <div className="ig__surface">
+      {!shell && <>
       <div className="ig__tabs" role="tablist" aria-label="Procurement areas">
-        {tabs.map((item, index) => <button key={item.id} id={`pr-tab-${item.id}`} type="button" role="tab" aria-controls={`pr-panel-${item.id}`} aria-selected={tab === item.id} tabIndex={tab === item.id ? 0 : -1} className="ig__tab" onClick={() => { setTab(item.id); setOpen(null); setNote(null); setForm({}); }} onKeyDown={(event) => { const next = event.key === 'ArrowRight' ? (index + 1) % tabs.length : event.key === 'ArrowLeft' ? (index - 1 + tabs.length) % tabs.length : -1; if (next < 0) return; event.preventDefault(); const id = tabs[next]!.id; setTab(id); setOpen(null); document.getElementById(`pr-tab-${id}`)?.focus(); }}>
+        {tabs.map((item, index) => <button key={item.id} id={`pr-tab-${item.id}`} type="button" role="tab" aria-controls={`pr-panel-${item.id}`} aria-selected={tab === item.id} tabIndex={tab === item.id ? 0 : -1} className="ig__tab" onClick={() => { pickTab(item.id); setOpen(null); setNote(null); setForm({}); }} onKeyDown={(event) => { const next = event.key === 'ArrowRight' ? (index + 1) % tabs.length : event.key === 'ArrowLeft' ? (index - 1 + tabs.length) % tabs.length : -1; if (next < 0) return; event.preventDefault(); const id = tabs[next]!.id; pickTab(id); setOpen(null); document.getElementById(`pr-tab-${id}`)?.focus(); }}>
           <Icon name={item.icon} /><span>{item.name}</span>{item.count !== null && <span className="ig__tabCount">{item.count}</span>}
         </button>)}
       </div>
+      </>}
+      <ShellSync sections={tabs} onSections={shell?.onSections} />
 
       <section id={`pr-panel-${tab}`} role="tabpanel" aria-labelledby={`pr-tab-${tab}`} className="ig__panel">
         {note && <p className="ig__notice" role="status">{note}</p>}

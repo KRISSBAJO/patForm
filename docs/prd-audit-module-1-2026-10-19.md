@@ -730,3 +730,18 @@ store), which this machine cannot reach from an app-launched server, and
 test files must not reach the real bucket. On staging, check 13 in
 `docs/deploy-and-check.md`.
 
+## Each module as its own area (20 October 2026)
+
+Expenses, Procurement, HR, Appraisals, Assets & IT and Compliance were one
+page each with a row of tabs. Each is now an area: entering it swaps the
+console rail for the module's rail (`web/app/console/module-shell.tsx`):
+a "Back to Patform" link, a coloured header with the module's name and
+blurb, and the module's sections with counts. The header carries the
+module's colour; on phones the sections are a strip above the content.
+Each module has one quiet colour (amber, blue, plum, teal, slate, brick).
+The module views keep their own state and rules: the shell only tells
+them which section to show (`shell.section`) and learns which sections
+exist (`ShellSync`), so nothing about who may see what moved. Without a
+shell the views still draw their own tabs. Checked in the browser on all
+six at desktop and phone width.
+
