@@ -1340,9 +1340,9 @@ html {
 .footer__brand {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
+  gap: 13px;
   font-family: var(--font-display), Georgia, serif;
-  font-size: 21px;
+  font-size: 29px;
   font-weight: 600;
   color: #135d43;
   text-decoration: none;
@@ -1406,13 +1406,18 @@ html {
 }
 
 .footer__base span {
-  font-size: 12px;
-  color: #68776d;
+  font-size: 13px;
+  color: #52675a;
+}
+
+.footer__compliance {
+  max-width: 460px;
+  line-height: 1.5;
 }
 
 .footer__wordmark {
   width: 100%;
-  margin: 12px auto -0.21em;
+  margin: 18px auto 0;
   text-align: center;
   white-space: nowrap;
   font-family: var(--font-display), Georgia, serif;
@@ -1420,7 +1425,7 @@ html {
   font-size: clamp(112px, 22.5vw, 390px);
   line-height: 1;
   letter-spacing: -0.085em;
-  color: #dce5dc;
+  color: #c5d8c9;
   user-select: none;
   pointer-events: none;
 }
@@ -1431,7 +1436,7 @@ html {
   .footer__statement { font-size: 34px; }
   .footer__cols { gap: 30px 16px; }
   .footer__base { margin-top: 54px; }
-  .footer__wordmark { font-size: 20vw; margin-top: 25px; }
+  .footer__wordmark { font-size: 24vw; margin-top: 28px; }
 }
 
 /* =========================================================== desktop board */
@@ -2034,7 +2039,7 @@ html {
   }
 
   .footer__brand {
-    font-size: 22px;
+    font-size: 29px;
   }
 
   .footer__blurb {

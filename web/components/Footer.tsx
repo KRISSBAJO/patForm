@@ -24,7 +24,7 @@ export function Footer() {
         <div className="footer__grid">
           <div className="footer__brandCol">
             <a className="footer__brand" href="/#top" aria-label="Patform home">
-              <Mark size={22} />
+              <Mark size={32} />
               <span>Patform</span>
             </a>
             <p className="footer__statement">Good work deserves<br />a clear path.</p>
@@ -49,7 +49,7 @@ export function Footer() {
 
         <div className="footer__base">
           <span>&copy; 2026 LogaXP Ltd.</span>
-          <span>Built for the work that matters.</span>
+          <span className="footer__compliance">We do not claim compliance we have not earned. Ask us what we hold.</span>
         </div>
       </div>
       <div className="footer__wordmark" aria-hidden="true">Patform</div>
