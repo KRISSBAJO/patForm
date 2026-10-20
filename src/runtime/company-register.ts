@@ -33,11 +33,15 @@ export const registerProviders: Record<string, RegisterLookup | undefined> = {
     if (c.status === 401) return { available: false, reason: 'Companies House refused the API key', country: 'GB', number: n, checkedAt };
     if (!c.ok) throw new Error(`Companies House answered HTTP ${c.status}`);
     const company = await c.json() as { company_name: string; company_status: string };
-    const o = await doFetch(`${base}/company/${encodeURIComponent(n)}/officers?items_per_page=100`, { headers, signal: AbortSignal.timeout(10_000) });
-    const officers: Officer[] = o.ok
-      ? ((await o.json() as { items?: { name: string; officer_role: string; appointed_on?: string; resigned_on?: string }[] }).items ?? [])
-        .filter((x) => !x.resigned_on).map((x) => ({ name: x.name, role: x.officer_role.replace(/-/g, ' '), appointedOn: x.appointed_on ?? null }))
-      : [];
+    const officers: Officer[] = [];
+    for (let start = 0; ; start += 100) {
+      const o = await doFetch(`${base}/company/${encodeURIComponent(n)}/officers?items_per_page=100&start_index=${start}`, { headers, signal: AbortSignal.timeout(10_000) });
+      if (!o.ok) return { available: false, reason: `Companies House officer lookup failed (HTTP ${o.status})`, country: 'GB', number: n, checkedAt };
+      const page = await o.json() as { items?: { name: string; officer_role: string; appointed_on?: string; resigned_on?: string }[]; total_results?: number };
+      const items = page.items ?? [];
+      officers.push(...items.filter((x) => !x.resigned_on).map((x) => ({ name: x.name, role: x.officer_role.replace(/-/g, ' '), appointedOn: x.appointed_on ?? null })));
+      if (items.length < 100 || (page.total_results !== undefined && start + items.length >= page.total_results)) break;
+    }
     return { available: true, country: 'GB', number: n, companyName: company.company_name, status: company.company_status, officers, checkedAt, source: 'Companies House' };
   },
   NG: async (number) => ({ available: false, reason: 'no register provider is set up for Nigeria (CAC checks come through a paid identity provider)', country: 'NG', number, checkedAt: new Date().toISOString() }),

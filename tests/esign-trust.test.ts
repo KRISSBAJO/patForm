@@ -11,7 +11,7 @@ import { setGovTeamMember, updateGovSettings, uploadGovFile } from '../src/runti
 import { createEnvelope, envelopeDetail, finalDocument, giveConsent, requestCode, sendEnvelope, setSignMailerForTests, signDocument, signerView, verifyCode } from '../src/runtime/esign.js';
 import { applySeal, checkSeal, setSealForTests } from '../src/runtime/esign-seal.js';
 import { readTimestampResponse, timestampRequest } from '../src/runtime/esign-tsa.js';
-import { matchOfficer, setRegisterProviderForTests, type RegisterLookup } from '../src/runtime/company-register.js';
+import { lookupCompany, matchOfficer, setRegisterProviderForTests, type RegisterLookup } from '../src/runtime/company-register.js';
 import { pdflibAddPlaceholder } from '@signpdf/placeholder-pdf-lib';
 import type { Principal } from '../src/runtime/policy.js';
 
@@ -85,6 +85,35 @@ test('register names: "SURNAME, Forename Middle" matches the signer with or with
   assert.equal(matchOfficer('Emeka Okafor', officers)?.role, 'director', 'people often go by a middle name');
   assert.equal(matchOfficer('Chidi Okoro', officers), null);
   assert.equal(matchOfficer('Okafor', officers), null, 'one word is not a name');
+});
+
+test('Companies House checks every officer page and never calls a failed officer lookup an unlisted signer', async () => {
+  const prior = process.env.COMPANIES_HOUSE_API_KEY;
+  process.env.COMPANIES_HOUSE_API_KEY = 'test-key';
+  try {
+    const calls: string[] = [];
+    const fetchPage = async (url: string) => {
+      calls.push(url);
+      if (url.endsWith('/company/00000042')) return new Response(JSON.stringify({ company_name: 'TEST LTD', company_status: 'active' }), { status: 200 });
+      if (url.includes('start_index=0')) return new Response(JSON.stringify({ items: Array.from({ length: 100 }, (_, i) => ({ name: `FIRST, Person${i}`, officer_role: 'director' })), total_results: 101 }), { status: 200 });
+      return new Response(JSON.stringify({ items: [{ name: 'LAST, Officer', officer_role: 'company-secretary' }], total_results: 101 }), { status: 200 });
+    };
+    const result = await lookupCompany('GB', '42', fetchPage as typeof fetch);
+    assert.equal(result.available, true);
+    assert.equal(result.officers?.length, 101);
+    assert.equal(result.officers?.at(-1)?.role, 'company secretary');
+    assert.equal(calls.length, 3);
+
+    const failed = await lookupCompany('GB', '42', (async (url: string) => url.endsWith('/company/00000042')
+      ? new Response(JSON.stringify({ company_name: 'TEST LTD', company_status: 'active' }), { status: 200 })
+      : new Response('', { status: 429 })) as typeof fetch);
+    assert.equal(failed.available, false);
+    assert.match(failed.reason ?? '', /officer lookup failed \(HTTP 429\)/);
+    assert.equal(failed.officers, undefined);
+  } finally {
+    if (prior === undefined) delete process.env.COMPANIES_HOUSE_API_KEY;
+    else process.env.COMPANIES_HOUSE_API_KEY = prior;
+  }
 });
 
 async function setup(pool: Pool, engine: Engine) {
