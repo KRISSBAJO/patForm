@@ -217,7 +217,6 @@ function Hero() {
   return (
     <section className="lp-hero" id="top">
       <div className="lp-hero__bg" aria-hidden="true">
-        <span className="lp-blob lp-blob--1" /><span className="lp-blob lp-blob--2" /><span className="lp-blob lp-blob--3" />
         <span className="lp-grid" />
       </div>
       <div className="shell lp-hero__grid">

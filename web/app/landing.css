@@ -73,9 +73,6 @@
   opacity: 0.55;
   animation: lp-drift 22s ease-in-out infinite alternate;
 }
-.lp-blob--1 { background: #cfe9d8; top: -18%; right: -8%; }
-.lp-blob--2 { background: #f1e7c8; bottom: -30%; left: -14%; animation-delay: -7s; animation-duration: 28s; }
-.lp-blob--3 { background: #e3eee6; top: 30%; left: 35%; width: 30vw; height: 30vw; opacity: 0.4; animation-delay: -14s; }
 .lp-blob--4 { background: #2a8a58; top: -30%; left: -10%; opacity: 0.6; }
 .lp-blob--5 { background: #0b3a22; bottom: -40%; right: -10%; opacity: 0.7; animation-delay: -11s; }
 @keyframes lp-drift { from { transform: translate3d(0, 0, 0) scale(1); } to { transform: translate3d(6vw, -4vh, 0) scale(1.12); } }
@@ -84,8 +81,8 @@
   position: absolute; inset: 0;
   background-image: linear-gradient(var(--line) 1px, transparent 1px), linear-gradient(90deg, var(--line) 1px, transparent 1px);
   background-size: 64px 64px;
-  mask-image: radial-gradient(ellipse at 70% 40%, #000 20%, transparent 70%);
-  opacity: 0.5;
+  mask-image: radial-gradient(ellipse 40% 55% at 74% 50%, #000 10%, transparent 100%);
+  opacity: 0.6;
 }
 
 .lp-hero__grid { position: relative; display: grid; grid-template-columns: 1.05fr 0.95fr; gap: clamp(28px, 5vw, 72px); align-items: center; }
