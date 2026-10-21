@@ -469,19 +469,19 @@ export function SignCenter({ startContract, onClose, shell }: { startContract?: 
       </div>
     </div>}
 
-    {mode === 'detail' && detail && (() => { const e = detail.envelope; const flow = ['draft', 'sent', 'completed']; const at = e.status === 'completed' ? 2 : ['sent', 'finalizing'].includes(e.status) ? 1 : 0; return <div className="mx__room">
+    {mode === 'detail' && detail && (() => { const e = detail.envelope; const signers = detail.recipients.filter((r) => r.role === 'signer'); const signed = signers.filter((r) => r.status === 'signed' || !!r.signed_at).length; const flow = ['draft', 'sent', 'completed']; const at = e.status === 'completed' ? 2 : ['sent', 'finalizing'].includes(e.status) ? 1 : 0; return <div className="mx__room">
       <div className="mx__card">
         <div className="mx__roomHead"><div>
           <button type="button" className="mx__link" onClick={() => { go('list'); setDetail(null); setPdf(null); if (onClose && startContract) onClose(); }}>‹ All envelopes</button>
           <div className="mx__eyebrow" style={{ color: 'var(--mx-muted)', marginTop: 8 }}>PS-{e.number}{e.contract ? ` · contract: ${e.contract}` : ''}</div>
           <h2 className="mx__roomTitle">{e.title}</h2>
           <div className="mx__roomMeta"><Pill s={e.status} /><span>{e.routing === 'parallel' ? 'All at once' : 'In order'}</span>{e.sent_at && <span>· sent {day(e.sent_at)}</span>}<span>· expires {day(e.expires_at)}</span>{e.void_reason && <span>· {e.void_reason}</span>}</div>
-        </div><div style={{ textAlign: 'right' }}><Progress signed={e.signed} total={e.signers} /><span className="mx__tiny">{e.signed} of {e.signers} signed</span></div></div>
+        </div><div style={{ textAlign: 'right' }}><Progress signed={signed} total={signers.length} /><span className="mx__tiny">{signed} of {signers.length} signed</span></div></div>
         <div className="mx__flow">{flow.map((s, i) => <span key={s} className={i < at ? 'is-done' : i === at ? 'is-on' : ''}>{s === 'draft' ? 'Draft' : s === 'sent' ? 'Out for signature' : 'Completed'}</span>)}{['declined', 'voided', 'expired', 'finalizing'].includes(e.status) && <span className="is-on">{st(e.status)}</span>}</div>
         <div className="mx__bar">
           {e.status === 'completed' && <button type="button" className="mx__btn" onClick={() => void act(async () => { const blob = new Blob([await pdfOf(e.id)], { type: 'application/pdf' }); const url = URL.createObjectURL(blob); window.open(url, '_blank', 'noopener'); setTimeout(() => URL.revokeObjectURL(url), 60_000); })}>Open the sealed copy</button>}
           {e.status === 'sent' && <button type="button" className="mx__btn" disabled={busy} onClick={() => void act(async () => { const r = await postJson<{ reminded: number }>(`/api/sign/envelopes/${e.id}/remind`, {}); return `Reminded ${r.reminded} signer(s).`; })}>Remind now</button>}
-          {e.status === 'sent' && e.signed === 0 && <button type="button" className="mx__btn mx__btn--ghost mx__btn--sm" onClick={() => { setFieldCorrectionReason(''); go('place'); }}>Correct fields</button>}
+          {e.status === 'sent' && signed === 0 && <button type="button" className="mx__btn mx__btn--ghost mx__btn--sm" onClick={() => { setFieldCorrectionReason(''); go('place'); }}>Correct fields</button>}
           {e.status === 'draft' && <button type="button" className="mx__btn" onClick={() => void act(() => open(e.id, 'place'))}>Continue placing boxes</button>}
           {['draft', 'sent'].includes(e.status) && <><input className="mx__input" style={{ height: 38, width: 220 }} placeholder="Why cancel?" value={voidWhy} onChange={(ev) => setVoidWhy(ev.target.value)} /><button type="button" className="mx__btn mx__btn--danger mx__btn--sm" disabled={busy || !voidWhy.trim()} onClick={() => void act(async () => { await postJson(`/api/sign/envelopes/${e.id}/void`, { reason: voidWhy.trim() }); await open(e.id, 'detail'); return 'Cancelled. Signers who were asked have been told.'; })}>Cancel envelope</button></>}
           {e.final_sha256 && <span className="mx__tiny" style={{ wordBreak: 'break-all' }}>SHA-256 {e.final_sha256}{e.seal ? ` · sealed with ${e.seal.subject}${e.seal.selfIssued ? ' (self-issued)' : ''}` : ''}{e.seal_timestamp?.time ? ` · time-stamped ${day(e.seal_timestamp.time)} by ${e.seal_timestamp.authority}` : e.seal_timestamp?.missing ? ` · no trusted time stamp: ${e.seal_timestamp.missing}` : ''}</span>}
