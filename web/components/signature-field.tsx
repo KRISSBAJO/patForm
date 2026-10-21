@@ -37,12 +37,14 @@ export function SignatureField({
   onChange,
   describedBy,
   invalid,
+  variant = 'signature',
 }: {
   id: string;
   value: unknown;
   onChange: (value: unknown) => void;
   describedBy?: string;
   invalid?: boolean;
+  variant?: 'signature' | 'initials';
 }) {
   const current = isSignature(value) ? value : null;
   const [method, setMethod] = useState<'typed' | 'drawn'>(current?.method ?? 'typed');
@@ -64,7 +66,7 @@ export function SignatureField({
 
   return (
     <div className="sg" data-invalid={invalid ? 'true' : undefined}>
-      <div className="sg__modes" role="radiogroup" aria-label="How to sign">
+      <div className="sg__modes" role="radiogroup" aria-label={variant === 'initials' ? 'How to initial' : 'How to sign'}>
         {(
           [
             ['typed', 'Type it'],
@@ -87,18 +89,20 @@ export function SignatureField({
       </div>
 
       <label className="sg__nameLabel" htmlFor={id}>
-        Your full name
+        {variant === 'initials' ? 'Your initials' : 'Your full name'}
       </label>
       <input
         id={id}
         className="fm__input sg__name"
         value={name}
-        autoComplete="name"
+        autoComplete={variant === 'initials' ? 'off' : 'name'}
+        maxLength={variant === 'initials' ? 8 : 120}
         aria-describedby={describedBy}
         aria-invalid={invalid ? true : undefined}
         onChange={(e) => {
-          setName(e.target.value);
-          emit({ name: e.target.value });
+          const next = variant === 'initials' ? Array.from(e.target.value.replace(/[^\p{L}]/gu, '')).slice(0, 8).join('').toUpperCase() : e.target.value;
+          setName(next);
+          emit({ name: next });
         }}
       />
 
@@ -117,7 +121,7 @@ export function SignatureField({
                 }}
               />
               <span className={`sg__ink sg__ink--${s.key}`} aria-hidden="true">
-                {name.trim() || 'Your name'}
+                {name.trim() || (variant === 'initials' ? 'Your initials' : 'Your name')}
               </span>
               <span className="sg__styleName">{s.label}</span>
             </label>
@@ -125,6 +129,7 @@ export function SignatureField({
         </fieldset>
       ) : (
         <DrawPad
+          variant={variant}
           image={image}
           onDrawn={(png) => {
             setImage(png);
@@ -133,7 +138,7 @@ export function SignatureField({
         />
       )}
 
-      <p className="sg__note">Signing puts your name to this request. It is kept with the record and the time you submit.</p>
+      <p className="sg__note">{variant === 'initials' ? 'Your initials are kept with your signed record.' : 'Signing puts your name to this request. It is kept with the record and the time you submit.'}</p>
     </div>
   );
 }
@@ -142,7 +147,7 @@ export function SignatureField({
  * Draw directly on the canvas. A remote, delayed script must not be required
  * for the signer to put ink on the page, especially on a phone.
  */
-function DrawPad({ image, onDrawn }: { image: string | null; onDrawn: (png: string | null) => void }) {
+function DrawPad({ image, onDrawn, variant }: { image: string | null; onDrawn: (png: string | null) => void; variant: 'signature' | 'initials' }) {
   const canvas = useRef<HTMLCanvasElement | null>(null);
   const drawing = useRef(false);
   const lastPoint = useRef<{ x: number; y: number } | null>(null);
@@ -205,7 +210,7 @@ function DrawPad({ image, onDrawn }: { image: string | null; onDrawn: (png: stri
         <canvas
           ref={canvas}
           className="sg__pad"
-          aria-label="Draw your signature here"
+          aria-label={variant === 'initials' ? 'Draw your initials here' : 'Draw your signature here'}
           role="img"
           onPointerDown={(event) => {
             event.preventDefault();
@@ -242,7 +247,7 @@ function DrawPad({ image, onDrawn }: { image: string | null; onDrawn: (png: stri
         <span className="sg__line" aria-hidden="true" />
         {empty && (
           <span className="sg__hint" aria-hidden="true">
-            Sign here
+            {variant === 'initials' ? 'Initial here' : 'Sign here'}
           </span>
         )}
       </div>
@@ -264,17 +269,17 @@ function DrawPad({ image, onDrawn }: { image: string | null; onDrawn: (png: stri
 }
 
 /** A signature on a record: the image or the adopted style, and the printed name. */
-export function SignatureView({ value }: { value: SignatureValue }) {
+export function SignatureView({ value, variant = 'signature' }: { value: SignatureValue; variant?: 'signature' | 'initials' }) {
   return (
     <span className="sg__view">
       {value.method === 'drawn' ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img className="sg__viewImg" src={value.image} alt={`Signature of ${value.name}`} />
+        <img className="sg__viewImg" src={value.image} alt={`${variant === 'initials' ? 'Initials' : 'Signature'} of ${value.name}`} />
       ) : (
         <span className={`sg__ink sg__ink--${value.style} sg__viewInk`}>{value.name}</span>
       )}
       <span className="sg__viewName">
-        {value.name} · {value.method === 'typed' ? 'typed and adopted' : 'drawn'}
+        {value.name} · {variant === 'initials' ? 'initials' : value.method === 'typed' ? 'typed and adopted' : 'drawn'}
       </span>
     </span>
   );

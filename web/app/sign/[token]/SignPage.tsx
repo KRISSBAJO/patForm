@@ -18,6 +18,10 @@ type View = { stage: 'verify' | 'sign' | 'signed' | 'completed' | 'closed'; titl
   verifyBy?: 'email' | 'sms' | 'email_and_sms'; phone?: string | null; party?: { name: string; required: number; signed: number; register?: { source?: string; companyName?: string; status?: string; number: string } | null; listedAs?: string | null } | null; signerTitle?: string | null; authorityText?: string | null; authorityNote?: string | null; allowAttachments?: boolean; attachments?: { id: string; filename: string; sha256: string }[] };
 
 const KEY = (t: string) => `patform-sign:${t.slice(0, 12)}`;
+const initialsOf = (name: string) => {
+  const parts = name.trim().split(/[\s\-]+/u).map((part) => Array.from(part.replace(/[^\p{L}]/gu, ''))).filter((part) => part.length);
+  return (parts.length > 1 ? parts.map((part) => part[0]) : parts[0]?.slice(0, 2) ?? []).slice(0, 8).join('').toUpperCase();
+};
 async function call<T>(path: string, init: RequestInit & { session?: string | null } = {}): Promise<T> {
   let res: Response;
   try {
@@ -104,7 +108,7 @@ export function SignPage({ token }: { token: string }) {
   const openField = (f: Field) => {
     setEditing(f);
     setDraft(f.kind === 'signature' ? signature ?? { method: 'typed', name: view.name, style: 'flowing' }
-      : f.kind === 'initials' ? initials ?? { method: 'typed', name: view.name, style: 'flowing' }
+      : f.kind === 'initials' ? initials ?? { method: 'typed', name: initialsOf(view.name), style: 'flowing' }
       : values[f.id] ?? '');
   };
 
@@ -164,7 +168,7 @@ export function SignPage({ token }: { token: string }) {
         </div>
         {view.allowAttachments && <div className="ps__card"><h2 style={{ fontSize: 17, margin: '0 0 5px' }}>Supporting files</h2><p className="ps__muted">Add a PDF or image if the sender needs proof or a supporting document. Each file is checked before you can finish.</p><label className="ps__btn" style={{ display: 'inline-block', cursor: 'pointer' }}>+ Add a file<input type="file" accept="application/pdf,image/png,image/jpeg,.pdf,.png,.jpg,.jpeg" hidden disabled={busy || (view.attachments?.length ?? 0) >= 5} onChange={(ev) => { const file = ev.target.files?.[0]; ev.target.value = ''; if (!file) return; void act(async () => { if (file.size > 10 * 1024 * 1024) throw new Error('Choose a file of 10 MB or less.'); const response = await call<{ status: string }>(`${base}/attachment`, { method: 'POST', session, body: JSON.stringify({ filename: file.name, contentType: file.type || (file.name.toLowerCase().endsWith('.pdf') ? 'application/pdf' : ''), base64: await fileBase64(file) }) }); await load(session); setNote(response.status === 'clean' ? 'File attached.' : 'File attached. Its security check is still running; wait before finishing.'); }); }} /></label><ul className="ps__attachments">{(view.attachments ?? []).map((file) => <li key={file.id}><strong>{file.filename}</strong><small>Recorded with this agreement · {file.sha256.slice(0, 12)}…</small></li>)}</ul></div>}
         {pdfUrl && <div className="ps__card"><strong>Review the document</strong><p className="ps__muted">If the preview is slow on your phone, open the PDF in your device’s viewer, then return here to complete the boxes.</p><a className="ps__documentLink" href={pdfUrl} target="_blank" rel="noopener noreferrer">Open the PDF ↗</a></div>}
-        {fields.some((f) => !['payment', 'date', 'name', 'email'].includes(f.kind)) && <div className="ps__card"><strong>Your boxes</strong><div className="ps__fieldList">{fields.filter((f) => !['payment', 'date', 'name', 'email'].includes(f.kind)).map((f) => <button type="button" key={f.id} className="ps__fieldAction" disabled={f.kind === 'company' && !!view.party || f.kind === 'title' && !!view.signerTitle} onClick={() => openField(f)}><span>{f.label || (f.kind === 'signature' ? 'Signature' : f.kind === 'initials' ? 'Initials' : f.kind)}{f.kind === 'signature' && signature ? <SignatureView value={signature} /> : f.kind === 'initials' && initials ? <SignatureView value={initials} /> : null}</span><small>{filled(f) ? 'Done' : 'Tap to fill'}</small></button>)}</div></div>}
+        {fields.some((f) => !['payment', 'date', 'name', 'email'].includes(f.kind)) && <div className="ps__card"><strong>Your boxes</strong><div className="ps__fieldList">{fields.filter((f) => !['payment', 'date', 'name', 'email'].includes(f.kind)).map((f) => <button type="button" key={f.id} className="ps__fieldAction" disabled={f.kind === 'company' && !!view.party || f.kind === 'title' && !!view.signerTitle} onClick={() => openField(f)}><span>{f.label || (f.kind === 'signature' ? 'Signature' : f.kind === 'initials' ? 'Initials' : f.kind)}{f.kind === 'signature' && signature ? <SignatureView value={signature} /> : f.kind === 'initials' && initials ? <SignatureView value={initials} variant="initials" /> : null}</span><small>{filled(f) ? 'Done' : 'Tap to fill'}</small></button>)}</div></div>}
         {pdf ? <PdfPages data={pdf} overlay={(page) => fields.filter((f) => f.page === page).map((f) =>
           <PageBox key={f.id} x={f.x} y={f.y} width={f.width} height={f.height} color={filled(f) ? '#1d6b3a' : '#b26b00'} title={f.label ?? f.kind} onClick={f.kind === 'payment' || f.kind === 'date' || f.kind === 'name' || f.kind === 'email' || (f.kind === 'company' && view.party) || (f.kind === 'title' && view.signerTitle) ? undefined : () => openField(f)}>
             {f.kind === 'signature' && signature?.method === 'drawn' ? <img src={signature.image} alt="Your drawn signature" style={{ width: '100%', height: '100%', objectFit: 'contain' }} /> : f.kind === 'initials' && initials?.method === 'drawn' ? <img src={initials.image} alt="Your drawn initials" style={{ width: '100%', height: '100%', objectFit: 'contain' }} /> : <span>{shown(f)}{f.required && !filled(f) ? ' *' : ''}</span>}
@@ -194,7 +198,7 @@ export function SignPage({ token }: { token: string }) {
     {editing && <div className="ps__sheet" role="dialog" aria-modal="true" aria-label="Fill this box"><div className="ps__sheetBody">
       <h2 style={{ fontSize: 17, marginTop: 0 }}>{editing.kind === 'signature' ? 'Your signature' : editing.kind === 'initials' ? 'Your initials' : editing.label ?? 'Fill in'}</h2>
       {editing.kind === 'signature' || editing.kind === 'initials'
-        ? <SignatureField id="ps-edit" value={draft} onChange={setDraft} />
+        ? <SignatureField key={editing.id} id="ps-edit" value={draft} onChange={setDraft} variant={editing.kind === 'initials' ? 'initials' : 'signature'} />
         : editing.kind === 'checkbox' ? <label className="ps__row"><input type="checkbox" checked={draft === 'Yes'} onChange={(e) => setDraft(e.target.checked ? 'Yes' : 'No')} />{editing.label ?? 'I confirm'}</label>
         : editing.kind === 'dropdown' ? <select className="ps__input" autoFocus value={String(draft ?? '')} onChange={(e) => setDraft(e.target.value)}><option value="">Choose an option</option>{editing.choices.map((choice) => <option key={choice} value={choice}>{choice}</option>)}</select>
         : editing.kind === 'radio' ? <div className="ps__choices">{editing.choices.map((choice) => <label key={choice} className="ps__row"><input type="radio" name="ps-field-choice" checked={draft === choice} onChange={() => setDraft(choice)} />{choice}</label>)}</div>
