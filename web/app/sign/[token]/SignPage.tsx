@@ -15,7 +15,7 @@ type Field = { id: string; kind: 'signature' | 'initials' | 'date' | 'name' | 't
 type View = { stage: 'verify' | 'sign' | 'signed' | 'completed' | 'closed'; title: string; workspace: string; sender: string | null; name: string; email: string; expiresAt: string; status?: string;
   finalizing?: boolean;
   message?: string | null; pages?: number; consented?: boolean; consentText?: string; fields?: Field[]; completedAt?: string;
-  verifyBy?: 'email' | 'sms' | 'email_and_sms'; phone?: string | null; party?: { name: string; required: number; signed: number; register?: { source?: string; companyName?: string; status?: string; number: string } | null; listedAs?: string | null } | null; signerTitle?: string | null; authorityText?: string | null; authorityNote?: string | null };
+  verifyBy?: 'email' | 'sms' | 'email_and_sms'; phone?: string | null; party?: { name: string; required: number; signed: number; register?: { source?: string; companyName?: string; status?: string; number: string } | null; listedAs?: string | null } | null; signerTitle?: string | null; authorityText?: string | null; authorityNote?: string | null; allowAttachments?: boolean; attachments?: { id: string; filename: string; sha256: string }[] };
 
 const KEY = (t: string) => `patform-sign:${t.slice(0, 12)}`;
 async function call<T>(path: string, init: RequestInit & { session?: string | null } = {}): Promise<T> {
@@ -24,6 +24,7 @@ async function call<T>(path: string, init: RequestInit & { session?: string | nu
   if (!res.ok) throw new Error(body.reason ?? body.error ?? `Something went wrong (${res.status})`);
   return body as T;
 }
+async function fileBase64(file: File) { return await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result).split(',')[1] ?? ''); reader.onerror = () => reject(reader.error); reader.readAsDataURL(file); }); }
 
 export function SignPage({ token }: { token: string }) {
   const base = `/api/sign/t/${token}`;
@@ -117,6 +118,7 @@ export function SignPage({ token }: { token: string }) {
           </div>}
           {needsSignature && <div style={{ marginTop: 12 }}><strong>Your signature</strong><SignatureField id="ps-sig" value={signature ?? undefined} onChange={(v) => setSignature((v as SignatureValue) ?? null)} /></div>}
         </div>
+        {view.allowAttachments && <div className="ps__card"><h2 style={{ fontSize: 17, margin: '0 0 5px' }}>Supporting files</h2><p className="ps__muted">Add a PDF or image if the sender needs proof or a supporting document. Each file is checked before you can finish.</p><label className="ps__btn" style={{ display: 'inline-block', cursor: 'pointer' }}>+ Add a file<input type="file" accept="application/pdf,image/png,image/jpeg,.pdf,.png,.jpg,.jpeg" hidden disabled={busy || (view.attachments?.length ?? 0) >= 5} onChange={(ev) => { const file = ev.target.files?.[0]; ev.target.value = ''; if (!file) return; void act(async () => { if (file.size > 10 * 1024 * 1024) throw new Error('Choose a file of 10 MB or less.'); const response = await call<{ status: string }>(`${base}/attachment`, { method: 'POST', session, body: JSON.stringify({ filename: file.name, contentType: file.type || (file.name.toLowerCase().endsWith('.pdf') ? 'application/pdf' : ''), base64: await fileBase64(file) }) }); await load(session); setNote(response.status === 'clean' ? 'File attached.' : 'File attached. Its security check is still running; wait before finishing.'); }); }} /></label><ul className="ps__attachments">{(view.attachments ?? []).map((file) => <li key={file.id}><strong>{file.filename}</strong><small>Recorded with this agreement · {file.sha256.slice(0, 12)}…</small></li>)}</ul></div>}
         {pdf ? <PdfPages data={pdf} overlay={(page) => fields.filter((f) => f.page === page).map((f) =>
           <PageBox key={f.id} x={f.x} y={f.y} width={f.width} height={f.height} color={filled(f) ? '#1d6b3a' : '#b26b00'} title={f.label ?? f.kind} onClick={f.kind === 'date' || f.kind === 'name' || (f.kind === 'title' && view.signerTitle) ? undefined : () => { setEditing(f); setDraft(f.kind === 'signature' ? signature ?? undefined : f.kind === 'initials' ? initials ?? undefined : values[f.id] ?? ''); }}>
             {f.kind === 'signature' && signature?.method === 'drawn' ? <img src={signature.image} alt={`Signature of ${signature.name}`} style={{ maxWidth: '100%', maxHeight: '100%' }} /> : <span>{shown(f)}{f.required && !filled(f) ? ' *' : ''}</span>}
@@ -127,6 +129,7 @@ export function SignPage({ token }: { token: string }) {
             <button type="button" className="ps__btn" onClick={() => setDeclining(true)}>Decline</button>
             <button type="button" className="ps__btn ps__btn--primary" disabled={!ready || busy} onClick={() => void act(async () => {
               const r = await call<{ completed: boolean; finalizing?: boolean }>(`${base}/sign`, { method: 'POST', session, body: JSON.stringify({ signature, initials: initials ?? undefined, values, authority: view.party ? authority : undefined }) });
+              if (window.parent !== window) window.parent.postMessage({ type: 'patform-sign-complete', status: r.completed ? 'completed' : 'signed' }, window.location.origin);
               try { sessionStorage.removeItem(KEY(token)); } catch { /* ignore */ }
               setNote(null); setView(r.completed ? { ...view, stage: 'completed', completedAt: new Date().toISOString() } : { ...view, stage: 'signed', finalizing: r.finalizing });
             })}>Finish</button>

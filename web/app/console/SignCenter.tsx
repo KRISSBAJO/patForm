@@ -21,15 +21,24 @@ type Recipient = { id: string; name: string; email: string; role: string; routin
 type Field = { id?: string; recipient_id: string | null; party_id?: string | null; slot?: number | null; kind: Kind; page: number; x: number; y: number; width: number; height: number; required: boolean; label: string | null };
 type Register = { available: boolean; reason?: string; country: string; number: string; companyName?: string; status?: string; source?: string; checkedAt: string };
 type Party = { id: string; name: string; required_count: number; signed: number; authority_note: string | null; completed_at: string | null; register: Register | null; register_required: boolean };
-type Detail = { envelope: Envelope & { page_count: number; original_sha256: string; void_reason: string | null; seal: { subject: string; selfIssued: boolean } | null; seal_timestamp: { time?: string; authority?: string; missing?: string } | null }; recipients: Recipient[]; fields: Field[]; events: { kind: string; detail: Record<string, unknown>; occurred_at: string; recipient: string | null }[]; parties: Party[] };
+type Detail = { envelope: Envelope & { page_count: number; original_sha256: string; void_reason: string | null; seal: { subject: string; selfIssued: boolean } | null; seal_timestamp: { time?: string; authority?: string; missing?: string } | null; allow_attachments: boolean }; recipients: Recipient[]; fields: Field[]; events: { kind: string; detail: Record<string, unknown>; occurred_at: string; recipient: string | null }[]; parties: Party[]; documents: { ordinal: number; filename: string; page_start: number; page_count: number }[]; attachments: { id: string; recipient_id: string; filename: string; byte_size: number; sha256: string }[] };
 type Kind = 'signature' | 'initials' | 'date' | 'name' | 'text' | 'title';
 type Row = { name: string; email: string; role: 'signer' | 'cc'; order: number; party: string; title: string; phone: string; verifyBy: 'email' | 'sms' | 'email_and_sms' };
 type Mine = { envelopeId: string; number: number; title: string; sentAt: string; expiresAt: string; workspace: string; sender: string | null; status: string; url: string | null };
 type Summary = { out: number; drafts: number; finalizing: number; done30: number; expiring: number; declined: number; waitingForMe: number; certificateSeal: boolean; selfIssuedSeal: boolean };
 type Template = { id: string; name: string; recipients: Row[]; parties: unknown[]; routing: string; message: string | null; expires_in_days: number; created_by: string | null };
-type Mode = 'list' | 'compose' | 'place' | 'detail' | 'verify' | 'overview' | 'mine' | 'templates';
+type AgreementTemplate = { id: string; name: string; documents: { ref: string; name: string }[]; roles: { label: string; role: 'signer' | 'cc'; order: number }[]; fields: { recipientIndex: number; kind: Kind; page: number; x: number; y: number; width: number; height: number; required: boolean; label: string | null }[]; routing: 'sequential' | 'parallel' };
+type Mode = 'list' | 'compose' | 'place' | 'detail' | 'verify' | 'overview' | 'mine' | 'templates' | 'bulk';
 const blank = (order: number): Row => ({ name: '', email: '', role: 'signer', order, party: '', title: '', phone: '', verifyBy: 'email' });
 const SIZE: Record<Kind, [number, number]> = { signature: [0.26, 0.06], initials: [0.1, 0.05], date: [0.16, 0.03], name: [0.26, 0.03], text: [0.26, 0.03], title: [0.26, 0.03] };
+const FIELD_TOOLS: { kind: Kind; symbol: string; name: string; hint: string }[] = [
+  { kind: 'signature', symbol: '✒', name: 'Signature', hint: 'Signer adopts their signature' },
+  { kind: 'initials', symbol: 'IN', name: 'Initials', hint: 'Short mark on each page' },
+  { kind: 'date', symbol: '▣', name: 'Date signed', hint: 'Filled at signing time' },
+  { kind: 'name', symbol: '◉', name: 'Full name', hint: 'From the signer identity' },
+  { kind: 'title', symbol: '▤', name: 'Job title', hint: 'Their role or title' },
+  { kind: 'text', symbol: 'T', name: 'Text', hint: 'Answer they type' },
+];
 const COLORS = ['#1f6feb', '#b26b00', '#8250df', '#1a7f37', '#cf222e', '#0969da'];
 const day = (v: string | null | undefined) => (v ? new Date(v).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : '');
 const initials = (n: string) => n.split(' ').map((p) => p[0]).join('').slice(0, 2).toUpperCase();
@@ -52,6 +61,20 @@ async function pdfOf(envelopeId: string): Promise<ArrayBuffer> {
 }
 async function readBase64(file: File): Promise<string> {
   return await new Promise<string>((resolve, reject) => { const r = new FileReader(); r.onload = () => resolve(String(r.result).split(',')[1] ?? ''); r.onerror = () => reject(r.error); r.readAsDataURL(file); });
+}
+function parseCsv(source: string): string[][] {
+  const rows: string[][] = []; let row: string[] = []; let cell = ''; let quoted = false;
+  for (let i = 0; i < source.length; i++) {
+    const ch = source[i]!;
+    if (quoted && ch === '"' && source[i + 1] === '"') { cell += '"'; i++; }
+    else if (ch === '"') quoted = !quoted;
+    else if (ch === ',' && !quoted) { row.push(cell.trim()); cell = ''; }
+    else if ((ch === '\n' || ch === '\r') && !quoted) { if (ch === '\r' && source[i + 1] === '\n') i++; row.push(cell.trim()); if (row.some(Boolean)) rows.push(row); row = []; cell = ''; }
+    else cell += ch;
+  }
+  if (quoted) throw new Error('The CSV has an unclosed quote.');
+  row.push(cell.trim()); if (row.some(Boolean)) rows.push(row);
+  return rows;
 }
 const Field = ({ label, children, wide, id }: { label: string; children: React.ReactNode; wide?: boolean; id?: string }) => <div className={`mx__field ${wide ? 'mx__field--wide' : ''}`}><label htmlFor={id}>{label}</label>{children}</div>;
 
@@ -112,8 +135,19 @@ export function SignCenter({ startContract, onClose, shell }: { startContract?: 
   const [mine, setMine] = useState<Mine[]>([]);
   const [summary, setSummary] = useState<Summary | null>(null);
   const [templates, setTemplates] = useState<Template[]>([]);
+  const [agreements, setAgreements] = useState<AgreementTemplate[]>([]);
+  const [activeAgreement, setActiveAgreement] = useState<AgreementTemplate | null>(null);
+  const [roleLabels, setRoleLabels] = useState<string[]>([]);
+  const [agreementName, setAgreementName] = useState('');
+  const [agreementRoles, setAgreementRoles] = useState<string[]>([]);
+  const [showAgreementSave, setShowAgreementSave] = useState(false);
+  const [bulkTemplate, setBulkTemplate] = useState<AgreementTemplate | null>(null);
+  const [bulkRows, setBulkRows] = useState<{ people: { name: string; email: string }[] }[]>([]);
+  const [bulkKey, setBulkKey] = useState('');
+  const [bulkReady, setBulkReady] = useState(false);
+  const [bulkResult, setBulkResult] = useState<{ sent: number; results: { index: number; envelopeId?: string; status: string; error?: string }[] } | null>(null);
   const [mode, setMode] = useState<Mode>(startContract ? 'compose' : shell ? 'overview' : 'list');
-  const sectionOf = (m: Mode) => (m === 'verify' ? 'verify' : m === 'compose' || m === 'place' ? 'send' : m === 'overview' ? 'overview' : m === 'mine' ? 'mine' : m === 'templates' ? 'templates' : 'envelopes');
+  const sectionOf = (m: Mode) => (m === 'verify' ? 'verify' : m === 'compose' || m === 'place' ? 'send' : m === 'overview' ? 'overview' : m === 'mine' ? 'mine' : m === 'templates' || m === 'bulk' ? 'templates' : 'envelopes');
   const go = (m: Mode) => { setMode(m); shell?.onSection?.(sectionOf(m)); };
   const [note, setNote] = useState<{ text: string; err?: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -121,18 +155,24 @@ export function SignCenter({ startContract, onClose, shell }: { startContract?: 
   const [message, setMessage] = useState('');
   const [routing, setRouting] = useState<'sequential' | 'parallel'>('sequential');
   const [days, setDays] = useState('30');
+  const [allowAttachments, setAllowAttachments] = useState(false);
   const [rows, setRows] = useState<Row[]>([blank(1)]);
   const [partyRules, setPartyRules] = useState<Record<string, { required: string; note: string; country: string; number: string; strict: boolean }>>({});
   const rule = (c: string) => partyRules[c] ?? { required: '1', note: '', country: 'GB', number: '', strict: false };
   const setRule = (c: string, patch: Partial<ReturnType<typeof rule>>) => setPartyRules((x) => ({ ...x, [c]: { ...rule(c), ...patch } }));
-  const [docRef, setDocRef] = useState<{ ref: string; name: string } | null>(null);
+  const [documents, setDocuments] = useState<{ ref: string; name: string }[]>([]);
   const [previewPdf, setPreviewPdf] = useState<ArrayBuffer | null>(null);
   const [detail, setDetail] = useState<Detail | null>(null);
   const [pdf, setPdf] = useState<ArrayBuffer | null>(null);
   const [fields, setFields] = useState<Field[]>([]);
+  const [selectedField, setSelectedField] = useState<number | null>(null);
   const [current, setCurrent] = useState<{ recipient: string; kind: Kind }>({ recipient: '', kind: 'signature' });
   const [textLabel, setTextLabel] = useState('');
   const [voidWhy, setVoidWhy] = useState('');
+  const [correcting, setCorrecting] = useState<{ id: string; name: string; email: string; reason: string } | null>(null);
+  const [embedFor, setEmbedFor] = useState<{ id: string; name: string } | null>(null);
+  const [embedOrigin, setEmbedOrigin] = useState('');
+  const [embedLink, setEmbedLink] = useState('');
   const [filter, setFilter] = useState<'all' | 'sent' | 'draft' | 'finalizing' | 'completed' | 'declined' | 'other'>('all');
   const [q, setQ] = useState('');
   const [tplName, setTplName] = useState('');
@@ -140,8 +180,8 @@ export function SignCenter({ startContract, onClose, shell }: { startContract?: 
 
   const loadAll = useCallback(async () => {
     try {
-      const [l, m, s, t] = await Promise.all([get<Envelope[]>('/api/sign/envelopes'), get<Mine[]>('/api/sign/mine').catch(() => []), get<Summary>('/api/sign/summary').catch(() => null), get<Template[]>('/api/sign/templates').catch(() => [])]);
-      setList(l); setMine(m); setSummary(s); setTemplates(t);
+      const [l, m, s, t, a] = await Promise.all([get<Envelope[]>('/api/sign/envelopes'), get<Mine[]>('/api/sign/mine').catch(() => []), get<Summary>('/api/sign/summary').catch(() => null), get<Template[]>('/api/sign/templates').catch(() => []), get<AgreementTemplate[]>('/api/sign/agreements').catch(() => [])]);
+      setList(l); setMine(m); setSummary(s); setTemplates(t); setAgreements(a);
     } catch (err) { setNote({ text: err instanceof Error ? err.message : String(err), err: true }); }
   }, []);
   useEffect(() => { void loadAll(); }, [loadAll]);
@@ -149,7 +189,7 @@ export function SignCenter({ startContract, onClose, shell }: { startContract?: 
     const want = shell?.section;
     if (!want || want === sectionOf(mode)) return;
     if (want === 'envelopes') { setMode('list'); setDetail(null); setPdf(null); }
-    else if (want === 'send') { setMode('compose'); setComposeStep(0); setTitle(''); setDocRef(null); setPreviewPdf(null); setRows([blank(1)]); setPartyRules({}); }
+    else if (want === 'send') { setMode('compose'); setComposeStep(0); setTitle(''); setDocuments([]); setPreviewPdf(null); setRows([blank(1)]); setPartyRules({}); setActiveAgreement(null); setRoleLabels([]); setAllowAttachments(false); }
     else if (want === 'verify') setMode('verify');
     else if (want === 'overview') setMode('overview');
     else if (want === 'mine') setMode('mine');
@@ -161,13 +201,13 @@ export function SignCenter({ startContract, onClose, shell }: { startContract?: 
     { id: 'mine', name: 'Waiting for me', count: mine.length || null },
     { id: 'envelopes', name: 'Envelopes', count: (list ?? []).filter((e) => e.status === 'sent').length || null },
     { id: 'send', name: 'Send a document', count: null },
-    { id: 'templates', name: 'Signer sets', count: templates.length || null },
+    { id: 'templates', name: 'Templates', count: templates.length + agreements.length || null },
     { id: 'verify', name: 'Verify a copy', count: null },
   ];
 
   const open = async (id: string, next: 'place' | 'detail') => {
     const d = await get<Detail>(`/api/sign/envelopes/${id}`);
-    setDetail(d); setFields(d.fields); setPdf(await pdfOf(id));
+    setDetail(d); setFields(d.fields); setSelectedField(null); setCorrecting(null); setEmbedFor(null); setEmbedLink(''); setAgreementRoles(d.recipients.map((r) => r.name)); setShowAgreementSave(false); setPdf(await pdfOf(id));
     const firstPerson = d.recipients.find((r) => r.role === 'signer' && !r.party_id);
     setCurrent({ recipient: firstPerson ? `r:${firstPerson.id}` : d.parties[0] ? `p:${d.parties[0].id}:1` : '', kind: 'signature' });
     go(next);
@@ -176,11 +216,12 @@ export function SignCenter({ startContract, onClose, shell }: { startContract?: 
   const uploadDocument = (file: File) => void act(async () => {
     if (!/\.pdf$/i.test(file.name) || file.type && file.type !== 'application/pdf') throw new Error('Choose a PDF document.');
     if (file.size > 20 * 1024 * 1024) throw new Error('The PDF must be 20 MB or smaller.');
+    if (documents.length >= 10) throw new Error('An envelope can contain at most 10 PDFs.');
     const r = await postJson<{ reference: string; filename: string }>('/api/gov/files', { purpose: 'signing', filename: file.name, base64: await readBase64(file) });
-    setDocRef({ ref: r.reference, name: r.filename });
-    setPreviewPdf(await file.arrayBuffer());
+    setDocuments((all) => [...all, { ref: r.reference, name: r.filename }]);
+    if (!documents.length) setPreviewPdf(await file.arrayBuffer());
     if (!title) setTitle(file.name.replace(/\.pdf$/i, ''));
-    return 'Uploaded. The document must pass its malware check before it can be sent.';
+    return 'Document added. Every PDF must pass its malware check before sending.';
   });
   const signers = (detail?.recipients ?? []).filter((r) => r.role === 'signer');
   const owners = [
@@ -190,10 +231,30 @@ export function SignCenter({ startContract, onClose, shell }: { startContract?: 
   const keyOf = (f: Field) => f.party_id ? `p:${f.party_id}:${f.slot}` : `r:${f.recipient_id}`;
   const color = (key: string) => COLORS[Math.max(0, owners.findIndex((o) => o.key === key)) % COLORS.length]!;
   const toBody = (f: Field) => ({ ...(f.party_id ? { partyId: f.party_id, slot: f.slot } : { recipientId: f.recipient_id }), kind: f.kind, page: f.page, x: f.x, y: f.y, width: f.width, height: f.height, required: f.required, label: f.label });
+  const updateField = (index: number, patch: Partial<Field>) => setFields((all) => all.map((field, i) => i === index ? { ...field, ...patch } : field));
+  const placeField = (page: number, x: number, y: number, kind: Kind = current.kind) => {
+    if (!current.recipient) return;
+    const [w, h] = SIZE[kind];
+    const [ownerKind, ownerId, slot] = current.recipient.split(':');
+    const owner = ownerKind === 'p' ? { recipient_id: null, party_id: ownerId!, slot: Number(slot) } : { recipient_id: ownerId!, party_id: null, slot: null };
+    setSelectedField(fields.length);
+    setFields((all) => [...all, { ...owner, kind, page, x: Math.max(0, Math.min(1 - w, x - w / 2)), y: Math.max(0, Math.min(1 - h, y - h / 2)), width: w, height: h, required: true, label: kind === 'text' ? textLabel.trim() || 'Text' : null }]);
+  };
   const companies = [...new Set(rows.filter((r) => r.role === 'signer' && r.party.trim()).map((r) => r.party.trim()))];
   const setRow = (i: number, patch: Partial<Row>) => setRows((x) => x.map((y, j) => (j === i ? { ...y, ...patch } : y)));
-  const startCompose = () => { setTitle(''); setDocRef(null); setPreviewPdf(null); setRows([blank(1)]); setPartyRules({}); setMessage(''); setComposeStep(0); go('compose'); };
-  const applyTemplate = (t: Template) => { setRows(t.recipients.map((r, i) => ({ ...blank(i + 1), ...r }))); setRouting(t.routing === 'parallel' ? 'parallel' : 'sequential'); setDays(String(t.expires_in_days)); if (t.message) setMessage(t.message); const rules: typeof partyRules = {}; for (const p of t.parties as { name: string; required?: number; authorityNote?: string; register?: { country: string; number: string }; requireRegistered?: boolean }[]) rules[p.name] = { required: String(p.required ?? 1), note: p.authorityNote ?? '', country: p.register?.country ?? 'GB', number: p.register?.number ?? '', strict: Boolean(p.requireRegistered) }; setPartyRules(rules); setComposeStep(1); go('compose'); setNote({ text: `Signer set "${t.name}" loaded. Add the document and send.` }); };
+  const startCompose = () => { setTitle(''); setDocuments([]); setPreviewPdf(null); setRows([blank(1)]); setPartyRules({}); setMessage(''); setComposeStep(0); setActiveAgreement(null); setRoleLabels([]); setAllowAttachments(false); go('compose'); };
+  const applyAgreement = (template: AgreementTemplate) => { setActiveAgreement(template); setDocuments(template.documents); setTitle(template.name); setRows(template.roles.map((role) => ({ ...blank(role.order), role: role.role }))); setRoleLabels(template.roles.map((role) => role.label)); setRouting(template.routing); setComposeStep(1); go('compose'); setNote({ text: `Agreement template “${template.name}” loaded. Fill each role, then review and send.` }); };
+  const startBulk = (template: AgreementTemplate) => { setBulkTemplate(template); setBulkRows([]); setBulkKey(crypto.randomUUID()); setBulkReady(false); setBulkResult(null); go('bulk'); };
+  const loadBulkCsv = async (file: File, template: AgreementTemplate) => {
+    if (file.size > 1024 * 1024) throw new Error('The recipient CSV must be under 1 MB.');
+    const parsed = parseCsv((await file.text()).replace(/^\uFEFF/, ''));
+    const expected = template.roles.flatMap((r) => [`${r.label} name`, `${r.label} email`]);
+    if (!parsed.length || parsed[0]!.length !== expected.length || expected.some((name, i) => parsed[0]![i]?.toLowerCase() !== name.toLowerCase())) throw new Error(`CSV headings must be: ${expected.join(', ')}`);
+    if (parsed.length < 2 || parsed.length > 21) throw new Error('Include between 1 and 20 recipient rows.');
+    const rows = parsed.slice(1).map((cells, index) => { if (cells.length !== expected.length) throw new Error(`Row ${index + 2} has the wrong number of columns.`); return { people: template.roles.map((_, i) => ({ name: cells[i * 2] ?? '', email: cells[i * 2 + 1] ?? '' })) }; });
+    setBulkRows(rows); setBulkReady(false); setBulkResult(null);
+  };
+  const applyTemplate = (t: Template) => { setActiveAgreement(null); setRoleLabels([]); setRows(t.recipients.map((r, i) => ({ ...blank(i + 1), ...r }))); setRouting(t.routing === 'parallel' ? 'parallel' : 'sequential'); setDays(String(t.expires_in_days)); if (t.message) setMessage(t.message); const rules: typeof partyRules = {}; for (const p of t.parties as { name: string; required?: number; authorityNote?: string; register?: { country: string; number: string }; requireRegistered?: boolean }[]) rules[p.name] = { required: String(p.required ?? 1), note: p.authorityNote ?? '', country: p.register?.country ?? 'GB', number: p.register?.number ?? '', strict: Boolean(p.requireRegistered) }; setPartyRules(rules); setComposeStep(0); go('compose'); setNote({ text: `Signer set "${t.name}" loaded. Add the document, then review the signers.` }); };
   const filtered = (list ?? []).filter((e) => (filter === 'all' || (filter === 'other' ? ['voided', 'expired'].includes(e.status) : e.status === filter)) && (!q.trim() || `${e.title} PS-${e.number} ${e.people.map((p) => p.name).join(' ')}`.toLowerCase().includes(q.toLowerCase())));
   const expiring = (list ?? []).filter((e) => e.status === 'sent' && daysLeft(e.expires_at) <= 7);
   const recent = (list ?? []).filter((e) => e.status === 'completed').slice(0, 5);
@@ -268,9 +329,13 @@ export function SignCenter({ startContract, onClose, shell }: { startContract?: 
     </div>}
 
     {mode === 'templates' && <div className="mx__card">
-      <div className="mx__cardHead"><h3>Signer sets</h3><small>Save the people who sign a recurring document; load them in one click when sending.</small></div>
+      <div className="mx__cardHead"><h3>Agreement templates</h3><small>Documents, role placeholders and signing fields, ready for a different group of people each time.</small></div>
+      <ul className="mx__list" style={{ marginTop: 10 }}>{agreements.map((t) => <li key={t.id}><Illustration name="sign" size={32} /><div className="mx__main"><strong>{t.name}</strong><small>{t.documents.length} document{t.documents.length === 1 ? '' : 's'} · {t.roles.map((r) => r.label).join(', ')} · {t.routing === 'parallel' ? 'all at once' : 'in stages'}</small></div><button type="button" className="mx__btn mx__btn--sm" onClick={() => applyAgreement(t)}>Use template</button><button type="button" className="mx__btn mx__btn--ghost mx__btn--sm" onClick={() => startBulk(t)}>Bulk send</button><button type="button" className="mx__btn mx__btn--ghost mx__btn--sm" disabled={busy} onClick={() => void act(async () => { await postJson(`/api/sign/agreements/${t.id}/delete`, {}); return 'Agreement template removed.'; })}>Remove</button></li>)}{!agreements.length && empty('No agreement templates yet', 'Prepare a draft, place its fields, then save it as a reusable agreement.', { label: 'Prepare an agreement', onClick: startCompose }, 'send')}</ul>
+      <div className="mx__cardHead"><h3>Signer sets</h3><small>Save the same people for a recurring document.</small></div>
       <ul className="mx__list" style={{ marginTop: 10 }}>{templates.map((t) => <li key={t.id}><People people={t.recipients.filter((r) => r.role === 'signer').map((r) => ({ name: r.name, status: 'waiting' }))} /><div className="mx__main"><strong>{t.name}</strong><small>{t.recipients.length} recipient{t.recipients.length === 1 ? '' : 's'} · {t.routing === 'parallel' ? 'all at once' : 'in order'} · expires after {t.expires_in_days} days{t.created_by ? ` · by ${t.created_by}` : ''}</small></div><button type="button" className="mx__btn mx__btn--sm" onClick={() => applyTemplate(t)}>Use</button><button type="button" className="mx__btn mx__btn--ghost mx__btn--sm" disabled={busy} onClick={() => void act(async () => { await postJson(`/api/sign/templates/${t.id}/delete`, {}); return 'Signer set removed.'; })}>Remove</button></li>)}{!templates.length && empty('No signer sets yet', 'Save the people who sign a recurring document once; next time, load them in one click.', { label: 'Send a document and save its signers', onClick: startCompose, secondary: true }, 'people')}</ul>
     </div>}
+
+    {mode === 'bulk' && bulkTemplate && <div className="mx__card sc__bulk"><div className="mx__cardHead"><div><button type="button" className="mx__link" onClick={() => go('templates')}>‹ Templates</button><h3>Send {bulkTemplate.name} to many groups</h3><small>One separate envelope per row. Each group sees only its own agreement.</small></div></div><div className="mx__cardBody"><p>Prepare a CSV with these columns, in this order:</p><code>{bulkTemplate.roles.flatMap((role) => [`${role.label} name`, `${role.label} email`]).join(', ')}</code><div className="sc__bulkActions"><button type="button" className="mx__btn mx__btn--ghost mx__btn--sm" onClick={() => { const header = bulkTemplate.roles.flatMap((role) => [`${role.label} name`, `${role.label} email`]).join(', '); const blob = new Blob([`${header}\n`], { type: 'text/csv' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `${bulkTemplate.name.replace(/[^a-z0-9_-]/gi, '-')}-recipients.csv`; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); }}>Download sample CSV</button><label className="mx__btn mx__btn--sm">Choose CSV<input type="file" accept=".csv,text/csv" hidden onChange={(ev) => { const file = ev.target.files?.[0]; ev.target.value = ''; if (file) void act(async () => { await loadBulkCsv(file, bulkTemplate); return `${file.name} loaded for review.`; }); }} /></label></div>{bulkRows.length > 0 && <><h4>Review {bulkRows.length} envelope{bulkRows.length === 1 ? '' : 's'}</h4><div className="sc__bulkTable"><table><thead><tr><th>#</th>{bulkTemplate.roles.map((role) => <th key={role.label}>{role.label}</th>)}</tr></thead><tbody>{bulkRows.map((row, i) => <tr key={i}><td>{i + 1}</td>{row.people.map((person, j) => <td key={j}><strong>{person.name}</strong><small>{person.email}</small></td>)}</tr>)}</tbody></table></div><div className="sc__bulkActions"><button type="button" className="mx__btn mx__btn--ghost mx__btn--sm" disabled={busy} onClick={() => void act(async () => { await postJson('/api/sign/agreements/bulk', { templateId: bulkTemplate.id, batchKey: bulkKey, rows: bulkRows, dryRun: true }); setBulkReady(true); return 'All rows are valid. Ready to send.'; })}>Validate all rows</button><button type="button" className="mx__btn mx__btn--sm" disabled={busy || !bulkReady} onClick={() => void act(async () => { const result = await postJson<{ sent: number; results: { index: number; envelopeId?: string; status: string; error?: string }[] }>('/api/sign/agreements/bulk', { templateId: bulkTemplate.id, batchKey: bulkKey, rows: bulkRows }); setBulkResult(result); return `${result.sent} envelope${result.sent === 1 ? '' : 's'} sent. ${result.results.filter((row) => row.status === 'failed').length} need attention.`; })}>Send {bulkRows.length} envelopes</button></div></>}{bulkResult && <div className="sc__bulkResults"><h4>Batch results</h4>{bulkResult.results.map((row) => <p key={row.index}>Row {row.index}: {row.status}{row.error ? ` — ${row.error}` : ''}</p>)}{bulkResult.results.some((row) => row.status === 'failed') && <p>Retry with the same batch to continue failed rows without duplicating those already sent.</p>}</div>}</div></div>}
 
     {mode === 'verify' && <Verify />}
 
@@ -281,14 +346,15 @@ export function SignCenter({ startContract, onClose, shell }: { startContract?: 
           <header className="sc__intro"><span className="sc__eyebrow">01 / PREPARE</span><h2>Start with the document.</h2><p>Preview the PDF, set the context, then choose who needs to sign.</p></header>
           <div className="sc__prepareGrid">
             <section className="sc__documentPane" aria-label="Document preview">
-              <div className="sc__paneHead"><span>DOCUMENT</span><span>{docRef ? 'Ready to prepare' : 'PDF · UP TO 20 MB'}</span></div>
+              <div className="sc__paneHead"><span>DOCUMENTS</span><span>{documents.length ? `${documents.length} OF 10 PDFS` : 'PDF · UP TO 20 MB EACH'}</span></div>
               {startContract ? <div className="sc__contract"><Illustration name="sign" size={64} /><strong>{startContract.title}</strong><span>The current approved contract version will be signed.</span></div>
                 : <>
-                  <label className={`sc__upload ${docRef ? 'is-set' : ''}`} onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); const file = e.dataTransfer.files?.[0]; if (file) uploadDocument(file); }}>
+                  <label className={`sc__upload ${documents.length ? 'is-set' : ''}`} onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); const file = e.dataTransfer.files?.[0]; if (file) uploadDocument(file); }}>
                     <input type="file" accept="application/pdf,.pdf" hidden onChange={(e) => { const file = e.target.files?.[0]; if (file) uploadDocument(file); e.target.value = ''; }} />
-                    <span className="sc__uploadIcon" aria-hidden="true">↥</span><strong>{docRef ? docRef.name : 'Choose a PDF or drop it here'}</strong><small>{docRef ? 'Choose another document' : 'We check every document before it goes out.'}</small>
+                    <span className="sc__uploadIcon" aria-hidden="true">↥</span><strong>{documents.length ? 'Add another PDF' : 'Choose a PDF or drop it here'}</strong><small>Documents are signed together, in the order shown below.</small>
                   </label>
-                  {previewPdf && <div className="sc__preview"><PdfPages data={previewPdf} maxWidth={500} /></div>}
+                  {documents.length > 0 && <ol className="sc__documents">{documents.map((doc, i) => <li key={doc.ref}><span>{String(i + 1).padStart(2, '0')}</span><strong>{doc.name}</strong><button type="button" aria-label={`Remove ${doc.name}`} onClick={() => { setDocuments((all) => all.filter((_, j) => j !== i)); if (i === 0) setPreviewPdf(null); }}>Remove</button></li>)}</ol>}
+                  {previewPdf && documents.length === 1 && <div className="sc__preview"><PdfPages data={previewPdf} maxWidth={500} /></div>}
                 </>}
             </section>
             <section className="sc__detailsPane" aria-label="Envelope details">
@@ -297,8 +363,9 @@ export function SignCenter({ startContract, onClose, shell }: { startContract?: 
                 <Field label="Document title" id="sc-title"><input id="sc-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Supply agreement with Acme" maxLength={200} /></Field>
                 <Field label="Message to signers" id="sc-message"><textarea id="sc-message" value={message} onChange={(e) => setMessage(e.target.value)} placeholder="Add a short note about what you need them to sign" /></Field>
                 <div className="sc__detailRule" />
-                <Field label="Signing order"><div className="mx__segs"><button type="button" className={`mx__seg ${routing === 'sequential' ? 'is-on' : ''}`} onClick={() => setRouting('sequential')}>In order</button><button type="button" className={`mx__seg ${routing === 'parallel' ? 'is-on' : ''}`} onClick={() => setRouting('parallel')}>All at once</button></div></Field>
+                <Field label="Signing order"><div className="mx__segs"><button type="button" className={`mx__seg ${routing === 'sequential' ? 'is-on' : ''}`} onClick={() => setRouting('sequential')}>Stages</button><button type="button" className={`mx__seg ${routing === 'parallel' ? 'is-on' : ''}`} onClick={() => setRouting('parallel')}>All at once</button></div><small className="sc__routingHelp">In stages, people with the same stage number receive the document together. The next stage starts when all required signatures in this stage are complete.</small></Field>
                 <Field label="Expires after" id="sc-days"><div className="sc__days"><input id="sc-days" type="number" min={1} max={365} value={days} onChange={(e) => setDays(e.target.value)} /><span>days</span></div></Field>
+                <label className="sc__attachmentToggle"><input type="checkbox" checked={allowAttachments} onChange={(ev) => setAllowAttachments(ev.target.checked)} /><span><strong>Allow supporting files</strong><small>Signers may add up to five PDFs or images. Files are checked and recorded with the agreement.</small></span></label>
                 {templates.length > 0 && <Field label="Use a signer set"><div className="mx__segs">{templates.map((t) => <button key={t.id} type="button" className="mx__seg" onClick={() => applyTemplate(t)}>{t.name}</button>)}</div></Field>}
                 <p className="sc__helper">Signers receive a personal link. You will place their signature fields before sending.</p>
               </div>
@@ -309,7 +376,7 @@ export function SignCenter({ startContract, onClose, shell }: { startContract?: 
           <div className="sc__recipientIntro"><span className="sc__eyebrow">02 / RECIPIENTS</span><h2>Who needs to sign?</h2><p>Add each person and choose how they confirm their identity.</p></div>
           <div className="sc__recipientList">
             {rows.map((r, i) => <section key={i} className="sc__recipient">
-              <div className="sc__recipientHead"><span className="sc__recipientNo">{String(i + 1).padStart(2, '0')}</span><strong>{r.name || (r.role === 'cc' ? 'Copy recipient' : `Signer ${i + 1}`)}</strong><select aria-label={`Role for recipient ${i + 1}`} className="mx__input" value={r.role} onChange={(e) => setRow(i, { role: e.target.value as Row['role'] })}><option value="signer">Needs to sign</option><option value="cc">Gets a copy</option></select><button type="button" className="sc__remove" aria-label={`Remove recipient ${i + 1}`} disabled={rows.length === 1} onClick={() => setRows((x) => x.filter((_, j) => j !== i))}>Remove</button></div>
+              <div className="sc__recipientHead"><span className="sc__recipientNo">{String(i + 1).padStart(2, '0')}</span><strong>{roleLabels[i] || r.name || (r.role === 'cc' ? 'Copy recipient' : `Signer ${i + 1}`)}</strong><select aria-label={`Role for recipient ${i + 1}`} className="mx__input" value={r.role} disabled={Boolean(activeAgreement)} onChange={(e) => setRow(i, { role: e.target.value as Row['role'] })}><option value="signer">Needs to sign</option><option value="cc">Gets a copy</option></select><button type="button" className="sc__remove" aria-label={`Remove recipient ${i + 1}`} disabled={rows.length === 1 || Boolean(activeAgreement)} onClick={() => setRows((x) => x.filter((_, j) => j !== i))}>Remove</button></div>
               <div className="sc__recipientFields">
                 <Field label="Full name" id={`sc-name-${i}`}><input id={`sc-name-${i}`} value={r.name} onChange={(e) => setRow(i, { name: e.target.value })} autoComplete="name" placeholder="Name as it should appear" /></Field>
                 <Field label="Email address" id={`sc-email-${i}`}><input id={`sc-email-${i}`} type="email" value={r.email} onChange={(e) => setRow(i, { email: e.target.value })} autoComplete="email" placeholder="name@company.com" /></Field>
@@ -318,12 +385,12 @@ export function SignCenter({ startContract, onClose, shell }: { startContract?: 
                   <Field label="Job title · optional" id={`sc-job-${i}`}><input id={`sc-job-${i}`} value={r.title} onChange={(e) => setRow(i, { title: e.target.value })} placeholder="e.g. Director" /></Field>
                   <Field label="Identity check" id={`sc-check-${i}`}><select id={`sc-check-${i}`} value={r.verifyBy} onChange={(e) => setRow(i, { verifyBy: e.target.value as Row['verifyBy'] })}><option value="email">Code by email</option><option value="sms">Code by text</option><option value="email_and_sms">Code by email and text</option></select></Field>
                   {r.verifyBy !== 'email' && <Field label="Mobile number" id={`sc-phone-${i}`}><input id={`sc-phone-${i}`} type="tel" value={r.phone} onChange={(e) => setRow(i, { phone: e.target.value })} placeholder="+2348012345678" /></Field>}
-                  {routing === 'sequential' && <Field label="Signing position" id={`sc-order-${i}`}><input id={`sc-order-${i}`} type="number" min={1} value={r.order} onChange={(e) => setRow(i, { order: Number(e.target.value) || 1 })} /></Field>}
+                  {routing === 'sequential' && <Field label="Signing stage" id={`sc-order-${i}`}><input id={`sc-order-${i}`} type="number" min={1} max={20} value={r.order} onChange={(e) => setRow(i, { order: Math.max(1, Math.min(20, Number(e.target.value) || 1)) })} /><small className="sc__routingHelp">Use the same stage for people who can sign together.</small></Field>}
                 </>}
               </div>
             </section>)}
           </div>
-          <div className="mx__voteBtns"><button type="button" className="mx__btn mx__btn--ghost mx__btn--sm" onClick={() => setRows((x) => [...x, blank(x.length + 1)])}>+ Add a signer</button><button type="button" className="mx__btn mx__btn--ghost mx__btn--sm" onClick={() => setRows((x) => [...x, { ...blank(x.length + 1), role: 'cc' }])}>+ Add someone who gets a copy</button></div>
+          {!activeAgreement && <div className="mx__voteBtns"><button type="button" className="mx__btn mx__btn--ghost mx__btn--sm" onClick={() => setRows((x) => [...x, blank(x.length + 1)])}>+ Add a signer</button><button type="button" className="mx__btn mx__btn--ghost mx__btn--sm" onClick={() => setRows((x) => [...x, { ...blank(x.length + 1), role: 'cc' }])}>+ Add someone who gets a copy</button></div>}
           {companies.map((c) => { const members = rows.filter((x) => x.role === 'signer' && x.party.trim() === c).length; return <div key={c} className="mx__reviewBox" style={{ marginTop: 14 }}><h4>{c} signs as a company</h4><div className="mx__form">
             <Field label={`Signatures needed (of ${members})`}><input type="number" min={1} max={members} value={rule(c).required} onChange={(e) => setRule(c, { required: e.target.value })} /></Field>
             <Field label="Authority (e.g. board resolution reference)"><input value={rule(c).note} onChange={(e) => setRule(c, { note: e.target.value })} /></Field>
@@ -336,11 +403,12 @@ export function SignCenter({ startContract, onClose, shell }: { startContract?: 
       </div>
       <div className="mx__wizFoot">
         <button type="button" className="mx__btn mx__btn--ghost" onClick={() => { if (composeStep === 1) setComposeStep(0); else if (onClose && startContract) onClose(); else go('overview'); }}>{composeStep === 1 ? '‹ Back' : 'Cancel'}</button>
-        {composeStep === 0 && <button type="button" className="mx__btn" disabled={busy || !title.trim() || (!startContract && !docRef) || !Number.isInteger(Number(days)) || Number(days) < 1 || Number(days) > 365} onClick={() => setComposeStep(1)}>Continue to signers →</button>}
-        {composeStep === 1 && <button type="button" className="mx__btn" disabled={busy || !rows.some((r) => r.role === 'signer' && r.name && r.email)} onClick={() => void act(async () => {
-          const r = await postJson<{ id: string; parties: { name: string; unlisted: string[]; register: Register | null }[] }>('/api/sign/envelopes', { ...(startContract ? { contractId: startContract.id } : { documentRef: docRef?.ref }), title, message, routing, expiresInDays: Number(days),
+        {composeStep === 0 && <button type="button" className="mx__btn" disabled={busy || !title.trim() || (!startContract && !documents.length) || !Number.isInteger(Number(days)) || Number(days) < 1 || Number(days) > 365} onClick={() => setComposeStep(1)}>Continue to signers →</button>}
+        {composeStep === 1 && <button type="button" className="mx__btn" disabled={busy || !rows.some((r) => r.role === 'signer' && r.name && r.email) || Boolean(activeAgreement && rows.some((r) => !r.name.trim() || !r.email.trim()))} onClick={() => void act(async () => {
+          const r = await postJson<{ id: string; recipients: string[]; parties: { name: string; unlisted: string[]; register: Register | null }[] }>('/api/sign/envelopes', { ...(startContract ? { contractId: startContract.id, documentRefs: documents.map((doc) => doc.ref) } : { documentRef: documents[0]?.ref, documentRefs: documents.slice(1).map((doc) => doc.ref) }), title, message, routing, expiresInDays: Number(days), allowAttachments,
             recipients: rows.filter((x) => x.name || x.email).map((x) => ({ name: x.name, email: x.email, role: x.role, order: x.order, party: x.role === 'signer' ? x.party.trim() || undefined : undefined, title: x.title || undefined, phone: x.phone || undefined, verifyBy: x.verifyBy })),
             parties: companies.map((c) => ({ name: c, required: Number(rule(c).required || 1), order: rows.find((x) => x.party.trim() === c)?.order ?? 1, authorityNote: rule(c).note || undefined, register: rule(c).number.trim() ? { country: rule(c).country, number: rule(c).number.trim() } : undefined, requireRegistered: rule(c).strict })) });
+          if (activeAgreement) await postJson(`/api/sign/envelopes/${r.id}/fields`, { fields: activeAgreement.fields.map((f) => ({ ...f, recipientId: r.recipients[f.recipientIndex] })) });
           await open(r.id, 'place');
           const notes = r.parties.flatMap((p) => [
             ...(p.register && !p.register.available ? [`${p.name}: register check not available (${p.register.reason}).`] : []),
@@ -352,24 +420,32 @@ export function SignCenter({ startContract, onClose, shell }: { startContract?: 
       </div>
     </div>}
 
-    {mode === 'place' && detail && pdf && <div className="mx__wizard">
+    {mode === 'place' && detail && pdf && <div className="mx__wizard sc__wizard">
       <div className="mx__steps">{['Document', 'Signers', 'Place & send'].map((s, i) => <div key={s} className={`mx__step ${i === 2 ? 'is-on' : 'is-done'}`}><i>{i < 2 ? '✓' : 3}</i>{s}</div>)}</div>
-      <div className="mx__bar" style={{ borderTop: 0, position: 'sticky', top: 0, zIndex: 3 }}>
-        <select className="mx__input" style={{ height: 38 }} value={current.recipient} onChange={(e) => setCurrent((c) => ({ ...c, recipient: e.target.value }))}>{owners.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}</select>
-        <div className="mx__segs">{(['signature', 'initials', 'date', 'name', 'title', 'text'] as Kind[]).map((k) => <button key={k} type="button" className={`mx__seg ${current.kind === k ? 'is-on' : ''}`} onClick={() => setCurrent((c) => ({ ...c, kind: k }))}>{k === 'text' ? 'Text to fill' : k === 'date' ? 'Date signed' : k === 'name' ? 'Printed name' : k === 'title' ? 'Job title' : k[0]!.toUpperCase() + k.slice(1)}</button>)}</div>
-        {current.kind === 'text' && <input className="mx__input" style={{ height: 38, width: 180 }} placeholder="Label, e.g. Company number" value={textLabel} onChange={(ev) => setTextLabel(ev.target.value)} />}
-        <span className="mx__tiny">Click a page to place; click a box to remove. {fields.length} placed.</span>
-        <span style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+      <div className="sc__editorTop">
+        <div><span className="sc__eyebrow">03 / FIELD EDITOR</span><h2>Place the details where they belong.</h2><p>Choose a recipient, then drag a field onto the PDF or tap the page to place it. Select a field to refine it.</p></div>
+        <div className="sc__editorActions">
+          {!detail.envelope.contract && <button type="button" className="mx__btn mx__btn--ghost mx__btn--sm" onClick={() => setShowAgreementSave((shown) => !shown)}>Save as template</button>}
           <button type="button" className="mx__btn mx__btn--ghost mx__btn--sm" disabled={busy} onClick={() => void act(async () => { await postJson(`/api/sign/envelopes/${detail.envelope.id}/fields`, { fields: fields.map(toBody) }); return 'Boxes saved.'; })}>Save</button>
           <button type="button" className="mx__btn mx__btn--sm" disabled={busy} onClick={() => void act(async () => { await postJson(`/api/sign/envelopes/${detail.envelope.id}/fields`, { fields: fields.map(toBody) }); const r = await postJson<{ notified: number }>(`/api/sign/envelopes/${detail.envelope.id}/send`, {}); await open(detail.envelope.id, 'detail'); return `Sent. ${r.notified} signer(s) emailed.${owners.some((o) => !fields.some((f) => keyOf(f) === o.key && f.kind === 'signature')) ? ' Anyone without a signature box signs on an added signature page.' : ''}`; })}>Send for signature</button>
           <button type="button" className="mx__btn mx__btn--ghost mx__btn--sm" onClick={() => { go('list'); setDetail(null); setPdf(null); }}>Later</button>
-        </span>
+        </div>
       </div>
-      <div className="mx__wizBody">
-        <p className="mx__tiny" style={{ marginBottom: 10 }}>{owners.map((o) => <span key={o.key} style={{ color: color(o.key), marginRight: 12 }}>■ {o.label}</span>)}</p>
-        <PdfPages data={pdf}
-          onPageClick={(page, x, y) => { if (!current.recipient) return; const [w, h] = SIZE[current.kind]; const label = current.kind === 'text' ? (textLabel.trim() || 'Text') : null; const [kindOf, idOf, slotOf] = current.recipient.split(':'); const owner = kindOf === 'p' ? { recipient_id: null, party_id: idOf!, slot: Number(slotOf) } : { recipient_id: idOf!, party_id: null, slot: null }; setFields((f) => [...f, { ...owner, kind: current.kind, page, x: Math.max(0, Math.min(1 - w, x - w / 2)), y: Math.max(0, Math.min(1 - h, y - h / 2)), width: w, height: h, required: true, label }]); }}
-          overlay={(page) => fields.map((f, i) => f.page === page && <PageBox key={i} x={f.x} y={f.y} width={f.width} height={f.height} color={color(keyOf(f))} title="Click to remove" onClick={() => setFields((all) => all.filter((_, j) => j !== i))}>{f.kind} · {owners.find((o) => o.key === keyOf(f))?.label.split(' ')[0]}{f.party_id ? ` ${f.slot}` : ''}</PageBox>)} />
+      {showAgreementSave && <div className="sc__templateSave"><div><h3>Save this agreement</h3><p>The PDFs and field positions are reused. Each role gets a new name and email when you send it again.</p></div><label>Template name<input value={agreementName} maxLength={120} placeholder="e.g. Employment agreement" onChange={(ev) => setAgreementName(ev.target.value)} /></label><div className="sc__templateRoles">{detail.recipients.map((r, i) => <label key={r.id}>Role {i + 1}<input value={agreementRoles[i] ?? ''} maxLength={80} placeholder={r.role === 'cc' ? 'Copy recipient' : 'Signer role'} onChange={(ev) => setAgreementRoles((all) => all.map((label, j) => j === i ? ev.target.value : label))} /></label>)}</div><button type="button" className="mx__btn mx__btn--sm" disabled={busy || !agreementName.trim() || agreementRoles.some((label) => !label.trim())} onClick={() => void act(async () => { await postJson(`/api/sign/envelopes/${detail.envelope.id}/fields`, { fields: fields.map(toBody) }); await postJson(`/api/sign/envelopes/${detail.envelope.id}/agreement-template`, { name: agreementName.trim(), roles: agreementRoles.map((label) => label.trim()) }); setShowAgreementSave(false); setAgreementName(''); return 'Agreement template saved. You can reuse it with new signers.'; })}>Save agreement template</button></div>}
+      <div className="sc__editor">
+        <aside className="sc__palette" aria-label="Signing fields">
+          <label className="sc__paletteLabel" htmlFor="sc-field-recipient">FIELDS FOR</label>
+          <select id="sc-field-recipient" value={current.recipient} onChange={(e) => { setCurrent((c) => ({ ...c, recipient: e.target.value })); setSelectedField(null); }} style={{ borderColor: color(current.recipient) }}>{owners.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}</select>
+          <div className="sc__paletteGroup"><span>STANDARD FIELDS</span>{FIELD_TOOLS.map((tool) => <button key={tool.kind} type="button" draggable onDragStart={(e) => { e.dataTransfer.setData('application/x-patform-sign-field', tool.kind); setCurrent((c) => ({ ...c, kind: tool.kind })); }} className={current.kind === tool.kind ? 'is-current' : ''} onClick={() => setCurrent((c) => ({ ...c, kind: tool.kind }))}><b style={{ background: color(current.recipient) }}>{tool.symbol}</b><span><strong>{tool.name}</strong><small>{tool.hint}</small></span></button>)}</div>
+          {current.kind === 'text' && <label className="sc__paletteLabel">Text field label<input value={textLabel} maxLength={120} onChange={(e) => setTextLabel(e.target.value)} placeholder="e.g. Company number" /></label>}
+          <p className="sc__editorHint">Each colour belongs to one signer. Fields can be moved before sending.</p>
+        </aside>
+        <main className="sc__canvas" aria-label="Document field placement"><div className="sc__canvasHead"><span>{detail.envelope.title} · {detail.envelope.page_count} page{detail.envelope.page_count === 1 ? '' : 's'}</span><span>{fields.length} field{fields.length === 1 ? '' : 's'} placed</span></div>
+          {detail.documents.length > 1 && <div className="sc__documentIndex">{detail.documents.map((doc) => <span key={doc.ordinal}>{doc.ordinal}. {doc.filename} · pages {doc.page_start}–{doc.page_start + doc.page_count - 1}</span>)}</div>}
+          <PdfPages data={pdf} onPageClick={(page, x, y) => placeField(page, x, y)} onPageDrop={(page, x, y, kind) => { if (FIELD_TOOLS.some((tool) => tool.kind === kind)) placeField(page, x, y, kind as Kind); }}
+            overlay={(page) => fields.map((field, i) => field.page === page && <PageBox key={field.id ?? i} x={field.x} y={field.y} width={field.width} height={field.height} color={color(keyOf(field))} selected={selectedField === i} title={`${field.kind} for ${owners.find((o) => o.key === keyOf(field))?.label ?? 'signer'}`} onClick={() => setSelectedField(i)} onMove={(x, y) => updateField(i, { x, y })}>{FIELD_TOOLS.find((tool) => tool.kind === field.kind)?.symbol} {field.label ?? FIELD_TOOLS.find((tool) => tool.kind === field.kind)?.name} · {owners.find((o) => o.key === keyOf(field))?.label.split(' ')[0]}</PageBox>)} />
+        </main>
+        <aside className="sc__inspector" aria-label="Selected field settings">{selectedField !== null && fields[selectedField] ? (() => { const field = fields[selectedField]!; const i = selectedField; return <><span className="sc__eyebrow">FIELD SETTINGS</span><h3>{FIELD_TOOLS.find((tool) => tool.kind === field.kind)?.name}</h3><p>Page {field.page} · {owners.find((o) => o.key === keyOf(field))?.label}</p><label>Assigned to<select value={keyOf(field)} onChange={(e) => { const [ownerKind, id, slot] = e.target.value.split(':'); updateField(i, ownerKind === 'p' ? { recipient_id: null, party_id: id!, slot: Number(slot) } : { recipient_id: id!, party_id: null, slot: null }); }}>{owners.map((owner) => <option key={owner.key} value={owner.key}>{owner.label}</option>)}</select></label><label>Label<input value={field.label ?? ''} maxLength={120} onChange={(e) => updateField(i, { label: e.target.value || null })} placeholder={FIELD_TOOLS.find((tool) => tool.kind === field.kind)?.name} /></label><label className="sc__required"><input type="checkbox" checked={field.required} onChange={(e) => updateField(i, { required: e.target.checked })} /> Required</label><div className="sc__sizeGrid"><label>Width<input type="number" min={5} max={100} value={Math.round(field.width * 100)} onChange={(e) => updateField(i, { width: Math.min(1 - field.x, Math.max(.05, Number(e.target.value) / 100 || .05)) })} /></label><label>Height<input type="number" min={2} max={100} value={Math.round(field.height * 100)} onChange={(e) => updateField(i, { height: Math.min(1 - field.y, Math.max(.02, Number(e.target.value) / 100 || .02)) })} /></label></div><button type="button" className="sc__deleteField" onClick={() => { setFields((all) => all.filter((_, index) => index !== i)); setSelectedField(null); }}>Remove field</button></>; })() : <><span className="sc__eyebrow">FIELD SETTINGS</span><h3>Select a field</h3><p>Click a box on the PDF to change its recipient, label, size or requirement.</p></>}</aside>
       </div>
     </div>}
 
@@ -396,10 +472,14 @@ export function SignCenter({ startContract, onClose, shell }: { startContract?: 
             <span className={`mx__avatar ${r.status === 'signed' ? 'mx__avatar--on' : ''}`} style={{ marginLeft: 0, ...(r.status === 'declined' ? { background: '#b0463f', color: '#fff' } : {}) }}>{initials(r.name)}</span>
             <span className="mx__personText"><strong>{r.name}{r.title ? `, ${r.title}` : ''}</strong><small>{r.email} · {r.role === 'cc' ? 'copy' : r.party ? `for ${r.party}` : `signer ${r.routing_order}`}{r.verify_by !== 'email' ? ` · ${r.verify_by === 'sms' ? 'text code' : 'email + text'}` : ''}{r.register_match ? ` · ${r.register_match.officer ? `listed as ${r.register_match.officer.role}` : 'not listed at the register'}` : ''}<br />{r.signed_at ? `signed ${day(r.signed_at)}` : r.declined_at ? `declined ${day(r.declined_at)}${r.decline_reason ? `: ${r.decline_reason}` : ''}` : r.verified_at ? `verified ${day(r.verified_at)}` : r.viewed_at ? `opened ${day(r.viewed_at)}` : r.notified_at ? `emailed ${day(r.notified_at)}${r.last_reminded_at ? ` · reminded ${day(r.last_reminded_at)}` : ''}` : 'waiting for their turn'}</small></span>
             <Pill s={r.status} />
+            {e.status === 'sent' && r.role === 'signer' && !r.party_id && ['waiting', 'sent', 'viewed'].includes(r.status) && <button type="button" className="mx__btn mx__btn--ghost mx__btn--sm" onClick={() => setCorrecting({ id: r.id, name: r.name, email: r.email, reason: '' })}>Correct</button>}
+            {e.status === 'sent' && r.role === 'signer' && ['sent', 'viewed'].includes(r.status) && <button type="button" className="mx__btn mx__btn--ghost mx__btn--sm" onClick={() => { setEmbedFor({ id: r.id, name: r.name }); setEmbedLink(''); }}>Embed</button>}
           </div>)}</div>
+          {correcting && <form className="sc__correction" onSubmit={(ev) => { ev.preventDefault(); void act(async () => { await postJson(`/api/sign/envelopes/${e.id}/recipients/${correcting.id}/correct`, correcting); await open(e.id, 'detail'); return 'Signer corrected. The old link was revoked; a new invitation was sent when their stage is active.'; }); }}><h4>Correct a signer</h4><p>Use this for a name or email mistake before they sign. Their previous link will stop working.</p><label>Name<input required minLength={2} value={correcting.name} onChange={(ev) => setCorrecting({ ...correcting, name: ev.target.value })} /></label><label>Email<input required type="email" value={correcting.email} onChange={(ev) => setCorrecting({ ...correcting, email: ev.target.value })} /></label><label>Reason<input required value={correcting.reason} onChange={(ev) => setCorrecting({ ...correcting, reason: ev.target.value })} placeholder="e.g. Corrected email address" /></label><div><button type="submit" className="mx__btn mx__btn--sm" disabled={busy}>Save correction</button><button type="button" className="mx__btn mx__btn--ghost mx__btn--sm" onClick={() => setCorrecting(null)}>Cancel</button></div></form>}
+          {embedFor && <div className="sc__correction"><h4>Embed signing for {embedFor.name}</h4><p>Enter the exact address of the site that will show the signing frame. The embed link lasts 15 minutes; the signer still verifies their identity.</p><label>Allowed site origin<input type="url" value={embedOrigin} onChange={(ev) => setEmbedOrigin(ev.target.value)} placeholder="https://your-company.com" /></label><div><button type="button" className="mx__btn mx__btn--sm" disabled={busy || !embedOrigin} onClick={() => void act(async () => { const result = await postJson<{ url: string }>(`/api/sign/envelopes/${e.id}/recipients/${embedFor.id}/embed`, { origin: embedOrigin.trim() }); setEmbedLink(result.url); return 'Embedded signing link ready. It expires in 15 minutes.'; })}>Create embed link</button><button type="button" className="mx__btn mx__btn--ghost mx__btn--sm" onClick={() => setEmbedFor(null)}>Close</button></div>{embedLink && <label>Embed code<textarea readOnly rows={3} value={`<iframe src="${embedLink}" title="Sign with Patform" style="width:100%;height:720px;border:0"></iframe>`} onFocus={(ev) => ev.target.select()} /></label>}</div>}
           {detail.parties.length > 0 && <div className="mx__cardBody">{detail.parties.map((p) => <p key={p.id} className="mx__tiny"><strong>{p.name}</strong>: {p.signed} of {p.required_count} required signature(s){p.completed_at ? ' — done' : ''}{p.authority_note ? ` · authority: ${p.authority_note}` : ''}{p.register ? <><br />{p.register.available ? `${p.register.source} (${p.register.country} ${p.register.number}): ${p.register.companyName ?? 'not found'}${p.register.status ? `, ${p.register.status}` : ''}, checked ${day(p.register.checkedAt)}${p.register_required ? ' · listed officers only' : ''}` : `Register check not available: ${p.register.reason}`}</> : null}</p>)}</div>}
         </div>
-        <div className="mx__card"><div className="mx__cardHead"><h3>Record</h3><small>{detail.events.length} events</small></div><ul className="mx__log" style={{ paddingTop: 12 }}>{detail.events.map((ev, i) => <li key={i}><span /><span><time>{day(ev.occurred_at)}</time>{ev.kind.replace(/_/g, ' ')}{ev.recipient ? ` — ${ev.recipient}` : ''}</span></li>)}</ul></div>
+        <div className="mx__stack"><div className="mx__card"><div className="mx__cardHead"><h3>Record</h3><small>{detail.events.length} events</small></div><ul className="mx__log" style={{ paddingTop: 12 }}>{detail.events.map((ev, i) => <li key={i}><span /><span><time>{day(ev.occurred_at)}</time>{ev.kind.replace(/_/g, ' ')}{ev.recipient ? ` — ${ev.recipient}` : ''}</span></li>)}</ul></div>{detail.attachments.length > 0 && <div className="mx__card"><div className="mx__cardHead"><h3>Supporting files</h3><small>{detail.attachments.length}</small></div><ul className="mx__list">{detail.attachments.map((file) => <li key={file.id}><div className="mx__main"><strong>{file.filename}</strong><small>{detail.recipients.find((r) => r.id === file.recipient_id)?.name} · SHA-256 {file.sha256}</small></div><button type="button" className="mx__btn mx__btn--ghost mx__btn--sm" onClick={() => void act(async () => { const res = await fetch(`/api/sign/envelopes/${e.id}/attachments/${file.id}`); if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error(b.reason ?? 'The file is not ready to open.'); } const url = URL.createObjectURL(await res.blob()); window.open(url, '_blank', 'noopener'); setTimeout(() => URL.revokeObjectURL(url), 60_000); })}>Open</button></li>)}</ul></div>}</div>
       </div>
     </div>; })()}
   </div>;

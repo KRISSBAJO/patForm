@@ -1262,13 +1262,20 @@ route('GET', sr('envelopes'), async ({ pool, principal }) => esign.listEnvelopes
 route('GET', sr('summary'), async ({ pool, principal }) => esign.signSummary(pool, principal));
 route('GET', sr('mine'), async ({ pool, principal }) => esign.mySignatures(pool, principal));
 route('GET', sr('templates'), async ({ pool, principal }) => esign.listTemplates(pool, principal));
+route('GET', sr('agreements'), async ({ pool, principal }) => esign.listAgreementTemplates(pool, principal));
+route('POST', sr('agreements/bulk'), async ({ pool, principal }, b) => esign.bulkSendAgreement(pool, principal, hb(b)));
 route('POST', sr('templates'), async ({ pool, principal }, b) => esign.saveTemplate(pool, principal, hb(b)));
+route('POST', sr(`envelopes/${A}/agreement-template`), async ({ pool, principal, url }, b) => esign.saveAgreementTemplate(pool, principal, hid(url, 4), hb(b)));
+route('POST', sr(`agreements/${A}/delete`), async ({ pool, principal, url }) => esign.deleteAgreementTemplate(pool, principal, hid(url, 4)));
 route('POST', sr(`templates/${A}/delete`), async ({ pool, principal, url }) => esign.deleteTemplate(pool, principal, hid(url, 4)));
 route('POST', sr('envelopes'), async ({ pool, principal }, b) => esign.createEnvelope(pool, principal, hb(b)));
 route('GET', sr(`envelopes/${A}`), async ({ pool, principal, url }) => esign.envelopeDetail(pool, principal, hid(url, 4)));
 route('GET', sr(`envelopes/${A}/document`), async ({ pool, principal, url }) => new RawBody(await esign.envelopeDocument(pool, principal, hid(url, 4)), 'application/pdf'));
+route('GET', sr(`envelopes/${A}/attachments/${A}`), async ({ pool, principal, url }) => { const file = await esign.envelopeAttachment(pool, principal, hid(url, 4), hid(url, 6)); return new RawBody(file.bytes, file.contentType, file.filename); });
 route('POST', sr(`envelopes/${A}/fields`), async ({ pool, principal, url }, b) => esign.setFields(pool, principal, hid(url, 4), hb(b)));
 route('POST', sr(`envelopes/${A}/send`), async ({ pool, principal, url }) => esign.sendEnvelope(pool, principal, hid(url, 4)));
+route('POST', sr(`envelopes/${A}/recipients/${A}/correct`), async ({ pool, principal, url }, b) => esign.correctRecipient(pool, principal, hid(url, 4), hid(url, 6), hb(b)));
+route('POST', sr(`envelopes/${A}/recipients/${A}/embed`), async ({ pool, principal, url }, b) => esign.createEmbedSession(pool, principal, hid(url, 4), hid(url, 6), hb(b)));
 route('POST', sr(`envelopes/${A}/void`), async ({ pool, principal, url }, b) => esign.voidEnvelope(pool, principal, hid(url, 4), hb(b)));
 route('POST', sr(`envelopes/${A}/remind`), async ({ pool, principal, url }) => esign.remindNow(pool, principal, hid(url, 4)));
 
@@ -2108,7 +2115,12 @@ async function main(): Promise<void> {
          * session in the x-sign-session header. Public verify takes a file's
          * fingerprint and says only whether it is a sealed copy.
          */
-        const signMatch = /^\/api\/sign\/t\/([A-Za-z0-9_-]{30,60})(\/(code|verify|document|consent|sign|decline|final))?$/.exec(url.pathname);
+        const signMatch = /^\/api\/sign\/t\/([A-Za-z0-9_-]{30,60})(\/(code|verify|document|consent|sign|decline|final|attachment))?$/.exec(url.pathname);
+        const embedMatch = /^\/api\/sign\/embed\/([A-Za-z0-9_-]{30,60})$/.exec(url.pathname);
+        if (embedMatch && req.method === 'GET') {
+          try { return send(res, 200, await esign.resolveEmbedSession(pool, embedMatch[1]!)); }
+          catch (err) { if (err instanceof InvalidInput) return send(res, 400, { error: 'invalid', reason: err.message }); throw err; }
+        }
         if (signMatch || (url.pathname === '/api/sign/verify' && req.method === 'POST')) {
           const ctx = { ip: callerFor(req), userAgent: String(req.headers['user-agent'] ?? '') };
           const sess = String(req.headers['x-sign-session'] ?? '') || undefined;
@@ -2119,11 +2131,12 @@ async function main(): Promise<void> {
             if (req.method === 'GET' && action === 'document') return sendRaw(res, new RawBody(await esign.signerDocument(pool, t!, sess), 'application/pdf'));
             if (req.method === 'GET' && action === 'final') return sendRaw(res, new RawBody(await esign.finalDocument(pool, t!), 'application/pdf', 'signed.pdf'));
             if (req.method === 'POST') {
-              const b = (await readBody(req, 1024 * 1024)) as Record<string, unknown>;
+              const b = (await readBody(req, action === 'attachment' ? 15 * 1024 * 1024 : 1024 * 1024)) as Record<string, unknown>;
               if (action === 'code') return send(res, 200, await esign.requestCode(pool, t!, ctx));
               if (action === 'verify') return send(res, 200, await esign.verifyCode(pool, t!, b.code, ctx, b.smsCode));
               if (action === 'consent') return send(res, 200, await esign.giveConsent(pool, t!, sess, ctx));
               if (action === 'sign') return send(res, 200, await esign.signDocument(pool, t!, sess, b, ctx));
+              if (action === 'attachment') return send(res, 200, await esign.uploadSignerAttachment(pool, t!, sess, b, ctx));
               if (action === 'decline') return send(res, 200, await esign.declineDocument(pool, t!, sess, b, ctx));
             }
             return send(res, 404, { error: 'not found' });

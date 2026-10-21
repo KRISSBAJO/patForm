@@ -9,7 +9,7 @@ import { setModule } from '../src/runtime/modules.js';
 import { memoryObjectStore, setObjectStoreForTests } from '../src/runtime/object-store.js';
 import { createContract, reviewContract, reviseContract, setGovTeamMember, submitContract, updateGovSettings, uploadGovFile, contractDetail } from '../src/runtime/gov.js';
 import {
-  createEnvelope, declineDocument, envelopeDetail, finalDocument, giveConsent, listEnvelopes, remindNow, requestCode, sendEnvelope, setFields, setSignMailerForTests,
+  bulkSendAgreement, correctRecipient, createEmbedSession, createEnvelope, declineDocument, envelopeAttachment, envelopeDetail, finalDocument, giveConsent, listAgreementTemplates, listEnvelopes, remindNow, requestCode, resolveEmbedSession, saveAgreementTemplate, sendEnvelope, setFields, setSignMailerForTests, uploadSignerAttachment,
   signDocument, signerDocument, signerView, sweepSignatures, verifyCode, verifyFingerprint, voidEnvelope,
 } from '../src/runtime/esign.js';
 import type { Principal } from '../src/runtime/policy.js';
@@ -143,6 +143,79 @@ test('Patform Sign: a contract goes to two signers in order, each verified by em
     assert.equal((await verifyFingerprint(pool, { base64: tampered.toString('base64') })).valid, false);
     await assert.rejects(pool.query('delete from sign_event where envelope_id = $1', [env.id]), /append-only/);
     assert.equal((await listEnvelopes(pool, w.staff.p))[0].signed, 2);
+  } finally { setSignMailerForTests(null); setObjectStoreForTests(undefined); await pool.end(); }
+});
+
+test('Patform Sign: two PDFs share one envelope and two people can sign the same stage before the next stage starts', { skip: !localDatabase }, async () => {
+  const pool = createPool(3); const engine = new Engine(pool);
+  const mem = memoryObjectStore(); setObjectStoreForTests(mem.store);
+  try {
+    const w = await setup(pool, engine);
+    const first = await twoPagePdf();
+    const onePage = await PDFDocument.create(); onePage.addPage([595, 842]);
+    const second = Buffer.from(await onePage.save());
+    const a = await uploadGovFile(pool, w.staff.p, { purpose: 'signing', filename: 'agreement.pdf', base64: first.toString('base64') });
+    const b = await uploadGovFile(pool, w.staff.p, { purpose: 'signing', filename: 'schedule.pdf', base64: second.toString('base64') });
+    const r1 = { name: 'Ada First', email: `ada-${stamp()}@sign.test`, order: 1 };
+    const r2 = { name: 'Bayo First', email: `bayo-${stamp()}@sign.test`, order: 1 };
+    const r3 = { name: 'Chi Next', email: `chi-${stamp()}@sign.test`, order: 2 };
+    const env = await createEnvelope(pool, w.staff.p, { documentRef: a.reference, documentRefs: [b.reference], title: 'Agreement and schedule', allowAttachments: true, recipients: [r1, r2, r3] });
+    assert.equal(env.pages, 3);
+    const detail = await envelopeDetail(pool, w.staff.p, env.id);
+    assert.deepEqual(detail.documents.map((d: { filename: string; page_start: number; page_count: number }) => [d.filename, d.page_start, d.page_count]),
+      [['agreement.pdf', 1, 2], ['schedule.pdf', 3, 1]]);
+    await setFields(pool, w.staff.p, env.id, { fields: [
+      { recipientId: env.recipients[0], kind: 'signature', page: 1, x: .1, y: .8, width: .25, height: .06 },
+      { recipientId: env.recipients[1], kind: 'signature', page: 2, x: .1, y: .8, width: .25, height: .06 },
+      { recipientId: env.recipients[2], kind: 'signature', page: 3, x: .1, y: .8, width: .25, height: .06 },
+    ] });
+    const saved = await saveAgreementTemplate(pool, w.staff.p, env.id, { name: `Agreement ${stamp()}`, roles: ['Employee', 'Manager', 'Witness'] });
+    const template = (await listAgreementTemplates(pool, w.staff.p)).find((t: { id: string }) => t.id === saved.id);
+    assert.deepEqual(template.roles.map((role: { label: string }) => role.label), ['Employee', 'Manager', 'Witness']);
+    assert.deepEqual(template.documents.map((doc: { name: string }) => doc.name), ['agreement.pdf', 'schedule.pdf']);
+    assert.deepEqual(template.fields.map((field: { recipientIndex: number; page: number }) => [field.recipientIndex, field.page]), [[0, 1], [1, 2], [2, 3]]);
+    const bulkRows = [0, 1].map((n) => ({ people: template.roles.map((role: { label: string }) => ({ name: `${role.label} ${n}`, email: `${role.label.toLowerCase()}-${n}-${stamp()}@sign.test` })) }));
+    const batchKey = `agreement-${stamp()}`;
+    assert.equal((await bulkSendAgreement(pool, w.staff.p, { templateId: saved.id, batchKey, rows: bulkRows, dryRun: true })).ready, 2);
+    const sentBatch = await bulkSendAgreement(pool, w.staff.p, { templateId: saved.id, batchKey, rows: bulkRows });
+    assert.equal(sentBatch.sent, 2);
+    assert.deepEqual((await bulkSendAgreement(pool, w.staff.p, { templateId: saved.id, batchKey, rows: bulkRows })).results.map((r) => r.envelopeId), sentBatch.results.map((r) => r.envelopeId));
+    await sendEnvelope(pool, w.staff.p, env.id);
+    assert.ok(w.link(r1.email) && w.link(r2.email));
+    const embedded = await createEmbedSession(pool, w.staff.p, env.id, env.recipients[0]!, { origin: 'https://customer.example' });
+    const embedToken = embedded.url.split('/').pop()!;
+    assert.equal((await resolveEmbedSession(pool, embedToken)).origin, 'https://customer.example');
+    assert.equal((await resolveEmbedSession(pool, embedToken)).signingPath, `/sign/${w.link(r1.email)}`);
+    assert.equal(w.link(r3.email), null);
+    const correctedEmail = `chi-fixed-${stamp()}@sign.test`;
+    await correctRecipient(pool, w.staff.p, env.id, env.recipients[2]!, { name: r3.name, email: correctedEmail, reason: 'The original email address was wrong' });
+    assert.equal(w.link(correctedEmail), null, 'a future-stage correction waits for its stage');
+    const oldT2 = w.link(r2.email)!;
+    const oldEmbed = await createEmbedSession(pool, w.staff.p, env.id, env.recipients[1]!, { origin: 'https://customer.example' });
+    const correctedFirstEmail = `bayo-fixed-${stamp()}@sign.test`;
+    await correctRecipient(pool, w.staff.p, env.id, env.recipients[1]!, { name: r2.name, email: correctedFirstEmail, reason: 'Email correction' });
+    await assert.rejects(signerView(pool, oldT2), /not valid|no longer/);
+    await assert.rejects(resolveEmbedSession(pool, oldEmbed.url.split('/').pop()!), /expired|no longer active/);
+    assert.ok(w.link(correctedFirstEmail), 'the active-stage signer gets a fresh invitation');
+    const t1 = w.link(r1.email)!; const s1 = await signIn(pool, t1, r1.email, w.code); await giveConsent(pool, t1, s1);
+    const image = Buffer.from(PNG.split(',')[1]!, 'base64');
+    const attachment = await uploadSignerAttachment(pool, t1, s1, { filename: 'identity.png', contentType: 'image/png', base64: image.toString('base64') });
+    assert.ok((await envelopeAttachment(pool, w.staff.p, env.id, attachment.id)).bytes.equals(image));
+    const { rows: storedAttachment } = await pool.query<{ storage_key: string }>('select storage_key from sign_attachment where id = $1', [attachment.id]);
+    mem.scans.set(storedAttachment[0]!.storage_key, 'scanning');
+    await assert.rejects(signDocument(pool, t1, s1, { signature: { method: 'typed', name: r1.name, style: 'flowing' } }), /still being checked/);
+    mem.scans.set(storedAttachment[0]!.storage_key, 'clean');
+    await signDocument(pool, t1, s1, { signature: { method: 'typed', name: r1.name, style: 'flowing' } });
+    await assert.rejects(resolveEmbedSession(pool, embedToken), /expired|no longer active/);
+    assert.equal(w.link(r3.email), null);
+    const t2 = w.link(correctedFirstEmail)!; const s2 = await signIn(pool, t2, correctedFirstEmail, w.code); await giveConsent(pool, t2, s2);
+    await signDocument(pool, t2, s2, { signature: { method: 'typed', name: r2.name, style: 'flowing' } });
+    assert.equal(w.link(r3.email), null);
+    assert.ok(w.link(correctedEmail));
+    const t3 = w.link(correctedEmail)!; const s3 = await signIn(pool, t3, correctedEmail, w.code); await giveConsent(pool, t3, s3);
+    await signDocument(pool, t3, s3, { signature: { method: 'typed', name: r3.name, style: 'flowing' } });
+    const sealed = await finalDocument(pool, t3);
+    assert.equal((await PDFDocument.load(sealed)).getPageCount(), 4, 'three source pages and a certificate');
   } finally { setSignMailerForTests(null); setObjectStoreForTests(undefined); await pool.end(); }
 });
 

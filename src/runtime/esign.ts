@@ -35,6 +35,7 @@ import { sealPdf, pageCount } from './esign-pdf.js';
 import { checkSeal, sealConfig } from './esign-seal.js';
 import { PHONE, maskPhone, normalisePhone, sendSms, smsConfigured } from './sms.js';
 import { lookupCompany, matchOfficer, type RegisterResult } from './company-register.js';
+import { PDFDocument } from 'pdf-lib';
 
 const UUID = /^[0-9a-f-]{36}$/;
 const EMAIL = /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i;
@@ -64,7 +65,7 @@ async function event(client: Client | Pool, envelopeId: string, recipientId: str
 // ---------------------------------------------------------------- sender
 
 interface EnvelopeRow { id: string; tenant_id: string; number: number; title: string; message: string | null; contract_id: string | null; contract_version: number | null; document_file_id: string; original_sha256: string;
-  page_count: number; routing: 'sequential' | 'parallel'; status: string; reminder_days: number; expires_at: Date; created_by: string | null; completed_at: Date | null; final_file_id: string | null; final_sha256: string | null }
+  page_count: number; routing: 'sequential' | 'parallel'; status: string; reminder_days: number; expires_at: Date; created_by: string | null; completed_at: Date | null; final_file_id: string | null; final_sha256: string | null; allow_attachments: boolean }
 
 async function envelopeFor(client: Client | Pool, principal: Principal, envelopeId: string, lock = false) {
   const w = await govMember(client, principal);
@@ -105,7 +106,7 @@ function readRecipients(v: unknown): RecipientIn[] {
 }
 
 /** A draft: a contract's current document, or any uploaded PDF, with its recipients. */
-export async function createEnvelope(pool: Pool, principal: Principal, body: Record<string, unknown>) {
+export async function createEnvelope(pool: Pool, principal: Principal, body: Record<string, unknown>, bulkKey?: string) {
   const w = await govMember(pool, principal);
   const recipients = readRecipients(body.recipients);
   const routing = body.routing === 'parallel' ? 'parallel' : 'sequential';
@@ -163,24 +164,63 @@ export async function createEnvelope(pool: Pool, principal: Principal, body: Rec
     fileId = m[1]!;
     if (!title) throw new InvalidInput('give the envelope a title');
   }
-  const { rows: f } = await pool.query<{ content_type: string; storage_key: string; scan_status: string; purpose: string; sha256: string }>(
-    'select content_type, storage_key, scan_status, purpose, sha256 from gov_file where id = $1 and tenant_id = $2', [fileId, w.tenantId]);
-  if (!f[0]) throw new InvalidInput('no such document');
-  if (f[0].content_type !== 'application/pdf') throw new InvalidInput('Patform Sign signs PDFs; save the Word file as PDF and upload that');
-  if (!contractId && !['signing', 'contract'].includes(f[0].purpose)) throw new InvalidInput('that file was not uploaded for signing');
-  const scan = await objectStore().scan(f[0].storage_key);
-  if (scan !== 'clean') throw new InvalidInput(scan === 'scanning' ? 'the document is still being checked for malware; try again shortly' : 'the document failed its malware check');
-  const bytes = await objectStore().get(f[0].storage_key);
-  if (hash(bytes) !== f[0].sha256) throw new InvalidInput('the stored document does not match what was uploaded');
-  const pages = await pageCount(bytes).catch((err: Error) => { throw new InvalidInput(err.message); });
-  const docSha = f[0].sha256;
-  return inTransaction(pool, async (client) => {
+  const extraRefs = Array.isArray(body.documentRefs) ? body.documentRefs : [];
+  if (extraRefs.length > 9) throw new InvalidInput('an envelope can contain at most 10 PDFs');
+  const fileIds = [fileId, ...extraRefs.map((ref, i) => {
+    const m = GOV_FILE_REF.exec(text(ref, 60));
+    if (!m) throw new InvalidInput(`document ${i + 2} has no valid upload reference`);
+    return m[1]!;
+  })];
+  if (new Set(fileIds).size !== fileIds.length) throw new InvalidInput('the same PDF is in the envelope twice');
+  const documents: { fileId: string; filename: string; sha256: string; pages: number; bytes: Buffer; pageStart: number }[] = [];
+  let pageStart = 1;
+  for (const id of fileIds) {
+    const { rows: f } = await pool.query<{ content_type: string; storage_key: string; purpose: string; sha256: string; filename: string }>(
+      'select content_type, storage_key, purpose, sha256, filename from gov_file where id = $1 and tenant_id = $2', [id, w.tenantId]);
+    if (!f[0]) throw new InvalidInput('no such document');
+    if (f[0].content_type !== 'application/pdf') throw new InvalidInput('Patform Sign signs PDFs; save the Word file as PDF and upload that');
+    if ((!contractId || id !== fileId) && !['signing', 'contract'].includes(f[0].purpose)) throw new InvalidInput('that file was not uploaded for signing');
+    const scan = await objectStore().scan(f[0].storage_key);
+    if (scan !== 'clean') throw new InvalidInput(scan === 'scanning' ? `${f[0].filename} is still being checked for malware; try again shortly` : `${f[0].filename} failed its malware check`);
+    const bytes = await objectStore().get(f[0].storage_key);
+    if (hash(bytes) !== f[0].sha256) throw new InvalidInput('the stored document does not match what was uploaded');
+    const pages = await pageCount(bytes).catch((err: Error) => { throw new InvalidInput(err.message); });
+    if (pageStart + pages - 1 > 100) throw new InvalidInput('an envelope can contain at most 100 pages');
+    documents.push({ fileId: id, filename: f[0].filename, sha256: f[0].sha256, pages, bytes, pageStart });
+    pageStart += pages;
+  }
+  let combined: Buffer | null = null;
+  let combinedKey: string | null = null;
+  if (documents.length > 1) {
+    const merged = await PDFDocument.create();
+    for (const source of documents) {
+      const pdf = await PDFDocument.load(source.bytes).catch(() => { throw new InvalidInput(`${source.filename} is not a readable PDF`); });
+      const copied = await merged.copyPages(pdf, pdf.getPageIndices());
+      copied.forEach((page) => merged.addPage(page));
+    }
+    combined = Buffer.from(await merged.save());
+    if (combined.length > 50 * 1024 * 1024) throw new InvalidInput('the combined PDF must be 50 MB or smaller');
+    combinedKey = `${w.tenantId}/signing/${randomUUID()}.pdf`;
+    await objectStore().put(combinedKey, combined, 'application/pdf', { sha256: hash(combined) });
+  }
+  const pages = pageStart - 1;
+  const docSha = combined ? hash(combined) : documents[0]!.sha256;
+  try { return await inTransaction(pool, async (client) => {
+    if (combined && combinedKey) {
+      const mergedId = randomUUID();
+      await client.query(`insert into gov_file (id, tenant_id, purpose, contract_id, filename, content_type, byte_size, sha256, storage_key, scan_status, uploaded_by) values ($1, $2, 'signing', $3, $4, 'application/pdf', $5, $6, $7, 'clean', $8)`,
+        [mergedId, w.tenantId, contractId, `${title}.pdf`, combined.length, docSha, combinedKey, w.actorId]);
+      fileId = mergedId;
+    }
     const number = await nextNumber(client, w.tenantId);
     const { rows } = await client.query<{ id: string }>(
-      `insert into sign_envelope (tenant_id, number, title, message, contract_id, contract_version, document_file_id, original_sha256, page_count, routing, reminder_days, expires_at, created_by)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, now() + make_interval(days => $12), $13) returning id`,
-      [w.tenantId, number, title, text(body.message, 2000) || null, contractId, version, fileId, docSha, pages, routing, reminder, days, w.actorId]);
+      `insert into sign_envelope (tenant_id, number, title, message, contract_id, contract_version, document_file_id, original_sha256, page_count, routing, reminder_days, expires_at, created_by, allow_attachments, bulk_key)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, now() + make_interval(days => $12), $13, $14, $15) returning id`,
+      [w.tenantId, number, title, text(body.message, 2000) || null, contractId, version, fileId, docSha, pages, routing, reminder, days, w.actorId, body.allowAttachments === true, bulkKey ?? null]);
     const envelopeId = rows[0]!.id;
+    for (const [ordinal, doc] of documents.entries()) await client.query(
+      `insert into sign_envelope_document (envelope_id, ordinal, file_id, filename, sha256, page_start, page_count) values ($1, $2, $3, $4, $5, $6, $7)`,
+      [envelopeId, ordinal + 1, doc.fileId, doc.filename, doc.sha256, doc.pageStart, doc.pages]);
     const partyIds = new Map<string, { id: string; order: number }>();
     for (const pp of parties) {
       const reg = registers.get(pp.name);
@@ -189,22 +229,22 @@ export async function createEnvelope(pool: Pool, principal: Principal, body: Rec
       partyIds.set(pp.name, { id: made[0]!.id, order: pp.order });
     }
     const ids: string[] = [];
-    for (const r of recipients) {
+    for (const [position, r] of recipients.entries()) {
       const { rows: a } = await client.query<{ id: string }>('select id from actor where tenant_id = $1 and lower(email) = $2 and active', [w.tenantId, r.email]);
       const party = r.party ? partyIds.get(r.party)! : null;
       const reg = r.party ? registers.get(r.party) : undefined;
       const match = reg?.result.available ? { officer: reg.matches.get(r.email) ?? null, checkedAt: reg.result.checkedAt } : null;
       const { rows: made } = await client.query<{ id: string }>(
-        `insert into sign_recipient (envelope_id, name, email, role, routing_order, actor_id, title, phone, verify_by, party_id, register_match) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) returning id`,
-        [envelopeId, r.name, r.email, r.role, routing === 'parallel' ? 1 : party ? party.order : r.order, a[0]?.id ?? null, r.title, r.phone, r.verifyBy, party?.id ?? null, match ? JSON.stringify(match) : null]);
+        `insert into sign_recipient (envelope_id, name, email, role, routing_order, actor_id, title, phone, verify_by, party_id, register_match, position) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) returning id`,
+        [envelopeId, r.name, r.email, r.role, routing === 'parallel' ? 1 : party ? party.order : r.order, a[0]?.id ?? null, r.title, r.phone, r.verifyBy, party?.id ?? null, match ? JSON.stringify(match) : null, position]);
       ids.push(made[0]!.id);
     }
     await event(client, envelopeId, null, 'created', { by: w.actorId, sha256: docSha, pages, companies: parties.map((pp) => `${pp.name} (${pp.required} required)`),
       registers: [...registers.entries()].map(([name, v]) => ({ company: name, ...(v.result.available ? { source: v.result.source, found: v.result.companyName, status: v.result.status, listed: [...v.matches.entries()].filter(([, m]) => m).map(([e]) => e) } : { unavailable: v.result.reason }) })) });
-    return { id: envelopeId, number, pages, recipients: ids, parties: [...partyIds.entries()].map(([name, v]) => ({ name, id: v.id, register: registers.get(name)?.result ?? null,
+    return { id: envelopeId, number, pages, documents: documents.map(({ filename, pageStart, pages }) => ({ filename, pageStart, pages })), recipients: ids, parties: [...partyIds.entries()].map(([name, v]) => ({ name, id: v.id, register: registers.get(name)?.result ?? null,
       // Only a register that answered can say who is not listed.
       unlisted: registers.get(name)?.result.available ? [...registers.get(name)!.matches.entries()].filter(([, m]) => !m).map(([e]) => e) : [] })) };
-  });
+  }); } catch (err) { if (combinedKey) await objectStore().remove(combinedKey).catch(() => undefined); throw err; }
 }
 
 /** Fields are placed on the pages as fractions of the page, from the top left, as the screen shows them. */
@@ -282,6 +322,39 @@ export async function sendEnvelope(pool: Pool, principal: Principal, envelopeId:
     }
     await recordWorkspaceAudit(client, { tenantId: w.tenantId, actorId: w.actorId, action: 'sign.envelope_sent', targetId: envelopeId, detail: { number: e.number, title: e.title } });
     return { id: envelopeId, status: 'sent', notified: sent };
+  });
+}
+
+/** Correct a recipient who has not signed. Old links and verification sessions
+ * stop working immediately; a current-stage signer gets a fresh invitation. */
+export async function correctRecipient(pool: Pool, principal: Principal, envelopeId: string, recipientId: string, body: Record<string, unknown>) {
+  const name = text(body.name, 120);
+  const email = text(body.email, 200).toLowerCase();
+  const reason = text(body.reason, 500);
+  if (name.length < 2 || !EMAIL.test(email)) throw new InvalidInput('give the corrected signer a name and a valid email');
+  if (!reason) throw new InvalidInput('say why the signer is being corrected');
+  return inTransaction(pool, async (client) => {
+    const { w, e } = await envelopeFor(client, principal, envelopeId, true);
+    if (e.status !== 'sent') throw new InvalidInput('only an envelope out for signature can be corrected');
+    const { rows } = await client.query<{ id: string; name: string; email: string; role: string; status: string; party_id: string | null; routing_order: number }>(
+      'select id, name, email, role, status, party_id, routing_order from sign_recipient where id = $1 and envelope_id = $2 for update', [recipientId, envelopeId]);
+    const r = rows[0];
+    if (!r || r.role !== 'signer') throw new InvalidInput('no such signer');
+    if (r.party_id) throw new InvalidInput('company signers need a new envelope so their authority can be checked again');
+    if (r.status === 'signed' || r.status === 'declined') throw new InvalidInput('a signer who already responded cannot be corrected');
+    if (r.name === name && r.email === email) throw new InvalidInput('the signer has not changed');
+    const duplicate = await client.query('select 1 from sign_recipient where envelope_id = $1 and lower(email) = $2 and id <> $3', [envelopeId, email, r.id]);
+    if (duplicate.rowCount) throw new InvalidInput('this email already receives the envelope');
+    const actor = await client.query<{ id: string }>('select id from actor where tenant_id = $1 and lower(email) = $2 and active', [w.tenantId, email]);
+    await client.query(`update sign_recipient set name = $2, email = $3, actor_id = $4, status = 'waiting', token_hash = null, token_sealed = null,
+      otp_hash = null, otp_expires_at = null, otp_attempts = 0, session_hash = null, session_expires_at = null, verified_at = null, consented_at = null,
+      viewed_at = null, notified_at = null, last_reminded_at = null where id = $1`, [r.id, name, email, actor.rows[0]?.id ?? null]);
+    await client.query('delete from sign_embed_session where recipient_id = $1', [r.id]);
+    await event(client, envelopeId, r.id, 'recipient_corrected', { by: w.actorId, reason, previous: { name: r.name, email: r.email }, current: { name, email } });
+    const from = await client.query<{ display_name: string; workspace: string }>('select a.display_name, t.name as workspace from actor a join tenant t on t.id = a.tenant_id where a.id = $1', [w.actorId]);
+    const notified = await notifyNext(client, e, `${from.rows[0]!.display_name} (${from.rows[0]!.workspace})`);
+    await recordWorkspaceAudit(client, { tenantId: w.tenantId, actorId: w.actorId, action: 'sign.recipient_corrected', targetId: envelopeId, detail: { recipientId: r.id, previousEmail: r.email, email, reason } });
+    return { corrected: true, notified: notified > 0 };
   });
 }
 
@@ -384,16 +457,167 @@ export async function deleteTemplate(pool: Pool, principal: Principal, id: strin
   return { removed: Boolean(rowCount) };
 }
 
+/** A reusable agreement keeps clean source PDFs, signer roles and box
+ * coordinates. Names and email addresses are supplied for each send. */
+export async function saveAgreementTemplate(pool: Pool, principal: Principal, envelopeId: string, body: Record<string, unknown>) {
+  const { w, e } = await envelopeFor(pool, principal, envelopeId);
+  if (e.status !== 'draft' || e.contract_id) throw new InvalidInput('save a standalone draft as an agreement template');
+  const name = text(body.name, 120);
+  if (!name) throw new InvalidInput('give the agreement template a name');
+  const { rows: recipients } = await pool.query<{ id: string; role: string; routing_order: number }>(
+    'select id, role, routing_order from sign_recipient where envelope_id = $1 order by position nulls last, created_at, id', [envelopeId]);
+  if (!recipients.length) throw new InvalidInput('add signer roles first');
+  const labels = Array.isArray(body.roles) ? body.roles.map((x) => text(x, 80)) : [];
+  if (labels.length !== recipients.length || labels.some((x) => !x)) throw new InvalidInput('give each recipient a role name');
+  if (new Set(labels.map((x) => x.toLowerCase())).size !== labels.length) throw new InvalidInput('role names must be different');
+  const party = await pool.query('select 1 from sign_party where envelope_id = $1 limit 1', [envelopeId]);
+  if (party.rowCount) throw new InvalidInput('company-signatory rules need their own agreement; this role template supports named people');
+  const { rows: docs } = await pool.query<{ file_id: string; filename: string }>('select file_id, filename from sign_envelope_document where envelope_id = $1 order by ordinal', [envelopeId]);
+  const { rows: boxes } = await pool.query<{ recipient_id: string; kind: string; page: number; x: number; y: number; width: number; height: number; required: boolean; label: string | null }>(
+    'select recipient_id, kind, page, x::float, y::float, width::float, height::float, required, label from sign_field where envelope_id = $1 order by page, y', [envelopeId]);
+  if (!boxes.length) throw new InvalidInput('place the agreement fields before saving a template');
+  const fields = boxes.map((b) => ({ recipientIndex: recipients.findIndex((r) => r.id === b.recipient_id), kind: b.kind, page: b.page, x: b.x, y: b.y, width: b.width, height: b.height, required: b.required, label: b.label }));
+  if (fields.some((f) => f.recipientIndex < 0)) throw new InvalidInput('every template field must belong to a named role');
+  const roles = recipients.map((r, i) => ({ label: labels[i], role: r.role, order: r.routing_order }));
+  const documents = docs.map((d) => ({ ref: `gov-file:${d.file_id}`, name: d.filename }));
+  const { rows } = await pool.query<{ id: string }>(
+    `insert into sign_agreement_template (tenant_id, name, documents, roles, fields, routing, created_by)
+     values ($1, $2, $3, $4, $5, $6, $7) returning id`,
+    [w.tenantId, name, JSON.stringify(documents), JSON.stringify(roles), JSON.stringify(fields), e.routing, w.actorId]);
+  await recordWorkspaceAudit(pool, { tenantId: w.tenantId, actorId: w.actorId, action: 'sign.agreement_template_saved', targetId: rows[0]!.id, detail: { name, documents: documents.length, roles: roles.length } });
+  return { id: rows[0]!.id };
+}
+
+export async function listAgreementTemplates(pool: Pool, principal: Principal) {
+  const w = await govMember(pool, principal);
+  const { rows } = await pool.query('select id, name, documents, roles, fields, routing, created_at from sign_agreement_template where tenant_id = $1 order by name', [w.tenantId]);
+  return rows;
+}
+
+export async function deleteAgreementTemplate(pool: Pool, principal: Principal, id: string) {
+  const w = await govMember(pool, principal);
+  const { rowCount } = await pool.query('delete from sign_agreement_template where id = $1 and tenant_id = $2', [id, w.tenantId]);
+  return { removed: Boolean(rowCount) };
+}
+
+/** Send the same role-based agreement to several independent groups. A caller
+ * supplies one stable batch key; retries resume drafts instead of duplicating
+ * envelopes. The response reports each row, including individual failures. */
+export async function bulkSendAgreement(pool: Pool, principal: Principal, body: Record<string, unknown>) {
+  const w = await govMember(pool, principal);
+  const templateId = text(body.templateId, 36);
+  const batchKey = text(body.batchKey, 120);
+  if (!UUID.test(templateId)) throw new InvalidInput('choose an agreement template');
+  if (!/^[A-Za-z0-9_-]{8,120}$/.test(batchKey)) throw new InvalidInput('batchKey must be a stable identifier');
+  const { rows: templates } = await pool.query<{ id: string; name: string; documents: { ref: string; name: string }[]; roles: { label: string; role: 'signer' | 'cc'; order: number }[]; fields: { recipientIndex: number; kind: string; page: number; x: number; y: number; width: number; height: number; required: boolean; label: string | null }[]; routing: string }>(
+    'select id, name, documents, roles, fields, routing from sign_agreement_template where id = $1 and tenant_id = $2', [templateId, w.tenantId]);
+  const template = templates[0];
+  if (!template) throw new InvalidInput('no such agreement template');
+  const rawRows = Array.isArray(body.rows) ? body.rows : [];
+  if (!rawRows.length || rawRows.length > 20) throw new InvalidInput('send between 1 and 20 agreements per batch');
+  const rows = rawRows.map((item, index) => {
+    const obj = (item ?? {}) as Record<string, unknown>;
+    const people = Array.isArray(obj.people) ? obj.people : [];
+    if (people.length !== template.roles.length) throw new InvalidInput(`row ${index + 1} needs ${template.roles.length} people`);
+    const recipients = readRecipients(people.map((p, i) => {
+      const person = (p ?? {}) as Record<string, unknown>;
+      return { name: person.name, email: person.email, role: template.roles[i]!.role, order: template.roles[i]!.order };
+    }));
+    return { recipients, title: text(obj.title, 200) || template.name };
+  });
+  if (body.dryRun === true) return { ready: rows.length, roles: template.roles.map((r) => r.label), rows: rows.map((row, i) => ({ index: i + 1, title: row.title, people: row.recipients.map((r) => r.email) })) };
+  const fingerprint = hash(JSON.stringify({ templateId, rows }));
+  const lock = await pool.connect();
+  try {
+    await lock.query('select pg_advisory_lock(hashtext($1), hashtext($2))', [w.tenantId, batchKey]);
+    const existing = await lock.query<{ payload_sha256: string; created_by: string }>('select payload_sha256, created_by from sign_bulk_batch where tenant_id = $1 and batch_key = $2', [w.tenantId, batchKey]);
+    if (existing.rows[0] && existing.rows[0].created_by !== w.actorId) throw new InvalidInput('this batch belongs to another sender');
+    if (existing.rows[0] && existing.rows[0].payload_sha256 !== fingerprint) throw new InvalidInput('this batch key was already used for different recipients');
+    if (!existing.rows[0]) await lock.query('insert into sign_bulk_batch (tenant_id, batch_key, payload_sha256, template_id, created_by) values ($1, $2, $3, $4, $5)', [w.tenantId, batchKey, fingerprint, templateId, w.actorId]);
+    const results: { index: number; envelopeId?: string; status: string; error?: string }[] = [];
+    for (const [index, row] of rows.entries()) {
+      const itemKey = `${batchKey}:${index + 1}`;
+      try {
+        let found = await pool.query<{ id: string; status: string }>('select id, status from sign_envelope where tenant_id = $1 and bulk_key = $2', [w.tenantId, itemKey]);
+        if (!found.rows[0]) {
+          const made = await createEnvelope(pool, principal, { documentRef: template.documents[0]!.ref, documentRefs: template.documents.slice(1).map((d) => d.ref), title: row.title, routing: template.routing,
+            recipients: row.recipients.map((r) => ({ name: r.name, email: r.email, role: r.role, order: r.order })) }, itemKey);
+          found = { ...found, rows: [{ id: made.id, status: 'draft' }] };
+        }
+        const env = found.rows[0]!;
+        if (env.status === 'draft') {
+          const ids = await pool.query<{ id: string }>('select id from sign_recipient where envelope_id = $1 order by position', [env.id]);
+          await setFields(pool, principal, env.id, { fields: template.fields.map((field) => ({ ...field, recipientId: ids.rows[field.recipientIndex]?.id })) });
+          await sendEnvelope(pool, principal, env.id);
+        }
+        results.push({ index: index + 1, envelopeId: env.id, status: env.status === 'draft' ? 'sent' : env.status });
+      } catch (err) { results.push({ index: index + 1, status: 'failed', error: err instanceof Error ? err.message : String(err) }); }
+    }
+    return { batchKey, sent: results.filter((r) => r.status === 'sent').length, results };
+  } finally {
+    await lock.query('select pg_advisory_unlock(hashtext($1), hashtext($2))', [w.tenantId, batchKey]).catch(() => undefined);
+    lock.release();
+  }
+}
+
 export async function envelopeDetail(pool: Pool, principal: Principal, envelopeId: string) {
   const { e } = await envelopeFor(pool, principal, envelopeId);
   const { rows: recipients } = await pool.query(
     `select r.id, r.name, r.email, r.role, r.routing_order, r.status, r.notified_at, r.viewed_at, r.verified_at, r.consented_at, r.signed_at, r.declined_at, r.decline_reason, r.last_reminded_at, r.title, r.verify_by, r.party_id, r.register_match, p.name as party
-       from sign_recipient r left join sign_party p on p.id = r.party_id where r.envelope_id = $1 order by r.role, r.routing_order, r.created_at`, [envelopeId]);
+       from sign_recipient r left join sign_party p on p.id = r.party_id where r.envelope_id = $1 order by r.position nulls last, r.created_at, r.id`, [envelopeId]);
   const { rows: fields } = await pool.query(`select id, recipient_id, party_id, slot, kind, page, x::float, y::float, width::float, height::float, required, label, (value is not null) as filled from sign_field where envelope_id = $1 order by page, y`, [envelopeId]);
   const { rows: events } = await pool.query(`select v.kind, v.detail, v.ip, v.occurred_at, r.name as recipient from sign_event v left join sign_recipient r on r.id = v.recipient_id where v.envelope_id = $1 order by v.id`, [envelopeId]);
   const { rows: parties } = await pool.query(
     `select p.id, p.name, p.required_count, p.authority_note, p.completed_at, p.register, p.register_required, (select count(*)::int from sign_recipient r where r.party_id = p.id and r.status = 'signed') as signed from sign_party p where p.envelope_id = $1 order by p.routing_order`, [envelopeId]);
-  return { envelope: e, recipients, fields, events, parties };
+  const { rows: documents } = await pool.query('select ordinal, filename, sha256, page_start, page_count from sign_envelope_document where envelope_id = $1 order by ordinal', [envelopeId]);
+  const { rows: attachments } = await pool.query('select id, recipient_id, filename, content_type, byte_size, sha256, uploaded_at from sign_attachment where envelope_id = $1 order by uploaded_at', [envelopeId]);
+  return { envelope: e, recipients, fields, events, parties, documents, attachments };
+}
+
+export async function envelopeAttachment(pool: Pool, principal: Principal, envelopeId: string, attachmentId: string) {
+  await envelopeFor(pool, principal, envelopeId);
+  const { rows } = await pool.query<{ storage_key: string; filename: string; content_type: string; sha256: string }>(
+    'select storage_key, filename, content_type, sha256 from sign_attachment where id = $1 and envelope_id = $2', [attachmentId, envelopeId]);
+  const item = rows[0];
+  if (!item) throw new InvalidInput('no such attachment');
+  const scan = await objectStore().scan(item.storage_key);
+  if (scan !== 'clean') throw new InvalidInput('this attachment is not cleared for opening');
+  const bytes = await objectStore().get(item.storage_key);
+  if (hash(bytes) !== item.sha256) throw new InvalidInput('the attachment does not match its fingerprint');
+  return { bytes, filename: item.filename, contentType: item.content_type };
+}
+
+/** A short-lived URL for showing the verified signing page inside one
+ * specified site. The personal signer token never leaves Patform's origin. */
+export async function createEmbedSession(pool: Pool, principal: Principal, envelopeId: string, recipientId: string, body: Record<string, unknown>) {
+  const { w, e } = await envelopeFor(pool, principal, envelopeId);
+  if (e.status !== 'sent') throw new InvalidInput('only active envelopes can be embedded');
+  const raw = text(body.origin, 300);
+  let origin: URL;
+  try { origin = new URL(raw); } catch { throw new InvalidInput('give the exact HTTPS origin of the embedding site'); }
+  if (origin.origin !== raw || (origin.protocol !== 'https:' && !(process.env.NODE_ENV !== 'production' && origin.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(origin.hostname))))
+    throw new InvalidInput('give the exact HTTPS origin, without a path or trailing slash');
+  const { rows } = await pool.query<{ id: string; role: string; status: string; token_sealed: string | null }>(
+    'select id, role, status, token_sealed from sign_recipient where id = $1 and envelope_id = $2', [recipientId, envelopeId]);
+  const recipient = rows[0];
+  if (!recipient || recipient.role !== 'signer' || !['sent', 'viewed'].includes(recipient.status) || !recipient.token_sealed) throw new InvalidInput('that signer is not active yet');
+  const embedToken = token();
+  await pool.query(`insert into sign_embed_session (token_hash, envelope_id, recipient_id, allowed_origin, expires_at, created_by)
+    values ($1, $2, $3, $4, least(now() + interval '15 minutes', $5), $6)`, [hash(embedToken), envelopeId, recipientId, origin.origin, e.expires_at, w.actorId]);
+  await event(pool, envelopeId, recipientId, 'embed_created', { by: w.actorId, origin: origin.origin });
+  return { url: `${appUrl()}/sign/embed/${embedToken}`, expiresInMinutes: 15, origin: origin.origin };
+}
+
+export async function resolveEmbedSession(pool: Pool, embedToken: string) {
+  if (!/^[A-Za-z0-9_-]{30,60}$/.test(embedToken)) throw new InvalidInput('this embed link is not valid');
+  const { rows } = await pool.query<{ token_sealed: string | null; recipient_id: string; allowed_origin: string }>(
+    `select r.token_sealed, r.id as recipient_id, s.allowed_origin from sign_embed_session s
+      join sign_recipient r on r.id = s.recipient_id join sign_envelope e on e.id = s.envelope_id
+      where s.token_hash = $1 and s.expires_at > now() and e.status = 'sent' and r.status in ('sent', 'viewed')`, [hash(embedToken)]);
+  const item = rows[0];
+  if (!item?.token_sealed) throw new InvalidInput('this embed link has expired or is no longer active');
+  const personal = unseal(item.token_sealed, `sign_recipient:${item.recipient_id}`).plaintext;
+  return { signingPath: `/sign/${personal}`, origin: item.allowed_origin };
 }
 
 /** The document's bytes for the sender's field placement and preview, or the sealed copy once complete. */
@@ -453,8 +677,8 @@ interface RecipientRow { id: string; envelope_id: string; name: string; email: s
 
 async function byToken(client: Client | Pool, t: string, lock = false) {
   if (!/^[A-Za-z0-9_-]{30,60}$/.test(t)) throw new InvalidInput('this link is not valid');
-  const { rows } = await client.query<RecipientRow & { e_status: string; tenant_id: string; expires_at: Date; title: string; message: string | null; workspace: string; sender: string | null; completed_at: Date | null; page_count: number }>(
-    `select r.*, r.title as signer_title, e.status as e_status, e.tenant_id, e.expires_at, e.title, e.message, e.completed_at, e.page_count, t.name as workspace, a.display_name as sender
+  const { rows } = await client.query<RecipientRow & { e_status: string; tenant_id: string; expires_at: Date; title: string; message: string | null; workspace: string; sender: string | null; completed_at: Date | null; page_count: number; allow_attachments: boolean }>(
+    `select r.*, r.title as signer_title, e.status as e_status, e.tenant_id, e.expires_at, e.title, e.message, e.completed_at, e.page_count, e.allow_attachments, t.name as workspace, a.display_name as sender
        from sign_recipient r join sign_envelope e on e.id = r.envelope_id join tenant t on t.id = e.tenant_id left join actor a on a.id = e.created_by
       where r.token_hash = $1 ${lock ? 'for update of r' : ''}`, [hash(t)]);
   if (!rows[0]) throw new InvalidInput('this link is not valid');
@@ -494,8 +718,37 @@ export async function signerView(pool: Pool, t: string, session?: string) {
   const { rows: fields } = await pool.query(
     `select id, kind, page, x::float, y::float, width::float, height::float, required, label, slot from sign_field
       where recipient_id = $1 or (party_id = $2 and slot = $3) order by page, y, x`, [r.id, x.party_id, (party?.signed ?? 0) + 1]);
+  const { rows: attachments } = r.allow_attachments ? await pool.query('select id, filename, byte_size, sha256, uploaded_at from sign_attachment where recipient_id = $1 order by uploaded_at', [r.id]) : { rows: [] };
   return { ...base, stage: 'sign' as const, message: r.message, pages: r.page_count, consented: Boolean(r.consented_at), consentText: CONSENT_TEXT,
-    authorityText: party ? authorityText(party.name) : null, authorityNote: party?.authority_note ?? null, fields };
+    authorityText: party ? authorityText(party.name) : null, authorityNote: party?.authority_note ?? null, fields, allowAttachments: r.allow_attachments, attachments };
+}
+
+export async function uploadSignerAttachment(pool: Pool, t: string, session: string | undefined, body: Record<string, unknown>, ctx: Ctx = {}) {
+  const r = await byToken(pool, t);
+  if (!sessionOk(r, session) || !r.consented_at) throw new InvalidInput('confirm your identity and agree to sign first');
+  if (r.e_status !== 'sent' || !['sent', 'viewed'].includes(r.status) || r.expires_at < new Date()) throw new InvalidInput('this document is no longer waiting for you');
+  if (!r.allow_attachments) throw new InvalidInput('the sender did not request supporting files');
+  const filename = text(body.filename, 180).replace(/[\\/\x00-\x1f]/g, '_');
+  const contentType = text(body.contentType, 100);
+  if (!filename || !['application/pdf', 'image/png', 'image/jpeg'].includes(contentType)) throw new InvalidInput('attach a PDF, PNG or JPEG');
+  if (typeof body.base64 !== 'string' || body.base64.length > 14 * 1024 * 1024) throw new InvalidInput('an attachment must be 10 MB or smaller');
+  const encoded = body.base64;
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(encoded)) throw new InvalidInput('the attachment is not valid base64');
+  const bytes = Buffer.from(encoded, 'base64');
+  if (!bytes.length || bytes.length > 10 * 1024 * 1024) throw new InvalidInput('an attachment must be 10 MB or smaller');
+  const valid = contentType === 'application/pdf' ? bytes.subarray(0, 5).toString() === '%PDF-' : contentType === 'image/png' ? bytes.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10])) : bytes.subarray(0, 3).equals(Buffer.from([255,216,255]));
+  if (!valid) throw new InvalidInput('the file does not match its PDF or image type');
+  const count = await pool.query<{ n: number }>('select count(*)::int as n from sign_attachment where recipient_id = $1', [r.id]);
+  if (count.rows[0]!.n >= 5) throw new InvalidInput('at most five supporting files per signer');
+  const id = randomUUID();
+  const key = `sign/attachments/${r.tenant_id}/${r.envelope_id}/${id}`;
+  await objectStore().put(key, bytes, contentType, { sha256: hash(bytes) });
+  try {
+    await pool.query('insert into sign_attachment (id, envelope_id, recipient_id, filename, content_type, byte_size, sha256, storage_key) values ($1,$2,$3,$4,$5,$6,$7,$8)',
+      [id, r.envelope_id, r.id, filename, contentType, bytes.length, hash(bytes), key]);
+    await event(pool, r.envelope_id, r.id, 'attachment_uploaded', { id, filename, sha256: hash(bytes), bytes: bytes.length }, ctx);
+  } catch (err) { await objectStore().remove(key).catch(() => undefined); throw err; }
+  return { id, filename, sha256: hash(bytes), status: await objectStore().scan(key) };
 }
 
 export async function requestCode(pool: Pool, t: string, ctx: Ctx = {}) {
@@ -575,6 +828,12 @@ export async function signDocument(pool: Pool, t: string, session: string | unde
     const { rows: still } = await client.query<{ status: string }>('select status from sign_recipient where id = $1', [r.id]);
     if (!['sent', 'viewed'].includes(still[0]!.status)) throw new InvalidInput(still[0]!.status === 'not_needed' ? 'enough people have already signed for the company; your signature is no longer needed' : 'you have already responded');
     if (!r.consented_at) throw new InvalidInput('agree to sign electronically first');
+    const { rows: attachments } = await client.query<{ storage_key: string; filename: string; sha256: string }>('select storage_key, filename, sha256 from sign_attachment where recipient_id = $1', [r.id]);
+    for (const attachment of attachments) {
+      const scan = await objectStore().scan(attachment.storage_key);
+      if (scan !== 'clean') throw new InvalidInput(scan === 'scanning' ? `${attachment.filename} is still being checked; try again shortly` : `${attachment.filename} failed its malware check`);
+      if (hash(await objectStore().get(attachment.storage_key)) !== attachment.sha256) throw new InvalidInput(`${attachment.filename} failed its fingerprint check`);
+    }
     const x = r as typeof r & SignerExtra;
     const party = await partyOf(client, x.party_id);
     let slot: number | null = null;
@@ -673,10 +932,11 @@ export async function completeEnvelope(pool: Pool, e: EnvelopeRow) {
   const { rows: events } = await lock.query<{ kind: string; occurred_at: Date; ip: string | null; name: string | null }>(
     `select v.kind, v.occurred_at, v.ip, r.name from sign_event v left join sign_recipient r on r.id = v.recipient_id where v.envelope_id = $1 order by v.id`, [e.id]);
   const { rows: t } = await lock.query<{ name: string }>('select name from tenant where id = $1', [e.tenant_id]);
+  const { rows: attachments } = await lock.query<{ recipient_id: string; filename: string; sha256: string }>('select recipient_id, filename, sha256 from sign_attachment where envelope_id = $1 order by uploaded_at', [e.id]);
   const completedAt = new Date();
   const sealed = await sealPdf(original, {
     envelope: { id: e.id, number: e.number, title: e.title, workspace: t[0]!.name, originalSha256: e.original_sha256, routing: e.routing, completedAt },
-    recipients: recipients.map((r) => ({ ...r, phone: r.phone ? maskPhone(r.phone) : null })), fields, events, parties,
+    recipients: recipients.map((r) => ({ ...r, phone: r.phone ? maskPhone(r.phone) : null })), fields, events, parties, attachments,
   });
   const finalBytes = sealed.bytes;
   const sealInfo = sealConfig()?.info ?? null;

@@ -31,7 +31,7 @@ interface Party { id: string; name: string; required_count: number; authority_no
 interface Event { kind: string; occurred_at: Date; ip: string | null; name: string | null }
 export interface SealInput {
   envelope: { id: string; number: number; title: string; workspace: string; originalSha256: string; routing: string; completedAt: Date };
-  recipients: Recipient[]; fields: Field[]; events: Event[]; parties?: Party[];
+  recipients: Recipient[]; fields: Field[]; events: Event[]; parties?: Party[]; attachments?: { recipient_id: string; filename: string; sha256: string }[];
 }
 
 const ink = rgb(0.05, 0.12, 0.35);
@@ -149,6 +149,14 @@ export async function sealPdf(original: Buffer, input: SealInput): Promise<SealO
       if (r.register_match) line(r.register_match.officer ? `Listed at the register as ${r.register_match.officer.role}${r.register_match.officer.appointedOn ? ` since ${r.register_match.officer.appointedOn}` : ''} (${r.register_match.officer.name})` : 'Not listed as an officer at the register; authority rests on the sender\'s record', { indent: 12 });
       line(`Signed: ${when(r.signed_at)} · method: ${r.signature?.method === 'drawn' ? 'drawn' : 'typed and adopted'} · printed name: ${r.signature?.name ?? '—'}`, { indent: 12 });
       line(`IP address: ${r.ip ?? '—'} · browser: ${(r.user_agent ?? '—').slice(0, 110)}`, { indent: 12, color: grey, size: 8 });
+    }
+  }
+  if (input.attachments?.length) {
+    y -= 8;
+    line('Signer attachments', { size: 12, font: bold });
+    for (const a of input.attachments) {
+      const signer = byId.get(a.recipient_id);
+      line(`${a.filename} · supplied by ${signer?.name ?? 'signer'} · SHA-256 ${a.sha256}`, { size: 8 });
     }
   }
   y -= 8;

@@ -2252,12 +2252,51 @@ create table if not exists sign_envelope (
 );
 create index if not exists sign_envelope_final on sign_envelope (final_sha256) where final_sha256 is not null;
 
+create table if not exists sign_envelope_document (
+  envelope_id uuid not null references sign_envelope(id),
+  ordinal int not null check (ordinal between 1 and 10),
+  file_id uuid not null references gov_file(id),
+  filename text not null,
+  sha256 text not null,
+  page_start int not null check (page_start >= 1),
+  page_count int not null check (page_count >= 1),
+  primary key (envelope_id, ordinal),
+  unique (envelope_id, file_id)
+);
+
+create table if not exists sign_agreement_template (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null references tenant(id),
+  name text not null,
+  documents jsonb not null,
+  roles jsonb not null,
+  fields jsonb not null,
+  routing text not null check (routing in ('sequential', 'parallel')),
+  created_by uuid references actor(id),
+  created_at timestamptz not null default now(),
+  unique (tenant_id, name)
+);
+alter table sign_envelope add column if not exists bulk_key text;
+create unique index if not exists sign_envelope_bulk_key on sign_envelope (tenant_id, bulk_key) where bulk_key is not null;
+create table if not exists sign_bulk_batch (
+  tenant_id uuid not null references tenant(id),
+  batch_key text not null,
+  payload_sha256 text not null,
+  template_id uuid not null references sign_agreement_template(id),
+  created_by uuid not null references actor(id),
+  created_at timestamptz not null default now(),
+  primary key (tenant_id, batch_key)
+);
+alter table sign_recipient add column if not exists position int;
+alter table sign_envelope add column if not exists allow_attachments boolean not null default false;
+
 create table if not exists sign_recipient (
   id               uuid primary key default gen_random_uuid(),
   envelope_id      uuid not null references sign_envelope(id),
   name             text not null,
   email            text not null,
   role             text not null default 'signer' check (role in ('signer', 'cc')),
+  position         int,
   routing_order    int not null default 1,
   actor_id         uuid references actor(id),
   status           text not null default 'waiting' check (status in ('waiting', 'sent', 'viewed', 'signed', 'declined')),
@@ -2284,6 +2323,29 @@ create table if not exists sign_recipient (
   last_reminded_at timestamptz,
   created_at       timestamptz not null default now()
 );
+
+create table if not exists sign_attachment (
+  id uuid primary key default gen_random_uuid(),
+  envelope_id uuid not null references sign_envelope(id),
+  recipient_id uuid not null references sign_recipient(id),
+  filename text not null,
+  content_type text not null,
+  byte_size int not null,
+  sha256 text not null,
+  storage_key text not null,
+  uploaded_at timestamptz not null default now()
+);
+create index if not exists sign_attachment_envelope on sign_attachment (envelope_id, recipient_id);
+create table if not exists sign_embed_session (
+  token_hash text primary key,
+  envelope_id uuid not null references sign_envelope(id),
+  recipient_id uuid not null references sign_recipient(id),
+  allowed_origin text not null,
+  expires_at timestamptz not null,
+  created_by uuid not null references actor(id),
+  created_at timestamptz not null default now()
+);
+create index if not exists sign_embed_session_envelope on sign_embed_session (envelope_id);
 
 create table if not exists sign_field (
   id           uuid primary key default gen_random_uuid(),
