@@ -8,6 +8,7 @@ import { logIfEnabled } from './trace.js';
 import { InvalidInput } from './errors.js';
 import { isVerified, sendVerification } from './account.js';
 import { invitationMail, sendPlatformMail } from './platform-mail.js';
+import { seedDefaultGeneralApproval } from './general-approval-defaults.js';
 
 /**
  * Workspaces and the people in them — §6.1's IAM-01 and IAM-04.
@@ -97,6 +98,11 @@ export async function createWorkspace(
       [tenantId, email, args.ownerName.trim() || email],
     );
     const actorId = actors[0]!.id;
+
+    // Everyday approvals are ready as soon as a real workspace is created.
+    await client.query(`insert into tenant_module (tenant_id, module_key, enabled, changed_by)
+      values ($1, 'general_approvals', true, $2) on conflict (tenant_id, module_key) do nothing`, [tenantId, actorId]);
+    await seedDefaultGeneralApproval(client, tenantId, actorId);
 
     await setPassword(client, actorId, args.password);
 

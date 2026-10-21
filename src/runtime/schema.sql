@@ -2391,12 +2391,14 @@ create index if not exists goal_file_by_goal on goal_file (goal_id, created_at);
 
 create table if not exists general_request_type (
   id uuid primary key default gen_random_uuid(), tenant_id uuid not null references tenant(id),
+  seed_key text,
   name text not null, description text, fields jsonb not null default '[]',
   attachment_rule text not null default 'optional' check (attachment_rule in ('none','optional','required')),
   steps jsonb not null, active boolean not null default true,
   created_by uuid references actor(id), created_at timestamptz not null default now(), updated_at timestamptz not null default now()
 );
 create index if not exists general_request_type_tenant on general_request_type (tenant_id, active, name);
+create unique index if not exists general_request_type_seed on general_request_type (tenant_id, seed_key);
 create table if not exists general_request (
   id uuid primary key default gen_random_uuid(), tenant_id uuid not null references tenant(id),
   type_id uuid not null references general_request_type(id), type_snapshot jsonb,
@@ -2430,6 +2432,12 @@ create table if not exists general_request_file (
   uploaded_by uuid not null references actor(id), created_at timestamptz not null default now()
 );
 create index if not exists general_request_file_by_request on general_request_file (request_id, created_at);
+create table if not exists general_request_share (
+  tenant_id uuid not null references tenant(id), request_id uuid not null references general_request(id),
+  actor_id uuid not null references actor(id), added_by uuid not null references actor(id),
+  created_at timestamptz not null default now(), primary key (request_id, actor_id)
+);
+create index if not exists general_request_share_by_actor on general_request_share (tenant_id, actor_id);
 
 create table if not exists development_item (
   id             uuid primary key default gen_random_uuid(),

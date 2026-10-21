@@ -211,9 +211,9 @@ export function Console() {
       if (info.actor.workspace_role === 'auditor' && info.modules?.includes('contracts')) setView('compliance');
       // Phone shortcuts can open an enabled module directly in the full console.
       const requestedView = new URLSearchParams(window.location.search).get('view');
-      const moduleViews: Record<string, string> = { expenses: 'expenses', procurement: 'procurement', hr: 'hr', appraisals: 'appraisals', assets: 'operations', contracts: 'compliance', meetings: 'meetings' };
+      const moduleViews: Record<string, string> = { expenses: 'expenses', procurement: 'procurement', hr: 'hr', appraisals: 'appraisals', assets: 'operations', contracts: 'compliance', meetings: 'meetings', general_approvals: 'general_approvals' };
       if (requestedView && Object.entries(moduleViews).some(([module, page]) => page === requestedView && info.modules?.includes(module))) {
-        setView(requestedView as 'expenses' | 'procurement' | 'hr' | 'appraisals' | 'operations' | 'compliance' | 'meetings');
+        setView(requestedView as 'expenses' | 'procurement' | 'hr' | 'appraisals' | 'operations' | 'compliance' | 'meetings' | 'general_approvals');
       } else if (requestedView === 'sign' && info.modules?.includes('contracts')) setView('sign');
       const requested = new URLSearchParams(window.location.search).get('process');
       setProcessKey((current) =>

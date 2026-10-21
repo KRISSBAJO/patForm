@@ -1328,6 +1328,7 @@ create index if not exists goal_file_by_goal on goal_file (goal_id, created_at);
 
 create table if not exists general_request_type (
   id uuid primary key default gen_random_uuid(), tenant_id uuid not null references tenant(id),
+  seed_key text,
   name text not null, description text, fields jsonb not null default '[]',
   attachment_rule text not null default 'optional' check (attachment_rule in ('none','optional','required')),
   steps jsonb not null, active boolean not null default true,
@@ -1367,6 +1368,22 @@ create table if not exists general_request_file (
   uploaded_by uuid not null references actor(id), created_at timestamptz not null default now()
 );
 create index if not exists general_request_file_by_request on general_request_file (request_id, created_at);
+alter table general_request_type add column if not exists seed_key text;
+create unique index if not exists general_request_type_seed on general_request_type (tenant_id, seed_key);
+create table if not exists general_request_share (
+  tenant_id uuid not null references tenant(id), request_id uuid not null references general_request(id),
+  actor_id uuid not null references actor(id), added_by uuid not null references actor(id),
+  created_at timestamptz not null default now(), primary key (request_id, actor_id)
+);
+create index if not exists general_request_share_by_actor on general_request_share (tenant_id, actor_id);
+
+insert into general_request_type (tenant_id, seed_key, name, description, fields, attachment_rule, steps)
+select tm.tenant_id, 'general', 'General request',
+  'For everyday work requests. Your manager reviews it; if no manager is assigned, another workspace owner or admin reviews it.',
+  '[{"key":"details","label":"What do you need and why?","type":"long_text","required":true},{"key":"needed_by","label":"When do you need it?","type":"date","required":false}]'::jsonb,
+  'optional', '[{"name":"Manager approval","responsible":[{"kind":"manager"}],"mode":"any"}]'::jsonb
+from tenant_module tm where tm.module_key='general_approvals' and tm.enabled
+on conflict (tenant_id, seed_key) do nothing;
 
 create table if not exists development_item (
   id             uuid primary key default gen_random_uuid(),

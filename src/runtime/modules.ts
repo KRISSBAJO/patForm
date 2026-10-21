@@ -14,6 +14,7 @@ import { inTransaction, type Pool } from './db.js';
 import { InvalidInput } from './errors.js';
 import { requireWorkspaceCapability, type Principal } from './policy.js';
 import { recordWorkspaceAudit } from './authority.js';
+import { seedDefaultGeneralApproval } from './general-approval-defaults.js';
 
 export interface ModuleDefinition {
   key: string;
@@ -146,6 +147,7 @@ export async function setModule(pool: Pool, principal: Principal, key: string, b
          set enabled = excluded.enabled, plan = coalesce(excluded.plan, tenant_module.plan),
              changed_by = excluded.changed_by, changed_at = now()`,
       [principal.tenantId, key, body.enabled, plan, principal.actorId]);
+    if (key === 'general_approvals' && body.enabled) await seedDefaultGeneralApproval(client, principal.tenantId, principal.actorId);
     await recordWorkspaceAudit(client, {
       tenantId: principal.tenantId, actorId: principal.actorId,
       action: body.enabled ? 'module.enabled' : 'module.disabled', targetId: key, detail: { plan },

@@ -5,7 +5,7 @@ import { Engine } from '../src/runtime/engine.js';
 import { setModule } from '../src/runtime/modules.js';
 import { setManager } from '../src/runtime/org.js';
 import { memoryObjectStore, setObjectStoreForTests } from '../src/runtime/object-store.js';
-import { createRequest, decideRequest, editRequest, fileLink, listRequests, requestDetail, saveType, submitRequest, uploadFile } from '../src/runtime/general-approvals.js';
+import { createRequest, decideRequest, editRequest, fileLink, listRequests, listTypes, requestDetail, saveType, setRequestShare, submitRequest, uploadFile } from '../src/runtime/general-approvals.js';
 import type { Principal } from '../src/runtime/policy.js';
 
 const localDatabase = !!process.env.DATABASE_URL && ['localhost', '127.0.0.1', '[::1]'].includes(new URL(process.env.DATABASE_URL).hostname);
@@ -27,6 +27,24 @@ test('general approvals routes a typed request, checks its required attachment, 
     const final = await actor('Final', 'approver');
     const outsider = await actor('Outsider', 'operator');
     await setModule(pool, owner.p, 'general_approvals', { enabled: true });
+    const starter = (await listTypes(pool, requester.p)).find((t: { name: string }) => t.name === 'General request');
+    assert.ok(starter, 'activating the module creates a usable request type');
+    const first = await createRequest(pool, requester.p, { typeId: starter.id, title: 'Access to the demo', answers: { details: 'I need to test the new workspace.' } });
+    await assert.rejects(setRequestShare(pool, requester.p, first.id, { actorId: outsider.id }), /submitted request/);
+    await submitRequest(pool, requester.p, first.id);
+    assert.equal((await listRequests(pool, owner.p, 'waiting')).some((r: { id: string }) => r.id === first.id), true, 'owner reviews when the requester has no manager');
+    await assert.rejects(requestDetail(pool, outsider.p, first.id), /not assigned/);
+    const otherTenant = await engine.createTenant(`ga-other-${Date.now()}-${Math.random()}`, { scenario: true });
+    const otherActor = await engine.createActor(otherTenant, `other-${Date.now()}@example.test`, 'Other workspace', 'operator');
+    await assert.rejects(setRequestShare(pool, requester.p, first.id, { actorId: otherActor }), /active person in this workspace/);
+    await setRequestShare(pool, requester.p, first.id, { actorId: outsider.id });
+    assert.equal((await requestDetail(pool, outsider.p, first.id)).viewer.canDecide, false, 'sharing view access does not grant approval power');
+    assert.equal((await listRequests(pool, outsider.p, 'shared')).some((r: { id: string }) => r.id === first.id), true);
+    await assert.rejects(decideRequest(pool, outsider.p, first.id, { decision: 'approve' }), /not a named approver/);
+    await setRequestShare(pool, requester.p, first.id, { actorId: outsider.id, shared: false });
+    await assert.rejects(requestDetail(pool, outsider.p, first.id), /not assigned/);
+    const ownerDraft = await createRequest(pool, owner.p, { typeId: starter.id, title: 'Owner request', answers: { details: 'A request that needs another person.' } });
+    await assert.rejects(submitRequest(pool, owner.p, ownerDraft.id), /cannot approve your own request/);
     await setManager(pool, owner.p, requester.id, { managerId: manager.id, effectiveFrom: '2026-01-01T00:00:00Z' });
     const type = await saveType(pool, owner.p, {
       name: 'System access', description: 'Access to a work system', attachmentRule: 'required',

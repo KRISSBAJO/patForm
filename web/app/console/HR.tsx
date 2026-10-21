@@ -360,6 +360,7 @@ export function HRView({ onChanged, shell }: { onChanged?: () => void; shell?: M
   const [setupTab, setSetupTab] = useState<'branches' | 'leave' | 'holidays' | 'documents' | 'teams'>('branches');
   const [form, setForm] = useState<Record<string, string>>({});
   const [sheet, setSheet] = useState<null | 'onboarding' | 'offboarding' | 'transfer' | 'urgent' | 'probation' | 'leave' | 'branch' | 'defaults' | 'leaveType' | 'holiday' | 'document' | 'docFile' | 'team' | 'probationExtend'>(null);
+  const [branchFromOnboarding, setBranchFromOnboarding] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [week, setWeek] = useState<number[]>([1, 2, 3, 4, 5]);
   const [asking, setAsking] = useState<{ id: string; label: string; run: (answer: string) => Promise<string> } | null>(null);
@@ -367,9 +368,10 @@ export function HRView({ onChanged, shell }: { onChanged?: () => void; shell?: M
   const [openCase, setOpenCase] = useState<string | null>(null);
   const [caseFilter, setCaseFilter] = useState<string>('all');
   useEffect(() => {
-    if (shell?.section && shell.section !== tab) { setTab(shell.section as Tab); setNote(null); setSheet(null); setForm({}); setAsking(null); setPerson(null); }
+    if (shell?.section && shell.section !== tab) { setTab(shell.section as Tab); setNote(null); setSheet(null); setBranchFromOnboarding(false); setForm({}); setAsking(null); setPerson(null); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shell?.section]);
+  useEffect(() => { if (sheet === null) setBranchFromOnboarding(false); }, [sheet]);
   const f = (k: string) => form[k] ?? '';
   const setF = (k: string, v: string) => setForm((x) => ({ ...x, [k]: v }));
 
@@ -654,7 +656,7 @@ export function HRView({ onChanged, shell }: { onChanged?: () => void; shell?: M
         <F label="Job title"><input value={f('oTitle')} onChange={(e) => setF('oTitle', e.target.value)} /></F>
         <F label="Grade"><input value={f('oGrade')} onChange={(e) => setF('oGrade', e.target.value)} placeholder="optional" /></F>
         <F label="Manager"><select value={f('oMgr')} onChange={(e) => setF('oMgr', e.target.value)}><option value="">Choose…</option>{memberOptions.map((m) => <option key={m.id} value={m.id}>{m.display_name}</option>)}</select></F>
-        <F label="Branch" hint={activeBranches.length ? undefined : 'no branches yet; set them up in Setup'}><select value={f('oBranch')} onChange={(e) => setF('oBranch', e.target.value)}><option value="">No branch</option>{activeBranches.map((b) => <option key={b.id} value={b.id}>{flag(b.country)} {b.name} · {b.currency}</option>)}</select></F>
+        <F label="Branch" hint={activeBranches.length ? undefined : 'Add a branch here if this is their first location.'}><div className="hr__branchPicker"><select value={f('oBranch')} onChange={(e) => setF('oBranch', e.target.value)}><option value="">No branch</option>{activeBranches.map((b) => <option key={b.id} value={b.id}>{flag(b.country)} {b.name} · {b.currency}</option>)}</select>{s.admin && <button type="button" className="mx__btn mx__btn--ghost mx__btn--sm" aria-label="Create a branch" title="Create a branch" onClick={() => { setBranchFromOnboarding(true); setForm((old) => ({ ...old, id: '', name: '', country: branches.data?.defaultCountry ?? '', currency: branches.data?.defaultCurrency ?? 'USD', timezone: 'UTC', address: '' })); setWeek(branches.data?.workingDays ?? [1, 2, 3, 4, 5]); setSheet('branch'); }}>+ Branch</button>}</div></F>
         <F label="Location" hint="office or city"><input value={f('oLoc')} onChange={(e) => setF('oLoc', e.target.value)} /></F>
         <F label="Type" wide><Choice value={f('oType') || 'employee'} onChange={(x) => setF('oType', x)} options={[['employee', 'Employee'], ['contractor', 'Contractor'], ['intern', 'Intern']]} /></F>
       </SheetSection>
@@ -689,8 +691,8 @@ export function HRView({ onChanged, shell }: { onChanged?: () => void; shell?: M
       <SheetSection title="Dates"><F label="From"><input type="date" autoFocus value={f('lFrom')} onChange={(e) => setF('lFrom', e.target.value)} /></F><F label="To"><input type="date" value={f('lTo')} onChange={(e) => setF('lTo', e.target.value)} /></F><F label="Note for your manager" wide><input value={f('lWhy')} onChange={(e) => setF('lWhy', e.target.value)} placeholder="optional" /></F></SheetSection>
     </Sheet>}
 
-    {sheet === 'branch' && <Sheet eyebrow="Branch" title={f('id') ? `Edit ${f('name')}` : 'New branch'} subtitle="A place you employ people. People in it get its holidays, working week and pay currency." onClose={() => setSheet(null)}
-      footer={<><button type="button" className="mx__btn mx__btn--ghost" onClick={() => setSheet(null)}>Cancel</button><button type="button" className="mx__btn" disabled={busy === 'branch' || !f('name') || !f('country') || !f('currency')} onClick={() => done('branch', async () => { await postJson('/api/hr/branches', { id: f('id') || undefined, name: f('name'), country: f('country'), currency: f('currency'), timezone: f('timezone'), address: f('address'), workingDays: week, active: f('active') !== 'no' }); return f('id') ? 'Branch updated.' : 'Branch added.'; })}>{f('id') ? 'Save' : 'Add branch'}</button></>}>
+    {sheet === 'branch' && <Sheet eyebrow="Branch" title={f('id') ? `Edit ${f('name')}` : 'New branch'} subtitle="A place you employ people. People in it get its holidays, working week and pay currency." onClose={() => { setSheet(branchFromOnboarding ? 'onboarding' : null); setBranchFromOnboarding(false); }}
+      footer={<><button type="button" className="mx__btn mx__btn--ghost" onClick={() => { setSheet(branchFromOnboarding ? 'onboarding' : null); setBranchFromOnboarding(false); }}>Cancel</button><button type="button" className="mx__btn" disabled={busy === 'branch' || !f('name') || !f('country') || !f('currency')} onClick={() => { if (branchFromOnboarding) { void act('branch', async () => { const created = await postJson<{ id: string }>('/api/hr/branches', { name: f('name'), country: f('country'), currency: f('currency'), timezone: f('timezone'), address: f('address'), workingDays: week, active: true }); setF('oBranch', created.id); setBranchFromOnboarding(false); setSheet('onboarding'); return `${f('name')} added and selected for this joiner.`; }); } else { done('branch', async () => { await postJson('/api/hr/branches', { id: f('id') || undefined, name: f('name'), country: f('country'), currency: f('currency'), timezone: f('timezone'), address: f('address'), workingDays: week, active: f('active') !== 'no' }); return f('id') ? 'Branch updated.' : 'Branch added.'; }); } }}>{f('id') ? 'Save' : 'Add branch'}</button></>}>
       <SheetSection title="Where" hint="Country sets the flag; the time zone is used for dates and reminders.">
         <F label="Name" wide><input autoFocus value={f('name')} onChange={(e) => setF('name', e.target.value)} placeholder="Lagos, London, Nairobi…" /></F>
         <F label="Country"><select value={f('country')} onChange={(e) => setF('country', e.target.value)}><option value="">Choose…</option>{COUNTRIES.map(([c, n]) => <option key={c} value={c}>{flag(c)} {n}</option>)}</select></F>

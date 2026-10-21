@@ -1068,6 +1068,7 @@ route('GET', /^\/api\/general-approvals\/requests\/([0-9a-f-]{36})$/, async ({ p
 route('POST', /^\/api\/general-approvals\/requests\/([0-9a-f-]{36})$/, async ({ pool, principal, url }, b) => ga.editRequest(pool, principal, hid(url, 4), hb(b)));
 route('POST', /^\/api\/general-approvals\/requests\/([0-9a-f-]{36})\/submit$/, async ({ pool, principal, url }) => ga.submitRequest(pool, principal, hid(url, 4)));
 route('POST', /^\/api\/general-approvals\/requests\/([0-9a-f-]{36})\/decide$/, async ({ pool, principal, url }, b) => ga.decideRequest(pool, principal, hid(url, 4), hb(b)));
+route('POST', /^\/api\/general-approvals\/requests\/([0-9a-f-]{36})\/share$/, async ({ pool, principal, url }, b) => ga.setRequestShare(pool, principal, hid(url, 4), hb(b)));
 route('POST', /^\/api\/general-approvals\/requests\/([0-9a-f-]{36})\/files$/, async ({ pool, principal, url }, b) => ga.uploadFile(pool, principal, hid(url, 4), hb(b)));
 route('GET', /^\/api\/general-approvals\/requests\/([0-9a-f-]{36})\/files\/([0-9a-f-]{36})$/, async ({ pool, principal, url }) => ga.fileLink(pool, principal, hid(url, 4), hid(url, 6)));
 route('GET', /^\/api\/hr\/cases\/search$/, async ({ pool, principal, url }) => searchCases(pool, principal, url.searchParams));

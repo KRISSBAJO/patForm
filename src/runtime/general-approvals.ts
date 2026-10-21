@@ -85,7 +85,9 @@ async function requestRow(pool: Pool | Client, tenantId: string, requestId: stri
 }
 async function visible(pool: Pool | Client, who: { tenantId: string; actorId: string; admin: boolean }, request: Request) {
   if (who.admin || request.requester_id === who.actorId) return true;
-  const { rows } = await pool.query('select 1 from general_request_step where request_id = $1 and $2 = any(approvers) limit 1', [request.id, who.actorId]);
+  const { rows } = await pool.query(`select 1 where exists
+    (select 1 from general_request_step where request_id=$1 and $2=any(approvers))
+    or exists (select 1 from general_request_share where request_id=$1 and actor_id=$2)`, [request.id, who.actorId]);
   return !!rows[0];
 }
 export async function listTypes(pool: Pool, principal: Principal) {
@@ -140,7 +142,16 @@ export async function editRequest(pool: Pool, principal: Principal, requestId: s
 async function assignees(client: Client, who: { tenantId: string; actorId: string }, rule: Rule) {
   if (rule.kind === 'manager') {
     const manager = await managerOf(client, { tenantId: who.tenantId, actorId: who.actorId, at: new Date() });
-    return manager ? [manager.id] : [];
+    if (manager && manager.id !== who.actorId) return [manager.id];
+    // A workspace can start with no org chart. Route to another owner/admin,
+    // never back to the requester, and keep the actual approver on the step.
+    const { rows } = await client.query<{ id: string }>(
+      `select id from actor where tenant_id=$1 and active and id<>$2
+         and workspace_role in ('owner','admin')
+       order by case workspace_role when 'owner' then 0 else 1 end, created_at, id limit 1`,
+      [who.tenantId, who.actorId],
+    );
+    return rows.map((r) => r.id);
   }
   if (rule.kind === 'person') {
     const { rows } = await client.query<{ id: string }>('select id from actor where id = $1 and tenant_id = $2 and active', [rule.actorId, who.tenantId]);
@@ -165,7 +176,7 @@ export async function submitRequest(pool: Pool, principal: Principal, requestId:
       const step = type.steps[index]!; const ids = new Set<string>();
       for (const rule of step.responsible) for (const id of await assignees(client, who, rule)) if (id !== who.actorId) ids.add(id);
       const required = step.mode === 'all' ? ids.size : step.mode === 'quorum' ? step.required! : 1;
-      if (!ids.size || required > ids.size) throw new InvalidInput(`${step.name} has no eligible approver. Ask an administrator to update its approval policy.`);
+      if (!ids.size || required > ids.size) throw new InvalidInput(`${step.name} needs another eligible approver. Assign a manager or ask a different owner/admin to join this workspace; you cannot approve your own request.`);
       await client.query(`insert into general_request_step (tenant_id,request_id,round,position,name,approvers,mode,required,status,opened_at) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, [who.tenantId, requestId, nextRound, index, step.name, [...ids], step.mode, required, index === 0 ? 'pending' : 'waiting', index === 0 ? new Date() : null]);
     }
     await client.query(`update general_request set status='pending',type_snapshot=$2,round=$3,current_step=0,submitted_at=now(),updated_at=now() where id=$1`, [requestId, JSON.stringify(type), nextRound]);
@@ -175,22 +186,43 @@ export async function submitRequest(pool: Pool, principal: Principal, requestId:
 }
 export async function listRequests(pool: Pool, principal: Principal, scope: string) {
   const who = await member(pool, principal);
-  if (!['mine', 'waiting', 'all'].includes(scope)) throw new InvalidInput('choose mine, waiting or all');
+  if (!['mine', 'waiting', 'shared', 'all'].includes(scope)) throw new InvalidInput('choose mine, waiting, shared or all');
   if (scope === 'all' && !who.admin) throw new InvalidInput('only an administrator can see every request');
-  const where = scope === 'mine' ? 'r.requester_id=$2' : scope === 'waiting' ? "r.status='pending' and exists (select 1 from general_request_step s where s.request_id=r.id and s.round=r.round and s.position=r.current_step and s.status='pending' and $2=any(s.approvers) and not exists (select 1 from general_request_vote v where v.step_id=s.id and v.actor_id=$2))" : 'true';
+  const where = scope === 'mine' ? 'r.requester_id=$2' : scope === 'waiting' ? "r.status='pending' and exists (select 1 from general_request_step s where s.request_id=r.id and s.round=r.round and s.position=r.current_step and s.status='pending' and $2=any(s.approvers) and not exists (select 1 from general_request_vote v where v.step_id=s.id and v.actor_id=$2))" : scope === 'shared' ? 'exists (select 1 from general_request_share h where h.request_id=r.id and h.actor_id=$2)' : 'true';
   const { rows } = await pool.query(`select r.id,r.title,r.status,r.created_at,r.updated_at,r.submitted_at,r.requester_id,r.current_step,t.name as type_name,a.display_name as requester,(select name from general_request_step s where s.request_id=r.id and s.round=r.round and s.position=r.current_step) as step_name from general_request r join general_request_type t on t.id=r.type_id join actor a on a.id=r.requester_id where r.tenant_id=$1 and ${where} order by r.updated_at desc limit 200`, scope === 'all' ? [who.tenantId] : [who.tenantId, who.actorId]);
   return rows;
 }
 export async function requestDetail(pool: Pool, principal: Principal, requestId: string) {
   const who = await member(pool, principal); const request = await requestRow(pool, who.tenantId, requestId);
   if (!(await visible(pool, who, request))) throw new InvalidInput('this request is not assigned to you');
-  const [type, steps, events, files] = await Promise.all([
+  const [type, steps, events, files, shares] = await Promise.all([
     pool.query<RequestType>('select * from general_request_type where id=$1', [request.type_id]),
     pool.query(`select s.id,s.round,s.position,s.name,s.mode,s.required,s.status,s.approvers,s.opened_at,s.closed_at,(select count(*)::int from general_request_vote v where v.step_id=s.id and v.decision='approve') as approvals,exists(select 1 from general_request_vote v where v.step_id=s.id and v.actor_id=$2) as viewer_voted from general_request_step s where s.request_id=$1 order by s.round,s.position`, [requestId, who.actorId]),
     pool.query(`select e.id,e.kind,e.detail,e.created_at,a.display_name as actor from general_request_event e left join actor a on a.id=e.actor_id where e.request_id=$1 order by e.id desc`, [requestId]),
     pool.query('select id,filename,byte_size,created_at from general_request_file where request_id=$1 order by created_at desc', [requestId]),
+    pool.query('select h.actor_id,a.display_name,a.email from general_request_share h join actor a on a.id=h.actor_id where h.request_id=$1 order by h.created_at', [requestId]),
   ]);
-  return { request, type: request.type_snapshot ?? type.rows[0], steps: steps.rows, events: events.rows, files: files.rows, viewer: { own: request.requester_id === who.actorId, admin: who.admin, canDecide: request.status === 'pending' && steps.rows.some((s: { round: number; position: number; status: string; approvers: string[]; viewer_voted: boolean }) => s.round === request.round && s.position === request.current_step && s.status === 'pending' && s.approvers.includes(who.actorId) && !s.viewer_voted) } };
+  return { request, type: request.type_snapshot ?? type.rows[0], steps: steps.rows, events: events.rows, files: files.rows, shares: shares.rows, viewer: { own: request.requester_id === who.actorId, admin: who.admin, canShare: request.status !== 'draft' && (request.requester_id === who.actorId || who.admin), canDecide: request.status === 'pending' && steps.rows.some((s: { round: number; position: number; status: string; approvers: string[]; viewer_voted: boolean }) => s.round === request.round && s.position === request.current_step && s.status === 'pending' && s.approvers.includes(who.actorId) && !s.viewer_voted) } };
+}
+export async function setRequestShare(pool: Pool, principal: Principal, requestId: string, body: Record<string, unknown>) {
+  const who = await member(pool, principal);
+  const request = await requestRow(pool, who.tenantId, requestId);
+  if (request.status === 'draft' || (!who.admin && request.requester_id !== who.actorId)) throw new InvalidInput('only the requester or a workspace admin can share a submitted request');
+  const actorId = value(body.actorId, 36);
+  if (!UUID.test(actorId) || actorId === request.requester_id) throw new InvalidInput('choose another workspace member');
+  const { rows } = await pool.query('select 1 from actor where tenant_id=$1 and id=$2 and active', [who.tenantId, actorId]);
+  if (!rows[0]) throw new InvalidInput('choose an active person in this workspace');
+  return inTransaction(pool, async (client) => {
+    if (body.shared === false) {
+      await client.query('delete from general_request_share where tenant_id=$1 and request_id=$2 and actor_id=$3', [who.tenantId, requestId, actorId]);
+      await event(client, who, requestId, 'access_removed', { actorId });
+    } else {
+      await client.query(`insert into general_request_share (tenant_id,request_id,actor_id,added_by) values ($1,$2,$3,$4)
+        on conflict (request_id,actor_id) do nothing`, [who.tenantId, requestId, actorId, who.actorId]);
+      await event(client, who, requestId, 'access_shared', { actorId });
+    }
+    return { requestId, actorId, shared: body.shared !== false };
+  });
 }
 export async function decideRequest(pool: Pool, principal: Principal, requestId: string, body: Record<string, unknown>) {
   const who = await member(pool, principal); const decision = value(body.decision, 10); const note = value(body.note, 2000);
