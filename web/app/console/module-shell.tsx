@@ -50,6 +50,7 @@ export const MODULE_AREAS: Record<string, Area> = {
   appraisals: { key: 'appraisals', name: 'Appraisals', blurb: 'Goals, reviews, calibration', colour: '#0e7c7b', deep: '#0a5554', tint: '#e8f4f4', icon: svg('M12 3l2.4 5 5.6.8-4 3.9.9 5.6-4.9-2.6-4.9 2.6.9-5.6-4-3.9 5.6-.8zM4 21h16') },
   operations: { key: 'operations', name: 'Assets & IT', blurb: 'Assets, access, tickets, maintenance', colour: '#475569', deep: '#2f3a48', tint: '#eef1f5', icon: svg('M4 5h16a1 1 0 0 1 1 1v9H3V6a1 1 0 0 1 1-1zM2 18h20M9 15v3M15 15v3M10 9h4') },
   meetings: { key: 'meetings', name: 'Meetings', blurb: 'Boards, votes, minutes, resolutions', colour: '#5b4bb7', deep: '#3d3280', tint: '#efedf9', icon: svg('M4 6h16a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1zM3 11h18M8 4v4M16 4v4M8 15h3') },
+  general_approvals: { key: 'general_approvals', name: 'General approvals', blurb: 'Requests, decisions, records', colour: '#236747', deep: '#174c34', tint: '#e9f4ed', icon: svg('M6 3h9l4 4v14H6zM9 12l2 2 4-4M9 17h6') },
   sign: { key: 'sign', name: 'Patform Sign', blurb: 'Send, sign, seal, verify', colour: '#14663f', deep: '#0f4e30', tint: '#eaf3ed', icon: svg('M4 19h16M5 15l9.5-9.5a2 2 0 0 1 2.8 2.8L7.8 17.8 4 19zM13 7l3 3') },
   compliance: { key: 'compliance', name: 'Compliance', blurb: 'Contracts, policies, controls, audits', colour: '#8a3a34', deep: '#5e2621', tint: '#f8eeec', icon: svg('M12 3l7 2.5v5.5c0 4.6-3 8-7 10-4-2-7-5.4-7-10V5.5zM9 12l2 2 4-4.5') },
 };

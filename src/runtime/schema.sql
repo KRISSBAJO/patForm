@@ -2389,6 +2389,48 @@ create table if not exists goal_file (
 );
 create index if not exists goal_file_by_goal on goal_file (goal_id, created_at);
 
+create table if not exists general_request_type (
+  id uuid primary key default gen_random_uuid(), tenant_id uuid not null references tenant(id),
+  name text not null, description text, fields jsonb not null default '[]',
+  attachment_rule text not null default 'optional' check (attachment_rule in ('none','optional','required')),
+  steps jsonb not null, active boolean not null default true,
+  created_by uuid references actor(id), created_at timestamptz not null default now(), updated_at timestamptz not null default now()
+);
+create index if not exists general_request_type_tenant on general_request_type (tenant_id, active, name);
+create table if not exists general_request (
+  id uuid primary key default gen_random_uuid(), tenant_id uuid not null references tenant(id),
+  type_id uuid not null references general_request_type(id), type_snapshot jsonb,
+  requester_id uuid not null references actor(id), title text not null, answers jsonb not null default '{}',
+  status text not null default 'draft' check (status in ('draft','pending','returned','approved','rejected')),
+  current_step int not null default 0, round int not null default 0,
+  created_at timestamptz not null default now(), updated_at timestamptz not null default now(), submitted_at timestamptz
+);
+create index if not exists general_request_tenant on general_request (tenant_id, status, created_at desc);
+create table if not exists general_request_step (
+  id bigserial primary key, tenant_id uuid not null references tenant(id), request_id uuid not null references general_request(id),
+  round int not null, position int not null, name text not null, approvers uuid[] not null,
+  mode text not null check (mode in ('any','all','quorum')), required int not null,
+  status text not null default 'waiting' check (status in ('waiting','pending','approved','rejected','returned')),
+  opened_at timestamptz, closed_at timestamptz, unique (request_id, round, position)
+);
+create index if not exists general_request_step_pending on general_request_step (tenant_id, status);
+create table if not exists general_request_vote (
+  id bigserial primary key, step_id bigint not null references general_request_step(id), actor_id uuid not null references actor(id),
+  decision text not null check (decision in ('approve','reject','return')), note text,
+  created_at timestamptz not null default now(), unique (step_id, actor_id)
+);
+create table if not exists general_request_event (
+  id bigserial primary key, tenant_id uuid not null references tenant(id), request_id uuid not null references general_request(id),
+  actor_id uuid references actor(id), kind text not null, detail jsonb not null default '{}', created_at timestamptz not null default now()
+);
+create index if not exists general_request_event_by_request on general_request_event (request_id, id);
+create table if not exists general_request_file (
+  id uuid primary key default gen_random_uuid(), tenant_id uuid not null references tenant(id), request_id uuid not null references general_request(id),
+  filename text not null, byte_size int not null, sha256 text not null, storage_key text not null,
+  uploaded_by uuid not null references actor(id), created_at timestamptz not null default now()
+);
+create index if not exists general_request_file_by_request on general_request_file (request_id, created_at);
+
 create table if not exists development_item (
   id             uuid primary key default gen_random_uuid(),
   tenant_id      uuid not null references tenant(id),

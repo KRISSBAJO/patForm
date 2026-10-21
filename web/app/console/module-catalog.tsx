@@ -11,6 +11,7 @@ export const CONSOLE_MODULES = [
   { id: 'appraisals', enabledBy: 'appraisals', view: 'appraisals', name: MODULE_AREAS.appraisals.name, blurb: MODULE_AREAS.appraisals.blurb, area: MODULE_AREAS.appraisals },
   { id: 'hr', enabledBy: 'hr', view: 'hr', name: MODULE_AREAS.hr.name, blurb: MODULE_AREAS.hr.blurb, area: MODULE_AREAS.hr },
   { id: 'meetings', enabledBy: 'meetings', view: 'meetings', name: MODULE_AREAS.meetings.name, blurb: MODULE_AREAS.meetings.blurb, area: MODULE_AREAS.meetings },
+  { id: 'general_approvals', enabledBy: 'general_approvals', view: 'general_approvals', name: MODULE_AREAS.general_approvals.name, blurb: MODULE_AREAS.general_approvals.blurb, area: MODULE_AREAS.general_approvals },
   { id: 'procurement', enabledBy: 'procurement', view: 'procurement', name: MODULE_AREAS.procurement.name, blurb: MODULE_AREAS.procurement.blurb, area: MODULE_AREAS.procurement },
   { id: 'sign', enabledBy: 'contracts', view: 'sign', name: MODULE_AREAS.sign.name, blurb: MODULE_AREAS.sign.blurb, area: MODULE_AREAS.sign },
 ] as const;

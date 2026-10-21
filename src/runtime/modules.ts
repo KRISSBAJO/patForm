@@ -85,6 +85,13 @@ export const MODULES: readonly ModuleDefinition[] = [
     categories: [],
     status: 'available',
   },
+  {
+    key: 'general_approvals',
+    name: 'General approvals',
+    summary: 'Everyday requests with their own fields, attachment rules, approval chains and decision history.',
+    categories: [],
+    status: 'available',
+  },
 ];
 
 const BY_KEY = new Map(MODULES.map((m) => [m.key, m]));

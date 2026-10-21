@@ -8,6 +8,7 @@ import { NotificationsPanel } from './Notifications';
 import { PasskeysPanel } from './Passkeys';
 import { SignCenter } from './SignCenter';
 import { MeetingsView } from './Meetings';
+import { GeneralApprovalsView } from './GeneralApprovals';
 import { MODULE_AREAS, ModuleRail, ModuleStrip, type Section } from './module-shell';
 import { PeopleView, ProcessesView } from './Manage';
 import { InviteView } from './Invite';
@@ -169,6 +170,7 @@ export function Console() {
     | 'compliance'
     | 'sign'
     | 'meetings'
+    | 'general_approvals'
     | 'held'
   >('home');
   const recordOrigin = useRef<'work' | 'records' | 'ask' | 'processes' | 'expenses' | 'procurement'>('work');
@@ -643,7 +645,7 @@ export function Console() {
                                             ? 'Assets & IT'
                                             : view === 'compliance'
                                               ? 'Contracts & compliance'
-                                              : view === 'sign' ? 'Patform Sign' : view === 'meetings' ? 'Meetings' : 'My work'}
+                                              : view === 'sign' ? 'Patform Sign' : view === 'meetings' ? 'Meetings' : view === 'general_approvals' ? 'General approvals' : 'My work'}
           </h1>
           {/* The process pill is context for the record views. On People,
               Processes and Your account it named a process the page has
@@ -657,13 +659,13 @@ export function Console() {
             <button type="button" className="cs__btn cs__btn--create" onClick={() => { sessionStorage.removeItem('patform:new-process-description'); window.location.href = '/builder/ai'; }}>
               <span className="cs__createMark" aria-hidden="true">✦</span> Build with AI
             </button>
-          ) : view !== 'security' && view !== 'home' && <button type="button" className="cs__btn" onClick={() => { if (view === 'integrations' || view === 'data' || view === 'modules' || view === 'organisation' || view === 'approvals' || view === 'expenses' || view === 'procurement' || view === 'hr' || view === 'appraisals' || view === 'operations' || view === 'compliance' || view === 'sign' || view === 'meetings') setSettingsRevision(value => value + 1); void load(); }}>
+          ) : view !== 'security' && view !== 'home' && <button type="button" className="cs__btn" onClick={() => { if (view === 'integrations' || view === 'data' || view === 'modules' || view === 'organisation' || view === 'approvals' || view === 'expenses' || view === 'procurement' || view === 'hr' || view === 'appraisals' || view === 'operations' || view === 'compliance' || view === 'sign' || view === 'meetings' || view === 'general_approvals') setSettingsRevision(value => value + 1); void load(); }}>
             Refresh
           </button>}
         </div>
 
         {area && <ModuleStrip sections={moduleSections} current={moduleSection} onPick={setModuleSection} />}
-        <div className={`cs__body ${view === 'home' ? 'cs__body--home' : ''} ${view === 'security' ? 'cs__body--security' : ''} ${view === 'ask' ? 'cs__body--ask' : ''} ${view === 'record' ? 'cs__body--record' : ''} ${view === 'health' ? 'cs__body--health' : ''} ${view === 'dashboard' ? 'cs__body--dashboard' : ''} ${view === 'people' ? 'cs__body--people' : ''} ${view === 'records' ? 'cs__body--records' : ''} ${view === 'work' ? 'cs__body--work' : ''} ${view === 'processes' ? 'cs__body--processes' : ''} ${view === 'held' ? 'cs__body--held' : ''} ${view === 'integrations' ? 'cs__body--integrations' : ''} ${view === 'data' ? 'cs__body--data' : ''} ${view === 'modules' || view === 'organisation' || view === 'approvals' || view === 'expenses' || view === 'procurement' || view === 'hr' || view === 'appraisals' || view === 'operations' || view === 'compliance' || view === 'sign' || view === 'meetings' ? 'cs__body--integrations' : ''} ${view === 'meetings' || view === 'hr' || view === 'expenses' || view === 'procurement' || view === 'appraisals' || view === 'approvals' ? 'cs__body--wide' : ''}`}>
+        <div className={`cs__body ${view === 'home' ? 'cs__body--home' : ''} ${view === 'security' ? 'cs__body--security' : ''} ${view === 'ask' ? 'cs__body--ask' : ''} ${view === 'record' ? 'cs__body--record' : ''} ${view === 'health' ? 'cs__body--health' : ''} ${view === 'dashboard' ? 'cs__body--dashboard' : ''} ${view === 'people' ? 'cs__body--people' : ''} ${view === 'records' ? 'cs__body--records' : ''} ${view === 'work' ? 'cs__body--work' : ''} ${view === 'processes' ? 'cs__body--processes' : ''} ${view === 'held' ? 'cs__body--held' : ''} ${view === 'integrations' ? 'cs__body--integrations' : ''} ${view === 'data' ? 'cs__body--data' : ''} ${view === 'modules' || view === 'organisation' || view === 'approvals' || view === 'expenses' || view === 'procurement' || view === 'hr' || view === 'appraisals' || view === 'operations' || view === 'compliance' || view === 'sign' || view === 'meetings' || view === 'general_approvals' ? 'cs__body--integrations' : ''} ${view === 'meetings' || view === 'hr' || view === 'expenses' || view === 'procurement' || view === 'appraisals' || view === 'approvals' || view === 'general_approvals' ? 'cs__body--wide' : ''}`}>
           <div className="cs__left">
             {view === 'home' ? (
               <HomeView name={me.display_name} workspace={me.workspace_name} modules={session.modules ?? []} onView={(next) => setView(next as typeof view)} onOpenModules={() => setModulesOpen(true)} onOpenRecord={(id) => void open(id)} />
@@ -699,6 +701,8 @@ export function Console() {
               <SignCenter key={settingsRevision} shell={shell} />
             ) : view === 'meetings' ? (
               <MeetingsView key={settingsRevision} shell={shell} />
+            ) : view === 'general_approvals' ? (
+              <GeneralApprovalsView key={settingsRevision} shell={shell} admin={['owner', 'admin'].includes(me.workspace_role)} />
             ) : view === 'procurement' ? (
               <ProcurementView key={settingsRevision} shell={shell} canAdminister={['owner', 'admin'].includes(me.workspace_role)} canOperate={['owner', 'admin', 'operator'].includes(me.workspace_role)} onOpenRecord={(id) => void open(id)} />
             ) : view === 'expenses' ? (

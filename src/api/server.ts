@@ -36,6 +36,7 @@ import { searchCases, searchDocuments, searchHiring, searchHolidays, searchLeave
 import { addEmployeeEvent, adjustLeave, documentFileLink, listBranches, saveBranch, searchEmployees, setEmployeeBranch, employeeDetail, employeeFileLink, leaveCalendar, leaveLedger, myProfile, orgTree, removeEmployeeFile, setEmployeeFileVisibility, updateProfile, uploadDocumentFile, uploadEmployeeFile } from '../runtime/hr-records.js';
 import { acknowledgeDocument, addCaseNote, addCertification, cancelLeave, completeTask, createDocument, decideLeave, decideProbation, exceptTask, hrSummary, leaveToApprove, listCaseNotes, listCases, listCompensation, listDocuments, listEmployees, listHiring, listHolidays, listLeaveTypes, listReconciliations, listTeams, listTemplates, myDocuments, myLeave, myTasks, readHrSettings, requestLeave, resolveReconciliation, saveHoliday, saveLeaveType, saveTemplate, sendDocument, setCompensation, setEntitlement, setTeamMember, startOffboarding, startOnboarding, startProbationReview, startTransfer, updateEmployee, updateHrSettings, upcoming, urgentTermination } from '../runtime/hr.js';
 import * as apr from '../runtime/appraisals.js';
+import * as ga from '../runtime/general-approvals.js';
 import { goalFileLink, uploadGoalFile } from '../runtime/goal-files.js';
 import * as ops from '../runtime/ops.js';
 import * as gov from '../runtime/gov.js';
@@ -1059,6 +1060,16 @@ route('GET', /^\/api\/approvals\/overview$/, async ({ pool, principal }) => appr
 route('GET', /^\/api\/records\/([0-9a-f-]{36})\/approvals\/([a-z0-9_]+)\/evidence$/, async ({ pool, principal, url }) => listEvidence(pool, principal, hid(url, 3), hid(url, 5)));
 route('POST', /^\/api\/records\/([0-9a-f-]{36})\/approvals\/([a-z0-9_]+)\/evidence\/files$/, async ({ pool, principal, url }, b) => uploadEvidence(pool, principal, hid(url, 3), hid(url, 5), hb(b)));
 route('GET', /^\/api\/approvals\/evidence\/([0-9a-f-]{36})\/link$/, async ({ pool, principal, url }) => evidenceLink(pool, principal, hid(url, 4)));
+route('GET', /^\/api\/general-approvals\/types$/, async ({ pool, principal }) => ga.listTypes(pool, principal));
+route('POST', /^\/api\/general-approvals\/types$/, async ({ pool, principal }, b) => ga.saveType(pool, principal, hb(b)));
+route('GET', /^\/api\/general-approvals\/requests$/, async ({ pool, principal, url }) => ga.listRequests(pool, principal, url.searchParams.get('scope') ?? 'mine'));
+route('POST', /^\/api\/general-approvals\/requests$/, async ({ pool, principal }, b) => ga.createRequest(pool, principal, hb(b)));
+route('GET', /^\/api\/general-approvals\/requests\/([0-9a-f-]{36})$/, async ({ pool, principal, url }) => ga.requestDetail(pool, principal, hid(url, 4)));
+route('POST', /^\/api\/general-approvals\/requests\/([0-9a-f-]{36})$/, async ({ pool, principal, url }, b) => ga.editRequest(pool, principal, hid(url, 4), hb(b)));
+route('POST', /^\/api\/general-approvals\/requests\/([0-9a-f-]{36})\/submit$/, async ({ pool, principal, url }) => ga.submitRequest(pool, principal, hid(url, 4)));
+route('POST', /^\/api\/general-approvals\/requests\/([0-9a-f-]{36})\/decide$/, async ({ pool, principal, url }, b) => ga.decideRequest(pool, principal, hid(url, 4), hb(b)));
+route('POST', /^\/api\/general-approvals\/requests\/([0-9a-f-]{36})\/files$/, async ({ pool, principal, url }, b) => ga.uploadFile(pool, principal, hid(url, 4), hb(b)));
+route('GET', /^\/api\/general-approvals\/requests\/([0-9a-f-]{36})\/files\/([0-9a-f-]{36})$/, async ({ pool, principal, url }) => ga.fileLink(pool, principal, hid(url, 4), hid(url, 6)));
 route('GET', /^\/api\/hr\/cases\/search$/, async ({ pool, principal, url }) => searchCases(pool, principal, url.searchParams));
 route('GET', /^\/api\/hr\/leave\/search$/, async ({ pool, principal, url }) => searchLeave(pool, principal, url.searchParams));
 route('GET', /^\/api\/hr\/hiring\/search$/, async ({ pool, principal, url }) => searchHiring(pool, principal, url.searchParams));
@@ -2320,7 +2331,7 @@ async function main(): Promise<void> {
         const match = routes.find((r) => r.method === req.method && r.pattern.test(url.pathname));
         if (!match) throw new HttpError(404, `no route for ${req.method} ${url.pathname}`);
 
-        const body = req.method === 'POST' ? await readBody(req, url.pathname.endsWith('/brand-assets') ? 4 * 1024 * 1024 + 1024 : url.pathname === '/api/gov/files' ? 28 * 1024 * 1024 : /^\/api\/appraisals\/goals\/[0-9a-f-]+\/files$/.test(url.pathname) ? 14 * 1024 * 1024 : url.pathname.endsWith('/files') || url.pathname === '/api/ops/photos' ? 7 * 1024 * 1024 : Number.MAX_SAFE_INTEGER) : {};
+        const body = req.method === 'POST' ? await readBody(req, url.pathname.endsWith('/brand-assets') ? 4 * 1024 * 1024 + 1024 : url.pathname === '/api/gov/files' ? 28 * 1024 * 1024 : /^\/api\/(appraisals\/goals|general-approvals\/requests)\/[0-9a-f-]+\/files$/.test(url.pathname) ? 14 * 1024 * 1024 : url.pathname.endsWith('/files') || url.pathname === '/api/ops/photos' ? 7 * 1024 * 1024 : Number.MAX_SAFE_INTEGER) : {};
 
         /*
          * Actions that grant access or destroy data ask for a recent sign-in.
