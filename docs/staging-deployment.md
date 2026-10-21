@@ -79,6 +79,15 @@ with `GuardDutyMalwareScanStatus`; until an upload is tagged
 synthetic PDF in a Finance process and confirm it changes from scanning to
 ready before submitting the form.
 
+Patform Sign documents use `gov/files/` in the same bucket. The GuardDuty
+Malware Protection plan must include **both** `finance/receipts/` and
+`gov/files/`, with result tagging enabled. Its IAM role needs `GetObject`,
+`GetObjectVersion`, and object tagging permissions for both prefixes. A Sign
+draft stays in the scanning state until its PDF receives
+`NO_THREATS_FOUND`. Extending the plan does not scan files uploaded earlier;
+request an on-demand scan for those objects and check their tags. Verify a new
+Sign upload is tagged automatically before relying on the sender flow.
+
 ## Sign Payment Item test setup
 
 Payment Items stay disabled until all relevant environment values are set on
@@ -94,8 +103,8 @@ and `https://patform-staging-api.onrender.com/api/sign/payments/stripe/webhook`.
 Set `SIGN_STRIPE_WEBHOOK_SECRET` to Stripe's test endpoint signing secret.
 Paystack authenticates with the account's test secret key. A signer return also
 checks the provider directly, so the return URL alone never marks a charge paid.
-Test one successful and one cancelled sandbox checkout before allowing the
-workspace to send Payment Items. The signing sender must understand that the
+Test one successful and one cancelled sandbox checkout before expanding beyond
+the isolated test workspace. The signing sender must understand that the
 configured provider account receives the funds; this pilot does not route
 payments into each customer's own merchant account.
 
