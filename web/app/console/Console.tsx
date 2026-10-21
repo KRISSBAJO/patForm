@@ -21,6 +21,7 @@ import { ApprovalsView } from './Approvals';
 import { ExpensesView } from './Expenses';
 import { ProcurementView } from './Procurement';
 import { HRView } from './HR';
+import { AttendanceView } from './Attendance';
 import { AppraisalsView } from './Appraisals';
 import { OperationsView } from './Operations';
 import { ComplianceView } from './Compliance';
@@ -166,6 +167,7 @@ export function Console() {
     | 'expenses'
     | 'procurement'
     | 'hr'
+    | 'attendance'
     | 'appraisals'
     | 'operations'
     | 'compliance'
@@ -212,9 +214,9 @@ export function Console() {
       if (info.actor.workspace_role === 'auditor' && info.modules?.includes('contracts')) setView('compliance');
       // Phone shortcuts can open an enabled module directly in the full console.
       const requestedView = new URLSearchParams(window.location.search).get('view');
-      const moduleViews: Record<string, string> = { expenses: 'expenses', procurement: 'procurement', hr: 'hr', appraisals: 'appraisals', assets: 'operations', contracts: 'compliance', meetings: 'meetings', general_approvals: 'general_approvals' };
+      const moduleViews: Record<string, string> = { expenses: 'expenses', procurement: 'procurement', hr: 'hr', attendance: 'attendance', appraisals: 'appraisals', assets: 'operations', contracts: 'compliance', meetings: 'meetings', general_approvals: 'general_approvals' };
       if (requestedView && Object.entries(moduleViews).some(([module, page]) => page === requestedView && info.modules?.includes(module))) {
-        setView(requestedView as 'expenses' | 'procurement' | 'hr' | 'appraisals' | 'operations' | 'compliance' | 'meetings' | 'general_approvals');
+        setView(requestedView as 'expenses' | 'procurement' | 'hr' | 'attendance' | 'appraisals' | 'operations' | 'compliance' | 'meetings' | 'general_approvals');
       } else if (requestedView === 'sign' && info.modules?.includes('contracts')) setView('sign');
       const requested = new URLSearchParams(window.location.search).get('process');
       setProcessKey((current) =>
@@ -653,7 +655,7 @@ export function Console() {
                                             ? 'Assets & IT'
                                             : view === 'compliance'
                                               ? 'Contracts & compliance'
-                                              : view === 'sign' ? 'Patform Sign' : view === 'meetings' ? 'Meetings' : view === 'general_approvals' ? 'General approvals' : 'My work'}
+                                              : view === 'sign' ? 'Patform Sign' : view === 'meetings' ? 'Meetings' : view === 'attendance' ? 'Time & attendance' : view === 'general_approvals' ? 'General approvals' : 'My work'}
           </h1>
           {/* The process pill is context for the record views. On People,
               Processes and Your account it named a process the page has
@@ -667,13 +669,13 @@ export function Console() {
             <button type="button" className="cs__btn cs__btn--create" onClick={() => { sessionStorage.removeItem('patform:new-process-description'); window.location.href = '/builder/ai'; }}>
               <span className="cs__createMark" aria-hidden="true">✦</span> Build with AI
             </button>
-          ) : view !== 'security' && view !== 'home' && <button type="button" className="cs__btn" onClick={() => { if (view === 'integrations' || view === 'data' || view === 'modules' || view === 'organisation' || view === 'approvals' || view === 'expenses' || view === 'procurement' || view === 'hr' || view === 'appraisals' || view === 'operations' || view === 'compliance' || view === 'sign' || view === 'meetings' || view === 'general_approvals') setSettingsRevision(value => value + 1); void load(); }}>
+          ) : view !== 'security' && view !== 'home' && <button type="button" className="cs__btn" onClick={() => { if (view === 'integrations' || view === 'data' || view === 'modules' || view === 'organisation' || view === 'approvals' || view === 'expenses' || view === 'procurement' || view === 'hr' || view === 'attendance' || view === 'appraisals' || view === 'operations' || view === 'compliance' || view === 'sign' || view === 'meetings' || view === 'general_approvals') setSettingsRevision(value => value + 1); void load(); }}>
             Refresh
           </button>}
         </div>
 
         {area && !beforeFirstDay && <ModuleStrip sections={moduleSections} current={moduleSection} onPick={setModuleSection} />}
-        <div className={`cs__body ${beforeFirstDay ? 'cs__body--access' : ''} ${view === 'home' ? 'cs__body--home' : ''} ${view === 'security' ? 'cs__body--security' : ''} ${view === 'ask' ? 'cs__body--ask' : ''} ${view === 'record' ? 'cs__body--record' : ''} ${view === 'health' ? 'cs__body--health' : ''} ${view === 'dashboard' ? 'cs__body--dashboard' : ''} ${view === 'people' ? 'cs__body--people' : ''} ${view === 'records' ? 'cs__body--records' : ''} ${view === 'work' ? 'cs__body--work' : ''} ${view === 'processes' ? 'cs__body--processes' : ''} ${view === 'held' ? 'cs__body--held' : ''} ${view === 'integrations' ? 'cs__body--integrations' : ''} ${view === 'data' ? 'cs__body--data' : ''} ${view === 'modules' || view === 'organisation' || view === 'approvals' || view === 'expenses' || view === 'procurement' || view === 'hr' || view === 'appraisals' || view === 'operations' || view === 'compliance' || view === 'sign' || view === 'meetings' || view === 'general_approvals' ? 'cs__body--integrations' : ''} ${view === 'meetings' || view === 'hr' || view === 'expenses' || view === 'procurement' || view === 'appraisals' || view === 'approvals' || view === 'general_approvals' ? 'cs__body--wide' : ''}`}>
+        <div className={`cs__body ${beforeFirstDay ? 'cs__body--access' : ''} ${view === 'home' ? 'cs__body--home' : ''} ${view === 'security' ? 'cs__body--security' : ''} ${view === 'ask' ? 'cs__body--ask' : ''} ${view === 'record' ? 'cs__body--record' : ''} ${view === 'health' ? 'cs__body--health' : ''} ${view === 'dashboard' ? 'cs__body--dashboard' : ''} ${view === 'people' ? 'cs__body--people' : ''} ${view === 'records' ? 'cs__body--records' : ''} ${view === 'work' ? 'cs__body--work' : ''} ${view === 'processes' ? 'cs__body--processes' : ''} ${view === 'held' ? 'cs__body--held' : ''} ${view === 'integrations' ? 'cs__body--integrations' : ''} ${view === 'data' ? 'cs__body--data' : ''} ${view === 'modules' || view === 'organisation' || view === 'approvals' || view === 'expenses' || view === 'procurement' || view === 'hr' || view === 'attendance' || view === 'appraisals' || view === 'operations' || view === 'compliance' || view === 'sign' || view === 'meetings' || view === 'general_approvals' ? 'cs__body--integrations' : ''} ${view === 'meetings' || view === 'hr' || view === 'expenses' || view === 'procurement' || view === 'appraisals' || view === 'approvals' || view === 'general_approvals' ? 'cs__body--wide' : ''}`}>
           <div className="cs__left">
             {beforeFirstDay ? (
               <AccessState
@@ -705,6 +707,8 @@ export function Console() {
               <DataView key={settingsRevision} processes={session.processes} />
             ) : view === 'modules' ? (
               <ModulesView canAdminister={['owner', 'admin'].includes(me.workspace_role)} focusModule={activationTarget} onOpenModule={() => { if (activationTarget) { setView(activationTarget.view as typeof view); setActivationTarget(null); } }} onChanged={() => { void refreshSession(); void load(); }} />
+            ) : view === 'attendance' ? (
+              <AttendanceView key={settingsRevision} />
             ) : view === 'hr' ? (
               <HRView key={settingsRevision} shell={shell} />
             ) : view === 'appraisals' ? (

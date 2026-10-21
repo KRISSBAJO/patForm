@@ -29,11 +29,17 @@ interface Home {
 }
 
 interface Me { actor: { display_name: string }; modules?: string[] }
+interface WorkdayData {
+  available: boolean;
+  current: null | { id: string; shiftId: string | null; startedAt: string; endedAt: string | null; state: 'working' | 'break' | 'closed'; breakStartedAt: string | null; breakPaid: boolean; paidBreakSeconds: number; unpaidBreakSeconds: number; reviewStatus: string };
+  shifts: { id: string; startsAt: string; endsAt: string; timezone: string; workplace: string | null; roleName: string | null }[];
+  recent: { id: string; startedAt: string; endedAt: string | null; unpaidBreakSeconds: number; reviewStatus: string }[];
+}
 
 class SignedOut extends Error {}
 
 async function get<T>(path: string): Promise<T> {
-  const res = await fetch(path, { credentials: 'same-origin' });
+  const res = await fetch(path, { credentials: 'same-origin', signal: AbortSignal.timeout(60000) });
   if (res.status === 401) throw new SignedOut();
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(body.reason ?? body.error ?? `HTTP ${res.status}`);
@@ -42,6 +48,47 @@ async function get<T>(path: string): Promise<T> {
 
 const hours = (h: number) => (h < 1 ? 'just now' : h < 24 ? `${Math.round(h)}h` : `${Math.round(h / 24)}d`);
 const toSignIn = () => window.location.assign('/console?next=%2Fgo');
+
+function Workday({ data, onRefresh, onDone }: { data: WorkdayData; onRefresh: () => Promise<void>; onDone: (message: string) => void }) {
+  const [busy, setBusy] = useState(false);
+  const pendingAction = useRef<{ kind: string; key: string } | null>(null);
+  const [reason, setReason] = useState('');
+  const [shiftId, setShiftId] = useState('');
+  const [confirm, setConfirm] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => { if (!data.current) return; const timer = window.setInterval(() => setNow(Date.now()), 30000); return () => window.clearInterval(timer); }, [data.current]);
+  const current = data.current;
+  const relevant = data.shifts.filter((shift) => new Date(shift.startsAt).getTime() <= now + 30 * 60000 && new Date(shift.endsAt).getTime() >= now - 2 * 3600000);
+  const chosen = relevant.find((shift) => shift.id === shiftId) ?? relevant[0];
+  const dateTime = (value: string, zone?: string) => new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit', timeZone: zone }).format(new Date(value));
+  const elapsed = current ? Math.max(0, Math.floor((now - new Date(current.startedAt).getTime()) / 60000) - Math.floor(current.unpaidBreakSeconds / 60) - (current.state === 'break' && !current.breakPaid && current.breakStartedAt ? Math.floor((now - new Date(current.breakStartedAt).getTime()) / 60000) : 0)) : 0;
+  const act = async (kind: 'clock_in' | 'break_start' | 'break_end' | 'clock_out', paid = false) => {
+    if (kind === 'clock_out' && !confirm) { setConfirm(true); return; }
+    setBusy(true);
+    try {
+      const key = pendingAction.current?.kind === kind ? pendingAction.current.key : crypto.randomUUID();
+      pendingAction.current = { kind, key };
+      await postJson('/api/attendance/clock', { kind, idempotencyKey: key, ...(kind === 'clock_in' ? { shiftId: chosen?.id ?? null, reason: chosen ? undefined : reason } : {}), ...(kind === 'break_start' ? { paid } : {}) });
+      pendingAction.current = null;
+      setConfirm(false); setReason(''); await onRefresh();
+      onDone(kind === 'clock_in' ? 'You are clocked in.' : kind === 'clock_out' ? 'Your workday was recorded.' : kind === 'break_start' ? 'Break started.' : 'Break ended.');
+    } catch (err) { onDone(err instanceof Error ? err.message : 'Could not record that action.'); }
+    finally { setBusy(false); }
+  };
+  if (!data.available) return null;
+  return <section className="go__workday" aria-labelledby="go-workday-title">
+    <div className="go__workdayTop"><span className="go__eyebrow">MY WORKDAY</span><span className={`go__workStatus ${current ? 'is-live' : ''}`}>{current ? current.state === 'break' ? 'On break' : 'Working' : 'Not clocked in'}</span></div>
+    <h2 id="go-workday-title">{current ? current.state === 'break' ? 'Take your time.' : 'Your day is underway.' : chosen ? 'Ready for your shift?' : 'Starting work?'}</h2>
+    {current ? <><p>Clocked in at {dateTime(current.startedAt)} · {Math.floor(elapsed / 60)}h {elapsed % 60}m recorded</p>{current.reviewStatus === 'pending' && <small className="go__workNotice">Schedule approval pending. Your time is still being recorded.</small>}
+      <div className="go__workActions">{current.state === 'break' ? <button type="button" className="go__btn go__btn--primary" disabled={busy} onClick={() => void act('break_end')}>End break</button> : <><button type="button" className="go__btn go__btn--primary" disabled={busy} onClick={() => void act('break_start')}>Unpaid break</button><button type="button" className="go__btn go__btn--secondary" disabled={busy} onClick={() => void act('break_start', true)}>Paid break</button></>}<button type="button" className="go__btn go__btn--secondary" disabled={busy} onClick={() => void act('clock_out')}>Clock out</button></div>
+      {confirm && <div className="go__workConfirm"><strong>Finish this workday?</strong><p>Your actual clock-out time and break will be saved. Signing out of Patform alone does not clock you out.</p><div className="go__workActions"><button type="button" className="go__btn go__btn--primary" disabled={busy} onClick={() => void act('clock_out')}>Confirm clock-out</button><button type="button" className="go__btn go__btn--secondary" onClick={() => setConfirm(false)}>Keep working</button></div></div>}</>
+      : <>{chosen ? <p>{chosen.workplace || 'Your workplace'} · {dateTime(chosen.startsAt, chosen.timezone)}–{dateTime(chosen.endsAt, chosen.timezone)}{chosen.roleName ? ` · ${chosen.roleName}` : ''}</p> : <p>No shift is scheduled for this time. You can still record actual work and send a reason for review.</p>}
+        {relevant.length > 1 && <label className="go__workField">Choose shift<select value={shiftId || chosen?.id} onChange={(event) => setShiftId(event.target.value)}>{relevant.map((shift) => <option value={shift.id} key={shift.id}>{dateTime(shift.startsAt, shift.timezone)} · {shift.workplace || 'Workplace'}</option>)}</select></label>}
+        {!chosen && <label className="go__workField">Why are you starting work?<input value={reason} maxLength={500} onChange={(event) => setReason(event.target.value)} placeholder="Manager asked me to come in…" /></label>}
+        <div className="go__workActions"><button type="button" className="go__btn go__btn--primary" disabled={busy || (!chosen && !reason.trim())} onClick={() => void act('clock_in')}>Clock in now</button><span className="go__workHint">Only when you tap. Opening Patform never clocks you in.</span></div></>}
+    {data.recent.length > 0 && <details className="go__workHistory"><summary>Recent time records</summary>{data.recent.slice(0, 3).map((session) => <p key={session.id}>{new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(session.startedAt))} · {dateTime(session.startedAt)}–{session.endedAt ? dateTime(session.endedAt) : 'open'} · {session.reviewStatus === 'pending' ? 'Needs review' : 'Recorded'}</p>)}</details>}
+  </section>;
+}
 
 /* ------------------------------------------------------------- receipts */
 
@@ -302,24 +349,36 @@ export function Go() {
   const [showKeys, setShowKeys] = useState(false);
   const [tab, setTab] = useState<GoTab>('today');
   const [refreshing, setRefreshing] = useState(false);
+  const [workday, setWorkday] = useState<WorkdayData | null>(null);
+  const [workdayError, setWorkdayError] = useState<string | null>(null);
+  const [signedOut, setSignedOut] = useState(false);
+  const [confirmSignOut, setConfirmSignOut] = useState(false);
+
+  const refreshWorkday = useCallback(async () => {
+    try { setWorkday(await get<WorkdayData>('/api/attendance/workday')); setWorkdayError(null); }
+    catch (err) { setWorkdayError(err instanceof Error ? err.message : 'Could not load your workday.'); }
+  }, []);
 
   const load = useCallback(async () => {
     try {
-      const [m, h] = await Promise.all([get<Me>('/api/session'), get<Home>('/api/go')]);
-      setMe(m); setHome(h); setError(null);
+      const m = await get<Me>('/api/session');
+      setMe(m);
+      if (m.modules?.includes('attendance')) void refreshWorkday();
+      const h = await get<Home>('/api/go');
+      setHome(h); setError(null);
     } catch (err) {
       if (err instanceof SignedOut) { toSignIn(); return; }
       setError(err instanceof Error ? err.message : 'Could not load.');
     }
-  }, []);
+  }, [refreshWorkday]);
   useEffect(() => { void load(); }, [load]);
   useEffect(() => {
     const onOut = () => toSignIn();
     window.addEventListener('patform:signed-out', onOut);
-    const onShow = () => { if (document.visibilityState === 'visible') void load(); };
+    const onShow = () => { if (!signedOut && document.visibilityState === 'visible') void load(); };
     document.addEventListener('visibilitychange', onShow);
     return () => { window.removeEventListener('patform:signed-out', onOut); document.removeEventListener('visibilitychange', onShow); };
-  }, [load]);
+  }, [load, signedOut]);
 
   const done = (message: string, refresh?: boolean) => {
     setToast(message);
@@ -333,6 +392,7 @@ export function Go() {
     { key: 'expenses', label: 'Expenses', view: 'expenses' },
     { key: 'procurement', label: 'Procurement', view: 'procurement' },
     { key: 'hr', label: 'HR', view: 'hr' },
+    { key: 'attendance', label: 'Time & attendance', view: 'attendance' },
     { key: 'appraisals', label: 'Appraisals', view: 'appraisals' },
     { key: 'assets', label: 'Assets & IT', view: 'operations' },
     { key: 'contracts', label: 'Contracts & compliance', view: 'compliance' },
@@ -340,7 +400,15 @@ export function Go() {
   ].filter((module) => me?.modules?.includes(module.key));
   const switchTab = (next: GoTab) => { setTab(next); window.scrollTo({ top: 0, behavior: 'smooth' }); };
   const refresh = async () => { setRefreshing(true); await load(); setRefreshing(false); };
-  const signOut = async () => { await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' }).catch(() => {}); window.location.assign('/console'); };
+  const signOut = async () => {
+    try {
+      const response = await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
+      if (!response.ok && response.status !== 401) throw new Error('Sign-out did not finish. Please try again.');
+      setHome(null); setMe(null); setWorkday(null); setConfirmSignOut(false); setSignedOut(true);
+    } catch (err) { done(err instanceof Error ? err.message : 'Sign-out did not finish.'); }
+  };
+
+  if (signedOut) return <main className="go go--signedOut"><header className="go__top"><a className="go__brand" href="/"><Mark /> <span>Patform</span></a></header><section className="go__signedOut"><span className="go__signedMark"><Mark /></span><span className="go__eyebrow">ALL DONE FOR NOW</span><h1>You’re signed out.</h1><p>Your account is secure. Any workday you left running remains recorded until you explicitly clock out.</p><a className="go__btn go__btn--primary" href="/console?next=%2Fgo">Sign in again</a></section></main>;
 
   return (
     <main className="go">
@@ -351,7 +419,9 @@ export function Go() {
       </header>
 
       {error && <p className="go__error" role="alert">{error} <button type="button" className="go__link" onClick={() => void load()}>Try again</button></p>}
-      {!home && !error && <div className="go__loading" role="status">Opening your workspace…</div>}
+      {!home && !error && <section className="go__boot" role="status" aria-live="polite" aria-busy="true"><span className="go__eyebrow">YOUR WORKSPACE</span><h1>{first ? `Good to see you, ${first}.` : 'Your day starts here.'}</h1><p>Bringing your work together…</p><div className="go__bootShape" aria-hidden="true"><span /><span /><span /></div></section>}
+
+      {!home && me?.modules?.includes('attendance') && workday && <div className="go__workdayWrap"><Workday data={workday} onRefresh={refreshWorkday} onDone={done} /></div>}
 
       {home && (
         <>
@@ -366,6 +436,7 @@ export function Go() {
                 <button type="button" onClick={() => switchTab('inbox')}><strong>{home.late}</strong><span>Overdue</span></button>
               </div>
             </section>
+            {me?.modules?.includes('attendance') && <div className="go__workdayWrap">{workday ? <Workday data={workday} onRefresh={refreshWorkday} onDone={done} /> : workdayError ? <div className="go__workday"><p>{workdayError}</p><button type="button" className="go__link" onClick={() => void refreshWorkday()}>Try again</button></div> : <div className="go__workday go__workday--loading" role="status">Checking your workday…</div>}</div>}
             <div className="go__sectionHead"><div><span className="go__eyebrow">AT YOUR FINGERTIPS</span><h2>Quick actions</h2></div></div>
             <div className="go__quickGrid">
               <button type="button" className="go__quick go__quick--green" onClick={() => switchTab('inbox')}><span className="go__quickIcon"><GoIcon name="inbox" /></span><strong>Review work</strong><small>{needs ? `${needs} waiting for you` : 'Your inbox is clear'}</small><GoIcon name="arrow" /></button>
@@ -395,7 +466,7 @@ export function Go() {
             <section className="go__section go__settingsCard"><div className="go__sectionHead"><h2>Stay in the loop</h2></div><Nudges /></section>
             <section className="go__section go__settingsCard"><div className="go__sectionHead"><h2>Sign in securely</h2></div><button type="button" className="go__textAction" onClick={() => setShowKeys((s) => !s)} aria-expanded={showKeys}>{showKeys ? 'Hide passkeys' : 'Use fingerprint or face'} <GoIcon name="arrow" /></button>{showKeys && <PasskeysPanel className="go__keys" />}</section>
             <a className="go__fullConsole" href="/console"><span><strong>Open full console</strong><small>All modules, records and settings</small></span><GoIcon name="arrow" /></a>
-            <button type="button" className="go__signOut" onClick={() => void signOut()}>Sign out of Patform</button>
+            <button type="button" className="go__signOut" onClick={() => setConfirmSignOut(true)}>Sign out of Patform</button>
           </div>}
         </>
       )}
@@ -403,6 +474,7 @@ export function Go() {
       {home && <nav className="go__bottomNav" aria-label="Phone workspace">{([['today', 'Today'], ['inbox', 'Inbox'], ['create', 'Create'], ['you', 'You']] as const).map(([key, label]) => <button key={key} type="button" aria-current={tab === key ? 'page' : undefined} onClick={() => switchTab(key)}><GoIcon name={key} /><span>{label}</span>{key === 'inbox' && needs > 0 && <i aria-label={`${needs} waiting`}>{needs}</i>}</button>)}</nav>}
 
       {toast && <div className="go__toast" role="status">{toast}</div>}
+      {confirmSignOut && <div className="go__dialogBackdrop"><section className="go__dialog" role="dialog" aria-modal="true" aria-labelledby="go-signout-title"><span className="go__eyebrow">YOUR SESSION</span><h2 id="go-signout-title">Sign out of Patform?</h2><p>{workday?.current ? 'You are still clocked in. Signing out will leave your workday running until you clock out explicitly.' : 'You can sign back in whenever you need your workspace.'}</p>{workday?.current && <button type="button" className="go__link" onClick={() => { setConfirmSignOut(false); switchTab('today'); }}>Review workday first</button>}<div className="go__workActions"><button type="button" className="go__btn go__btn--primary" onClick={() => void signOut()}>Sign out</button><button type="button" className="go__btn go__btn--secondary" onClick={() => setConfirmSignOut(false)}>Stay here</button></div></section></div>}
       <ReauthDialog />
     </main>
   );

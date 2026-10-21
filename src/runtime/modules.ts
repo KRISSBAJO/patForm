@@ -59,6 +59,13 @@ export const MODULES: readonly ModuleDefinition[] = [
     status: 'available',
   },
   {
+    key: 'attendance',
+    name: 'Time & attendance',
+    summary: 'Scheduled shifts, explicit clock events, breaks and manager review. Payroll stays separate.',
+    categories: [],
+    status: 'available',
+  },
+  {
     key: 'appraisals',
     name: 'Goals, appraisals and development',
     summary: 'Goals, review cycles with self, peer and manager reviews, calibration, appeals and development plans. Ratings never change pay on their own.',

@@ -10,6 +10,7 @@ import { shareRecord } from '../runtime/share-record.js';
 import { pushConfig, removeSubscription, saveSubscription, testPush } from '../runtime/push.js';
 import { beginAssertion, beginRegistration, finishAssertion, finishRegistration, hasPasskeys, listPasskeys, removePasskey } from '../runtime/passkeys.js';
 import { goHome } from '../runtime/go.js';
+import * as attendance from '../runtime/attendance.js';
 import { createView, deleteView, listViews, type Schedule, type ViewParams } from '../runtime/saved-views.js';
 import { isPublicApiPath, publicHandler } from './public-server.js';
 import { aiDraftStatus, applyAiRevision, queueAiDraft, queueAiRevision } from '../runtime/ai-drafts.js';
@@ -1684,6 +1685,12 @@ route('POST', mr(`actions/${A}/close`), async ({ pool, principal, url }, b) => m
 
 // The phone screen: what needs me, across every module, in one call. See runtime/go.ts.
 route('GET', /^\/api\/go$/, async ({ pool, engine, principal, actorId }) => goHome(pool, engine, principal, actorId));
+route('GET', /^\/api\/attendance\/workday$/, async ({ pool, principal }) => attendance.workday(pool, principal));
+route('POST', /^\/api\/attendance\/clock$/, async ({ pool, principal }, body) => attendance.clockAction(pool, principal, hb(body)));
+route('POST', /^\/api\/attendance\/shifts$/, async ({ pool, principal }, body) => attendance.scheduleShift(pool, principal, hb(body)));
+route('GET', /^\/api\/attendance\/shifts$/, async ({ pool, principal }) => attendance.teamSchedule(pool, principal));
+route('GET', /^\/api\/attendance\/review$/, async ({ pool, principal }) => attendance.reviewQueue(pool, principal));
+route('POST', /^\/api\/attendance\/review\/[0-9a-f-]+$/, async ({ pool, principal, url }, body) => attendance.decideException(pool, principal, hid(url, 4), hb(body)));
 
 /** §6.1 IAM-04: revoke sessions. Signing out everywhere is its own control. */
 route('POST', /^\/api\/session\/revoke-all$/, async ({ pool, actorId }) => {

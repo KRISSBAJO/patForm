@@ -91,13 +91,18 @@ export async function goHome(pool: Pool, engine: Engine, principal: Principal, a
   );
   const blueprints = new Map(latest.map((r) => [r.process_key, r.blueprint]));
 
-  for (const p of processes) {
-    let work: WorkSummary;
-    try {
-      work = await engine.myWork({ principal, actorId, processKey: p.process_key });
-    } catch {
-      continue; // no view right on this one: nothing of it belongs on the phone
-    }
+  // A phone should not wait for twenty process queries one after another.
+  // Keep concurrency bounded so an active workspace does not exhaust the API pool.
+  const works: (WorkSummary | null)[] = [];
+  for (let i = 0; i < processes.length; i += 4) {
+    works.push(...await Promise.all(processes.slice(i, i + 4).map(async (p) => {
+      try { return await engine.myWork({ principal, actorId, processKey: p.process_key }); }
+      catch { return null; } // No view right on this process.
+    })));
+  }
+  for (const [index, p] of processes.entries()) {
+    const work = works[index];
+    if (!work) continue;
     for (const a of work.approvals) {
       approvals.push({
         processKey: p.process_key, processName: p.name, instanceId: a.instanceId, reference: a.reference,

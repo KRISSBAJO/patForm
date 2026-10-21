@@ -1980,6 +1980,54 @@ create table if not exists employee_record (
 );
 create unique index if not exists employee_record_actor_uq on employee_record (actor_id) where actor_id is not null;
 
+-- A planned shift and the clock ledger are distinct. Clock events are never edited.
+create table if not exists attendance_shift (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null references tenant(id),
+  actor_id uuid not null references actor(id),
+  starts_at timestamptz not null,
+  ends_at timestamptz not null,
+  timezone text not null,
+  workplace text,
+  role_name text,
+  created_by uuid not null references actor(id),
+  created_at timestamptz not null default now(),
+  check (ends_at > starts_at)
+);
+create index if not exists attendance_shift_actor on attendance_shift (tenant_id, actor_id, starts_at desc);
+create table if not exists attendance_session (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null references tenant(id),
+  actor_id uuid not null references actor(id),
+  shift_id uuid references attendance_shift(id),
+  started_at timestamptz not null default now(),
+  ended_at timestamptz,
+  state text not null default 'working' check (state in ('working', 'break', 'closed')),
+  break_started_at timestamptz,
+  break_paid boolean not null default false,
+  paid_break_seconds int not null default 0,
+  unpaid_break_seconds int not null default 0,
+  exception_reason text,
+  review_status text not null default 'none' check (review_status in ('none', 'pending', 'approved', 'declined')),
+  reviewed_by uuid references actor(id),
+  reviewed_at timestamptz,
+  review_note text,
+  check (unpaid_break_seconds >= 0 and paid_break_seconds >= 0)
+);
+create unique index if not exists attendance_one_open_session on attendance_session (tenant_id, actor_id) where ended_at is null;
+create index if not exists attendance_session_actor on attendance_session (tenant_id, actor_id, started_at desc);
+create table if not exists attendance_event (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null references tenant(id),
+  session_id uuid not null references attendance_session(id),
+  actor_id uuid not null references actor(id),
+  kind text not null check (kind in ('clock_in', 'break_start', 'break_end', 'clock_out')),
+  received_at timestamptz not null default now(),
+  idempotency_key uuid not null,
+  unique (tenant_id, actor_id, idempotency_key)
+);
+create index if not exists attendance_event_session on attendance_event (session_id, received_at);
+
 -- HR-06: pay is separate, so no query that serves a team can reach it.
 create table if not exists employee_compensation (
   id             bigserial primary key,

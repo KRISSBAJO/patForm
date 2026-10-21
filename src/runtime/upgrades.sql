@@ -2846,3 +2846,37 @@ create unique index if not exists approval_request_run_uq on approval_request (a
 -- linked to the original so the joiner can see both versions of the work.
 alter table lifecycle_task add column if not exists details text;
 alter table lifecycle_task add column if not exists correction_of uuid references lifecycle_task(id);
+
+-- Attendance keeps the schedule, actual clock events and review decisions separate.
+create table if not exists attendance_shift (
+  id uuid primary key default gen_random_uuid(), tenant_id uuid not null references tenant(id),
+  actor_id uuid not null references actor(id), starts_at timestamptz not null,
+  ends_at timestamptz not null, timezone text not null, workplace text, role_name text,
+  created_by uuid not null references actor(id), created_at timestamptz not null default now(),
+  check (ends_at > starts_at)
+);
+create index if not exists attendance_shift_actor on attendance_shift (tenant_id, actor_id, starts_at desc);
+create table if not exists attendance_session (
+  id uuid primary key default gen_random_uuid(), tenant_id uuid not null references tenant(id),
+  actor_id uuid not null references actor(id), shift_id uuid references attendance_shift(id),
+  started_at timestamptz not null default now(), ended_at timestamptz,
+  state text not null default 'working' check (state in ('working', 'break', 'closed')),
+  break_started_at timestamptz, break_paid boolean not null default false,
+  paid_break_seconds int not null default 0, unpaid_break_seconds int not null default 0,
+  exception_reason text, review_status text not null default 'none'
+    check (review_status in ('none', 'pending', 'approved', 'declined')),
+  reviewed_by uuid references actor(id), reviewed_at timestamptz, review_note text,
+  check (unpaid_break_seconds >= 0 and paid_break_seconds >= 0)
+);
+alter table attendance_session add column if not exists break_paid boolean not null default false;
+alter table attendance_session add column if not exists paid_break_seconds int not null default 0;
+create unique index if not exists attendance_one_open_session on attendance_session (tenant_id, actor_id) where ended_at is null;
+create index if not exists attendance_session_actor on attendance_session (tenant_id, actor_id, started_at desc);
+create table if not exists attendance_event (
+  id uuid primary key default gen_random_uuid(), tenant_id uuid not null references tenant(id),
+  session_id uuid not null references attendance_session(id), actor_id uuid not null references actor(id),
+  kind text not null check (kind in ('clock_in', 'break_start', 'break_end', 'clock_out')),
+  received_at timestamptz not null default now(), idempotency_key uuid not null,
+  unique (tenant_id, actor_id, idempotency_key)
+);
+create index if not exists attendance_event_session on attendance_event (session_id, received_at);

@@ -48,3 +48,9 @@ Jurisdiction-specific pay and working-time rules need a reviewed configuration b
 4. **Additional channels:** offline capture, kiosk and QR, each using the same event API and conflict rules.
 
 Do not describe the first release as a payroll system until pay rules, export reconciliation and jurisdiction checks are ready. The first employee action should still take about two taps: open Workday, then confirm clock-in.
+
+## Implementation status (20 October 2026)
+
+The first attendance slice is implemented behind the optional Time & Attendance module. It provides planned shifts, an explicit phone clock-in, paid and unpaid breaks, clock-out, an append-only event record, a recent-time view, and a manager queue for unscheduled starts. A declined schedule exception keeps the clock record. The phone opens with a welcome while its wider inbox loads, and sign-out asks for confirmation if a workday is active.
+
+This is an attendance pilot, not a payroll release. Location validation, time corrections, missed clock-out resolution, approved timesheets, pay periods, compensation rules, payroll export, offline events, kiosks and QR clocking remain to be built. Keep the module off for a workspace until its managers have tested the clock rules and trained employees on clock-out and exception review.

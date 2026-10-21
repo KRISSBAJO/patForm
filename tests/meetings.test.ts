@@ -69,6 +69,7 @@ async function board(pool: Pool, engine: Engine, mails: Mail[]) {
 
 test('a board meeting: notice, RSVP, quorum, a vote with a casting vote, minutes approved by someone else, actions', { skip: !localDatabase }, async () => {
   const pool = createPool(3); const engine = new Engine(pool); const mails: Mail[] = [];
+  const mem = memoryObjectStore(); setObjectStoreForTests(mem.store);
   try {
     const b = await board(pool, engine, mails);
     await updateMeetingSettings(pool, b.owner.p, { noticeDays: 7 });
@@ -146,7 +147,7 @@ test('a board meeting: notice, RSVP, quorum, a vote with a casting vote, minutes
     assert.deepEqual(reg.map((r: { number: number; status: string }) => [r.number, r.status]), [[1, 'passed'], [2, 'failed']]);
     const ov = await meetingsOverview(pool, b.chair.p);
     assert.equal(ov.toSign.length, 1);
-  } finally { setMeetingMailerForTests(null); await pool.end(); }
+  } finally { setMeetingMailerForTests(null); setObjectStoreForTests(undefined); await pool.end(); }
 });
 
 test('a written resolution: everyone eligible is asked, silence is not a yes, the deadline settles it', { skip: !localDatabase }, async () => {
