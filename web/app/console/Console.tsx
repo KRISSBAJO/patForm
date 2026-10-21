@@ -678,10 +678,9 @@ export function Console() {
             {beforeFirstDay ? (
               <AccessState
                 eyebrow="BEFORE YOUR FIRST DAY"
-                title="Your workspace is getting ready."
-                description={`You’re signed in to ${me.workspace_name}. Your onboarding tasks, documents and profile are available now. The rest of the workspace opens after your start date and the required checks are complete.`}
-                steps={['Complete the tasks assigned to you in HR.', 'Review any documents and finish your profile.', 'HR completes the remaining checks and activates your workspace role.']}
-                primary={{ label: 'Continue onboarding', onClick: () => setView('hr') }}
+                title="Your first day starts here."
+                description={`Your tasks and documents are ready in ${me.workspace_name}. HR will open the rest of your workspace after onboarding.`}
+                primary={{ label: 'See my tasks', onClick: () => setView('hr') }}
                 secondary={{ label: 'Your account', onClick: () => setView('security') }}
               />
             ) : view === 'home' ? (
