@@ -675,7 +675,7 @@ export function Console() {
         </div>
 
         {area && !beforeFirstDay && <ModuleStrip sections={moduleSections} current={moduleSection} onPick={setModuleSection} />}
-        <div className={`cs__body ${beforeFirstDay ? 'cs__body--access' : ''} ${view === 'home' ? 'cs__body--home' : ''} ${view === 'security' ? 'cs__body--security' : ''} ${view === 'ask' ? 'cs__body--ask' : ''} ${view === 'record' ? 'cs__body--record' : ''} ${view === 'health' ? 'cs__body--health' : ''} ${view === 'dashboard' ? 'cs__body--dashboard' : ''} ${view === 'people' ? 'cs__body--people' : ''} ${view === 'records' ? 'cs__body--records' : ''} ${view === 'work' ? 'cs__body--work' : ''} ${view === 'processes' ? 'cs__body--processes' : ''} ${view === 'held' ? 'cs__body--held' : ''} ${view === 'integrations' ? 'cs__body--integrations' : ''} ${view === 'data' ? 'cs__body--data' : ''} ${view === 'modules' || view === 'organisation' || view === 'approvals' || view === 'expenses' || view === 'procurement' || view === 'hr' || view === 'attendance' || view === 'appraisals' || view === 'operations' || view === 'compliance' || view === 'sign' || view === 'meetings' || view === 'general_approvals' ? 'cs__body--integrations' : ''} ${view === 'meetings' || view === 'hr' || view === 'expenses' || view === 'procurement' || view === 'appraisals' || view === 'approvals' || view === 'general_approvals' ? 'cs__body--wide' : ''}`}>
+          <div className={`cs__body ${beforeFirstDay ? 'cs__body--access' : ''} ${view === 'home' ? 'cs__body--home' : ''} ${view === 'security' ? 'cs__body--security' : ''} ${view === 'ask' ? 'cs__body--ask' : ''} ${view === 'record' ? 'cs__body--record' : ''} ${view === 'health' ? 'cs__body--health' : ''} ${view === 'dashboard' ? 'cs__body--dashboard' : ''} ${view === 'people' ? 'cs__body--people' : ''} ${view === 'records' ? 'cs__body--records' : ''} ${view === 'work' ? 'cs__body--work' : ''} ${view === 'processes' ? 'cs__body--processes' : ''} ${view === 'held' ? 'cs__body--held' : ''} ${view === 'integrations' ? 'cs__body--integrations' : ''} ${view === 'data' ? 'cs__body--data' : ''} ${view === 'modules' || view === 'organisation' || view === 'approvals' || view === 'expenses' || view === 'procurement' || view === 'hr' || view === 'attendance' || view === 'appraisals' || view === 'operations' || view === 'compliance' || view === 'sign' || view === 'meetings' || view === 'general_approvals' ? 'cs__body--integrations' : ''} ${view === 'meetings' || view === 'hr' || view === 'attendance' || view === 'expenses' || view === 'procurement' || view === 'appraisals' || view === 'approvals' || view === 'general_approvals' ? 'cs__body--wide' : ''}`}>
           <div className="cs__left">
             {beforeFirstDay ? (
               <AccessState
@@ -708,7 +708,7 @@ export function Console() {
             ) : view === 'modules' ? (
               <ModulesView canAdminister={['owner', 'admin'].includes(me.workspace_role)} focusModule={activationTarget} onOpenModule={() => { if (activationTarget) { setView(activationTarget.view as typeof view); setActivationTarget(null); } }} onChanged={() => { void refreshSession(); void load(); }} />
             ) : view === 'attendance' ? (
-              <AttendanceView key={settingsRevision} />
+              <AttendanceView key={settingsRevision} shell={shell} />
             ) : view === 'hr' ? (
               <HRView key={settingsRevision} shell={shell} />
             ) : view === 'appraisals' ? (

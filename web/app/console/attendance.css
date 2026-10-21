@@ -61,3 +61,91 @@
 .att__sheet :is(input,select) { display: block; width: 100%; height: 45px; margin-top: 7px; padding: 0 12px; border: 1px solid #cbdace; border-radius: 9px; background: white; color: #183e2b; font: 14px var(--font-ui); }
 .att__sheet > .att__primary { width: 100%; margin-top: 26px; }
 @media(max-width:650px) { .att { padding: 20px 17px 80px; } .att__intro { align-items: start; flex-direction: column; } .att__stats { gap: 10px; } .att__row { align-items: start; flex-direction: column; } .att__sheet { padding: 22px; } }
+
+/* The workday is the entrance to this module. The illustration explains the
+   three parts of timekeeping without presenting invented clock data. */
+.cs__body--wide:has(.att) { background: #f7f8f5; }
+.cs__body--wide:has(.att) > .cs__left { max-width: 1320px; }
+.att { width: 100%; max-width: none; padding: 10px 4px 90px; color: #193a2b; }
+.att__hero { position: relative; min-height: 304px; display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(320px, .95fr); align-items: center; overflow: hidden; border: 1px solid #d4e4d7; border-radius: 24px; background: radial-gradient(circle at 82% 45%, #e7f2e7 0, transparent 45%), linear-gradient(115deg, #eff6ee, #fafaf5 76%); box-shadow: 0 25px 48px -46px #1e4e35; }
+.att__heroCopy { position: relative; z-index: 1; padding: 36px clamp(24px, 4vw, 56px); }
+.att__hero h1 { margin: 13px 0 14px; font: 650 clamp(36px, 4vw, 60px)/1.02 Georgia, 'Times New Roman', serif; letter-spacing: -.052em; color: #173d2c; }
+.att__hero h1 em { font-weight: 500; color: #397e59; }
+.att__heroCopy > p { max-width: 390px; margin: 0; color: #5f7667; font-size: 14px; line-height: 1.6; }
+.att__heroActions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 24px; }
+.att__primary,.att__secondary { display: inline-flex; align-items: center; justify-content: center; gap: 18px; min-height: 45px; padding: 0 17px; border-radius: 10px; text-decoration: none; white-space: nowrap; }
+.att__primary:hover { background: #10492f; }
+.att__secondary { border: 1px solid #bed4c1; background: #fff9; color: #20583d; font: 700 13px var(--font-ui); cursor: pointer; }
+.att__secondary:hover { background: #fff; border-color: #76a68a; }
+.att__heroScene { position: relative; height: 300px; min-width: 0; }
+.att__orbit { position: absolute; left: 50%; top: 48%; border: 1px solid #b7d5bd88; border-radius: 50%; transform: translate(-50%,-50%) rotate(-20deg); }
+.att__orbit--one { width: 340px; height: 245px; }
+.att__orbit--two { width: 470px; height: 340px; }
+.att__clock { position: absolute; left: 50%; top: 48%; width: 177px; height: 177px; border: 9px solid #2e7153; border-radius: 50%; transform: translate(-50%,-50%) rotate(-12deg); background: #fbfdf9; box-shadow: 0 24px 30px -21px #204b3270, inset 0 0 0 1px #cfe2d3; }
+.att__clock::before { content: ''; position: absolute; inset: 15px; border: 1px dashed #b5d4bd; border-radius: 50%; }
+.att__clock::after { content: ''; position: absolute; width: 5px; height: 5px; top: 12px; left: calc(50% - 2px); border-radius: 50%; background: #d3a35a; box-shadow: 0 127px #d3a35a, 64px 63px #d3a35a, -64px 63px #d3a35a; }
+.att__clockNeedle { position: absolute; z-index: 1; left: calc(50% - 3px); bottom: 50%; width: 6px; border-radius: 4px; background: #28694b; transform-origin: bottom center; }
+.att__clockNeedle--hour { height: 47px; transform: rotate(43deg); }
+.att__clockNeedle--minute { height: 64px; width: 4px; left: calc(50% - 2px); transform: rotate(145deg); background: #bd8c4d; }
+.att__clockCenter { position: absolute; z-index: 2; left: calc(50% - 5px); top: calc(50% - 5px); width: 10px; height: 10px; border-radius: 50%; background: #245e42; }
+.att__sceneChip { position: absolute; display: flex; align-items: center; gap: 7px; padding: 10px 13px; border: 1px solid #d9e6d8; border-radius: 12px; background: #fffdf9; box-shadow: 0 14px 24px -20px #23503780; color: #385b46; font: 700 11px var(--font-ui); white-space: nowrap; }
+.att__sceneDot { width: 7px; height: 7px; border-radius: 50%; background: #4b9a6c; }
+.att__sceneChip--plan { left: 6%; top: 13%; transform: rotate(-5deg); }
+.att__sceneChip--record { right: 5%; top: 32%; transform: rotate(5deg); }
+.att__sceneChip--record .att__sceneDot { background: #bd8c4d; }
+.att__sceneChip--review { left: 14%; bottom: 10%; transform: rotate(3deg); }
+.att__sceneChip--review .att__sceneDot { background: #7b9f82; }
+.att__overviewGrid { display: grid; grid-template-columns: minmax(0,1.55fr) minmax(250px,.85fr); gap: 16px; margin-top: 22px; }
+.att__workday { min-width: 0; padding: 24px 28px; border: 1px solid #dce6dd; border-radius: 18px; background: #fff; }
+.att__workdayTop { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.att__liveBadge { display: inline-flex; align-items: center; gap: 7px; border-radius: 20px; padding: 7px 11px; background: #f2f5f0; color: #587260; font-size: 11px; font-weight: 700; white-space: nowrap; }
+.att__liveBadge i { width: 7px; height: 7px; border-radius: 50%; background: #98a99a; }
+.att__liveBadge--on { background: #e7f4ea; color: #1b693e; }
+.att__liveBadge--on i { background: #229959; box-shadow: 0 0 0 4px #cdebd6; }
+.att__workdayContent { display: flex; justify-content: space-between; gap: 20px; align-items: center; margin-top: 9px; }
+.att__workdayContent h2 { max-width: 500px; margin: 0; font: 600 clamp(25px,2.7vw,35px)/1.15 Georgia, 'Times New Roman', serif; letter-spacing: -.038em; }
+.att__workdayContent p { max-width: 430px; margin: 9px 0 16px; color: #6b7f70; font-size: 13px; line-height: 1.5; }
+.att__workdayLink { color: #1a6440; font-size: 13px; font-weight: 750; text-decoration: none; }
+.att__workdayLink span { margin-left: 10px; }
+.att__workdayLink:hover,.att__textAction:hover { text-decoration: underline; }
+.att__workdayArt { flex: 0 0 112px; width: 112px; height: 112px; display: grid; place-items: center; border-radius: 50%; background: #edf6ed; }
+.att__pulse { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); align-items: center; border: 1px solid #dce6dd; border-radius: 18px; background: #fff; }
+.att__pulse > div { min-width: 0; padding: 17px 10px 17px 17px; }
+.att__pulse > div + div { border-left: 1px solid #e7ede6; }
+.att__pulse span,.att__pulse small { display: block; color: #6b7f70; font-size: 11px; line-height: 1.35; }
+.att__pulse strong { display: block; margin: 6px 0; font: 600 32px/1 Georgia, 'Times New Roman', serif; color: #1c5438; }
+.att__section { margin-top: 39px; }
+.att__sectionHead { align-items: end; gap: 16px; margin-bottom: 15px; }
+.att__sectionHead h2 { margin-top: 5px; font: 600 clamp(25px,2.5vw,32px)/1.15 Georgia, 'Times New Roman', serif; letter-spacing: -.034em; }
+.att__sectionHead p { margin: 7px 0 0; color: #6b7f70; font-size: 13px; }
+.att__sectionCount { padding: 7px 10px; border-radius: 20px; background: #e8f2e9; color: #276447!important; font-size: 11px!important; font-weight: 700; white-space: nowrap; }
+.att__emptyReview,.att__emptySchedule { display: flex; align-items: center; gap: 20px; padding: 18px 22px; border: 1px solid #dce8dd; border-radius: 16px; background: #f1f7f0; }
+.att__emptyReviewArt { flex: 0 0 64px; }
+.att__emptyReview strong,.att__emptySchedule strong { display: block; color: #234a35; font-size: 14px; }
+.att__emptyReview p,.att__emptySchedule p { margin: 5px 0 0; color: #6a806f; font-size: 12px; line-height: 1.5; }
+.att__textAction { padding: 4px 0; border: 0; background: transparent; color: #216747; font: 750 12px var(--font-ui); cursor: pointer; white-space: nowrap; }
+.att__textAction span { margin-left: 9px; }
+.att__shiftGrid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; }
+.att__shift { display: flex; align-items: center; gap: 15px; min-width: 0; padding: 14px 16px; border: 1px solid #e0e8dd; border-radius: 13px; background: #fff; }
+.att__shiftDate { flex: 0 0 51px; display: flex; flex-direction: column; align-items: center; padding: 6px 0; border-radius: 9px; background: #eaf3e9; }
+.att__shiftDate strong { font: 600 22px Georgia, 'Times New Roman', serif; }
+.att__shiftDate small { color: #618169; font-size: 11px; text-transform: uppercase; }
+.att__shift > div { min-width: 0; }
+.att__shift > div strong,.att__shift > div span,.att__shift > div small { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.att__shift > div strong { font-size: 13px; }
+.att__shift > div span { margin-top: 4px; color: #44664e; font-size: 12px; }
+.att__shift > div small { margin-top: 4px; color: #7b8d7c; font-size: 11px; }
+.att__emptySchedule { min-height: 124px; background: #fff; }
+.att__emptySchedule > span { flex: 0 0 80px; }
+.att__emptySchedule .att__textAction { margin-top: 9px; }
+.att__recent { margin-bottom: 12px; }
+.att__subhead { display: flex; justify-content: space-between; align-items: center; gap: 25px; min-height: 180px; padding: 26px clamp(24px,4vw,48px); border-radius: 20px; background: linear-gradient(110deg,#eaf4e9,#f8faf5 74%); border: 1px solid #d9e6d8; }
+.att__subhead h1 { margin: 10px 0 8px; font: 600 clamp(30px,3vw,44px)/1.1 Georgia,'Times New Roman',serif; letter-spacing: -.04em; }
+.att__subhead p { margin: 0; color: #637968; font-size: 13px; }
+.att__subheadArt { flex: 0 0 130px; display: grid; place-items: center; }
+.att__records .att__section:first-child { margin-top: 32px; }
+@media(max-width:1050px) { .att__overviewGrid { grid-template-columns: 1fr; } .att__pulse > div { padding: 16px 20px; } }
+@media(max-width:800px) { .att__hero { grid-template-columns: 1fr; } .att__heroCopy { padding-bottom: 0; } .att__heroScene { height: 240px; } .att__clock { width: 148px; height: 148px; } .att__clock::after { box-shadow: 0 98px #d3a35a, 49px 49px #d3a35a, -49px 49px #d3a35a; } .att__clockNeedle--hour { height: 38px; } .att__clockNeedle--minute { height: 50px; } }
+@media(max-width:650px) { .att { padding: 0 0 70px; } .att__hero { min-height: 0; border-radius: 18px; } .att__heroCopy { padding: 28px 23px 0; } .att__hero h1 { font-size: clamp(38px,9vw,51px); } .att__heroCopy > p { font-size: 13px; } .att__heroActions { margin-top: 22px; } .att__heroScene { height: 194px; } .att__orbit--one { width: 270px; height: 180px; } .att__orbit--two { width: 360px; height: 255px; } .att__sceneChip { padding: 7px 8px; font-size: 9px; } .att__sceneChip--plan { top: 7%; left: 9%; } .att__sceneChip--record { top: 30%; right: 5%; } .att__sceneChip--review { bottom: 7%; left: 7%; } .att__overviewGrid { margin-top: 14px; } .att__workday { padding: 20px; } .att__workdayArt { width: 75px; height: 75px; flex-basis: 75px; } .att__workdayArt svg { width: 60px; height: 60px; } .att__pulse > div { padding: 13px 9px; } .att__pulse strong { font-size: 26px; } .att__pulse span,.att__pulse small { font-size: 10px; } .att__section { margin-top: 30px; } .att__sectionHead { align-items: start; } .att__shiftGrid { grid-template-columns: 1fr; } .att__emptyReview,.att__emptySchedule { padding: 16px; } .att__subhead { min-height: 145px; padding: 22px; } .att__subheadArt { flex-basis: 72px; } .att__subheadArt svg { width: 68px; height: 68px; } }
+@media(prefers-reduced-motion:no-preference) { .att__clock { animation: att-arrive .8s ease-out both; } .att__sceneChip { animation: att-arrive .6s ease-out both; } .att__sceneChip--record { animation-delay: .12s; } .att__sceneChip--review { animation-delay: .22s; } }
+@keyframes att-arrive { from { opacity: 0; translate: 0 12px; } to { opacity: 1; translate: 0 0; } }
