@@ -19,7 +19,7 @@ import { HrAddressFields, addressFromForm, addressToForm } from './HrAddressFiel
 
 type Tab = 'tasks' | 'leave' | 'calendar' | 'documents' | 'profile' | 'approve' | 'cases' | 'people' | 'org' | 'hiring' | 'upcoming' | 'reconcile' | 'setup';
 type Summary = { hr: boolean; admin?: boolean; role: string; teams: string[]; myTasks: number; leaveToApprove: number; onboarding?: number; offboarding?: number; changes?: number; reconciliation?: number; hiring?: number };
-type Task = { id: string; key: string; title: string; team: string; critical: boolean; status: string; note: string | null; mine: boolean; blockedBy: string[]; completed_by_name: string | null; action: string | null };
+type Task = { id: string; key: string; title: string; team: string; critical: boolean; status: string; note: string | null; mine: boolean; blockedBy: string[]; completed_by_name: string | null; completed_at: string | null; action: string | null };
 type Case = { id: string; kind: string; status: string; restricted?: boolean; effectiveDate: string | null; summary: string | null; employee: { id: string; name: string; email: string; location: string | null; startDate: string | null; endDate: string | null; unit: string | null; title: string | null; employmentType: string }; progress: { done: number; total: number }; readiness: { title: string; team: string; critical: boolean; blockedBy: string[] }[]; tasks: Task[] };
 type MyTask = Task & { caseId: string; kind: string; employee: string; effectiveDate: string | null };
 type Balance = { typeId: string; key: string; name: string; unlimited: boolean; accrualMode: string; entitled: number; accrued: number; carriedOver: number; adjusted: number; taken: number; pending: number; left: number | null };
@@ -354,6 +354,7 @@ export function HRView({ onChanged, shell }: { onChanged?: () => void; shell?: M
   const [person, setPerson] = useState<string | null>(null);
   const pickTab = (id: Tab) => { setTab(id); shell?.onSection?.(id); setPerson(null); };
   const tasks = useFeed<MyTask[]>('/api/hr/tasks/mine');
+  const taskHistory = useFeed<MyTask[]>('/api/hr/tasks/mine/history');
   const leave = useFeed<MyLeave>(s && s.role !== 'pre_hire' ? '/api/hr/leave/mine' : null);
   const docs = useFeed<MyDoc[]>(s ? '/api/hr/documents/mine' : null);
   const approve = useFeed<ToApprove[]>(s && s.role !== 'pre_hire' ? '/api/hr/leave/to-approve' : null);
@@ -373,7 +374,7 @@ export function HRView({ onChanged, shell }: { onChanged?: () => void; shell?: M
   const [tick, setTick] = useState(0);
   const [setupTab, setSetupTab] = useState<'branches' | 'leave' | 'holidays' | 'documents' | 'teams'>('branches');
   const [form, setForm] = useState<Record<string, string>>({});
-  const [sheet, setSheet] = useState<null | 'onboarding' | 'offboarding' | 'transfer' | 'urgent' | 'probation' | 'leave' | 'branch' | 'defaults' | 'leaveType' | 'holiday' | 'document' | 'docFile' | 'team' | 'probationExtend'>(null);
+  const [sheet, setSheet] = useState<null | 'onboarding' | 'onboardingTask' | 'offboarding' | 'transfer' | 'urgent' | 'probation' | 'leave' | 'branch' | 'defaults' | 'leaveType' | 'holiday' | 'document' | 'docFile' | 'team' | 'probationExtend'>(null);
   const [branchFromOnboarding, setBranchFromOnboarding] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [week, setWeek] = useState<number[]>([1, 2, 3, 4, 5]);
@@ -389,7 +390,7 @@ export function HRView({ onChanged, shell }: { onChanged?: () => void; shell?: M
   const f = (k: string) => form[k] ?? '';
   const setF = (k: string, v: string) => setForm((x) => ({ ...x, [k]: v }));
 
-  const reloadAll = async () => { await Promise.all([summary.reload(), tasks.reload(), leave.reload(), docs.reload(), approve.reload(), cases.reload(), people.reload(), hiring.reload(), soon.reload(), recon.reload(), teams.reload(), docList.reload(), holidays.reload(), types.reload(), branches.reload()]); setTick((t) => t + 1); onChanged?.(); };
+  const reloadAll = async () => { await Promise.all([summary.reload(), tasks.reload(), taskHistory.reload(), leave.reload(), docs.reload(), approve.reload(), cases.reload(), people.reload(), hiring.reload(), soon.reload(), recon.reload(), teams.reload(), docList.reload(), holidays.reload(), types.reload(), branches.reload()]); setTick((t) => t + 1); onChanged?.(); };
   const act: Act = async (id, work) => {
     setBusy(id); setNote(null);
     try { const message = await work(); await reloadAll(); setNote({ text: message }); } catch (err) { setNote({ text: err instanceof Error ? err.message : String(err), err: true }); } finally { setBusy(null); }
@@ -453,6 +454,7 @@ export function HRView({ onChanged, shell }: { onChanged?: () => void; shell?: M
       </li>)}</ul>
       {hr && <div className="mx__bar">
         <button type="button" className="mx__btn mx__btn--ghost mx__btn--sm" onClick={() => openPerson(c.employee.id)}>Open record</button>
+        {c.kind === 'onboarding' && c.status === 'open' && <button type="button" className="mx__btn mx__btn--sm" onClick={() => { setForm({ caseId: c.id, employeeName: c.employee.name }); setSheet('onboardingTask'); }}>Assign employee task</button>}
         <button type="button" className="mx__btn mx__btn--ghost mx__btn--sm" onClick={() => ask(c.id, 'Note (kept to HR)', async (b) => { await postJson(`/api/hr/cases/${c.id}/notes`, { body: b, category: 'general' }); return 'Note added.'; })}>Add HR note</button>
         <button type="button" className="mx__btn mx__btn--ghost mx__btn--sm" onClick={() => ask(c.id, 'Note shared with the teams on this case', async (b) => { await postJson(`/api/hr/cases/${c.id}/notes`, { body: b, category: 'general', shared: true }); return 'Shared note added.'; })}>Add shared note</button>
         {c.kind === 'probation' && c.status === 'open' && <>
@@ -504,8 +506,17 @@ export function HRView({ onChanged, shell }: { onChanged?: () => void; shell?: M
     </form>}
 
     <div className="mx__stack" style={{ marginTop: 18 }}>
-      {tab === 'tasks' && <div className="mx__card"><div className="mx__cardHead"><h3>{pre ? 'Before you start' : 'My tasks'}</h3><small>{(tasks.data ?? []).length}</small></div>
-        <ul className="mx__list" style={{ marginTop: 10 }}>{(tasks.data ?? []).map(taskRow)}{tasks.data && !tasks.data.length && empty('check', 'Nothing for you to do', 'Tasks from onboardings, leavers and transfers that are yours appear here, with what they wait on.')}</ul></div>}
+      {tab === 'tasks' && <>
+        <div className="mx__card"><div className="mx__cardHead"><h3>{pre ? 'Before you start' : 'My tasks'}</h3><small>{(tasks.data ?? []).length}</small></div>
+          <ul className="mx__list" style={{ marginTop: 10 }}>{(tasks.data ?? []).map(taskRow)}{tasks.data && !tasks.data.length && empty('check', 'You’re all caught up', 'New tasks from HR will appear here when they are assigned to you.')}</ul></div>
+        <div className="mx__card"><div className="mx__cardHead"><h3>Completed by you</h3><small>{(taskHistory.data ?? []).filter((t) => t.status === 'done').length}</small></div>
+          <p className="mx__tiny" style={{ margin: '8px 24px 0' }}>A read-only record of your work. If something needs correcting, ask HR to assign a follow-up task.</p>
+          <ul className="mx__list" style={{ marginTop: 10 }}>{(taskHistory.data ?? []).filter((t) => t.status === 'done').map((t) => <li key={t.id}>
+            <span className="mx__avatar mx__avatar--on" style={{ marginLeft: 0 }}>✓</span>
+            <div className="mx__main"><strong>{t.title}</strong><small>{KIND[t.kind] ?? t.kind} · {t.employee}{t.completed_at ? ` · completed ${day(t.completed_at)}` : ''}</small>{t.note && <small>{t.note}</small>}</div>
+            <Pill s="done" text="Done" />
+          </li>)}{taskHistory.data && !taskHistory.data.some((t) => t.status === 'done') && empty('check', 'No completed tasks yet', 'When you finish a task, it will stay here for you to review.')}</ul></div>
+      </>}
 
       {tab === 'leave' && leave.data && <>
         <div className="hr__balances">{leave.data.balances.map((b) => <div key={b.key} className="mx__card hr__balance"><div className="mx__cardBody"><span className="mx__eyebrow" style={{ color: 'var(--mx-muted)' }}>{b.name}</span><strong className="hr__big">{b.unlimited ? '∞' : b.left ?? '–'}<small>{b.unlimited ? 'no limit' : 'days left'}</small></strong>{!b.unlimited && <Bar value={b.taken + b.pending} max={b.accrued + b.carriedOver + b.adjusted} />}<span className="mx__tiny">{b.unlimited ? `${b.taken} taken this year` : `${b.taken} taken · ${b.pending} pending${b.accrualMode === 'monthly' ? ` · ${b.accrued} of ${b.entitled} accrued` : ''}${b.carriedOver ? ` · ${b.carriedOver} carried over` : ''}`}</span></div></div>)}</div>
@@ -664,6 +675,13 @@ export function HRView({ onChanged, shell }: { onChanged?: () => void; shell?: M
           <ul className="mx__list">{(teams.data ?? []).map((t) => <li key={`${t.team}-${t.actor_id}`}><Avatar name={t.display_name} /><div className="mx__main"><strong>{t.display_name}</strong><small>{TEAM[t.team]}</small></div>{s.admin && <button type="button" className="mx__btn mx__btn--ghost mx__btn--sm" onClick={() => void act(t.actor_id, async () => { await postJson('/api/hr/teams', { team: t.team, actorId: t.actor_id, member: false }); return 'Removed from the team.'; })}>Remove</button>}</li>)}</ul></div>}
       </>}
     </div>
+
+    {sheet === 'onboardingTask' && <Sheet eyebrow="Onboarding task" title={`Assign a task to ${f('employeeName')}`} subtitle="They will see this in Before you start. Completed tasks remain in their read-only history." onClose={() => setSheet(null)}
+      footer={<><button type="button" className="mx__btn mx__btn--ghost" onClick={() => setSheet(null)}>Cancel</button><button type="button" className="mx__btn" disabled={busy === 'assignTask' || f('taskTitle').trim().length < 4} onClick={() => done('assignTask', async () => { await postJson(`/api/hr/cases/${f('caseId')}/tasks`, { title: f('taskTitle') }); return 'Task assigned. It now appears in their Before you start list.'; })}>Assign task</button></>}>
+      <SheetSection title="What should they do?" hint="Use a clear action, such as ‘Review the welcome guide’ or ‘Confirm your emergency contact’.">
+        <F label="Task"><input autoFocus required maxLength={200} value={f('taskTitle')} onChange={(e) => setF('taskTitle', e.target.value)} /></F>
+      </SheetSection>
+    </Sheet>}
 
     {sheet === 'onboarding' && <Sheet eyebrow="New joiner" title={f('oName') || 'Who is joining?'} subtitle={onboardingMember ? 'This person already has workspace access. Their existing role stays in place while onboarding tasks are tracked.' : 'They get a pre-hire account with their own tasks only. Access opens on the first day once the checks are done.'} onClose={() => setSheet(null)} wide
       footer={<><small className="mx__tiny">Tasks come from the onboarding template for their type and branch.</small><button type="button" className="mx__btn mx__btn--ghost" onClick={() => setSheet(null)}>Cancel</button><button type="button" className="mx__btn" disabled={busy === 'start' || !f('oName') || !f('oEmail') || !f('oStart') || Boolean(onboardingCase) || (Boolean(onboardingMember) && onboardingMember?.id === f('oMgr'))} onClick={() => done('start', async () => { const r = await postJson<{ invitation: string | null; existingMember: boolean }>('/api/hr/cases/onboarding', { name: f('oName'), email: f('oEmail'), startDate: f('oStart'), employmentType: f('oType') || 'employee', location: f('oLoc'), managerId: f('oMgr') || undefined, title: f('oTitle'), grade: f('oGrade'), branchId: f('oBranch') || undefined, probationEnd: f('oProb') || undefined, hiringId: f('oHire') || undefined, onboardExisting: Boolean(onboardingMember), sendInvitation: !onboardingMember && f('oInvite') === 'yes' }); return r.existingMember ? 'Onboarding started for the existing member. Their sign-in and workspace role are unchanged.' : `Onboarding started.${r.invitation ? ` Invitation: ${r.invitation}.` : ''}`; })}>{onboardingMember ? 'Start member onboarding' : 'Start onboarding'}</button></>}>

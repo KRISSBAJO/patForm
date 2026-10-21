@@ -20,6 +20,7 @@
  * on the day and past decisions keep the old manager (acceptance 3).
  */
 import { inTransaction, type Client, type Pool } from './db.js';
+import { randomUUID } from 'node:crypto';
 import { InvalidInput } from './errors.js';
 import { WORKSPACE_ROLES, requireWorkspaceCapability, type Principal, type WorkspaceRole } from './policy.js';
 import { recordWorkspaceAudit } from './authority.js';
@@ -741,6 +742,38 @@ export async function listCases(pool: Pool, principal: Principal, opts: { status
 export async function myTasks(pool: Pool, principal: Principal) {
   const cases = await listCases(pool, principal, { status: 'open' });
   return cases.flatMap((c) => c.tasks.filter((t) => t.mine && t.status === 'open').map((t) => ({ ...t, caseId: c.id, kind: c.kind, employee: c.employee.name, effectiveDate: c.effectiveDate })));
+}
+
+/** Read-only history of the caller's own finished lifecycle tasks. */
+export async function myTaskHistory(pool: Pool, principal: Principal) {
+  const cases = await listCases(pool, principal);
+  return cases.flatMap((c) => c.tasks.filter((t) => t.mine && t.status !== 'open').map((t) => ({ ...t, caseId: c.id, kind: c.kind, employee: c.employee.name, effectiveDate: c.effectiveDate })))
+    .sort((a, b) => String(b.completed_at ?? '').localeCompare(String(a.completed_at ?? '')));
+}
+
+/** HR may add a new employee task to an active onboarding without changing completed records. */
+export async function addOnboardingTask(pool: Pool, principal: Principal, caseId: string, body: Record<string, unknown>) {
+  const w = await who(pool, principal); requireHr(w);
+  if (!UUID.test(caseId)) throw new InvalidInput('no such onboarding');
+  const title = text(body.title, 200);
+  if (title.length < 4) throw new InvalidInput('give the task a clear title');
+  return inTransaction(pool, async (client) => {
+    const { rows } = await client.query<{ id: string; status: string; kind: string; actor_id: string | null }>(
+      `select c.id, c.status, c.kind, e.actor_id from lifecycle_case c join employee_record e on e.id = c.employee_id where c.id = $1 and c.tenant_id = $2 for update of c`,
+      [caseId, w.tenantId]);
+    const c = rows[0];
+    if (!c || c.kind !== 'onboarding') throw new InvalidInput('no such onboarding');
+    if (c.status !== 'open') throw new InvalidInput('this onboarding is closed');
+    if (!c.actor_id) throw new InvalidInput('invite this person before assigning their tasks');
+    const { rows: count } = await client.query<{ n: number }>('select count(*)::int as n from lifecycle_task where case_id = $1', [caseId]);
+    if (count[0]!.n >= 60) throw new InvalidInput('this onboarding already has 60 tasks');
+    const key = `employee_${randomUUID().replace(/-/g, '').slice(0, 16)}`;
+    const { rows: added } = await client.query<{ id: string }>(
+      `insert into lifecycle_task (case_id, key, title, team) values ($1, $2, $3, 'employee') returning id`,
+      [caseId, key, title]);
+    await recordWorkspaceAudit(client, { tenantId: w.tenantId, actorId: w.actorId, action: 'hr.onboarding_task_added', targetId: added[0]!.id, detail: { caseId, title } });
+    return { id: added[0]!.id, caseId, title, status: 'open' };
+  });
 }
 
 async function revokeAccess(client: Client, w: Who, actorId: string) {

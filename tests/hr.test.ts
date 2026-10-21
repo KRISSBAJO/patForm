@@ -12,8 +12,8 @@ import { resolveSession, startSession } from '../src/runtime/auth.js';
 import { acceptInvitation, invite, listMembers } from '../src/runtime/workspace.js';
 import { saveBudget } from '../src/runtime/expenses.js';
 import {
-  acknowledgeDocument, addCaseNote, cancelLeave, completeTask, createDocument, decideLeave, decideProbation, exceptTask, hrSummary, leaveToApprove,
-  listCaseNotes, listCases, listCompensation, listEmployees, listHiring, listReconciliations, myDocuments, myLeave, myTasks, requestLeave,
+  acknowledgeDocument, addCaseNote, addOnboardingTask, cancelLeave, completeTask, createDocument, decideLeave, decideProbation, exceptTask, hrSummary, leaveToApprove,
+  listCaseNotes, listCases, listCompensation, listEmployees, listHiring, listReconciliations, myDocuments, myLeave, myTasks, myTaskHistory, requestLeave,
   saveHoliday, saveTemplate, sendDocument, setCompensation, setTeamMember, startOffboarding, startOnboarding, startProbationReview, startTransfer,
   updateEmployee, updateHrSettings, upcoming, urgentTermination,
 } from '../src/runtime/hr.js';
@@ -65,6 +65,27 @@ const taskBy = async (pool: Pool, p: Principal, caseId: string, key: string) => 
   const c = (await listCases(pool, p)).find((x) => x.id === caseId)!;
   return c.tasks.find((t) => t.key === key)!;
 };
+
+test('HR-assigned onboarding tasks appear for the joiner and stay read-only in their history', { skip: !localDatabase }, async () => {
+  const pool = createPool(3);
+  try {
+    const w = await workspace(pool, new Engine(pool));
+    const ob = await startOnboarding(pool, w.hrClerk.p, { email: `new-task-${stamp()}@hr.test`, name: 'New Joiner', startDate: addDays(3) });
+    const pre: Principal = { kind: 'actor', tenantId: w.tenantId, actorId: ob.actorId };
+    await assert.rejects(addOnboardingTask(pool, pre, ob.caseId, { title: 'Review the welcome guide' }), /only HR/);
+    const task = await addOnboardingTask(pool, w.hrClerk.p, ob.caseId, { title: 'Review the welcome guide' });
+    assert.equal(task.status, 'open');
+    assert.ok((await myTasks(pool, pre)).some((t) => t.id === task.id));
+    assert.ok(!(await myTasks(pool, w.staff.p)).some((t) => t.id === task.id));
+    await completeTask(pool, pre, task.id, { note: 'Reviewed' });
+    assert.ok(!(await myTasks(pool, pre)).some((t) => t.id === task.id));
+    const finished = (await myTaskHistory(pool, pre)).find((t) => t.id === task.id);
+    assert.equal(finished?.note, 'Reviewed');
+    assert.ok(finished?.completed_at);
+    await assert.rejects(completeTask(pool, pre, task.id, { note: 'Edited' }), /already done/);
+    assert.ok(!(await myTaskHistory(pool, w.staff.p)).some((t) => t.id === task.id));
+  } finally { await pool.end(); }
+});
 
 test('an existing member can enter HR onboarding without losing sign-in access or receiving a duplicate invitation', { skip: !localDatabase }, async () => {
   const pool = createPool(3);

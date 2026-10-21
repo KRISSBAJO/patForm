@@ -34,7 +34,7 @@ import { allowance, cancelPaymentRun, createPaymentRun, expenseReport, listCateg
 import { adoptTemplate, approvalsOverview, evidenceLink, listEvidence, listPolicies, savePolicy, setPolicyActive, simulatePolicy, uploadEvidence } from '../runtime/approvals.js';
 import { searchCases, searchDocuments, searchHiring, searchHolidays, searchLeave, searchReconciliation, searchUpcoming } from '../runtime/hr-lists.js';
 import { addEmployeeEvent, adjustLeave, documentFileLink, listBranches, saveBranch, searchEmployees, setEmployeeBranch, employeeDetail, employeeFileLink, leaveCalendar, leaveLedger, myProfile, orgTree, removeEmployeeFile, setEmployeeFileVisibility, updateProfile, uploadDocumentFile, uploadEmployeeFile } from '../runtime/hr-records.js';
-import { acknowledgeDocument, addCaseNote, addCertification, cancelLeave, completeTask, createDocument, decideLeave, decideProbation, exceptTask, hrSummary, leaveToApprove, listCaseNotes, listCases, listCompensation, listDocuments, listEmployees, listHiring, listHolidays, listLeaveTypes, listReconciliations, listTeams, listTemplates, myDocuments, myLeave, myTasks, readHrSettings, requestLeave, resolveReconciliation, saveHoliday, saveLeaveType, saveTemplate, sendDocument, setCompensation, setEntitlement, setTeamMember, startOffboarding, startOnboarding, startProbationReview, startTransfer, updateEmployee, updateHrSettings, upcoming, urgentTermination } from '../runtime/hr.js';
+import { acknowledgeDocument, addCaseNote, addCertification, addOnboardingTask, cancelLeave, completeTask, createDocument, decideLeave, decideProbation, exceptTask, hrSummary, leaveToApprove, listCaseNotes, listCases, listCompensation, listDocuments, listEmployees, listHiring, listHolidays, listLeaveTypes, listReconciliations, listTeams, listTemplates, myDocuments, myLeave, myTasks, myTaskHistory, readHrSettings, requestLeave, resolveReconciliation, saveHoliday, saveLeaveType, saveTemplate, sendDocument, setCompensation, setEntitlement, setTeamMember, startOffboarding, startOnboarding, startProbationReview, startTransfer, updateEmployee, updateHrSettings, upcoming, urgentTermination } from '../runtime/hr.js';
 import * as apr from '../runtime/appraisals.js';
 import * as ga from '../runtime/general-approvals.js';
 import { goalFileLink, uploadGoalFile } from '../runtime/goal-files.js';
@@ -1020,6 +1020,7 @@ route('POST', /^\/api\/hr\/employees\/([0-9a-f-]{36})\/pay$/, async ({ pool, pri
 route('POST', /^\/api\/hr\/employees\/([0-9a-f-]{36})\/certifications$/, async ({ pool, principal, url }, b) => addCertification(pool, principal, hid(url, 4), hb(b)));
 route('GET', /^\/api\/hr\/cases$/, async ({ pool, principal, url }) => listCases(pool, principal, { status: url.searchParams.get('status') ?? undefined }));
 route('POST', /^\/api\/hr\/cases\/onboarding$/, async ({ pool, principal }, b) => startOnboarding(pool, principal, hb(b)));
+route('POST', /^\/api\/hr\/cases\/([0-9a-f-]{36})\/tasks$/, async ({ pool, principal, url }, b) => addOnboardingTask(pool, principal, hid(url, 4), hb(b)));
 route('POST', /^\/api\/hr\/cases\/offboarding$/, async ({ pool, principal }, b) => startOffboarding(pool, principal, hb(b)));
 route('POST', /^\/api\/hr\/cases\/urgent-termination$/, async ({ pool, principal }, b) => urgentTermination(pool, principal, hb(b)));
 route('POST', /^\/api\/hr\/cases\/transfer$/, async ({ pool, principal }, b) => startTransfer(pool, principal, hb(b)));
@@ -1028,6 +1029,7 @@ route('POST', /^\/api\/hr\/cases\/([0-9a-f-]{36})\/probation-decision$/, async (
 route('GET', /^\/api\/hr\/cases\/([0-9a-f-]{36})\/notes$/, async ({ pool, principal, url }) => listCaseNotes(pool, principal, hid(url, 4)));
 route('POST', /^\/api\/hr\/cases\/([0-9a-f-]{36})\/notes$/, async ({ pool, principal, url }, b) => addCaseNote(pool, principal, hid(url, 4), hb(b)));
 route('GET', /^\/api\/hr\/tasks\/mine$/, async ({ pool, principal }) => myTasks(pool, principal));
+route('GET', /^\/api\/hr\/tasks\/mine\/history$/, async ({ pool, principal }) => myTaskHistory(pool, principal));
 route('POST', /^\/api\/hr\/tasks\/([0-9a-f-]{36})\/complete$/, async ({ pool, principal, url }, b) => completeTask(pool, principal, hid(url, 4), hb(b)));
 route('POST', /^\/api\/hr\/tasks\/([0-9a-f-]{36})\/except$/, async ({ pool, principal, url }, b) => exceptTask(pool, principal, hid(url, 4), hb(b)));
 route('GET', /^\/api\/hr\/leave\/types$/, async ({ pool, principal }) => listLeaveTypes(pool, principal));
