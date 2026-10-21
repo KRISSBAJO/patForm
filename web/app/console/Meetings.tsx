@@ -495,6 +495,10 @@ export function MeetingsView({ shell }: { shell?: ModuleShell } = {}) {
   };
   const next = o?.upcoming.find((m) => m.status !== 'cancelled');
   const live = (meetings.data ?? []).find((m) => m.status === 'in_progress');
+  const hasBody = myBodies.length > 0;
+  const staffed = myBodies.some((b) => b.members >= 2);
+  const hasMeeting = (meetings.data ?? []).length > 0;
+  const pendingCount = (o?.openVotes.length ?? 0) + (o?.rsvpPending.length ?? 0) + (o?.minutesToApprove.length ?? 0) + (o?.toSign.length ?? 0);
 
   const meetingRow = (m: Meeting) => <li key={m.id}>
     <div className={`mx__date ${m.status === 'in_progress' ? 'mx__date--live' : ''}`}><strong>{new Date(m.starts_at).getDate()}</strong><small>{new Date(m.starts_at).toLocaleDateString([], { month: 'short' })}</small></div>
@@ -523,70 +527,59 @@ export function MeetingsView({ shell }: { shell?: ModuleShell } = {}) {
       <div className="mx__voteBtns" style={{ marginTop: 0 }}><button type="submit" className="mx__btn mx__btn--sm">Continue</button><button type="button" className="mx__btn mx__btn--ghost mx__btn--sm" onClick={() => { setAsking(null); setAnswer(''); }}>Cancel</button></div>
     </form>}
 
-    {tab === 'overview' && o && <>
-      <section className="mx__band">
-        <div className="mx__bandGrid">
-          <div>
-            <div className="mx__eyebrow">Meetings &amp; resolutions</div>
-            <h2 className="mx__bandTitle">{live ? `In the room now: ${live.title}` : next ? `Next: ${next.title}` : 'Nothing on the calendar yet'}</h2>
-            <p className="mx__bandSub">{live ? `${live.body} is sitting. Enter the room.` : next ? `${next.body} · ${when(next.starts_at)} · ${countdown(next.starts_at)}${next.location ? ` · ${next.location}` : ''}` : 'Create a board, then call its first meeting.'}</p>
-            <div className="mx__bandActions">
-              {live ? <button type="button" className="mx__btn mx__btn--light" onClick={() => openM(live.id)}>Enter the room</button> : next ? <button type="button" className="mx__btn mx__btn--light" onClick={() => openM(next.id)}>Open the meeting</button> : null}
-              <button type="button" className="mx__btn mx__btn--outline" onClick={() => newMeeting()}>+ New meeting</button>
-              <button type="button" className="mx__btn mx__btn--outline" onClick={() => pickTab('calendar')}>Calendar</button>
-            </div>
+    {tab === 'overview' && o && <div className="mx__overview">
+      <section className="mx__band" aria-labelledby="mx-overview-title">
+        <div className="mx__bandCopy">
+          <span className="mx__eyebrow">MEETINGS &amp; RESOLUTIONS <span className="mx__eyebrowDot" /> {pendingCount ? `${pendingCount} NEEDS YOU` : 'ALL CLEAR'}</span>
+          <h2 className="mx__bandTitle" id="mx-overview-title">{live ? live.title : next ? next.title : !hasBody ? 'Decisions start with the right people.' : !staffed ? 'Your board is ready for its people.' : hasMeeting ? 'Every decision has a place here.' : 'The table is set. Call your first meeting.'}</h2>
+          <p className="mx__bandSub">{live ? `${live.body} is sitting now. Join the room to follow the agenda and record decisions.` : next ? `${next.body} · ${when(next.starts_at)} · ${countdown(next.starts_at)}${next.location ? ` · ${next.location}` : ''}` : !hasBody ? 'Create a board or committee, add its members, then bring everyone together around an agenda.' : !staffed ? 'Add a chair, secretary and members before you send the first invitation.' : hasMeeting ? 'Your meetings, minutes, votes and actions stay connected from first notice to final record.' : 'Send the agenda and notice together. The meeting, minutes and decisions will stay connected.'}</p>
+          <div className="mx__bandActions">
+            {live ? <button type="button" className="mx__btn" onClick={() => openM(live.id)}>Enter the room <span aria-hidden="true">↗</span></button>
+              : next ? <button type="button" className="mx__btn" onClick={() => openM(next.id)}>Open meeting <span aria-hidden="true">↗</span></button>
+              : !hasBody ? admin && <button type="button" className="mx__btn" onClick={() => { pickTab('bodies'); setNewBody(true); }}>Create a board <span aria-hidden="true">↗</span></button>
+              : !staffed ? <button type="button" className="mx__btn" onClick={() => { setOpenBody(myBodies[0]!.id); pickTab('bodies'); }}>{myBodies[0]?.can_manage ? 'Add members' : 'View your board'} <span aria-hidden="true">↗</span></button>
+              : <button type="button" className="mx__btn" onClick={() => newMeeting()}>Call a meeting <span aria-hidden="true">↗</span></button>}
+            <button type="button" className="mx__btn mx__btn--ghost" onClick={() => pickTab('calendar')}>View calendar</button>
           </div>
-          <div className={`mx__kpi ${o.openVotes.length ? 'mx__kpi--live' : ''}`}><span>Votes waiting</span><strong>{o.openVotes.length}</strong><small>{o.rsvpPending.length} meeting{o.rsvpPending.length === 1 ? '' : 's'} to reply to</small></div>
-          <div className="mx__kpi"><span>Your actions</span><strong>{o.myActions.length}</strong><small>{o.myActions.filter((a) => a.late).length} overdue</small></div>
-          <div className="mx__kpi"><span>To approve / sign</span><strong>{o.minutesToApprove.length + o.toSign.length}</strong><small>{o.minutesToApprove.length} minutes · {o.toSign.length} resolution{o.toSign.length === 1 ? '' : 's'}</small></div>
         </div>
+        <div className="mx__bandVisual" aria-hidden="true"><span className="mx__visualHalo" /><Illustration name="calendar" size={114} /><div className="mx__visualLines"><i /><i /><i /></div><span className="mx__visualCaption">ONE PLACE FOR EVERY DECISION</span></div>
       </section>
-      {(() => {
-        const hasBody = myBodies.length > 0;
-        const staffed = myBodies.some((b) => b.members >= 2);
-        const hasMeeting = (meetings.data ?? []).length > 0;
-        if (hasBody && staffed && hasMeeting) return null;
-        const steps = [
-          { done: hasBody, title: 'Create a board or committee', text: 'Its name, kind, quorum rule and how decisions are taken. A company name lets it sign resolutions as the company.', action: admin ? { label: hasBody ? 'Open' : 'Create', onClick: () => pickTab('bodies') } : null, who: 'Owner or admin' },
-          { done: staffed, title: 'Add the chair, the secretary and the members', text: 'The chair runs the room, the secretary calls meetings and writes minutes, members vote. Mark who may sign resolutions.', action: hasBody ? { label: 'Add members', onClick: () => pickTab('bodies') } : null, who: 'Admin, chair or secretary' },
-          { done: Boolean(settings.data), title: 'Check the notice rules', text: `Days of notice before a meeting (${settings.data?.settings.noticeDays ?? 7}), reminders, how long written resolutions stay open.`, action: admin ? { label: 'Review', onClick: () => pickTab('setup') } : null, who: 'Optional', optional: true },
-          { done: hasMeeting, title: 'Call the first meeting', text: 'Draft the agenda, send the notice with a calendar invitation, take attendance, vote, write and approve the minutes.', action: staffed ? { label: 'New meeting', onClick: () => newMeeting() } : null, who: 'Chair or secretary' },
-        ];
-        const doneCount = steps.filter((x) => x.done && !x.optional).length;
-        return <section className="mx__card mx__start" style={{ marginTop: 18 }}>
-          <div className="mx__cardHead"><div><h3>Get started with Meetings</h3><small>{doneCount} of 3 steps done · what a company secretary would set up first</small></div><div className="mx__startBar" aria-hidden="true"><span style={{ width: `${(doneCount / 3) * 100}%` }} /></div></div>
-          <ol className="mx__startSteps">
-            {steps.map((x, i) => <li key={x.title} className={x.done ? 'is-done' : ''}>
-              <span className="mx__startNo">{x.done ? '✓' : i + 1}</span>
-              <div className="mx__main"><strong>{x.title}{x.optional && <span className="mx__pill" style={{ marginLeft: 8 }}>optional</span>}</strong><small>{x.text}</small><small className="mx__tiny">{x.who}</small></div>
-              {x.action && !x.done && <button type="button" className={`mx__btn mx__btn--sm ${i > 0 && !steps[i - 1]!.done && !x.optional ? 'mx__btn--ghost' : ''}`} onClick={x.action.onClick}>{x.action.label}</button>}
-              {x.action && x.done && <button type="button" className="mx__btn mx__btn--ghost mx__btn--sm" onClick={x.action.onClick}>{x.action.label}</button>}
-            </li>)}
-          </ol>
-        </section>;
-      })()}
-      <div className="mx__quick" style={{ marginTop: 18 }}>
+      <div className="mx__pulse" aria-label="Meetings at a glance">
+        <button type="button" onClick={() => pickTab('resolutions')}><span>Votes waiting</span><strong>{o.openVotes.length}</strong><small>{o.rsvpPending.length} invitations to answer</small></button>
+        <button type="button" onClick={() => pickTab('actions')}><span>Your actions</span><strong>{o.myActions.length}</strong><small>{o.myActions.filter((a) => a.late).length} overdue</small></button>
+        <button type="button" onClick={() => pickTab('register')}><span>To approve or sign</span><strong>{o.minutesToApprove.length + o.toSign.length}</strong><small>{o.minutesToApprove.length} minutes · {o.toSign.length} resolutions</small></button>
+      </div>
+      {!(hasBody && staffed && hasMeeting) && <section className="mx__readiness" aria-labelledby="mx-readiness-title">
+        <div className="mx__readinessHead"><div><span className="mx__eyebrow">YOUR SETUP</span><h3 id="mx-readiness-title">A simple path to the first meeting</h3></div><span>{Number(hasBody) + Number(staffed) + Number(hasMeeting)} of 3 complete</span></div>
+        <ol className="mx__readinessSteps">
+          <li className={hasBody ? 'is-done' : 'is-next'}><span>{hasBody ? '✓' : '01'}</span><div><strong>Board</strong><small>Give the group its rules.</small></div></li>
+          <li className={staffed ? 'is-done' : hasBody ? 'is-next' : ''}><span>{staffed ? '✓' : '02'}</span><div><strong>People</strong><small>Chair, secretary, members.</small></div></li>
+          <li className={hasMeeting ? 'is-done' : staffed ? 'is-next' : ''}><span>{hasMeeting ? '✓' : '03'}</span><div><strong>First meeting</strong><small>Agenda, notice, decisions.</small></div></li>
+        </ol>
+        {admin && <button type="button" className="mx__link mx__readinessRules" onClick={() => pickTab('setup')}>Review notice rules <span aria-hidden="true">↗</span></button>}
+      </section>}
+      <div className="mx__quick">
         <button type="button" className="mx__quickBtn" onClick={() => newMeeting()}><Illustration name="calendar" size={48} /><strong>Call a meeting</strong><small>Agenda, notice, invitations</small></button>
         {manageable.some((b) => b.written_resolutions) && <button type="button" className="mx__quickBtn" onClick={() => { pickTab('resolutions'); setOpenRes(null); }}><Illustration name="vote" size={48} /><strong>Written resolution</strong><small>Decide without a meeting</small></button>}
         <button type="button" className="mx__quickBtn" onClick={() => pickTab('actions')}><Illustration name="actions" size={48} /><strong>Actions</strong><small>{(actions.data ?? []).filter((a) => a.status === 'open').length} open across bodies</small></button>
         <button type="button" className="mx__quickBtn" onClick={() => pickTab('register')}><Illustration name="register" size={48} /><strong>Register</strong><small>Decided resolutions, signed copies</small></button>
       </div>
-      <div className="mx__grid">
-        <div className="mx__stack">
+      {(o.rsvpPending.length > 0 || o.openVotes.length > 0 || o.minutesToApprove.length > 0 || o.toSign.length > 0 || o.upcoming.length > 0 || o.myActions.length > 0 || myBodies.length > 0) && <div className={`mx__grid ${!(o.rsvpPending.length || o.openVotes.length || o.minutesToApprove.length || o.toSign.length || o.upcoming.length) ? 'mx__grid--single' : ''}`}>
+        {(o.rsvpPending.length > 0 || o.openVotes.length > 0 || o.minutesToApprove.length > 0 || o.toSign.length > 0 || o.upcoming.length > 0) && <div className="mx__stack">
           {o.rsvpPending.length > 0 && <div className="mx__card"><div className="mx__cardHead"><h3>Reply to</h3></div><ul className="mx__list" style={{ marginTop: 10 }}>{o.rsvpPending.map(meetingRow)}</ul></div>}
           {o.openVotes.length > 0 && <div className="mx__card"><div className="mx__cardHead"><h3>Vote now</h3></div><ul className="mx__list" style={{ marginTop: 10 }}>{o.openVotes.map(resRow)}</ul></div>}
           {(o.minutesToApprove.length > 0 || o.toSign.length > 0) && <div className="mx__card"><div className="mx__cardHead"><h3>Officer's desk</h3></div><ul className="mx__list" style={{ marginTop: 10 }}>
             {o.minutesToApprove.map((m) => <li key={m.id}><div className="mx__main"><strong>Approve the minutes: {m.title}</strong><small>{m.body}</small></div><button type="button" className="mx__btn mx__btn--sm" onClick={() => openM(m.id)}>Review</button></li>)}
             {o.toSign.map((r) => <li key={r.id}><div className="mx__main"><strong>Send for signature: R-{r.number} {r.title}</strong><small>{r.body} · passed</small></div><button type="button" className="mx__btn mx__btn--ghost mx__btn--sm" onClick={() => openR(r.id)}>Open</button></li>)}
           </ul></div>}
-          <div className="mx__card"><div className="mx__cardHead"><h3>Coming up</h3><small>{o.upcoming.length}</small></div><ul className="mx__list" style={{ marginTop: 10 }}>{o.upcoming.map(meetingRow)}{!o.upcoming.length && empty('Nothing on the calendar', myBodies.length ? 'Call a meeting: the notice and invitation go to every member.' : 'Create a board or committee, then call its first meeting.', myBodies.length ? { label: '+ New meeting', onClick: () => newMeeting() } : admin ? { label: 'Create a board or committee', onClick: () => pickTab('bodies') } : undefined, 'calendar')}</ul></div>
-        </div>
+          {o.upcoming.length > 0 && <div className="mx__card"><div className="mx__cardHead"><h3>Coming up</h3><small>{o.upcoming.length}</small></div><ul className="mx__list" style={{ marginTop: 10 }}>{o.upcoming.map(meetingRow)}</ul></div>}
+        </div>}
         <div className="mx__stack">
-          <div className="mx__card"><div className="mx__cardHead"><h3>Your actions</h3><small>{o.myActions.length}</small></div><ul className="mx__list" style={{ marginTop: 10 }}>{o.myActions.slice(0, 6).map(actionRow)}{!o.myActions.length && empty('Nothing on you', 'Actions agreed in meetings with you as owner appear here.', undefined, 'check')}</ul></div>
-          <div className="mx__card"><div className="mx__cardHead"><h3>Your bodies</h3></div><ul className="mx__list" style={{ marginTop: 10 }}>{myBodies.map((b) => <li key={b.id}><div className="mx__main"><strong>{b.name}</strong><small>{KIND[b.kind]} · {b.members} members{b.my_role ? ` · you: ${ROLE[b.my_role]}` : ''}</small></div><button type="button" className="mx__btn mx__btn--ghost mx__btn--sm" onClick={() => { setOpenBody(b.id); pickTab('bodies'); }}>Open</button></li>)}{!myBodies.length && empty('No bodies yet', admin ? 'Create a board or committee to get going.' : 'You are not on a board or committee yet.', admin ? { label: 'Create one', onClick: () => pickTab('bodies') } : undefined, 'people')}</ul></div>
+          {o.myActions.length > 0 && <div className="mx__card"><div className="mx__cardHead"><h3>Your actions</h3><small>{o.myActions.length}</small></div><ul className="mx__list" style={{ marginTop: 10 }}>{o.myActions.slice(0, 6).map(actionRow)}</ul></div>}
+          {myBodies.length > 0 && <div className="mx__card"><div className="mx__cardHead"><h3>Your boards &amp; committees</h3></div><ul className="mx__list" style={{ marginTop: 10 }}>{myBodies.map((b) => <li key={b.id}><div className="mx__main"><strong>{b.name}</strong><small>{KIND[b.kind]} · {b.members} members{b.my_role ? ` · you: ${ROLE[b.my_role]}` : ''}</small></div><button type="button" className="mx__btn mx__btn--ghost mx__btn--sm" onClick={() => { setOpenBody(b.id); pickTab('bodies'); }}>Open</button></li>)}</ul></div>}
         </div>
-      </div>
-    </>}
+      </div>}
+    </div>}
 
     {tab === 'calendar' && <Calendar onOpen={openM} onNew={newMeeting} pickedDay={pickedDay} setPickedDay={setPickedDay} />}
 
