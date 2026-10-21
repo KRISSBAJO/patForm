@@ -11,7 +11,7 @@ import { PdfPages, PageBox } from '../../../components/pdf-pages';
 import { SignatureField, type SignatureValue } from '../../../components/signature-field';
 import '../sign.css';
 
-type Field = { id: string; kind: 'signature' | 'initials' | 'date' | 'name' | 'text' | 'title' | 'email' | 'company' | 'checkbox' | 'dropdown' | 'radio'; page: number; x: number; y: number; width: number; height: number; required: boolean; label: string | null; choices: string[] };
+type Field = { id: string; kind: 'signature' | 'initials' | 'date' | 'name' | 'text' | 'title' | 'email' | 'company' | 'checkbox' | 'dropdown' | 'radio' | 'payment'; page: number; x: number; y: number; width: number; height: number; required: boolean; label: string | null; choices: string[]; amountMinor?: number | null; currency?: string | null; paymentStatus?: string | null };
 type View = { stage: 'verify' | 'sign' | 'signed' | 'completed' | 'closed'; title: string; workspace: string; sender: string | null; name: string; email: string; expiresAt: string; status?: string;
   finalizing?: boolean;
   message?: string | null; pages?: number; consented?: boolean; consentText?: string; fields?: Field[]; completedAt?: string;
@@ -61,6 +61,16 @@ export function SignPage({ token }: { token: string }) {
       .then(async (r) => { if (!r.ok) throw new Error('The document could not be loaded.'); setPdf(await r.arrayBuffer()); })
       .catch((e: Error) => setError(e.message));
   }, [view, pdf, base, session]);
+  useEffect(() => {
+    if (view?.stage !== 'sign' || !view.consented || !view.fields?.some((f) => f.kind === 'payment' && f.paymentStatus !== 'paid') || !session) return;
+    if (!new URLSearchParams(window.location.search).has('payment')) return;
+    const timer = window.setInterval(() => {
+      void call<{ status: string }>(`${base}/payment-status`, { session }).then((result) => {
+        if (result.status === 'paid') { window.clearInterval(timer); window.history.replaceState(null, '', window.location.pathname); void load(session); }
+      }).catch(() => undefined);
+    }, 3000);
+    return () => window.clearInterval(timer);
+  }, [view, session, base, load]);
 
   const act = async (work: () => Promise<void>) => { setBusy(true); setNote(null); try { await work(); } catch (err) { setNote(err instanceof Error ? err.message : String(err)); } finally { setBusy(false); } };
 
@@ -68,11 +78,11 @@ export function SignPage({ token }: { token: string }) {
   if (!view) return <div className="ps"><div className="ps__main"><p>Loading…</p></div></div>;
 
   const fields = view.fields ?? [];
-  const filled = (f: Field) => f.kind === 'signature' ? Boolean(signature) : f.kind === 'initials' ? Boolean(initials) : f.kind === 'checkbox' ? values[f.id] === 'Yes' : ['text', 'dropdown', 'radio'].includes(f.kind) || (f.kind === 'title' && !view.signerTitle) || (f.kind === 'company' && !view.party) ? Boolean(values[f.id]?.trim()) : true;
+  const filled = (f: Field) => f.kind === 'signature' ? Boolean(signature) : f.kind === 'initials' ? Boolean(initials) : f.kind === 'payment' ? f.paymentStatus === 'paid' : f.kind === 'checkbox' ? values[f.id] === 'Yes' : ['text', 'dropdown', 'radio'].includes(f.kind) || (f.kind === 'title' && !view.signerTitle) || (f.kind === 'company' && !view.party) ? Boolean(values[f.id]?.trim()) : true;
   const missing = fields.filter((f) => f.required && !filled(f));
   const needsSignature = !fields.some((f) => f.kind === 'signature');
   const ready = Boolean(signature) && missing.length === 0 && (!view.party || authority);
-  const shown = (f: Field) => f.kind === 'signature' ? (signature ? signature.name : 'Sign') : f.kind === 'initials' ? (initials ? initials.name : 'Initials') : f.kind === 'date' ? new Date().toLocaleDateString() : f.kind === 'name' ? (signature?.name ?? view.name) : f.kind === 'email' ? view.email : f.kind === 'company' && view.party ? view.party.name : f.kind === 'title' ? (view.signerTitle ?? values[f.id] ?? 'Job title') : f.kind === 'checkbox' ? (values[f.id] === 'Yes' ? '☑' : '☐') : (values[f.id] || f.label || (f.kind === 'dropdown' || f.kind === 'radio' ? 'Choose' : 'Text'));
+  const shown = (f: Field) => f.kind === 'signature' ? (signature ? signature.name : 'Sign') : f.kind === 'initials' ? (initials ? initials.name : 'Initials') : f.kind === 'payment' ? (f.paymentStatus === 'paid' ? 'Payment verified' : `${f.currency} ${((f.amountMinor ?? 0) / 100).toFixed(2)} · pay securely`) : f.kind === 'date' ? new Date().toLocaleDateString() : f.kind === 'name' ? (signature?.name ?? view.name) : f.kind === 'email' ? view.email : f.kind === 'company' && view.party ? view.party.name : f.kind === 'title' ? (view.signerTitle ?? values[f.id] ?? 'Job title') : f.kind === 'checkbox' ? (values[f.id] === 'Yes' ? '☑' : '☐') : (values[f.id] || f.label || (f.kind === 'dropdown' || f.kind === 'radio' ? 'Choose' : 'Text'));
 
   return <div className="ps">
     <header className="ps__top"><strong>Patform Sign</strong><span>{view.workspace}</span></header>
@@ -110,6 +120,14 @@ export function SignPage({ token }: { token: string }) {
       </div>}
 
       {view.stage === 'sign' && view.consented && <>
+        {fields.filter((f) => f.kind === 'payment').map((f) => <div className="ps__card" key={`pay-${f.id}`}>
+          <h2 style={{ fontSize: 18, margin: '0 0 5px' }}>{f.label || 'Payment Item'}</h2>
+          <p className="ps__muted">{f.currency} {((f.amountMinor ?? 0) / 100).toFixed(2)} · {f.currency === 'NGN' ? 'Paystack' : 'Stripe'} secure checkout</p>
+          {f.paymentStatus === 'paid' ? <strong className="ps__ok">Payment verified. You can finish signing.</strong> : <div className="ps__row">
+            <button type="button" className="ps__btn ps__btn--primary" disabled={busy} onClick={() => void act(async () => { const result = await call<{ status: string; url?: string }>(`${base}/payment`, { method: 'POST', body: '{}', session }); if (result.status === 'paid') { await load(session); return; } if (!result.url) throw new Error('Checkout is unavailable.'); sessionStorage.setItem('patform-sign-resume', token); window.location.assign(result.url); })}>Pay securely</button>
+            <button type="button" className="ps__btn" disabled={busy} onClick={() => void act(async () => { const result = await call<{ status: string }>(`${base}/payment-status`, { session }); if (result.status === 'paid') await load(session); else setNote('Payment is still waiting for confirmation.'); })}>Check payment</button>
+          </div>}
+        </div>)}
         <div className="ps__card">
           <p style={{ margin: 0 }}>{fields.length ? `Fill the ${fields.length} highlighted box${fields.length === 1 ? '' : 'es'} — tap one to fill it.` : 'Read the document, then sign below.'} Nothing is sent until you press Finish.</p>
           {view.party && <div style={{ marginTop: 12 }}>
@@ -120,7 +138,7 @@ export function SignPage({ token }: { token: string }) {
         </div>
         {view.allowAttachments && <div className="ps__card"><h2 style={{ fontSize: 17, margin: '0 0 5px' }}>Supporting files</h2><p className="ps__muted">Add a PDF or image if the sender needs proof or a supporting document. Each file is checked before you can finish.</p><label className="ps__btn" style={{ display: 'inline-block', cursor: 'pointer' }}>+ Add a file<input type="file" accept="application/pdf,image/png,image/jpeg,.pdf,.png,.jpg,.jpeg" hidden disabled={busy || (view.attachments?.length ?? 0) >= 5} onChange={(ev) => { const file = ev.target.files?.[0]; ev.target.value = ''; if (!file) return; void act(async () => { if (file.size > 10 * 1024 * 1024) throw new Error('Choose a file of 10 MB or less.'); const response = await call<{ status: string }>(`${base}/attachment`, { method: 'POST', session, body: JSON.stringify({ filename: file.name, contentType: file.type || (file.name.toLowerCase().endsWith('.pdf') ? 'application/pdf' : ''), base64: await fileBase64(file) }) }); await load(session); setNote(response.status === 'clean' ? 'File attached.' : 'File attached. Its security check is still running; wait before finishing.'); }); }} /></label><ul className="ps__attachments">{(view.attachments ?? []).map((file) => <li key={file.id}><strong>{file.filename}</strong><small>Recorded with this agreement · {file.sha256.slice(0, 12)}…</small></li>)}</ul></div>}
         {pdf ? <PdfPages data={pdf} overlay={(page) => fields.filter((f) => f.page === page).map((f) =>
-          <PageBox key={f.id} x={f.x} y={f.y} width={f.width} height={f.height} color={filled(f) ? '#1d6b3a' : '#b26b00'} title={f.label ?? f.kind} onClick={f.kind === 'date' || f.kind === 'name' || f.kind === 'email' || (f.kind === 'company' && view.party) || (f.kind === 'title' && view.signerTitle) ? undefined : () => { setEditing(f); setDraft(f.kind === 'signature' ? signature ?? undefined : f.kind === 'initials' ? initials ?? undefined : values[f.id] ?? ''); }}>
+          <PageBox key={f.id} x={f.x} y={f.y} width={f.width} height={f.height} color={filled(f) ? '#1d6b3a' : '#b26b00'} title={f.label ?? f.kind} onClick={f.kind === 'payment' || f.kind === 'date' || f.kind === 'name' || f.kind === 'email' || (f.kind === 'company' && view.party) || (f.kind === 'title' && view.signerTitle) ? undefined : () => { setEditing(f); setDraft(f.kind === 'signature' ? signature ?? undefined : f.kind === 'initials' ? initials ?? undefined : values[f.id] ?? ''); }}>
             {f.kind === 'signature' && signature?.method === 'drawn' ? <img src={signature.image} alt={`Signature of ${signature.name}`} style={{ maxWidth: '100%', maxHeight: '100%' }} /> : <span>{shown(f)}{f.required && !filled(f) ? ' *' : ''}</span>}
           </PageBox>)} /> : <p>Loading the document…</p>}
         <div className="ps__bar">

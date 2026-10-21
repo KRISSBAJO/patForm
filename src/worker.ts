@@ -5,7 +5,7 @@ import { runScheduledRetention, sweepExpiredTokens } from './runtime/retention.j
 import { sweepGov, syncEnvelopes } from './runtime/gov.js';
 import { sweepApprovals } from './runtime/approvals.js';
 import { runClosures, runExports } from './runtime/tenant-lifecycle.js';
-import { sweepSignatures } from './runtime/esign.js';
+import { processNextBulkAgreement, sweepSignatures } from './runtime/esign.js';
 import { sweepMeetings } from './runtime/meetings.js';
 import { sweepHeld } from './runtime/held.js';
 import { applyDueChanges } from './runtime/hr.js';
@@ -84,6 +84,13 @@ async function main(): Promise<void> {
       // rows not yet announced. See runtime/push.ts.
       const pushed = await notifyWaitingWork(pool, now);
       if (pushed) console.log(`  ${now.toISOString()}  pushed ${pushed} notification(s)`);
+      // Each row is leased and idempotent. A small parallel window keeps a
+      // large send moving without starving the other queues on this worker.
+      const bulk = await Promise.allSettled(Array.from({ length: 3 }, () => processNextBulkAgreement(pool)));
+      for (const result of bulk) {
+        if (result.status === 'fulfilled' && result.value) did++;
+        else if (result.status === 'rejected') throw result.reason;
+      }
 
       // §11.2's delivery. Same loop as the outbox rather than a second
       // process: a webhook that only leaves when somebody opens a page is the

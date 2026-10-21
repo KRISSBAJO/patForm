@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
+import { createHash, createHmac } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { PDFDocument } from 'pdf-lib';
 import { createPool, type Pool } from '../src/runtime/db.js';
@@ -9,15 +9,40 @@ import { setModule } from '../src/runtime/modules.js';
 import { memoryObjectStore, setObjectStoreForTests } from '../src/runtime/object-store.js';
 import { createContract, reviewContract, reviseContract, setGovTeamMember, submitContract, updateGovSettings, uploadGovFile, contractDetail } from '../src/runtime/gov.js';
 import {
-  bulkSendAgreement, correctRecipient, createEmbedSession, createEnvelope, declineDocument, envelopeAttachment, envelopeDetail, finalDocument, giveConsent, listAgreementTemplates, listEnvelopes, remindNow, requestCode, resolveEmbedSession, saveAgreementTemplate, sendEnvelope, setFields, setSignMailerForTests, uploadSignerAttachment,
-  signDocument, signerDocument, signerView, sweepSignatures, verifyCode, verifyFingerprint, voidEnvelope,
+  bulkAgreementStatus, bulkSendAgreement, correctRecipient, createEmbedSession, createEnvelope, declineDocument, envelopeAttachment, envelopeDetail, finalDocument, giveConsent, listAgreementTemplates, listEnvelopes, remindNow, processNextBulkAgreement, requestCode, resolveEmbedSession, saveAgreementTemplate, sendEnvelope, setFields, setSignMailerForTests, uploadSignerAttachment,
+  signDocument, signerDocument, signerPaymentStatus, signerView, startSignerPayment, sweepSignatures, verifyCode, verifyFingerprint, voidEnvelope,
 } from '../src/runtime/esign.js';
 import type { Principal } from '../src/runtime/policy.js';
+import { verifyPaymentWebhook } from '../src/runtime/sign-payments.js';
 
 const localDatabase = !!process.env.DATABASE_URL && ['localhost', '127.0.0.1', '[::1]'].includes(new URL(process.env.DATABASE_URL).hostname);
 const stamp = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 const sha = (b: Buffer) => createHash('sha256').update(b).digest('hex');
 const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+
+test('Sign payment webhooks reject altered bodies and stale Stripe signatures', () => {
+  const previous = { stripe: process.env.SIGN_STRIPE_SECRET_KEY, paystack: process.env.SIGN_PAYSTACK_SECRET_KEY, mode: process.env.SIGN_PAYMENTS_MODE, hook: process.env.SIGN_STRIPE_WEBHOOK_SECRET };
+  try {
+    process.env.SIGN_PAYMENTS_MODE = 'test';
+    process.env.SIGN_STRIPE_SECRET_KEY = 'sk_test_sign_unit_test';
+    process.env.SIGN_PAYSTACK_SECRET_KEY = 'sk_test_sign_unit_test';
+    process.env.SIGN_STRIPE_WEBHOOK_SECRET = 'whsec_test_sign_unit_test';
+    const body = Buffer.from('{"event":"charge.success"}');
+    const paystack = createHmac('sha512', process.env.SIGN_PAYSTACK_SECRET_KEY).update(body).digest('hex');
+    assert.equal(verifyPaymentWebhook('paystack', body, paystack), true);
+    assert.equal(verifyPaymentWebhook('paystack', Buffer.from('{}'), paystack), false);
+    const now = Math.floor(Date.now() / 1000);
+    const stripe = createHmac('sha256', process.env.SIGN_STRIPE_WEBHOOK_SECRET).update(`${now}.${body.toString()}`).digest('hex');
+    assert.equal(verifyPaymentWebhook('stripe', body, `t=${now},v1=${stripe}`), true);
+    assert.equal(verifyPaymentWebhook('stripe', Buffer.from('{}'), `t=${now},v1=${stripe}`), false);
+    assert.equal(verifyPaymentWebhook('stripe', body, `t=${now - 600},v1=${stripe}`), false);
+  } finally {
+    if (previous.stripe === undefined) delete process.env.SIGN_STRIPE_SECRET_KEY; else process.env.SIGN_STRIPE_SECRET_KEY = previous.stripe;
+    if (previous.paystack === undefined) delete process.env.SIGN_PAYSTACK_SECRET_KEY; else process.env.SIGN_PAYSTACK_SECRET_KEY = previous.paystack;
+    if (previous.mode === undefined) delete process.env.SIGN_PAYMENTS_MODE; else process.env.SIGN_PAYMENTS_MODE = previous.mode;
+    if (previous.hook === undefined) delete process.env.SIGN_STRIPE_WEBHOOK_SECRET; else process.env.SIGN_STRIPE_WEBHOOK_SECRET = previous.hook;
+  }
+});
 
 async function twoPagePdf() {
   const doc = await PDFDocument.create();
@@ -153,6 +178,73 @@ test('Patform Sign: a contract goes to two signers in order, each verified by em
   } finally { setSignMailerForTests(null); setObjectStoreForTests(undefined); await pool.end(); }
 });
 
+test('Patform Sign Payment Item requires a provider-verified matching charge before signature', { skip: !localDatabase }, async () => {
+  const pool = createPool(3); const engine = new Engine(pool);
+  const mem = memoryObjectStore(); setObjectStoreForTests(mem.store);
+  const originalFetch = globalThis.fetch;
+  const previous = Object.fromEntries(['SIGN_STRIPE_SECRET_KEY', 'SIGN_PAYSTACK_SECRET_KEY', 'SIGN_PAYMENTS_MODE', 'SIGN_PAYMENT_TENANT_IDS'].map((key) => [key, process.env[key]]));
+  try {
+    const w = await setup(pool, engine);
+    process.env.SIGN_PAYMENTS_MODE = 'test';
+    process.env.SIGN_PAYMENT_TENANT_IDS = w.tenantId;
+    process.env.SIGN_STRIPE_SECRET_KEY = 'sk_test_sign_unit_test';
+    process.env.SIGN_PAYSTACK_SECRET_KEY = 'sk_test_sign_unit_test';
+    const up = await uploadGovFile(pool, w.staff.p, { purpose: 'signing', filename: 'payment.pdf', base64: (await twoPagePdf()).toString('base64') });
+    for (const currency of ['USD', 'NGN'] as const) {
+      const provider = currency === 'NGN' ? 'paystack' : 'stripe';
+      const signer = { name: `${provider} Signer`, email: `${provider}-${stamp()}@sign.test` };
+      const env = await createEnvelope(pool, w.staff.p, { documentRef: up.reference, title: `${provider} agreement`, recipients: [signer] });
+      const layout = [
+        { recipientId: env.recipients[0], kind: 'signature', page: 1, x: 0.1, y: 0.7, width: 0.3, height: 0.06 },
+        { recipientId: env.recipients[0], kind: 'payment', page: 1, x: 0.1, y: 0.5, width: 0.3, height: 0.06, amountMinor: 2500, currency },
+      ];
+      await setFields(pool, w.staff.p, env.id, { fields: layout });
+      await sendEnvelope(pool, w.staff.p, env.id);
+      await assert.rejects(setFields(pool, w.staff.p, env.id, { fields: layout, correctionReason: 'Move a field' }), /contains a Payment Item/);
+      const token = w.link(signer.email)!;
+      const session = await signIn(pool, token, signer.email, w.code);
+      await giveConsent(pool, token, session);
+      const signature = { method: 'typed', name: signer.name, style: 'flowing' };
+      await assert.rejects(signDocument(pool, token, session, { signature }), /complete the Payment Item/);
+      let paymentId = '';
+      let amount = 2500;
+      globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+        const url = String(input);
+        if (url.includes('/checkout/sessions') && init?.method === 'POST') {
+          paymentId = new URLSearchParams(String(init.body)).get('metadata[patform_sign_payment_id]')!;
+          return Response.json({ id: `cs_test_${paymentId.replaceAll('-', '')}`, url: 'https://checkout.stripe.com/test' });
+        }
+        if (url.includes('/transaction/initialize')) {
+          const body = JSON.parse(String(init?.body));
+          paymentId = JSON.parse(body.metadata).patform_sign_payment_id;
+          return Response.json({ status: true, data: { reference: body.reference, authorization_url: 'https://checkout.paystack.com/test' } });
+        }
+        if (url.includes('/checkout/sessions/cs_test_')) return Response.json({
+          id: url.split('/').at(-1), payment_status: 'paid', amount_total: amount, currency: 'usd', metadata: { patform_sign_payment_id: paymentId },
+        });
+        if (url.includes('/transaction/verify/')) return Response.json({ status: true, data: {
+          status: 'success', reference: url.split('/').at(-1), amount, currency: 'NGN', metadata: { patform_sign_payment_id: paymentId },
+        } });
+        throw new Error(`unexpected provider request: ${url}`);
+      }) as typeof fetch;
+      const started = await startSignerPayment(pool, token, session);
+      assert.equal(started.status, 'pending');
+      assert.match(started.url!, /checkout/);
+      assert.deepEqual(await startSignerPayment(pool, token, session), started, 'checkout retry reuses the same session');
+      amount = 2499;
+      await assert.rejects(signerPaymentStatus(pool, token, session), /do not match/);
+      await assert.rejects(signDocument(pool, token, session, { signature }), /complete the Payment Item/);
+      amount = 2500;
+      assert.equal((await signerPaymentStatus(pool, token, session)).status, 'paid');
+      assert.equal((await signDocument(pool, token, session, { signature })).completed, true);
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+    for (const [key, value] of Object.entries(previous)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
+    setSignMailerForTests(null); setObjectStoreForTests(undefined); await pool.end();
+  }
+});
+
 test('Patform Sign: two PDFs share one envelope and two people can sign the same stage before the next stage starts', { skip: !localDatabase }, async () => {
   const pool = createPool(3); const engine = new Engine(pool);
   const mem = memoryObjectStore(); setObjectStoreForTests(mem.store);
@@ -191,8 +283,15 @@ test('Patform Sign: two PDFs share one envelope and two people can sign the same
     const batchKey = `agreement-${stamp()}`;
     assert.equal((await bulkSendAgreement(pool, w.staff.p, { templateId: saved.id, batchKey, rows: bulkRows, dryRun: true })).ready, 2);
     const sentBatch = await bulkSendAgreement(pool, w.staff.p, { templateId: saved.id, batchKey, rows: bulkRows });
-    assert.equal(sentBatch.sent, 2);
-    assert.deepEqual((await bulkSendAgreement(pool, w.staff.p, { templateId: saved.id, batchKey, rows: bulkRows })).results.map((r) => r.envelopeId), sentBatch.results.map((r) => r.envelopeId));
+    assert.equal(sentBatch.queued, 2);
+    assert.equal((await bulkAgreementStatus(pool, w.staff.p, batchKey)).pending, 2);
+    assert.equal(await processNextBulkAgreement(pool), true);
+    assert.equal(await processNextBulkAgreement(pool), true);
+    const finishedBatch = await bulkAgreementStatus(pool, w.staff.p, batchKey);
+    assert.equal(finishedBatch.sent, 2);
+    assert.deepEqual((await bulkSendAgreement(pool, w.staff.p, { templateId: saved.id, batchKey, rows: bulkRows })).queued, 2);
+    assert.deepEqual((await bulkAgreementStatus(pool, w.staff.p, batchKey)).results.map((r) => r.envelopeId), finishedBatch.results.map((r) => r.envelopeId));
+    assert.equal((await bulkSendAgreement(pool, w.staff.p, { templateId: saved.id, batchKey: `larger-${stamp()}`, rows: Array.from({ length: 21 }, (_, i) => bulkRows[i % 2]), dryRun: true })).ready, 21);
     await sendEnvelope(pool, w.staff.p, env.id);
     assert.ok(w.link(r1.email) && w.link(r2.email));
     const embedded = await createEmbedSession(pool, w.staff.p, env.id, env.recipients[0]!, { origin: 'https://customer.example' });

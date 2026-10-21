@@ -2351,7 +2351,7 @@ create table if not exists sign_field (
   id           uuid primary key default gen_random_uuid(),
   envelope_id  uuid not null references sign_envelope(id),
   recipient_id uuid not null references sign_recipient(id),
-  kind         text not null check (kind in ('signature', 'initials', 'date', 'name', 'text')),
+  kind         text not null check (kind in ('signature', 'initials', 'date', 'name', 'text', 'title', 'email', 'company', 'checkbox', 'dropdown', 'radio', 'payment')),
   page         int not null check (page >= 1),
   x            numeric(6, 5) not null check (x >= 0 and x <= 1),
   y            numeric(6, 5) not null check (y >= 0 and y <= 1),
@@ -2413,7 +2413,7 @@ alter table sign_field alter column recipient_id drop not null;
 alter table sign_field drop constraint if exists sign_field_owner_check;
 alter table sign_field add constraint sign_field_owner_check check (recipient_id is not null or (party_id is not null and slot is not null));
 alter table sign_field drop constraint if exists sign_field_kind_check;
-alter table sign_field add constraint sign_field_kind_check check (kind in ('signature', 'initials', 'date', 'name', 'text', 'title', 'email', 'company', 'checkbox', 'dropdown', 'radio'));
+alter table sign_field add constraint sign_field_kind_check check (kind in ('signature', 'initials', 'date', 'name', 'text', 'title', 'email', 'company', 'checkbox', 'dropdown', 'radio', 'payment'));
 
 -- The certificate seal applied to the finished file, when one is configured.
 alter table sign_envelope add column if not exists seal jsonb;
@@ -2982,6 +2982,44 @@ create table if not exists attendance_adjustment (
   delta_seconds int not null, created_at timestamptz not null default now()
 );
 create index if not exists attendance_adjustment_period on attendance_adjustment (tenant_id, period_id, created_at);
+
+alter table sign_field drop constraint if exists sign_field_kind_check;
+alter table sign_field add constraint sign_field_kind_check check (kind in ('signature', 'initials', 'date', 'name', 'text', 'title', 'email', 'company', 'checkbox', 'dropdown', 'radio', 'payment'));
+alter table sign_field add column if not exists payment_amount_minor int;
+alter table sign_field add column if not exists payment_currency text;
+create table if not exists sign_payment (
+  id uuid primary key default gen_random_uuid(),
+  envelope_id uuid not null references sign_envelope(id),
+  field_id uuid not null unique references sign_field(id) on delete cascade,
+  recipient_id uuid not null references sign_recipient(id),
+  tenant_id uuid not null references tenant(id),
+  provider text not null check (provider in ('stripe', 'paystack')),
+  amount_minor int not null check (amount_minor >= 100 and amount_minor <= 100000000),
+  currency text not null check (currency in ('NGN', 'USD', 'GBP', 'EUR')),
+  status text not null default 'not_started' check (status in ('not_started', 'pending', 'paid')),
+  reference text unique,
+  checkout_url text,
+  paid_at timestamptz,
+  created_at timestamptz not null default now()
+);
+create index if not exists sign_payment_recipient on sign_payment (recipient_id, status);
+
+-- A fully signed envelope stays in this state while its final PDF is produced.
+create table if not exists sign_bulk_item (
+  tenant_id uuid not null references tenant(id),
+  batch_key text not null,
+  row_index int not null check (row_index > 0),
+  payload jsonb not null,
+  status text not null default 'queued' check (status in ('queued', 'running', 'sent', 'failed')),
+  attempts int not null default 0,
+  claimed_at timestamptz,
+  envelope_id uuid references sign_envelope(id),
+  error text,
+  updated_at timestamptz not null default now(),
+  primary key (tenant_id, batch_key, row_index),
+  foreign key (tenant_id, batch_key) references sign_bulk_batch(tenant_id, batch_key)
+);
+create index if not exists sign_bulk_item_queue on sign_bulk_item (status, updated_at) where status in ('queued', 'running');
 
 -- A fully signed envelope stays in this state while its final PDF is produced.
 -- The worker can retry safely after a crash or a temporary storage failure.

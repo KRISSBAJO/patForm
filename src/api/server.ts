@@ -1264,6 +1264,8 @@ route('GET', sr('mine'), async ({ pool, principal }) => esign.mySignatures(pool,
 route('GET', sr('templates'), async ({ pool, principal }) => esign.listTemplates(pool, principal));
 route('GET', sr('agreements'), async ({ pool, principal }) => esign.listAgreementTemplates(pool, principal));
 route('POST', sr('agreements/bulk'), async ({ pool, principal }, b) => esign.bulkSendAgreement(pool, principal, hb(b)));
+route('GET', sr('agreements/bulk/([A-Za-z0-9_-]{8,120})'), async ({ pool, principal, url }) => esign.bulkAgreementStatus(pool, principal, url.pathname.split('/')[5]!));
+route('POST', sr('agreements/bulk/([A-Za-z0-9_-]{8,120})/retry'), async ({ pool, principal, url }) => esign.retryBulkAgreement(pool, principal, url.pathname.split('/')[5]!));
 route('POST', sr('templates'), async ({ pool, principal }, b) => esign.saveTemplate(pool, principal, hb(b)));
 route('POST', sr(`envelopes/${A}/agreement-template`), async ({ pool, principal, url }, b) => esign.saveAgreementTemplate(pool, principal, hid(url, 4), hb(b)));
 route('POST', sr(`agreements/${A}/delete`), async ({ pool, principal, url }) => esign.deleteAgreementTemplate(pool, principal, hid(url, 4)));
@@ -1851,7 +1853,7 @@ class HttpError extends Error {
   }
 }
 
-async function readRaw(req: IncomingMessage, maxBytes = Number.MAX_SAFE_INTEGER): Promise<string> {
+async function readRawBuffer(req: IncomingMessage, maxBytes = Number.MAX_SAFE_INTEGER): Promise<Buffer> {
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of req) {
@@ -1859,7 +1861,11 @@ async function readRaw(req: IncomingMessage, maxBytes = Number.MAX_SAFE_INTEGER)
     if (size > maxBytes) throw new HttpError(413, 'request is too large');
     chunks.push(chunk as Buffer);
   }
-  return Buffer.concat(chunks).toString('utf8');
+  return Buffer.concat(chunks);
+}
+
+async function readRaw(req: IncomingMessage, maxBytes = Number.MAX_SAFE_INTEGER): Promise<string> {
+  return (await readRawBuffer(req, maxBytes)).toString('utf8');
 }
 
 async function readBody(req: IncomingMessage, maxBytes = Number.MAX_SAFE_INTEGER): Promise<unknown> {
@@ -2115,7 +2121,14 @@ async function main(): Promise<void> {
          * session in the x-sign-session header. Public verify takes a file's
          * fingerprint and says only whether it is a sealed copy.
          */
-        const signMatch = /^\/api\/sign\/t\/([A-Za-z0-9_-]{30,60})(\/(code|verify|document|consent|sign|decline|final|attachment))?$/.exec(url.pathname);
+        const paymentHook = /^\/api\/sign\/payments\/(stripe|paystack)\/webhook$/.exec(url.pathname);
+        if (paymentHook && req.method === 'POST') {
+          const raw = await readRawBuffer(req, 1024 * 1024);
+          const signature = String(req.headers[paymentHook[1] === 'stripe' ? 'stripe-signature' : 'x-paystack-signature'] ?? '');
+          const result = await esign.signPaymentWebhook(pool, paymentHook[1] as 'stripe' | 'paystack', raw, signature);
+          return send(res, result.status, { ok: result.status === 200 });
+        }
+        const signMatch = /^\/api\/sign\/t\/([A-Za-z0-9_-]{30,60})(\/(code|verify|document|consent|sign|decline|final|attachment|payment|payment-status))?$/.exec(url.pathname);
         const embedMatch = /^\/api\/sign\/embed\/([A-Za-z0-9_-]{30,60})$/.exec(url.pathname);
         if (embedMatch && req.method === 'GET') {
           try { return send(res, 200, await esign.resolveEmbedSession(pool, embedMatch[1]!)); }
@@ -2130,11 +2143,13 @@ async function main(): Promise<void> {
             if (req.method === 'GET' && !action) return send(res, 200, await esign.signerView(pool, t!, sess));
             if (req.method === 'GET' && action === 'document') return sendRaw(res, new RawBody(await esign.signerDocument(pool, t!, sess), 'application/pdf'));
             if (req.method === 'GET' && action === 'final') return sendRaw(res, new RawBody(await esign.finalDocument(pool, t!), 'application/pdf', 'signed.pdf'));
+            if (req.method === 'GET' && action === 'payment-status') return send(res, 200, await esign.signerPaymentStatus(pool, t!, sess));
             if (req.method === 'POST') {
               const b = (await readBody(req, action === 'attachment' ? 15 * 1024 * 1024 : 1024 * 1024)) as Record<string, unknown>;
               if (action === 'code') return send(res, 200, await esign.requestCode(pool, t!, ctx));
               if (action === 'verify') return send(res, 200, await esign.verifyCode(pool, t!, b.code, ctx, b.smsCode));
               if (action === 'consent') return send(res, 200, await esign.giveConsent(pool, t!, sess, ctx));
+              if (action === 'payment') return send(res, 200, await esign.startSignerPayment(pool, t!, sess, ctx));
               if (action === 'sign') return send(res, 200, await esign.signDocument(pool, t!, sess, b, ctx));
               if (action === 'attachment') return send(res, 200, await esign.uploadSignerAttachment(pool, t!, sess, b, ctx));
               if (action === 'decline') return send(res, 200, await esign.declineDocument(pool, t!, sess, b, ctx));

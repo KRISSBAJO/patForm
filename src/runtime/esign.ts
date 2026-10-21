@@ -36,6 +36,7 @@ import { checkSeal, sealConfig } from './esign-seal.js';
 import { PHONE, maskPhone, normalisePhone, sendSms, smsConfigured } from './sms.js';
 import { lookupCompany, matchOfficer, type RegisterResult } from './company-register.js';
 import { PDFDocument } from 'pdf-lib';
+import { requirePaymentSetup, startHostedPayment, verifyHostedPayment, verifyPaymentWebhook, type SignCurrency, type SignPaymentProvider } from './sign-payments.js';
 
 const UUID = /^[0-9a-f-]{36}$/;
 const EMAIL = /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i;
@@ -264,7 +265,7 @@ export async function setFields(pool: Pool, principal: Principal, envelopeId: st
     const fields = (Array.isArray(body.fields) ? body.fields : []).map((x, i) => {
       const o = (x ?? {}) as Record<string, unknown>;
       const kind = text(o.kind, 20);
-      if (!['signature', 'initials', 'date', 'name', 'text', 'title', 'email', 'company', 'checkbox', 'dropdown', 'radio'].includes(kind)) throw new InvalidInput(`field ${i + 1}: unsupported field type`);
+      if (!['signature', 'initials', 'date', 'name', 'text', 'title', 'email', 'company', 'checkbox', 'dropdown', 'radio', 'payment'].includes(kind)) throw new InvalidInput(`field ${i + 1}: unsupported field type`);
       const choices = Array.isArray(o.choices) ? o.choices.map((choice) => text(choice, 80)) : [];
       if (kind === 'dropdown' || kind === 'radio') {
         if (choices.length < 2 || choices.length > 20 || choices.some((choice) => !choice) || new Set(choices.map((choice) => choice.toLowerCase())).size !== choices.length)
@@ -281,18 +282,32 @@ export async function setFields(pool: Pool, principal: Principal, envelopeId: st
         if (!found || found.role !== 'signer') throw new InvalidInput(`field ${i + 1} must belong to a signer`);
         r = found;
       }
+      if (kind === 'payment' && partyId) throw new InvalidInput(`field ${i + 1}: assign payment to a named signer`);
+      const amountMinor = kind === 'payment' ? Number(o.amountMinor) : null;
+      const currency = kind === 'payment' ? text(o.currency, 3).toUpperCase() : null;
+      if (kind === 'payment') {
+        if (!Number.isSafeInteger(amountMinor) || amountMinor! < 100 || amountMinor! > 100000000) throw new InvalidInput(`field ${i + 1}: give an amount between 1 and 1,000,000`);
+        requirePaymentSetup(w.tenantId, currency!);
+      }
       const n = (k: string) => Number(o[k]);
       const page = Math.trunc(n('page'));
       if (!(page >= 1 && page <= e.page_count)) throw new InvalidInput(`field ${i + 1}: the document has ${e.page_count} page(s)`);
       const [x0, y0, wd, ht] = [n('x'), n('y'), n('width'), n('height')];
       if (![x0, y0, wd, ht].every(Number.isFinite) || x0 < 0 || y0 < 0 || wd <= 0 || ht <= 0 || x0 + wd > 1.0001 || y0 + ht > 1.0001) throw new InvalidInput(`field ${i + 1} is off the page`);
-      return { recipientId: r?.id ?? null, partyId, slot, kind, page, x: x0, y: y0, width: wd, height: ht, required: o.required !== false, label: text(o.label, 120) || null, choices };
+      return { recipientId: r?.id ?? null, partyId, slot, kind, page, x: x0, y: y0, width: wd, height: ht, required: kind === 'payment' || o.required !== false, label: text(o.label, 120) || null, choices, amountMinor, currency };
     });
     if (fields.length > 400) throw new InvalidInput('at most 400 fields');
+    if (fields.filter((f) => f.kind === 'payment').length > 1) throw new InvalidInput('use one Payment Item per envelope');
+    if (e.status === 'sent' && (await client.query('select 1 from sign_payment where envelope_id = $1 limit 1', [envelopeId])).rowCount)
+      throw new InvalidInput('this agreement contains a Payment Item; cancel it and create a new one to change its fields');
     const previous = e.status === 'sent' ? await client.query('select recipient_id, party_id, slot, kind, page, x, y, width, height, required, label, choices from sign_field where envelope_id = $1 order by page, y', [envelopeId]) : null;
     await client.query('delete from sign_field where envelope_id = $1', [envelopeId]);
-    for (const fl of fields) await client.query(`insert into sign_field (envelope_id, recipient_id, party_id, slot, kind, page, x, y, width, height, required, label, choices) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
-      [envelopeId, fl.recipientId, fl.partyId, fl.slot, fl.kind, fl.page, fl.x, fl.y, fl.width, fl.height, fl.required, fl.label, JSON.stringify(fl.choices)]);
+    for (const fl of fields) {
+      const inserted = await client.query<{ id: string }>(`insert into sign_field (envelope_id, recipient_id, party_id, slot, kind, page, x, y, width, height, required, label, choices, payment_amount_minor, payment_currency) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) returning id`,
+        [envelopeId, fl.recipientId, fl.partyId, fl.slot, fl.kind, fl.page, fl.x, fl.y, fl.width, fl.height, fl.required, fl.label, JSON.stringify(fl.choices), fl.amountMinor, fl.currency]);
+      if (fl.kind === 'payment') await client.query(`insert into sign_payment (envelope_id, field_id, recipient_id, tenant_id, provider, amount_minor, currency)
+        values ($1, $2, $3, $4, $5, $6, $7)`, [envelopeId, inserted.rows[0]!.id, fl.recipientId, w.tenantId, requirePaymentSetup(w.tenantId, fl.currency!), fl.amountMinor, fl.currency]);
+    }
     if (e.status === 'sent') {
       await client.query(`update sign_recipient set status = 'waiting', token_hash = null, token_sealed = null, otp_hash = null,
         otp_expires_at = null, otp_attempts = 0, session_hash = null, session_expires_at = null, verified_at = null,
@@ -498,10 +513,10 @@ export async function saveAgreementTemplate(pool: Pool, principal: Principal, en
   const party = await pool.query('select 1 from sign_party where envelope_id = $1 limit 1', [envelopeId]);
   if (party.rowCount) throw new InvalidInput('company-signatory rules need their own agreement; this role template supports named people');
   const { rows: docs } = await pool.query<{ file_id: string; filename: string }>('select file_id, filename from sign_envelope_document where envelope_id = $1 order by ordinal', [envelopeId]);
-  const { rows: boxes } = await pool.query<{ recipient_id: string; kind: string; page: number; x: number; y: number; width: number; height: number; required: boolean; label: string | null; choices: string[] }>(
-    'select recipient_id, kind, page, x::float, y::float, width::float, height::float, required, label, choices from sign_field where envelope_id = $1 order by page, y', [envelopeId]);
+  const { rows: boxes } = await pool.query<{ recipient_id: string; kind: string; page: number; x: number; y: number; width: number; height: number; required: boolean; label: string | null; choices: string[]; payment_amount_minor: number | null; payment_currency: string | null }>(
+    'select recipient_id, kind, page, x::float, y::float, width::float, height::float, required, label, choices, payment_amount_minor, payment_currency from sign_field where envelope_id = $1 order by page, y', [envelopeId]);
   if (!boxes.length) throw new InvalidInput('place the agreement fields before saving a template');
-  const fields = boxes.map((b) => ({ recipientIndex: recipients.findIndex((r) => r.id === b.recipient_id), kind: b.kind, page: b.page, x: b.x, y: b.y, width: b.width, height: b.height, required: b.required, label: b.label, choices: b.choices }));
+  const fields = boxes.map((b) => ({ recipientIndex: recipients.findIndex((r) => r.id === b.recipient_id), kind: b.kind, page: b.page, x: b.x, y: b.y, width: b.width, height: b.height, required: b.required, label: b.label, choices: b.choices, amountMinor: b.payment_amount_minor, currency: b.payment_currency }));
   if (fields.some((f) => f.recipientIndex < 0)) throw new InvalidInput('every template field must belong to a named role');
   const roles = recipients.map((r, i) => ({ label: labels[i], role: r.role, order: r.routing_order }));
   const documents = docs.map((d) => ({ ref: `gov-file:${d.file_id}`, name: d.filename }));
@@ -539,7 +554,7 @@ export async function bulkSendAgreement(pool: Pool, principal: Principal, body: 
   const template = templates[0];
   if (!template) throw new InvalidInput('no such agreement template');
   const rawRows = Array.isArray(body.rows) ? body.rows : [];
-  if (!rawRows.length || rawRows.length > 20) throw new InvalidInput('send between 1 and 20 agreements per batch');
+  if (!rawRows.length || rawRows.length > 1000) throw new InvalidInput('send between 1 and 1,000 agreements per batch');
   const rows = rawRows.map((item, index) => {
     const obj = (item ?? {}) as Record<string, unknown>;
     const people = Array.isArray(obj.people) ? obj.people : [];
@@ -552,37 +567,79 @@ export async function bulkSendAgreement(pool: Pool, principal: Principal, body: 
   });
   if (body.dryRun === true) return { ready: rows.length, roles: template.roles.map((r) => r.label), rows: rows.map((row, i) => ({ index: i + 1, title: row.title, people: row.recipients.map((r) => r.email) })) };
   const fingerprint = hash(JSON.stringify({ templateId, rows }));
-  const lock = await pool.connect();
-  try {
-    await lock.query('select pg_advisory_lock(hashtext($1), hashtext($2))', [w.tenantId, batchKey]);
-    const existing = await lock.query<{ payload_sha256: string; created_by: string }>('select payload_sha256, created_by from sign_bulk_batch where tenant_id = $1 and batch_key = $2', [w.tenantId, batchKey]);
+  return inTransaction(pool, async (client) => {
+    await client.query('select pg_advisory_xact_lock(hashtext($1), hashtext($2))', [w.tenantId, batchKey]);
+    const existing = await client.query<{ payload_sha256: string; created_by: string }>('select payload_sha256, created_by from sign_bulk_batch where tenant_id = $1 and batch_key = $2', [w.tenantId, batchKey]);
     if (existing.rows[0] && existing.rows[0].created_by !== w.actorId) throw new InvalidInput('this batch belongs to another sender');
     if (existing.rows[0] && existing.rows[0].payload_sha256 !== fingerprint) throw new InvalidInput('this batch key was already used for different recipients');
-    if (!existing.rows[0]) await lock.query('insert into sign_bulk_batch (tenant_id, batch_key, payload_sha256, template_id, created_by) values ($1, $2, $3, $4, $5)', [w.tenantId, batchKey, fingerprint, templateId, w.actorId]);
-    const results: { index: number; envelopeId?: string; status: string; error?: string }[] = [];
-    for (const [index, row] of rows.entries()) {
-      const itemKey = `${batchKey}:${index + 1}`;
-      try {
-        let found = await pool.query<{ id: string; status: string }>('select id, status from sign_envelope where tenant_id = $1 and bulk_key = $2', [w.tenantId, itemKey]);
-        if (!found.rows[0]) {
-          const made = await createEnvelope(pool, principal, { documentRef: template.documents[0]!.ref, documentRefs: template.documents.slice(1).map((d) => d.ref), title: row.title, routing: template.routing,
-            recipients: row.recipients.map((r) => ({ name: r.name, email: r.email, role: r.role, order: r.order })) }, itemKey);
-          found = { ...found, rows: [{ id: made.id, status: 'draft' }] };
-        }
-        const env = found.rows[0]!;
-        if (env.status === 'draft') {
-          const ids = await pool.query<{ id: string }>('select id from sign_recipient where envelope_id = $1 order by position', [env.id]);
-          await setFields(pool, principal, env.id, { fields: template.fields.map((field) => ({ ...field, recipientId: ids.rows[field.recipientIndex]?.id })) });
-          await sendEnvelope(pool, principal, env.id);
-        }
-        results.push({ index: index + 1, envelopeId: env.id, status: env.status === 'draft' ? 'sent' : env.status });
-      } catch (err) { results.push({ index: index + 1, status: 'failed', error: err instanceof Error ? err.message : String(err) }); }
+    if (!existing.rows[0]) {
+      await client.query('insert into sign_bulk_batch (tenant_id, batch_key, payload_sha256, template_id, created_by) values ($1, $2, $3, $4, $5)', [w.tenantId, batchKey, fingerprint, templateId, w.actorId]);
+      for (const [index, row] of rows.entries()) {
+        await client.query('insert into sign_bulk_item (tenant_id, batch_key, row_index, payload) values ($1, $2, $3, $4)',
+          [w.tenantId, batchKey, index + 1, JSON.stringify({ title: row.title, recipients: row.recipients })]);
+      }
     }
-    return { batchKey, sent: results.filter((r) => r.status === 'sent').length, results };
-  } finally {
-    await lock.query('select pg_advisory_unlock(hashtext($1), hashtext($2))', [w.tenantId, batchKey]).catch(() => undefined);
-    lock.release();
+    return { batchKey, queued: rows.length, status: 'queued' };
+  });
+}
+
+export async function bulkAgreementStatus(pool: Pool, principal: Principal, batchKey: string) {
+  const w = await govMember(pool, principal);
+  const batch = await pool.query<{ created_by: string }>('select created_by from sign_bulk_batch where tenant_id = $1 and batch_key = $2', [w.tenantId, batchKey]);
+  if (batch.rows[0]?.created_by !== w.actorId) throw new InvalidInput('no such bulk send');
+  const { rows } = await pool.query<{ row_index: number; status: string; envelope_id: string | null; error: string | null }>(
+    'select row_index, status, envelope_id, error from sign_bulk_item where tenant_id = $1 and batch_key = $2 order by row_index', [w.tenantId, batchKey]);
+  return { batchKey, total: rows.length, sent: rows.filter((r) => r.status === 'sent').length,
+    pending: rows.filter((r) => r.status === 'queued' || r.status === 'running').length,
+    results: rows.map((r) => ({ index: r.row_index, status: r.status, envelopeId: r.envelope_id, error: r.error })) };
+}
+
+export async function retryBulkAgreement(pool: Pool, principal: Principal, batchKey: string) {
+  const w = await govMember(pool, principal);
+  const batch = await pool.query<{ created_by: string }>('select created_by from sign_bulk_batch where tenant_id = $1 and batch_key = $2', [w.tenantId, batchKey]);
+  if (batch.rows[0]?.created_by !== w.actorId) throw new InvalidInput('no such bulk send');
+  const { rowCount } = await pool.query(`update sign_bulk_item set status = 'queued', error = null, updated_at = now()
+    where tenant_id = $1 and batch_key = $2 and status = 'failed'`, [w.tenantId, batchKey]);
+  return { queued: rowCount ?? 0 };
+}
+
+/** Claim one durable row. A worker crash can be retried after a five-minute lease;
+ * the envelope's stable bulk key prevents sending a second copy. */
+export async function processNextBulkAgreement(pool: Pool) {
+  const claimed = await pool.query<{ tenant_id: string; batch_key: string; row_index: number; payload: { title: string; recipients: RecipientIn[] }; template_id: string; created_by: string }>(
+    `update sign_bulk_item i set status = 'running', attempts = attempts + 1, claimed_at = now(), updated_at = now()
+     from sign_bulk_batch b where (i.tenant_id, i.batch_key, i.row_index) = (
+       select tenant_id, batch_key, row_index from sign_bulk_item
+       where status = 'queued' or (status = 'running' and claimed_at < now() - interval '5 minutes')
+       order by updated_at for update skip locked limit 1)
+       and b.tenant_id = i.tenant_id and b.batch_key = i.batch_key
+     returning i.tenant_id, i.batch_key, i.row_index, i.payload, b.template_id, b.created_by`);
+  const job = claimed.rows[0];
+  if (!job) return false;
+  const principal: Principal = { kind: 'actor', tenantId: job.tenant_id, actorId: job.created_by };
+  const itemKey = `${job.batch_key}:${job.row_index}`;
+  try {
+    const { rows: templates } = await pool.query<{ documents: { ref: string }[]; fields: { recipientIndex: number }[]; routing: string }>(
+      'select documents, fields, routing from sign_agreement_template where id = $1 and tenant_id = $2', [job.template_id, job.tenant_id]);
+    const template = templates[0];
+    if (!template?.documents.length) throw new Error('agreement template is no longer available');
+    let env = (await pool.query<{ id: string; status: string }>('select id, status from sign_envelope where tenant_id = $1 and bulk_key = $2', [job.tenant_id, itemKey])).rows[0];
+    if (!env) {
+      const made = await createEnvelope(pool, principal, { documentRef: template.documents[0]!.ref, documentRefs: template.documents.slice(1).map((d) => d.ref), title: job.payload.title, routing: template.routing, recipients: job.payload.recipients }, itemKey);
+      env = { id: made.id, status: 'draft' };
+    }
+    if (env.status === 'draft') {
+      const ids = await pool.query<{ id: string }>('select id from sign_recipient where envelope_id = $1 order by position', [env.id]);
+      await setFields(pool, principal, env.id, { fields: template.fields.map((field) => ({ ...field, recipientId: ids.rows[field.recipientIndex]?.id })) });
+      await sendEnvelope(pool, principal, env.id);
+    }
+    await pool.query(`update sign_bulk_item set status = 'sent', envelope_id = $4, error = null, updated_at = now()
+      where tenant_id = $1 and batch_key = $2 and row_index = $3`, [job.tenant_id, job.batch_key, job.row_index, env.id]);
+  } catch (err) {
+    await pool.query(`update sign_bulk_item set status = 'failed', error = $4, updated_at = now()
+      where tenant_id = $1 and batch_key = $2 and row_index = $3`, [job.tenant_id, job.batch_key, job.row_index, (err instanceof Error ? err.message : String(err)).slice(0, 500)]);
   }
+  return true;
 }
 
 export async function envelopeDetail(pool: Pool, principal: Principal, envelopeId: string) {
@@ -590,7 +647,7 @@ export async function envelopeDetail(pool: Pool, principal: Principal, envelopeI
   const { rows: recipients } = await pool.query(
     `select r.id, r.name, r.email, r.role, r.routing_order, r.status, r.notified_at, r.viewed_at, r.verified_at, r.consented_at, r.signed_at, r.declined_at, r.decline_reason, r.last_reminded_at, r.title, r.verify_by, r.party_id, r.register_match, p.name as party
        from sign_recipient r left join sign_party p on p.id = r.party_id where r.envelope_id = $1 order by r.position nulls last, r.created_at, r.id`, [envelopeId]);
-  const { rows: fields } = await pool.query(`select id, recipient_id, party_id, slot, kind, page, x::float, y::float, width::float, height::float, required, label, choices, (value is not null) as filled from sign_field where envelope_id = $1 order by page, y`, [envelopeId]);
+  const { rows: fields } = await pool.query(`select f.id, f.recipient_id, f.party_id, f.slot, f.kind, f.page, f.x::float, f.y::float, f.width::float, f.height::float, f.required, f.label, f.choices, f.payment_amount_minor as "amountMinor", f.payment_currency as currency, p.status as "paymentStatus", (f.value is not null) as filled from sign_field f left join sign_payment p on p.field_id = f.id where f.envelope_id = $1 order by f.page, f.y`, [envelopeId]);
   const { rows: events } = await pool.query(`select v.kind, v.detail, v.ip, v.occurred_at, r.name as recipient from sign_event v left join sign_recipient r on r.id = v.recipient_id where v.envelope_id = $1 order by v.id`, [envelopeId]);
   const { rows: parties } = await pool.query(
     `select p.id, p.name, p.required_count, p.authority_note, p.completed_at, p.register, p.register_required, (select count(*)::int from sign_recipient r where r.party_id = p.id and r.status = 'signed') as signed from sign_party p where p.envelope_id = $1 order by p.routing_order`, [envelopeId]);
@@ -741,11 +798,74 @@ export async function signerView(pool: Pool, t: string, session?: string) {
   if (!sessionOk(r, session)) return { ...base, stage: 'verify' as const };
   // Own boxes, and the company's boxes for the next signatory slot (the slot is fixed when signing).
   const { rows: fields } = await pool.query(
-    `select id, kind, page, x::float, y::float, width::float, height::float, required, label, choices, slot from sign_field
-      where recipient_id = $1 or (party_id = $2 and slot = $3) order by page, y, x`, [r.id, x.party_id, (party?.signed ?? 0) + 1]);
+    `select f.id, f.kind, f.page, f.x::float, f.y::float, f.width::float, f.height::float, f.required, f.label, f.choices, f.slot,
+      f.payment_amount_minor as "amountMinor", f.payment_currency as currency, p.status as "paymentStatus"
+      from sign_field f left join sign_payment p on p.field_id = f.id
+      where f.recipient_id = $1 or (f.party_id = $2 and f.slot = $3) order by f.page, f.y, f.x`, [r.id, x.party_id, (party?.signed ?? 0) + 1]);
   const { rows: attachments } = r.allow_attachments ? await pool.query('select id, filename, byte_size, sha256, uploaded_at from sign_attachment where recipient_id = $1 order by uploaded_at', [r.id]) : { rows: [] };
   return { ...base, stage: 'sign' as const, message: r.message, pages: r.page_count, consented: Boolean(r.consented_at), consentText: CONSENT_TEXT,
     authorityText: party ? authorityText(party.name) : null, authorityNote: party?.authority_note ?? null, fields, allowAttachments: r.allow_attachments, attachments };
+}
+
+interface PaymentRow { id: string; envelope_id: string; field_id: string; recipient_id: string; tenant_id: string; provider: SignPaymentProvider; amount_minor: number; currency: SignCurrency; status: string; reference: string | null; checkout_url: string | null }
+
+/** Starts hosted checkout only after identity verification and electronic-consent.
+ * One persisted reference per Payment Item prevents duplicate charges on retries. */
+export async function startSignerPayment(pool: Pool, t: string, session: string | undefined, ctx: Ctx = {}) {
+  return inTransaction(pool, async (client) => {
+    const r = await byToken(client, t, true);
+    if (!sessionOk(r, session) || !r.consented_at) throw new InvalidInput('confirm your identity and agree to sign first');
+    if (r.e_status !== 'sent' || !['sent', 'viewed'].includes(r.status) || r.expires_at < new Date()) throw new InvalidInput('this agreement is no longer open');
+    const { rows } = await client.query<PaymentRow>('select * from sign_payment where recipient_id = $1 for update', [r.id]);
+    const payment = rows[0];
+    if (!payment) throw new InvalidInput('this agreement has no Payment Item for you');
+    if (payment.status === 'paid') return { status: 'paid' };
+    if (payment.reference && payment.checkout_url) return { status: 'pending', url: payment.checkout_url };
+    requirePaymentSetup(r.tenant_id, payment.currency);
+    const checkout = await startHostedPayment(payment.provider, { id: payment.id, amountMinor: payment.amount_minor, currency: payment.currency, email: r.email,
+      label: `${r.title}: payment to ${r.workspace}` });
+    await client.query(`update sign_payment set status = 'pending', reference = $2, checkout_url = $3 where id = $1`, [payment.id, checkout.reference, checkout.url]);
+    await event(client, r.envelope_id, r.id, 'payment_started', { provider: payment.provider, amountMinor: payment.amount_minor, currency: payment.currency }, ctx);
+    return { status: 'pending', url: checkout.url };
+  });
+}
+
+async function reconcilePayment(pool: Pool, payment: PaymentRow) {
+  if (!payment.reference || payment.status === 'paid') return payment.status;
+  const verified = await verifyHostedPayment(payment.provider, payment.reference);
+  if (!verified.paid) return 'pending';
+  if (verified.reference !== payment.reference || verified.paymentId !== payment.id || verified.amountMinor !== payment.amount_minor || verified.currency !== payment.currency)
+    throw new InvalidInput('provider payment details do not match this agreement');
+  await inTransaction(pool, async (client) => {
+    const { rows } = await client.query<PaymentRow>('select * from sign_payment where id = $1 for update', [payment.id]);
+    if (rows[0]?.status === 'paid') return;
+    await client.query(`update sign_payment set status = 'paid', paid_at = now() where id = $1`, [payment.id]);
+    await client.query(`update sign_field set value = $2, filled_at = now(), filled_by = $3 where id = $1`,
+      [payment.field_id, `Paid ${payment.currency} ${(payment.amount_minor / 100).toFixed(2)} · ${payment.provider}`, payment.recipient_id]);
+    await event(client, payment.envelope_id, payment.recipient_id, 'payment_verified', { provider: payment.provider, reference: payment.reference, amountMinor: payment.amount_minor, currency: payment.currency });
+  });
+  return 'paid';
+}
+
+export async function signerPaymentStatus(pool: Pool, t: string, session: string | undefined) {
+  const r = await byToken(pool, t);
+  if (!sessionOk(r, session)) throw new InvalidInput('confirm it is you first');
+  const { rows } = await pool.query<PaymentRow>('select * from sign_payment where recipient_id = $1', [r.id]);
+  if (!rows[0]) return { status: 'none' };
+  return { status: await reconcilePayment(pool, rows[0]!) };
+}
+
+export async function signPaymentWebhook(pool: Pool, provider: SignPaymentProvider, raw: Buffer, signature: string) {
+  if (raw.length > 1024 * 1024 || !verifyPaymentWebhook(provider, raw, signature)) return { status: 401 };
+  let payload: { type?: string; event?: string; data?: { object?: { id?: string }; reference?: string } };
+  try { payload = JSON.parse(raw.toString('utf8')); } catch { return { status: 400 }; }
+  const reference = provider === 'stripe' ? payload.data?.object?.id : payload.data?.reference;
+  const success = provider === 'stripe' ? ['checkout.session.completed', 'checkout.session.async_payment_succeeded'].includes(payload.type ?? '') : payload.event === 'charge.success';
+  if (!success || !reference) return { status: 200 };
+  const { rows } = await pool.query<PaymentRow>('select * from sign_payment where provider = $1 and reference = $2', [provider, reference]);
+  if (!rows[0]) return { status: 200 };
+  await reconcilePayment(pool, rows[0]);
+  return { status: 200 };
 }
 
 export async function uploadSignerAttachment(pool: Pool, t: string, session: string | undefined, body: Record<string, unknown>, ctx: Ctx = {}) {
@@ -885,7 +1005,11 @@ export async function signDocument(pool: Pool, t: string, session: string | unde
       else if (f.kind === 'email') value = r.email;
       else if (f.kind === 'title') value = x.signer_title ?? (text(values[f.id], 120) || null);
       else if (f.kind === 'company') value = party?.name ?? (text(values[f.id], 160) || null);
-      else if (f.kind === 'checkbox') {
+      else if (f.kind === 'payment') {
+        const paid = await client.query<{ status: string }>('select status from sign_payment where field_id = $1 and recipient_id = $2', [f.id, r.id]);
+        if (paid.rows[0]?.status !== 'paid') throw new InvalidInput('complete the Payment Item before finishing your signature');
+        continue; // Payment value is written only by verified provider reconciliation.
+      } else if (f.kind === 'checkbox') {
         value = values[f.id] === true || values[f.id] === 'Yes' ? 'Yes' : 'No';
         if (f.required && value !== 'Yes') throw new InvalidInput(`check "${f.label ?? 'the required box'}"`);
       } else if (f.kind === 'dropdown' || f.kind === 'radio') {

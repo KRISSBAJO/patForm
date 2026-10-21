@@ -79,6 +79,26 @@ with `GuardDutyMalwareScanStatus`; until an upload is tagged
 synthetic PDF in a Finance process and confirm it changes from scanning to
 ready before submitting the form.
 
+## Sign Payment Item test setup
+
+Payment Items stay disabled until all relevant environment values are set on
+Render. Use only test keys. Set `SIGN_PAYMENTS_MODE=test` and
+`SIGN_PAYMENT_TENANT_IDS` to the UUIDs of synthetic test workspaces that may
+collect payments. Set `SIGN_PAYSTACK_SECRET_KEY` for NGN and
+`SIGN_STRIPE_SECRET_KEY` for USD, GBP and EUR. Do not enter live keys in this
+staging service or expose keys to the web build.
+
+Register the test webhooks at
+`https://patform-staging-api.onrender.com/api/sign/payments/paystack/webhook`
+and `https://patform-staging-api.onrender.com/api/sign/payments/stripe/webhook`.
+Set `SIGN_STRIPE_WEBHOOK_SECRET` to Stripe's test endpoint signing secret.
+Paystack authenticates with the account's test secret key. A signer return also
+checks the provider directly, so the return URL alone never marks a charge paid.
+Test one successful and one cancelled sandbox checkout before allowing the
+workspace to send Payment Items. The signing sender must understand that the
+configured provider account receives the funds; this pilot does not route
+payments into each customer's own merchant account.
+
 ## Vercel
 
 Import this repository into the personal Hobby account as `patform-staging`.
