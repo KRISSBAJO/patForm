@@ -263,7 +263,9 @@ export function Console() {
     try { window.localStorage.setItem(storageKey, JSON.stringify(next)); } catch { /* Private browsing can refuse storage. */ }
   }, [session, processKey]);
 
-  useEffect(() => { setProcessPickerOpen(false); setModuleSection(null); setModuleSections([]); }, [view]);
+  // Module views publish their rail sections on mount. Clearing those sections
+  // here runs after the child effect and can leave the rail on "Loading…".
+  useEffect(() => { setProcessPickerOpen(false); setModuleSection(null); }, [view]);
   const area = MODULE_AREAS[view];
   const shell = { section: moduleSection ?? undefined, onSection: setModuleSection, onSections: setModuleSections };
   const sectionName = moduleSections.find((x) => x.id === (moduleSection ?? moduleSections[0]?.id))?.name;

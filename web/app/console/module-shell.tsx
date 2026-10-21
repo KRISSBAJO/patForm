@@ -127,7 +127,7 @@ const SECTION_PATHS: Record<string, string> = {
   holds: 'M7 11V8a5 5 0 0 1 10 0v3M5 11h14v10H5z',
   engagement: 'M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16zM21 21l-4.3-4.3',
 };
-const SECTION_SYNONYMS: Record<string, string> = { 'my-tasks': 'tasks', sign: 'signatures', queue: 'queue', register: 'register' };
+const SECTION_SYNONYMS: Record<string, string> = { 'my-tasks': 'tasks', sign: 'signatures', queue: 'queue', register: 'register', records: 'register', periods: 'calendar' };
 
 export function SectionIcon({ id }: { id: string }) {
   const key = SECTION_SYNONYMS[id] ?? id;
