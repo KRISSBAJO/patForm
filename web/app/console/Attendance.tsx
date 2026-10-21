@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import './attendance.css';
+import { AttendanceRecords } from './AttendanceRecords';
 
 type Shift = { id: string; actorId: string; employeeName: string; startsAt: string; endsAt: string; timezone: string; workplace: string | null; roleName: string | null };
 type Exception = { id: string; employeeName: string; employeeId: string; startedAt: string; endedAt: string | null; exceptionReason: string | null; reviewStatus: string };
@@ -16,6 +17,7 @@ async function api<T>(path: string, body?: unknown): Promise<T> {
 }
 
 export function AttendanceView() {
+  const [tab, setTab] = useState<'overview' | 'records' | 'periods'>('overview');
   const [team, setTeam] = useState<Team | null>(null);
   const [queue, setQueue] = useState<Exception[]>([]);
   const [myTime, setMyTime] = useState<MyTime | null>(null);
@@ -54,8 +56,10 @@ export function AttendanceView() {
   const format = (value: string, zone?: string) => new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short', timeZone: zone }).format(new Date(value));
   const canSchedule = Boolean(team?.people.length);
   return <main className="att">
-    <header className="att__intro"><div><span className="att__eyebrow">TIME & ATTENDANCE</span><h1>Every hour, accounted for.</h1><p>Planned shifts and actual time stay clear from start to review.</p></div>{canSchedule && <button type="button" className="att__primary" onClick={() => { setPerson(team?.people[0]?.id ?? ''); setSheet(true); }}>Schedule shift</button>}</header>
+    <header className="att__intro"><div><span className="att__eyebrow">TIME & ATTENDANCE</span><h1>Every hour, accounted for.</h1><p>Planned shifts and actual time stay clear from start to review.</p></div>{canSchedule && tab === 'overview' && <button type="button" className="att__primary" onClick={() => { setPerson(team?.people[0]?.id ?? ''); setSheet(true); }}>Schedule shift</button>}</header>
+    <nav className="att__tabs" aria-label="Attendance views"><button type="button" aria-current={tab === 'overview' ? 'page' : undefined} onClick={() => setTab('overview')}>Overview</button><button type="button" aria-current={tab === 'records' ? 'page' : undefined} onClick={() => setTab('records')}>My records</button><button type="button" aria-current={tab === 'periods' ? 'page' : undefined} onClick={() => setTab('periods')}>Timesheets</button></nav>
     {error && <p className="att__error" role="alert">{error} <button type="button" onClick={() => void refresh()}>Retry</button></p>}
+    {tab === 'overview' ? <>
     <section className="att__section"><div className="att__sectionHead"><div><span className="att__eyebrow">YOUR RECORD</span><h2>My time</h2></div><a href="/go">Open Workday on your phone ↗</a></div>{myTime?.current ? <p className="att__myStatus">{myTime.current.state === 'break' ? 'On break' : 'Working'} since {format(myTime.current.startedAt)}{myTime.current.reviewStatus === 'pending' ? ' · Schedule review pending' : ''}</p> : <p className="att__myStatus">You are not clocked in.</p>}{myTime?.recent.map((session) => <div className="att__myRow" key={session.id}>{format(session.startedAt)} → {session.endedAt ? format(session.endedAt) : 'Open'} <span>{session.reviewStatus === 'pending' ? 'Needs review' : 'Recorded'}</span></div>)}</section>
     {canSchedule && <><div className="att__stats"><div><strong>{team?.shifts.length ?? '—'}</strong><span>Upcoming shifts</span></div><div><strong>{queue.length}</strong><span>Needs review</span></div><div><strong>{team?.people.length ?? '—'}</strong><span>Team members</span></div></div>
     <section className="att__section"><div className="att__sectionHead"><div><span className="att__eyebrow">MANAGER INBOX</span><h2>Schedule exceptions</h2></div><span>{queue.length} open</span></div>
@@ -65,5 +69,6 @@ export function AttendanceView() {
       {team?.shifts.length ? <div className="att__list">{team.shifts.map((shift) => <article className="att__row" key={shift.id}><div><strong>{shift.employeeName}</strong><span>{format(shift.startsAt, shift.timezone)} – {new Intl.DateTimeFormat(undefined, { timeStyle: 'short', timeZone: shift.timezone }).format(new Date(shift.endsAt))}</span><small>{shift.workplace || 'No workplace set'}{shift.roleName ? ` · ${shift.roleName}` : ''}</small></div></article>)}</div> : <div className="att__empty">No shifts scheduled yet. Add one to show a helpful clock-in prompt on the employee’s phone.</div>}
     </section>
     {sheet && <div className="att__backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setSheet(false); }}><section className="att__sheet" role="dialog" aria-modal="true" aria-labelledby="att-sheet-title"><div className="att__sheetHead"><div><span className="att__eyebrow">PLANNED WORK</span><h2 id="att-sheet-title">Schedule a shift</h2></div><button type="button" aria-label="Close" onClick={() => setSheet(false)}>×</button></div><p>This is the plan. Clock events record what actually happens. Enter times in your device’s time zone ({Intl.DateTimeFormat().resolvedOptions().timeZone}).</p><label>Team member<select value={person} onChange={(event) => setPerson(event.target.value)}><option value="">Choose a person</option>{team?.people.map((p) => <option key={p.id} value={p.id}>{p.display_name}</option>)}</select></label><label>Starts<input type="datetime-local" value={start} onChange={(event) => setStart(event.target.value)} /></label><label>Ends<input type="datetime-local" value={end} onChange={(event) => setEnd(event.target.value)} /></label><label>Workplace<input value={workplace} onChange={(event) => setWorkplace(event.target.value)} placeholder="Branch or workplace" /></label><label>Role for this shift<input value={roleName} onChange={(event) => setRoleName(event.target.value)} placeholder="Optional" /></label><button type="button" className="att__primary" disabled={busy || !person || !start || !end} onClick={() => void save()}>Save shift</button></section></div>}
+    </> : <AttendanceRecords mode={tab} />}
   </main>;
 }

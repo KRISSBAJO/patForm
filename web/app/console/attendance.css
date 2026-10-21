@@ -1,5 +1,23 @@
 .att { width: min(100%,1120px); margin: 0 auto; padding: 32px 28px 80px; color: #17382b; }
 .att__intro { display: flex; justify-content: space-between; align-items: end; gap: 20px; padding: 25px 0 33px; border-bottom: 1px solid #d9e5dc; }
+.att__tabs { display: flex; gap: 26px; border-bottom: 1px solid #d9e5dc; overflow-x: auto; }
+.att__tabs button { flex: none; padding: 16px 1px 13px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: #66796b; font: 700 13px var(--font-ui); cursor: pointer; }
+.att__tabs button[aria-current=page] { border-bottom-color: #237a53; color: #174b34; }
+.att__introLine { margin: 0 0 18px; color: #6c8172; font-size: 13px; line-height: 1.55; }
+.att__plainAction,.att__pages button { padding: 9px 13px; border: 1px solid #bdd5c1; border-radius: 9px; background: #f6faf6; color: #205d3d; cursor: pointer; font: 700 12px var(--font-ui); }
+.att__headActions { display: flex; gap: 8px; }
+.att__headActions a { text-decoration: none; }
+.att__adjustments { margin-top: 28px; padding-top: 20px; border-top: 1px solid #dbe7dd; }
+.att__adjustments h3 { margin: 7px 0; font-size: 17px; }
+.att__adjustments p { color: #687e6c; font-size: 13px; }
+.att__plainAction:disabled,.att__pages button:disabled { opacity: .5; cursor: default; }
+.att__pages { display: flex; align-items: center; justify-content: flex-end; gap: 12px; padding-top: 17px; color: #697d6d; font-size: 12px; }
+.att__periodPicker { display: flex; gap: 9px; overflow-x: auto; padding: 4px 0 8px; }
+.att__periodPicker button { min-width: 145px; padding: 11px 13px; border: 1px solid #d7e1d8; border-radius: 11px; background: #fff; color: #254b34; text-align: left; cursor: pointer; }
+.att__periodPicker button[aria-pressed=true] { border-color: #24784e; background: #eaf5eb; }
+.att__periodPicker strong,.att__periodPicker small { display: block; }
+.att__periodPicker strong { font-size: 12px; }
+.att__periodPicker small { margin-top: 4px; color: #718475; font-size: 11px; }
 .att__eyebrow { color: #277553; font: 700 10px var(--font-mono),monospace; letter-spacing: .13em; }
 .att__intro h1 { margin: 9px 0; font: 700 clamp(32px,4vw,46px)/1.05 var(--font-ui); letter-spacing: -.06em; }
 .att__intro p,.att__sheet p { margin: 0; color: #6c8172; font-size: 14px; }

@@ -11,6 +11,7 @@ import { pushConfig, removeSubscription, saveSubscription, testPush } from '../r
 import { beginAssertion, beginRegistration, finishAssertion, finishRegistration, hasPasskeys, listPasskeys, removePasskey } from '../runtime/passkeys.js';
 import { goHome } from '../runtime/go.js';
 import * as attendance from '../runtime/attendance.js';
+import * as attendanceReview from '../runtime/attendance-review.js';
 import { createView, deleteView, listViews, type Schedule, type ViewParams } from '../runtime/saved-views.js';
 import { isPublicApiPath, publicHandler } from './public-server.js';
 import { aiDraftStatus, applyAiRevision, queueAiDraft, queueAiRevision } from '../runtime/ai-drafts.js';
@@ -1691,6 +1692,16 @@ route('POST', /^\/api\/attendance\/shifts$/, async ({ pool, principal }, body) =
 route('GET', /^\/api\/attendance\/shifts$/, async ({ pool, principal }) => attendance.teamSchedule(pool, principal));
 route('GET', /^\/api\/attendance\/review$/, async ({ pool, principal }) => attendance.reviewQueue(pool, principal));
 route('POST', /^\/api\/attendance\/review\/[0-9a-f-]+$/, async ({ pool, principal, url }, body) => attendance.decideException(pool, principal, hid(url, 4), hb(body)));
+route('GET', /^\/api\/attendance\/corrections$/, async ({ pool, principal, url }) => attendanceReview.corrections(pool, principal, url.searchParams.get('scope') === 'team' ? 'team' : 'mine'));
+route('POST', /^\/api\/attendance\/corrections$/, async ({ pool, principal }, body) => attendanceReview.requestCorrection(pool, principal, hb(body)));
+route('POST', /^\/api\/attendance\/corrections\/[0-9a-f-]+\/decide$/, async ({ pool, principal, url }, body) => attendanceReview.decideCorrection(pool, principal, hid(url, 4), hb(body)));
+route('GET', /^\/api\/attendance\/sessions$/, async ({ pool, principal, url }) => attendanceReview.mySessions(pool, principal, url.searchParams.get('page')));
+route('GET', /^\/api\/attendance\/periods$/, async ({ pool, principal }) => attendanceReview.listPeriods(pool, principal));
+route('POST', /^\/api\/attendance\/periods$/, async ({ pool, principal }, body) => attendanceReview.createPeriod(pool, principal, hb(body)));
+route('GET', /^\/api\/attendance\/periods\/[0-9a-f-]+$/, async ({ pool, principal, url }) => attendanceReview.periodDetail(pool, principal, hid(url, 4)));
+route('POST', /^\/api\/attendance\/periods\/[0-9a-f-]+\/timesheets\/[0-9a-f-]+\/approve$/, async ({ pool, principal, url }, body) => attendanceReview.approveTimesheet(pool, principal, hid(url, 4), hid(url, 6), hb(body)));
+route('POST', /^\/api\/attendance\/periods\/[0-9a-f-]+\/finalize$/, async ({ pool, principal, url }) => attendanceReview.finalizePeriod(pool, principal, hid(url, 4)));
+route('GET', /^\/api\/attendance\/periods\/[0-9a-f-]+\/export$/, async ({ pool, principal, url }) => attendanceReview.exportPeriod(pool, principal, hid(url, 4)));
 
 /** §6.1 IAM-04: revoke sessions. Signing out everywhere is its own control. */
 route('POST', /^\/api\/session\/revoke-all$/, async ({ pool, actorId }) => {

@@ -2880,3 +2880,42 @@ create table if not exists attendance_event (
   unique (tenant_id, actor_id, idempotency_key)
 );
 create index if not exists attendance_event_session on attendance_event (session_id, received_at);
+
+create table if not exists attendance_correction (
+  id uuid primary key default gen_random_uuid(), tenant_id uuid not null references tenant(id),
+  session_id uuid not null references attendance_session(id), requested_by uuid not null references actor(id),
+  proposed_started_at timestamptz not null, proposed_ended_at timestamptz not null,
+  proposed_unpaid_break_seconds int not null default 0, reason text not null,
+  status text not null default 'pending' check (status in ('pending','approved','declined')),
+  decided_by uuid references actor(id), decided_at timestamptz, decision_note text,
+  created_at timestamptz not null default now(),
+  check (proposed_ended_at > proposed_started_at), check (proposed_unpaid_break_seconds >= 0)
+);
+create index if not exists attendance_correction_session on attendance_correction (tenant_id, session_id, created_at desc);
+create table if not exists attendance_period (
+  id uuid primary key default gen_random_uuid(), tenant_id uuid not null references tenant(id),
+  name text not null, starts_at timestamptz not null, ends_at timestamptz not null,
+  status text not null default 'open' check (status in ('open','finalized')),
+  created_by uuid not null references actor(id), created_at timestamptz not null default now(),
+  finalized_by uuid references actor(id), finalized_at timestamptz,
+  check (ends_at > starts_at), unique (tenant_id, starts_at, ends_at)
+);
+create index if not exists attendance_period_tenant on attendance_period (tenant_id, starts_at desc);
+create table if not exists attendance_timesheet (
+  id uuid primary key default gen_random_uuid(), tenant_id uuid not null references tenant(id),
+  period_id uuid not null references attendance_period(id), actor_id uuid not null references actor(id),
+  recorded_seconds int not null, approved_seconds int not null,
+  status text not null default 'approved' check (status in ('approved','needs_review')),
+  approval_note text,
+  approved_by uuid not null references actor(id), approved_at timestamptz not null default now(),
+  unique (period_id, actor_id), check (recorded_seconds >= 0 and approved_seconds >= 0)
+);
+alter table attendance_timesheet drop constraint if exists attendance_timesheet_status_check;
+alter table attendance_timesheet add constraint attendance_timesheet_status_check check (status in ('approved','needs_review'));
+create table if not exists attendance_adjustment (
+  id uuid primary key default gen_random_uuid(), tenant_id uuid not null references tenant(id),
+  period_id uuid not null references attendance_period(id), actor_id uuid not null references actor(id),
+  correction_id uuid not null unique references attendance_correction(id),
+  delta_seconds int not null, created_at timestamptz not null default now()
+);
+create index if not exists attendance_adjustment_period on attendance_adjustment (tenant_id, period_id, created_at);

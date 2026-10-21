@@ -19,13 +19,13 @@ async function member(pool: Pool, principal: Principal) {
   return { tenantId: principal.tenantId, actorId: principal.actorId, role: rows[0].workspace_role };
 }
 
-async function requiredMember(pool: Pool, principal: Principal) {
+export async function requiredMember(pool: Pool, principal: Principal) {
   const who = await member(pool, principal);
   if (!who) throw new InvalidInput('Time & attendance is not available for this account.');
   return who;
 }
 
-async function canManage(pool: Pool, tenantId: string, actorId: string, subjectId: string) {
+export async function canManage(pool: Pool, tenantId: string, actorId: string, subjectId: string) {
   const { rows } = await pool.query<{ allowed: boolean }>(
     `select (exists(select 1 from actor where id = $2 and tenant_id = $1 and active and workspace_role in ('owner','admin'))
          or exists(select 1 from reporting_line where tenant_id = $1 and actor_id = $3 and manager_id = $2
@@ -34,7 +34,7 @@ async function canManage(pool: Pool, tenantId: string, actorId: string, subjectI
   return Boolean(rows[0]?.allowed);
 }
 
-function validId(value: unknown): string {
+export function validId(value: unknown): string {
   if (typeof value !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)) throw new InvalidInput('Invalid identifier.');
   return value;
 }
@@ -94,10 +94,14 @@ export async function clockAction(pool: Pool, principal: Principal, body: Record
       if (shiftId && !matching) throw new InvalidInput('That shift is not available for clock-in.');
       if (candidates.rows.length > 1 && !shiftId) throw new InvalidInput('Choose the shift you are starting.');
       if (!matching && !reason) throw new InvalidInput('Tell your manager why you are starting without a scheduled shift.');
+      const recordedAt = matching ? (await db.query<{ at: Date }>('select now() as at')).rows[0]!.at : null;
+      const minutesFromStart = matching && recordedAt ? Math.round((recordedAt.getTime() - matching.starts_at.getTime()) / 60000) : 0;
+      const timingException = matching && minutesFromStart < -15 ? `Started ${-minutesFromStart} minutes before the scheduled shift.`
+        : matching && minutesFromStart > 15 ? `Started ${minutesFromStart} minutes after the scheduled shift began.` : null;
       const inserted = await db.query<Session>(
         `insert into attendance_session (tenant_id, actor_id, shift_id, exception_reason, review_status)
          values ($1,$2,$3,$4,$5) returning *`,
-        [who.tenantId, who.actorId, matching?.id ?? null, matching ? null : reason, matching ? 'none' : 'pending']);
+        [who.tenantId, who.actorId, matching?.id ?? null, matching ? timingException : reason, matching && !timingException ? 'none' : 'pending']);
       session = inserted.rows[0];
     } else {
       if (!session) throw new InvalidInput('Clock in before recording this action.');
@@ -121,6 +125,9 @@ export async function clockAction(pool: Pool, principal: Principal, body: Record
     if (!session) throw new Error('Clock action did not create a session.');
     await db.query(`insert into attendance_event (id, tenant_id, session_id, actor_id, kind, idempotency_key)
       values ($1,$2,$3,$4,$5,$6)`, [randomUUID(), who.tenantId, session.id, who.actorId, kind, idempotencyKey]);
+    await db.query(`update attendance_timesheet set status = 'needs_review' where tenant_id = $1 and actor_id = $2
+      and status = 'approved' and period_id in (select id from attendance_period where tenant_id = $1
+        and status = 'open' and starts_at <= $3 and ends_at > $3)`, [who.tenantId, who.actorId, session.started_at]);
     return { current: present(session), repeated: false };
   });
 }
