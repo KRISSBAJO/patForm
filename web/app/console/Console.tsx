@@ -479,7 +479,8 @@ export function Console() {
   if (!session) return <SignIn onSignedIn={() => void refreshSession()} signedOut={wasSignedOut} />;
 
   const me = session.actor;
-  const beforeFirstDay = me.workspace_role === 'pre_hire' && view !== 'hr' && view !== 'security';
+  const isPrehire = me.workspace_role === 'pre_hire';
+  const beforeFirstDay = isPrehire && view !== 'hr' && view !== 'security';
   const counts = work?.counts ?? { arrived: 0, needsYou: 0, late: 0, failed: 0 };
   const currentProcess = session.processes.find((process) => process.process_key === processKey);
   const recentProcesses = recentProcessKeys
@@ -572,9 +573,9 @@ export function Console() {
         if ((event.target as HTMLElement).closest('button, a')) setMobileNavOpen(false);
       }}>
         <div className="cs__mobileNavHead"><strong>{area ? area.name : 'Menu'}</strong><button type="button" aria-label="Close menu" onClick={() => setMobileNavOpen(false)}>×</button></div>
-        {beforeFirstDay ? <nav className="cs__nav cs__nav--module" aria-label="Available before your first day">
-          <button type="button" className="cs__navItem" onClick={() => setView('hr')}><NavIcon name="people"/><span className="cs__navText">Before you start</span></button>
-          <button type="button" className="cs__navItem" onClick={() => setView('security')}><NavIcon name="integrations"/><span className="cs__navText">Your account</span></button>
+        {isPrehire && view !== 'hr' ? <nav className="cs__nav cs__nav--module" aria-label="Available before your first day">
+          <button type="button" className="cs__navItem" aria-current={beforeFirstDay ? 'page' : undefined} onClick={() => setView('hr')}><NavIcon name="people"/><span className="cs__navText">Before you start</span></button>
+          <button type="button" className="cs__navItem" aria-current={view === 'security' ? 'page' : undefined} onClick={() => setView('security')}><NavIcon name="integrations"/><span className="cs__navText">Your account</span></button>
         </nav> : area ? <ModuleRail area={area} sections={moduleSections} current={moduleSection} onPick={setModuleSection} onBack={() => setView('home')} /> : <>
         <nav className="cs__nav" aria-label="Console">
 <button type="button" className="cs__navItem" title="Home" aria-current={view === 'home' ? 'page' : undefined} onClick={() => { setActivationTarget(null); setView('home'); }}><NavIcon name="home"/><span className="cs__navText">Home</span></button>
@@ -744,11 +745,24 @@ export function Console() {
                 }}
               />
             ) : view === 'security' ? (
-              <>
-                <SecurityView onAccessChange={() => void checkSiteAdmin()} />
-                <NotificationsPanel />
-                <PasskeysPanel className="cs__passkeys" />
-              </>
+              <div className="account-page">
+                <div className="account-page__intro">
+                  <div>
+                    <span className="account-page__eyebrow">ACCOUNT & DEVICES</span>
+                    <h2>A calmer way to stay secure.</h2>
+                    <p>Manage how you sign in, receive updates and use Patform on this device.</p>
+                  </div>
+                  <div className="account-page__identity">
+                    <span className="account-page__avatar" aria-hidden="true">{me.display_name.split(' ').map(p => p[0]).join('').slice(0, 2)}</span>
+                    <span><strong>{me.display_name}</strong><small>{me.email}</small></span>
+                  </div>
+                </div>
+                <div className="account-page__content">
+                  <SecurityView onAccessChange={() => void checkSiteAdmin()} />
+                  <NotificationsPanel />
+                  <PasskeysPanel className="cs__passkeys" />
+                </div>
+              </div>
             ) : view === 'held' ? (
               <HeldView onChanged={setHeldCount} />
             ) : !processKey && ['work', 'records', 'dashboard', 'ask'].includes(view) ? (
