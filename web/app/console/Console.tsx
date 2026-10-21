@@ -568,7 +568,7 @@ export function Console() {
       <ReauthDialog />
       <div className={`cs__shell${area ? ' cs__shell--module' : ''}${modulesOpen && !area ? ' cs__shell--launcher' : ''}`} style={area ? ({ '--mod': area.colour, '--mod-deep': area.deep, '--mod-tint': area.tint } as React.CSSProperties) : undefined}>
       {mobileNavOpen && <button type="button" className="cs__navBackdrop" aria-label="Close menu" onClick={() => setMobileNavOpen(false)} />}
-      <aside id="console-navigation" className={`cs__side${railExpanded || area ? ' cs__side--expanded' : ''}${mobileNavOpen ? ' cs__side--open' : ''}${area ? ' cs__side--module' : ''}`} onClick={(event) => {
+      <aside id="console-navigation" className={`cs__side${railExpanded || area || me.workspace_role === 'pre_hire' ? ' cs__side--expanded' : ''}${mobileNavOpen ? ' cs__side--open' : ''}${area ? ' cs__side--module' : ''}`} onClick={(event) => {
         if ((event.target as HTMLElement).closest('button, a')) setMobileNavOpen(false);
       }}>
         <div className="cs__mobileNavHead"><strong>{area ? area.name : 'Menu'}</strong><button type="button" aria-label="Close menu" onClick={() => setMobileNavOpen(false)}>×</button></div>
@@ -606,7 +606,9 @@ export function Console() {
         {!me.email_verified_at && <VerifyBanner email={me.email} />}
         <div className="cs__head">
           <h1>
-            {view === 'home'
+            {beforeFirstDay
+              ? 'Your workspace'
+              : view === 'home'
               ? 'Home'
               : view === 'record'
               ? (record?.reference ?? 'Record')
