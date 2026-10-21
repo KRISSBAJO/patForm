@@ -139,57 +139,106 @@ export function SignatureField({
 }
 
 /**
- * The drawing surface, from signature_pad.
- *
- * Loaded when somebody chooses to draw, not with the form: most people will
- * type, and the public form should not carry a library for the few who draw.
+ * Draw directly on the canvas. A remote, delayed script must not be required
+ * for the signer to put ink on the page, especially on a phone.
  */
 function DrawPad({ image, onDrawn }: { image: string | null; onDrawn: (png: string | null) => void }) {
   const canvas = useRef<HTMLCanvasElement | null>(null);
-  const pad = useRef<{ clear(): void; isEmpty(): boolean; toDataURL(type?: string): string; off(): void; fromDataURL(u: string, o?: object): Promise<void> } | null>(null);
+  const drawing = useRef(false);
+  const lastPoint = useRef<{ x: number; y: number } | null>(null);
+  const inkData = useRef<string | null>(image);
   const [empty, setEmpty] = useState(!image);
-  const done = useRef(onDrawn);
-  done.current = onDrawn;
 
   useEffect(() => {
-    let cancelled = false;
-    let resize: (() => void) | null = null;
-    void import('signature_pad').then(({ default: SignaturePad }) => {
-      const el = canvas.current;
-      if (cancelled || !el) return;
-      const p = new SignaturePad(el, { penColor: '#131a17', minWidth: 0.8, maxWidth: 2.6 });
-      // Sized for the screen's real pixels, or the line is blurred on a phone.
-      resize = () => {
-        const kept = p.isEmpty() ? null : p.toDataURL('image/png');
-        const ratio = Math.max(window.devicePixelRatio || 1, 1);
-        el.width = el.offsetWidth * ratio;
-        el.height = el.offsetHeight * ratio;
-        el.getContext('2d')?.scale(ratio, ratio);
-        p.clear();
-        if (kept) void p.fromDataURL(kept, { ratio });
+    const el = canvas.current;
+    if (!el) return;
+    const restore = (data: string) => {
+      const saved = new Image();
+      saved.onload = () => {
+        const ctx = el.getContext('2d');
+        if (ctx) ctx.drawImage(saved, 0, 0, el.clientWidth, el.clientHeight);
       };
-      resize();
-      if (image) void p.fromDataURL(image);
-      p.addEventListener('endStroke', () => {
-        setEmpty(false);
-        done.current(p.toDataURL('image/png'));
-      });
-      pad.current = p;
-      window.addEventListener('resize', resize);
-    });
-    return () => {
-      cancelled = true;
-      if (resize) window.removeEventListener('resize', resize);
-      pad.current?.off();
+      saved.src = data;
     };
-    // The image is read once, on mount; after that the pad is the source.
+    const resize = () => {
+      const kept = inkData.current;
+      const ratio = Math.max(window.devicePixelRatio || 1, 1);
+      const width = Math.max(1, Math.round(el.clientWidth * ratio));
+      const height = Math.max(1, Math.round(el.clientHeight * ratio));
+      if (el.width === width && el.height === height) return;
+      el.width = width;
+      el.height = height;
+      el.getContext('2d')?.setTransform(ratio, 0, 0, ratio, 0, 0);
+      if (kept) restore(kept);
+    };
+    resize();
+    if (image) restore(image);
+    const observer = new ResizeObserver(resize);
+    observer.observe(el);
+    window.addEventListener('resize', resize);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', resize);
+    };
+    // The image is read once, on mount; after that the canvas is the source.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const point = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+  };
+  const finish = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (!drawing.current) return;
+    drawing.current = false;
+    lastPoint.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    setEmpty(false);
+    const png = event.currentTarget.toDataURL('image/png');
+    inkData.current = png;
+    onDrawn(png);
+  };
 
   return (
     <div className="sg__draw">
       <div className="sg__padWrap">
-        <canvas ref={canvas} className="sg__pad" aria-label="Draw your signature here" role="img" />
+        <canvas
+          ref={canvas}
+          className="sg__pad"
+          aria-label="Draw your signature here"
+          role="img"
+          onPointerDown={(event) => {
+            event.preventDefault();
+            event.currentTarget.setPointerCapture(event.pointerId);
+            drawing.current = true;
+            const start = point(event);
+            lastPoint.current = start;
+            const ctx = event.currentTarget.getContext('2d');
+            if (!ctx) return;
+            ctx.fillStyle = '#131a17';
+            ctx.beginPath();
+            ctx.arc(start.x, start.y, 1.4, 0, Math.PI * 2);
+            ctx.fill();
+          }}
+          onPointerMove={(event) => {
+            if (!drawing.current || !lastPoint.current) return;
+            event.preventDefault();
+            const next = point(event);
+            const ctx = event.currentTarget.getContext('2d');
+            if (!ctx) return;
+            ctx.strokeStyle = '#131a17';
+            ctx.lineWidth = 2.5;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.beginPath();
+            ctx.moveTo(lastPoint.current.x, lastPoint.current.y);
+            ctx.lineTo(next.x, next.y);
+            ctx.stroke();
+            lastPoint.current = next;
+          }}
+          onPointerUp={finish}
+          onPointerCancel={finish}
+        />
         <span className="sg__line" aria-hidden="true" />
         {empty && (
           <span className="sg__hint" aria-hidden="true">
@@ -201,7 +250,9 @@ function DrawPad({ image, onDrawn }: { image: string | null; onDrawn: (png: stri
         type="button"
         className="sg__clear"
         onClick={() => {
-          pad.current?.clear();
+          const el = canvas.current;
+          if (el) el.getContext('2d')?.clearRect(0, 0, el.clientWidth, el.clientHeight);
+          inkData.current = null;
           setEmpty(true);
           onDrawn(null);
         }}

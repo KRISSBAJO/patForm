@@ -8,7 +8,7 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { PdfPages, PageBox } from '../../../components/pdf-pages';
-import { SignatureField, type SignatureValue } from '../../../components/signature-field';
+import { SignatureField, SignatureView, isSignature, type SignatureValue } from '../../../components/signature-field';
 import '../sign.css';
 
 type Field = { id: string; kind: 'signature' | 'initials' | 'date' | 'name' | 'text' | 'title' | 'email' | 'company' | 'checkbox' | 'dropdown' | 'radio' | 'payment'; page: number; x: number; y: number; width: number; height: number; required: boolean; label: string | null; choices: string[]; amountMinor?: number | null; currency?: string | null; paymentStatus?: string | null };
@@ -101,6 +101,12 @@ export function SignPage({ token }: { token: string }) {
   const needsSignature = !fields.some((f) => f.kind === 'signature');
   const ready = Boolean(signature) && missing.length === 0 && (!view.party || authority);
   const shown = (f: Field) => f.kind === 'signature' ? (signature ? signature.name : 'Sign') : f.kind === 'initials' ? (initials ? initials.name : 'Initials') : f.kind === 'payment' ? (f.paymentStatus === 'paid' ? 'Payment verified' : `${f.currency} ${((f.amountMinor ?? 0) / 100).toFixed(2)} · pay securely`) : f.kind === 'date' ? new Date().toLocaleDateString() : f.kind === 'name' ? (signature?.name ?? view.name) : f.kind === 'email' ? view.email : f.kind === 'company' && view.party ? view.party.name : f.kind === 'title' ? (view.signerTitle ?? values[f.id] ?? 'Job title') : f.kind === 'checkbox' ? (values[f.id] === 'Yes' ? '☑' : '☐') : (values[f.id] || f.label || (f.kind === 'dropdown' || f.kind === 'radio' ? 'Choose' : 'Text'));
+  const openField = (f: Field) => {
+    setEditing(f);
+    setDraft(f.kind === 'signature' ? signature ?? { method: 'typed', name: view.name, style: 'flowing' }
+      : f.kind === 'initials' ? initials ?? { method: 'typed', name: view.name, style: 'flowing' }
+      : values[f.id] ?? '');
+  };
 
   return <div className="ps">
     <header className="ps__top"><strong>Patform Sign</strong><span>{view.workspace}</span></header>
@@ -158,10 +164,10 @@ export function SignPage({ token }: { token: string }) {
         </div>
         {view.allowAttachments && <div className="ps__card"><h2 style={{ fontSize: 17, margin: '0 0 5px' }}>Supporting files</h2><p className="ps__muted">Add a PDF or image if the sender needs proof or a supporting document. Each file is checked before you can finish.</p><label className="ps__btn" style={{ display: 'inline-block', cursor: 'pointer' }}>+ Add a file<input type="file" accept="application/pdf,image/png,image/jpeg,.pdf,.png,.jpg,.jpeg" hidden disabled={busy || (view.attachments?.length ?? 0) >= 5} onChange={(ev) => { const file = ev.target.files?.[0]; ev.target.value = ''; if (!file) return; void act(async () => { if (file.size > 10 * 1024 * 1024) throw new Error('Choose a file of 10 MB or less.'); const response = await call<{ status: string }>(`${base}/attachment`, { method: 'POST', session, body: JSON.stringify({ filename: file.name, contentType: file.type || (file.name.toLowerCase().endsWith('.pdf') ? 'application/pdf' : ''), base64: await fileBase64(file) }) }); await load(session); setNote(response.status === 'clean' ? 'File attached.' : 'File attached. Its security check is still running; wait before finishing.'); }); }} /></label><ul className="ps__attachments">{(view.attachments ?? []).map((file) => <li key={file.id}><strong>{file.filename}</strong><small>Recorded with this agreement · {file.sha256.slice(0, 12)}…</small></li>)}</ul></div>}
         {pdfUrl && <div className="ps__card"><strong>Review the document</strong><p className="ps__muted">If the preview is slow on your phone, open the PDF in your device’s viewer, then return here to complete the boxes.</p><a className="ps__documentLink" href={pdfUrl} target="_blank" rel="noopener noreferrer">Open the PDF ↗</a></div>}
-        {fields.some((f) => !['payment', 'date', 'name', 'email'].includes(f.kind)) && <div className="ps__card"><strong>Your boxes</strong><div className="ps__fieldList">{fields.filter((f) => !['payment', 'date', 'name', 'email'].includes(f.kind)).map((f) => <button type="button" key={f.id} className="ps__fieldAction" disabled={f.kind === 'company' && !!view.party || f.kind === 'title' && !!view.signerTitle} onClick={() => { setEditing(f); setDraft(f.kind === 'signature' ? signature ?? undefined : f.kind === 'initials' ? initials ?? undefined : values[f.id] ?? ''); }}><span>{f.label || (f.kind === 'signature' ? 'Signature' : f.kind === 'initials' ? 'Initials' : f.kind)}</span><small>{filled(f) ? 'Done' : 'Tap to fill'}</small></button>)}</div></div>}
+        {fields.some((f) => !['payment', 'date', 'name', 'email'].includes(f.kind)) && <div className="ps__card"><strong>Your boxes</strong><div className="ps__fieldList">{fields.filter((f) => !['payment', 'date', 'name', 'email'].includes(f.kind)).map((f) => <button type="button" key={f.id} className="ps__fieldAction" disabled={f.kind === 'company' && !!view.party || f.kind === 'title' && !!view.signerTitle} onClick={() => openField(f)}><span>{f.label || (f.kind === 'signature' ? 'Signature' : f.kind === 'initials' ? 'Initials' : f.kind)}{f.kind === 'signature' && signature ? <SignatureView value={signature} /> : f.kind === 'initials' && initials ? <SignatureView value={initials} /> : null}</span><small>{filled(f) ? 'Done' : 'Tap to fill'}</small></button>)}</div></div>}
         {pdf ? <PdfPages data={pdf} overlay={(page) => fields.filter((f) => f.page === page).map((f) =>
-          <PageBox key={f.id} x={f.x} y={f.y} width={f.width} height={f.height} color={filled(f) ? '#1d6b3a' : '#b26b00'} title={f.label ?? f.kind} onClick={f.kind === 'payment' || f.kind === 'date' || f.kind === 'name' || f.kind === 'email' || (f.kind === 'company' && view.party) || (f.kind === 'title' && view.signerTitle) ? undefined : () => { setEditing(f); setDraft(f.kind === 'signature' ? signature ?? undefined : f.kind === 'initials' ? initials ?? undefined : values[f.id] ?? ''); }}>
-            {f.kind === 'signature' && signature?.method === 'drawn' ? <img src={signature.image} alt={`Signature of ${signature.name}`} style={{ maxWidth: '100%', maxHeight: '100%' }} /> : <span>{shown(f)}{f.required && !filled(f) ? ' *' : ''}</span>}
+          <PageBox key={f.id} x={f.x} y={f.y} width={f.width} height={f.height} color={filled(f) ? '#1d6b3a' : '#b26b00'} title={f.label ?? f.kind} onClick={f.kind === 'payment' || f.kind === 'date' || f.kind === 'name' || f.kind === 'email' || (f.kind === 'company' && view.party) || (f.kind === 'title' && view.signerTitle) ? undefined : () => openField(f)}>
+            {f.kind === 'signature' && signature?.method === 'drawn' ? <img src={signature.image} alt="Your drawn signature" style={{ width: '100%', height: '100%', objectFit: 'contain' }} /> : f.kind === 'initials' && initials?.method === 'drawn' ? <img src={initials.image} alt="Your drawn initials" style={{ width: '100%', height: '100%', objectFit: 'contain' }} /> : <span>{shown(f)}{f.required && !filled(f) ? ' *' : ''}</span>}
           </PageBox>)} /> : <div className="ps__card" role="status"><p>{pdfError ?? 'Opening the PDF…'}</p>{pdfError && <button type="button" className="ps__btn" onClick={() => setPdfAttempt((attempt) => attempt + 1)}>Try opening it again</button>}</div>}
         <div className="ps__bar">
           <span className="ps__muted">{ready ? 'Ready to finish.' : missing.length ? `${missing.length} box${missing.length === 1 ? '' : 'es'} still to fill` : !signature ? 'Add your signature' : `Confirm you may sign for ${view.party?.name}`}</span>
@@ -195,7 +201,7 @@ export function SignPage({ token }: { token: string }) {
         : <input className="ps__input" autoFocus maxLength={editing.kind === 'company' ? 160 : editing.kind === 'title' ? 120 : 500} value={String(draft ?? '')} onChange={(e) => setDraft(e.target.value)} />}
       <div className="ps__row" style={{ marginTop: 12, justifyContent: 'flex-end' }}>
         <button type="button" className="ps__btn" onClick={() => setEditing(null)}>Cancel</button>
-        <button type="button" className="ps__btn ps__btn--primary" onClick={() => {
+        <button type="button" className="ps__btn ps__btn--primary" disabled={(editing.kind === 'signature' || editing.kind === 'initials') && !isSignature(draft)} onClick={() => {
           if (editing.kind === 'signature') setSignature((draft as SignatureValue) ?? null);
           else if (editing.kind === 'initials') setInitials((draft as SignatureValue) ?? null);
           else setValues((v) => ({ ...v, [editing.id]: String(draft ?? '') }));
