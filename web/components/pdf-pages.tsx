@@ -43,6 +43,7 @@ export async function findPdfFieldHints(data: ArrayBuffer): Promise<PdfFieldHint
       const height = kind === 'signature' ? .06 : kind === 'initials' ? .05 : .04;
       const x = Math.max(0, Math.min(1 - width, left / viewport.width));
       const y = Math.max(0, Math.min(1 - height, (baseline + 10) / viewport.height));
+      if (hints.some((existing) => existing.page === pageNo && existing.kind === kind && Math.abs(existing.x - x) < .12 && Math.abs(existing.y - y) < .075)) continue;
       hints.push({ kind, page: pageNo, x, y, label });
       if (hints.length >= 80) return hints;
     }

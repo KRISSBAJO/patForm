@@ -78,10 +78,11 @@
 .sc__recipientFields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; padding: 19px; }
 .sc__recipientFields input, .sc__recipientFields select { width: 100%; min-width: 0; }
 .sc__signers .mx__reviewBox { margin-top: 0 !important; }
-.sc__editorTop { display: flex; align-items: end; justify-content: space-between; gap: 24px; padding: 28px 32px; background: #fbfcf9; border-bottom: 1px solid #e2e9e1; }
+.sc__editorTop { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 18px 24px; padding: 28px 32px; background: #fbfcf9; border-bottom: 1px solid #e2e9e1; }
+.sc__editorTop > div:first-child { flex: 1 1 320px; min-width: 0; }
 .sc__editorTop h2 { margin: 8px 0 5px; font: 600 clamp(26px, 2.8vw, 38px)/1.1 Georgia, serif; letter-spacing: -.035em; color: #173c2b; }
 .sc__editorTop p { margin: 0; color: #697d6e; font-size: 13px; }
-.sc__editorActions { display: flex; gap: 8px; flex-wrap: wrap; flex-shrink: 0; }
+.sc__editorActions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 .sc__editor { display: grid; grid-template-columns: 230px minmax(0, 1fr) 235px; min-height: 650px; background: #e9ede8; }
 .sc__palette, .sc__inspector { display: flex; flex-direction: column; gap: 15px; padding: 24px 18px; background: #fff; min-width: 0; }
 .sc__palette { border-right: 1px solid #dce5da; }.sc__inspector { border-left: 1px solid #dce5da; }
