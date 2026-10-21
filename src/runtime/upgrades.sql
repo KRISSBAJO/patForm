@@ -2841,3 +2841,8 @@ alter table approval_vote add column if not exists evidence_ids uuid[] not null 
 alter table approval_request alter column action_run_id drop not null;
 alter table approval_request drop constraint if exists approval_request_action_run_id_key;
 create unique index if not exists approval_request_run_uq on approval_request (action_run_id) where action_run_id is not null;
+
+-- Keep completed onboarding tasks immutable. HR corrections are new tasks
+-- linked to the original so the joiner can see both versions of the work.
+alter table lifecycle_task add column if not exists details text;
+alter table lifecycle_task add column if not exists correction_of uuid references lifecycle_task(id);

@@ -19,7 +19,7 @@ import { HrAddressFields, addressFromForm, addressToForm } from './HrAddressFiel
 
 type Tab = 'tasks' | 'leave' | 'calendar' | 'documents' | 'profile' | 'approve' | 'cases' | 'people' | 'org' | 'hiring' | 'upcoming' | 'reconcile' | 'setup';
 type Summary = { hr: boolean; admin?: boolean; role: string; teams: string[]; myTasks: number; leaveToApprove: number; onboarding?: number; offboarding?: number; changes?: number; reconciliation?: number; hiring?: number };
-type Task = { id: string; key: string; title: string; team: string; critical: boolean; status: string; note: string | null; mine: boolean; blockedBy: string[]; completed_by_name: string | null; completed_at: string | null; action: string | null };
+type Task = { id: string; key: string; title: string; details: string | null; correction_of: string | null; team: string; critical: boolean; status: string; note: string | null; mine: boolean; blockedBy: string[]; completed_by_name: string | null; completed_at: string | null; action: string | null };
 type Case = { id: string; kind: string; status: string; restricted?: boolean; effectiveDate: string | null; summary: string | null; employee: { id: string; name: string; email: string; location: string | null; startDate: string | null; endDate: string | null; unit: string | null; title: string | null; employmentType: string }; progress: { done: number; total: number }; readiness: { title: string; team: string; critical: boolean; blockedBy: string[] }[]; tasks: Task[] };
 type MyTask = Task & { caseId: string; kind: string; employee: string; effectiveDate: string | null };
 type Balance = { typeId: string; key: string; name: string; unlimited: boolean; accrualMode: string; entitled: number; accrued: number; carriedOver: number; adjusted: number; taken: number; pending: number; left: number | null };
@@ -429,7 +429,7 @@ export function HRView({ onChanged, shell }: { onChanged?: () => void; shell?: M
 
   const taskRow = (t: MyTask) => <li key={t.id}>
     <span className={`mx__avatar ${t.blockedBy.length ? '' : 'mx__avatar--on'}`} style={{ marginLeft: 0 }}>{t.critical ? '!' : '✓'}</span>
-    <div className="mx__main"><strong>{t.title}</strong><small>{KIND[t.kind] ?? t.kind} · {t.employee}{t.effectiveDate ? ` · ${day(t.effectiveDate)}` : ''}{t.blockedBy.length ? ` · waiting: ${t.blockedBy.join(', ')}` : ''}</small></div>
+    <div className="mx__main"><strong>{t.title}</strong><small>{KIND[t.kind] ?? t.kind} · {t.employee}{t.effectiveDate ? ` · ${day(t.effectiveDate)}` : ''}{t.blockedBy.length ? ` · waiting: ${t.blockedBy.join(', ')}` : ''}</small>{t.details && <small>{t.details}</small>}{t.correction_of && <small>Requested correction to earlier work</small>}</div>
     {t.blockedBy.length ? <Pill s="requested" text="Waiting" /> : <>
       {t.key === 'personal_details' && <button type="button" className="mx__btn mx__btn--sm" onClick={() => pickTab('profile')}>Fill in details</button>}
       <button type="button" className={`mx__btn ${t.key === 'personal_details' ? 'mx__btn--ghost' : ''} mx__btn--sm`} disabled={busy === t.id} onClick={() => ask(t.id, `Note for "${t.title}" (optional)`, async (n) => { await postJson(`/api/hr/tasks/${t.id}/complete`, { note: n }); return `"${t.title}" done.`; })}>Mark done</button>
@@ -447,14 +447,15 @@ export function HRView({ onChanged, shell }: { onChanged?: () => void; shell?: M
     {open && <>
       <ul className="mx__list">{c.tasks.map((t) => <li key={t.id} className={t.status !== 'open' ? 'is-done' : ''}>
         <span className={`mx__avatar ${t.status === 'done' ? 'mx__avatar--on' : ''}`} style={{ marginLeft: 0, fontSize: 10 }}>{TEAM[t.team]?.slice(0, 2).toUpperCase()}</span>
-        <div className="mx__main"><strong>{t.critical ? <span title="Critical">● </span> : null}{t.title}</strong><small>{TEAM[t.team]} · {t.status === 'open' ? (t.blockedBy.length ? `waiting: ${t.blockedBy.join(', ')}` : 'ready') : t.status === 'done' ? `done${t.completed_by_name ? ` by ${t.completed_by_name}` : ''}` : 'waived'}{t.note ? ` · ${t.note}` : ''}</small></div>
+        <div className="mx__main"><strong>{t.critical ? <span title="Critical">● </span> : null}{t.title}</strong><small>{TEAM[t.team]} · {t.status === 'open' ? (t.blockedBy.length ? `waiting: ${t.blockedBy.join(', ')}` : 'ready') : t.status === 'done' ? `done${t.completed_by_name ? ` by ${t.completed_by_name}` : ''}` : 'waived'}{t.note ? ` · ${t.note}` : ''}</small>{t.details && <small>{t.details}</small>}{t.correction_of && <small>Correction to earlier completed task</small>}</div>
         <Pill s={t.status} text={t.status === 'open' ? (t.blockedBy.length ? 'Waiting' : 'Ready') : t.status === 'done' ? 'Done' : 'Waived'} />
         {t.status === 'open' && t.mine && !t.blockedBy.length && <button type="button" className="mx__btn mx__btn--sm" disabled={busy === t.id} onClick={() => ask(t.id, `Note for "${t.title}" (optional)`, async (n) => { await postJson(`/api/hr/tasks/${t.id}/complete`, { note: n }); return `"${t.title}" done.`; })}>Mark done</button>}
         {t.status === 'open' && hr && s.admin && !t.critical && <button type="button" className="mx__btn mx__btn--ghost mx__btn--sm" onClick={() => ask(t.id, `Why waive "${t.title}"?`, async (r) => { await postJson(`/api/hr/tasks/${t.id}/except`, { reason: r }); return 'Waived, with your reason recorded.'; })}>Waive</button>}
+        {hr && c.kind === 'onboarding' && t.team === 'employee' && t.status === 'done' && <button type="button" className="mx__btn mx__btn--ghost mx__btn--sm" onClick={() => { setForm({ caseId: c.id, employeeName: c.employee.name, taskTitle: `Correct: ${t.title}`.slice(0, 200), correctionOf: t.id }); setSheet('onboardingTask'); }}>Request correction</button>}
       </li>)}</ul>
       {hr && <div className="mx__bar">
         <button type="button" className="mx__btn mx__btn--ghost mx__btn--sm" onClick={() => openPerson(c.employee.id)}>Open record</button>
-        {c.kind === 'onboarding' && c.status === 'open' && <button type="button" className="mx__btn mx__btn--sm" onClick={() => { setForm({ caseId: c.id, employeeName: c.employee.name }); setSheet('onboardingTask'); }}>Assign employee task</button>}
+        {c.kind === 'onboarding' && ['open', 'closed'].includes(c.status) && <button type="button" className="mx__btn mx__btn--sm" onClick={() => { setForm({ caseId: c.id, employeeName: c.employee.name }); setSheet('onboardingTask'); }}>Assign employee task</button>}
         <button type="button" className="mx__btn mx__btn--ghost mx__btn--sm" onClick={() => ask(c.id, 'Note (kept to HR)', async (b) => { await postJson(`/api/hr/cases/${c.id}/notes`, { body: b, category: 'general' }); return 'Note added.'; })}>Add HR note</button>
         <button type="button" className="mx__btn mx__btn--ghost mx__btn--sm" onClick={() => ask(c.id, 'Note shared with the teams on this case', async (b) => { await postJson(`/api/hr/cases/${c.id}/notes`, { body: b, category: 'general', shared: true }); return 'Shared note added.'; })}>Add shared note</button>
         {c.kind === 'probation' && c.status === 'open' && <>
@@ -510,10 +511,10 @@ export function HRView({ onChanged, shell }: { onChanged?: () => void; shell?: M
         <div className="mx__card"><div className="mx__cardHead"><h3>{pre ? 'Before you start' : 'My tasks'}</h3><small>{(tasks.data ?? []).length}</small></div>
           <ul className="mx__list" style={{ marginTop: 10 }}>{(tasks.data ?? []).map(taskRow)}{tasks.data && !tasks.data.length && empty('check', 'You’re all caught up', 'New tasks from HR will appear here when they are assigned to you.')}</ul></div>
         <div className="mx__card"><div className="mx__cardHead"><h3>Completed by you</h3><small>{(taskHistory.data ?? []).filter((t) => t.status === 'done').length}</small></div>
-          <p className="mx__tiny" style={{ margin: '8px 24px 0' }}>A read-only record of your work. If something needs correcting, ask HR to assign a follow-up task.</p>
+          <p className="mx__tiny" style={{ margin: '8px 24px 0' }}>A read-only record of your work. HR can request a correction without changing what you already submitted.</p>
           <ul className="mx__list" style={{ marginTop: 10 }}>{(taskHistory.data ?? []).filter((t) => t.status === 'done').map((t) => <li key={t.id}>
             <span className="mx__avatar mx__avatar--on" style={{ marginLeft: 0 }}>✓</span>
-            <div className="mx__main"><strong>{t.title}</strong><small>{KIND[t.kind] ?? t.kind} · {t.employee}{t.completed_at ? ` · completed ${day(t.completed_at)}` : ''}</small>{t.note && <small>{t.note}</small>}</div>
+            <div className="mx__main"><strong>{t.title}</strong><small>{KIND[t.kind] ?? t.kind} · {t.employee}{t.completed_at ? ` · completed ${day(t.completed_at)}` : ''}</small>{t.note && <small>{t.note}</small>}{t.correction_of && <small>Correction of earlier work</small>}</div>
             <Pill s="done" text="Done" />
           </li>)}{taskHistory.data && !taskHistory.data.some((t) => t.status === 'done') && empty('check', 'No completed tasks yet', 'When you finish a task, it will stay here for you to review.')}</ul></div>
       </>}
@@ -676,10 +677,11 @@ export function HRView({ onChanged, shell }: { onChanged?: () => void; shell?: M
       </>}
     </div>
 
-    {sheet === 'onboardingTask' && <Sheet eyebrow="Onboarding task" title={`Assign a task to ${f('employeeName')}`} subtitle="They will see this in Before you start. Completed tasks remain in their read-only history." onClose={() => setSheet(null)}
-      footer={<><button type="button" className="mx__btn mx__btn--ghost" onClick={() => setSheet(null)}>Cancel</button><button type="button" className="mx__btn" disabled={busy === 'assignTask' || f('taskTitle').trim().length < 4} onClick={() => done('assignTask', async () => { await postJson(`/api/hr/cases/${f('caseId')}/tasks`, { title: f('taskTitle') }); return 'Task assigned. It now appears in their Before you start list.'; })}>Assign task</button></>}>
+    {sheet === 'onboardingTask' && <Sheet eyebrow={f('correctionOf') ? 'Correction request' : 'Onboarding task'} title={`${f('correctionOf') ? 'Request a correction from' : 'Assign a task to'} ${f('employeeName')}`} subtitle={f('correctionOf') ? 'Their earlier answer stays in the completed history. This creates a new task with your instructions.' : 'They will see this in Before you start. Completed tasks remain in their read-only history.'} onClose={() => setSheet(null)}
+      footer={<><button type="button" className="mx__btn mx__btn--ghost" onClick={() => setSheet(null)}>Cancel</button><button type="button" className="mx__btn" disabled={busy === 'assignTask' || f('taskTitle').trim().length < 4 || (Boolean(f('correctionOf')) && !f('taskDetails').trim())} onClick={() => done('assignTask', async () => { await postJson(`/api/hr/cases/${f('caseId')}/tasks`, { title: f('taskTitle'), details: f('taskDetails'), correctionOf: f('correctionOf') || undefined }); return f('correctionOf') ? 'Correction requested. Their earlier work stays in the history.' : 'Task assigned. It now appears in their Before you start list.'; })}>{f('correctionOf') ? 'Request correction' : 'Assign task'}</button></>}>
       <SheetSection title="What should they do?" hint="Use a clear action, such as ‘Review the welcome guide’ or ‘Confirm your emergency contact’.">
-        <F label="Task"><input autoFocus required maxLength={200} value={f('taskTitle')} onChange={(e) => setF('taskTitle', e.target.value)} /></F>
+        <F label="Task" wide><input autoFocus required maxLength={200} value={f('taskTitle')} onChange={(e) => setF('taskTitle', e.target.value)} /></F>
+        <F label={f('correctionOf') ? 'What needs correcting' : 'Instructions'} wide><textarea rows={4} maxLength={2000} value={f('taskDetails')} onChange={(e) => setF('taskDetails', e.target.value)} placeholder={f('correctionOf') ? 'Explain what was missing or incorrect and what to provide now.' : 'Tell them exactly what to provide or review.'} /></F>
       </SheetSection>
     </Sheet>}
 

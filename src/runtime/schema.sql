@@ -2041,6 +2041,8 @@ create table if not exists lifecycle_task (
   case_id       uuid not null references lifecycle_case(id),
   key           text not null,
   title         text not null,
+  details       text,
+  correction_of uuid references lifecycle_task(id),
   team          text not null check (team in ('hr', 'it', 'facilities', 'finance', 'manager', 'employee')),
   critical      boolean not null default false,
   prerequisites jsonb not null default '[]'::jsonb,

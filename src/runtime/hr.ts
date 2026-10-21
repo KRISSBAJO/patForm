@@ -664,7 +664,7 @@ export async function decideProbation(pool: Pool, principal: Principal, caseId: 
 
 // ------------------------------------------------------------ case views
 
-interface TaskRow { id: string; case_id: string; key: string; title: string; team: Team; critical: boolean; prerequisites: string[]; wait_until: string | null; action: string | null; status: string; note: string | null; evidence_ref: string | null; completed_at: Date | null; completed_by_name: string | null }
+interface TaskRow { id: string; case_id: string; key: string; title: string; details: string | null; correction_of: string | null; team: Team; critical: boolean; prerequisites: string[]; wait_until: string | null; action: string | null; status: string; note: string | null; evidence_ref: string | null; completed_at: Date | null; completed_by_name: string | null }
 
 function blockers(t: TaskRow, all: TaskRow[]): string[] {
   if (t.status !== 'open') return [];
@@ -710,7 +710,7 @@ export async function listCases(pool: Pool, principal: Principal, opts: { status
     [w.tenantId, opts.status ?? null]);
   if (!cases.length) return [];
   const { rows: tasks } = await pool.query<TaskRow>(
-    `select t.id, t.case_id, t.key, t.title, t.team, t.critical, t.prerequisites, t.wait_until::text, t.action, t.status, t.note, t.evidence_ref, t.completed_at,
+    `select t.id, t.case_id, t.key, t.title, t.details, t.correction_of, t.team, t.critical, t.prerequisites, t.wait_until::text, t.action, t.status, t.note, t.evidence_ref, t.completed_at,
             a.display_name as completed_by_name
        from lifecycle_task t left join actor a on a.id = t.completed_by where t.case_id = any($1::uuid[]) order by t.case_id, t.critical desc, t.key`,
     [cases.map((c) => c.id)]);
@@ -751,27 +751,37 @@ export async function myTaskHistory(pool: Pool, principal: Principal) {
     .sort((a, b) => String(b.completed_at ?? '').localeCompare(String(a.completed_at ?? '')));
 }
 
-/** HR may add a new employee task to an active onboarding without changing completed records. */
+/** HR may assign work or grant a correction while keeping completed records unchanged. */
 export async function addOnboardingTask(pool: Pool, principal: Principal, caseId: string, body: Record<string, unknown>) {
   const w = await who(pool, principal); requireHr(w);
   if (!UUID.test(caseId)) throw new InvalidInput('no such onboarding');
   const title = text(body.title, 200);
   if (title.length < 4) throw new InvalidInput('give the task a clear title');
+  const details = text(body.details, 2000) || null;
+  const correctionOf = body.correctionOf === undefined ? null : id(body.correctionOf, 'the task to correct');
+  if (correctionOf && !details) throw new InvalidInput('say what needs correcting');
   return inTransaction(pool, async (client) => {
     const { rows } = await client.query<{ id: string; status: string; kind: string; actor_id: string | null }>(
       `select c.id, c.status, c.kind, e.actor_id from lifecycle_case c join employee_record e on e.id = c.employee_id where c.id = $1 and c.tenant_id = $2 for update of c`,
       [caseId, w.tenantId]);
     const c = rows[0];
     if (!c || c.kind !== 'onboarding') throw new InvalidInput('no such onboarding');
-    if (c.status !== 'open') throw new InvalidInput('this onboarding is closed');
+    if (!['open', 'closed'].includes(c.status)) throw new InvalidInput('this onboarding cannot take new tasks');
     if (!c.actor_id) throw new InvalidInput('invite this person before assigning their tasks');
+    if (correctionOf) {
+      const { rows: previous } = await client.query<{ id: string }>(
+        `select id from lifecycle_task where id = $1 and case_id = $2 and team = 'employee' and status = 'done'`,
+        [correctionOf, caseId]);
+      if (!previous[0]) throw new InvalidInput('choose a completed employee task from this onboarding');
+    }
     const { rows: count } = await client.query<{ n: number }>('select count(*)::int as n from lifecycle_task where case_id = $1', [caseId]);
     if (count[0]!.n >= 60) throw new InvalidInput('this onboarding already has 60 tasks');
     const key = `employee_${randomUUID().replace(/-/g, '').slice(0, 16)}`;
     const { rows: added } = await client.query<{ id: string }>(
-      `insert into lifecycle_task (case_id, key, title, team) values ($1, $2, $3, 'employee') returning id`,
-      [caseId, key, title]);
-    await recordWorkspaceAudit(client, { tenantId: w.tenantId, actorId: w.actorId, action: 'hr.onboarding_task_added', targetId: added[0]!.id, detail: { caseId, title } });
+      `insert into lifecycle_task (case_id, key, title, details, correction_of, team) values ($1, $2, $3, $4, $5, 'employee') returning id`,
+      [caseId, key, title, details, correctionOf]);
+    if (c.status === 'closed') await client.query(`update lifecycle_case set status = 'open', closed_at = null where id = $1`, [caseId]);
+    await recordWorkspaceAudit(client, { tenantId: w.tenantId, actorId: w.actorId, action: correctionOf ? 'hr.onboarding_correction_requested' : 'hr.onboarding_task_added', targetId: added[0]!.id, detail: { caseId, title, details, correctionOf, reopened: c.status === 'closed' } });
     return { id: added[0]!.id, caseId, title, status: 'open' };
   });
 }

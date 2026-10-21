@@ -83,6 +83,14 @@ test('HR-assigned onboarding tasks appear for the joiner and stay read-only in t
     assert.equal(finished?.note, 'Reviewed');
     assert.ok(finished?.completed_at);
     await assert.rejects(completeTask(pool, pre, task.id, { note: 'Edited' }), /already done/);
+    await assert.rejects(addOnboardingTask(pool, w.hrClerk.p, ob.caseId, { title: 'Correct the guide', correctionOf: task.id }), /say what needs correcting/);
+    await pool.query(`update lifecycle_case set status = 'closed', closed_at = now() where id = $1`, [ob.caseId]);
+    const correction = await addOnboardingTask(pool, w.hrClerk.p, ob.caseId, { title: 'Correct your guide confirmation', details: 'Confirm you reviewed the latest version.', correctionOf: task.id });
+    assert.equal((await myTasks(pool, pre)).find((t) => t.id === correction.id)?.correction_of, task.id);
+    assert.equal((await myTasks(pool, pre)).find((t) => t.id === correction.id)?.details, 'Confirm you reviewed the latest version.');
+    assert.ok((await myTaskHistory(pool, pre)).some((t) => t.id === task.id), 'the original answer remains visible');
+    await completeTask(pool, pre, correction.id, { note: 'Reviewed the latest version' });
+    assert.equal((await myTaskHistory(pool, pre)).find((t) => t.id === correction.id)?.note, 'Reviewed the latest version');
     assert.ok(!(await myTaskHistory(pool, w.staff.p)).some((t) => t.id === task.id));
   } finally { await pool.end(); }
 });
