@@ -14,7 +14,41 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 type PdfJs = { GlobalWorkerOptions: { workerSrc: string }; getDocument: (src: { data: ArrayBuffer }) => { promise: Promise<PdfDoc> } };
 type PdfDoc = { numPages: number; getPage: (n: number) => Promise<PdfPage> };
-type PdfPage = { getViewport: (o: { scale: number }) => { width: number; height: number }; render: (o: { canvasContext: CanvasRenderingContext2D; viewport: unknown }) => { promise: Promise<void> } };
+type PdfPage = { getViewport: (o: { scale: number }) => { width: number; height: number; convertToViewportPoint: (x: number, y: number) => [number, number] }; getTextContent: () => Promise<{ items: Array<{ str?: string; transform?: number[]; width?: number; height?: number }> }>; render: (o: { canvasContext: CanvasRenderingContext2D; viewport: unknown }) => { promise: Promise<void> } };
+
+export type PdfFieldHintKind = 'signature' | 'initials' | 'date' | 'name' | 'email' | 'company' | 'title' | 'text';
+export type PdfFieldHint = { kind: PdfFieldHintKind; page: number; x: number; y: number; label: string };
+
+/** Finds only stand-alone field labels. Suggestions always need sender review. */
+export async function findPdfFieldHints(data: ArrayBuffer): Promise<PdfFieldHint[]> {
+  const pdf = await pdfjs();
+  const document = await pdf.getDocument({ data: data.slice(0) }).promise;
+  const names: Record<string, PdfFieldHintKind> = {
+    signature: 'signature', 'sign here': 'signature', initials: 'initials', 'date signed': 'date',
+    'full name': 'name', name: 'name', email: 'email', 'email address': 'email',
+    company: 'company', 'company name': 'company', 'job title': 'title', title: 'title', text: 'text',
+  };
+  const hints: PdfFieldHint[] = [];
+  for (let pageNo = 1; pageNo <= document.numPages; pageNo++) {
+    const page = await document.getPage(pageNo);
+    const viewport = page.getViewport({ scale: 1 });
+    const content = await page.getTextContent();
+    for (const item of content.items) {
+      if (!item.str || !item.transform || item.transform.length < 6) continue;
+      const label = item.str.trim().replace(/^F\d{2}\s+/i, '').replace(/[\s:._-]+$/u, '').replace(/\s+/gu, ' ');
+      const kind = names[label.toLowerCase()];
+      if (!kind) continue;
+      const [left, baseline] = viewport.convertToViewportPoint(item.transform[4]!, item.transform[5]!);
+      const width = kind === 'signature' ? .26 : kind === 'initials' ? .1 : kind === 'email' ? .3 : .26;
+      const height = kind === 'signature' ? .06 : kind === 'initials' ? .05 : .04;
+      const x = Math.max(0, Math.min(1 - width, left / viewport.width));
+      const y = Math.max(0, Math.min(1 - height, (baseline + 10) / viewport.height));
+      hints.push({ kind, page: pageNo, x, y, label });
+      if (hints.length >= 80) return hints;
+    }
+  }
+  return hints;
+}
 
 let loader: Promise<PdfJs> | null = null;
 function pdfjs(): Promise<PdfJs> {

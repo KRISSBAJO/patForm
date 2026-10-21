@@ -136,6 +136,8 @@
 .sc__eventList strong{color:#203b2b;font-weight:650;text-transform:capitalize}
 .sc__eventList span{min-width:0;color:#566f5e;overflow-wrap:anywhere}
 .sc__sealDetails{position:relative;color:#315944;font-size:12px}
+.sc__trustLabel{color:#315944;font-size:12px;font-weight:650}
+.sc__trustLabel--test{color:#835a25}
 .sc__sealDetails summary{cursor:pointer;font-weight:650;list-style-position:inside}
 .sc__sealDetails[open]{flex-basis:100%;padding-top:8px}
 .sc__sealDetails p{display:grid;grid-template-columns:150px minmax(0,1fr);gap:10px;margin:8px 0 0;color:#536d5c}
