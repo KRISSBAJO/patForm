@@ -163,6 +163,7 @@ test('an imported person accepts their invitation and keeps their place in the o
 
     // The invitation goes to someone already in the directory; accepting adopts that row.
     const sent = await invite(pool, { principal: w.admin, email: e('new2'), workspaceRole: 'read_only' });
+    await assert.rejects(invite(pool, { principal: w.admin, email: e('new2'), workspaceRole: 'read_only' }), /already has an open invitation/);
     const accepted = await acceptInvitation(pool, { token: sent.token, displayName: 'Nia N.', password: 'a-long-enough-password' });
     assert.equal(accepted.actorId, before[0]!.id, 'the same person, not a second account');
     const chart = await orgChart(pool, w.admin);

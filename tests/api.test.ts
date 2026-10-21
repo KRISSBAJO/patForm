@@ -157,6 +157,12 @@ test('an account link points at the configured app, and says when it stops worki
   assert.ok(invitation.text.includes('https://patform.logaxp.com/join/inv_abc'));
   assert.ok(!invitation.text.includes('.com//join'));
   assert.match(invitation.subject, /Dana invited you to Operations/);
+  assert.match(invitation.html, /Accept invitation/);
+  assert.match(invitation.html, /href="https:\/\/patform\.logaxp\.com\/join\/inv_abc"/);
+  assert.ok(!invitation.html.includes('>https://patform.logaxp.com/join/inv_abc<'), 'the token is a button target, not a frightening visible URL');
+  const escaped = invitationMail({ to: 'a@example.test', token: 'inv_abc', workspaceName: '<script>alert(1)</script>', invitedBy: 'Dana', workspaceRole: 'read_only', message: '<b>note</b>', expiresAt });
+  assert.ok(!escaped.html.includes('<script>'));
+  assert.ok(!escaped.html.includes('<b>note</b>'));
 
   // Three things every one of these has to say: it is single use, when it
   // expires, and what to do if it was not you.

@@ -2612,6 +2612,7 @@ alter table employee_record add column if not exists phone text;
 alter table employee_record add column if not exists personal_email text;
 alter table employee_record add column if not exists date_of_birth date;
 alter table employee_record add column if not exists address text;
+alter table employee_record add column if not exists address_detail jsonb;
 alter table employee_record add column if not exists emergency_name text;
 alter table employee_record add column if not exists emergency_phone text;
 alter table employee_record add column if not exists emergency_relation text;

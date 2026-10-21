@@ -47,6 +47,9 @@ test('the record: HR sees everything, the manager the basics and manager notes, 
     const w = await workspace(pool, new Engine(pool));
     // The person fills in their own contact and emergency details; HR-only fields are refused.
     await updateProfile(pool, w.staff.p, w.staffId, { phone: '+234 800 000 0001', emergencyName: 'Ada Staff', emergencyPhone: '+234 800 000 0002', emergencyRelation: 'Sister' });
+    await updateProfile(pool, w.staff.p, w.staffId, { addressDetail: { line1: '1108 Berry Street', line2: 'Suite 2', city: 'Nashville', region: 'TN', postalCode: '37201', country: 'US' } });
+    await assert.rejects(updateProfile(pool, w.staff.p, w.staffId, { addressDetail: { city: 'Nashville', country: 'US' } }), /address needs line 1/);
+    await assert.rejects(updateProfile(pool, w.staff.p, w.staffId, { emergencyPhone: '123' }), /valid phone number/);
     await assert.rejects(updateProfile(pool, w.staff.p, w.staffId, { grade: 'G7' }), /only HR can change grade/);
     await assert.rejects(updateProfile(pool, w.manager.p, w.staffId, { phone: 'x' }), /only HR or the person/);
     await updateProfile(pool, w.hrClerk.p, w.staffId, { grade: 'G7', workPattern: 'Mon–Fri, 9 to 5', dateOfBirth: '1990-04-12' });
@@ -65,6 +68,8 @@ test('the record: HR sees everything, the manager the basics and manager notes, 
     assert.equal(hrView.tier, 'hr');
     assert.equal(hrView.profile.grade, 'G7');
     assert.equal(hrView.profile.emergency_name, 'Ada Staff');
+    assert.equal(hrView.profile.address, '1108 Berry Street, Suite 2, Nashville, TN, 37201, US');
+    assert.deepEqual(hrView.profile.address_detail, { line1: '1108 Berry Street', line2: 'Suite 2', city: 'Nashville', region: 'TN', postalCode: '37201', country: 'US' });
     assert.equal(hrView.profile.manager_name, 'Mo Manager');
     assert.deepEqual(hrView.files.map((f: { title: string }) => f.title).sort(), ['Confirmation letter', 'Employment contract']);
     assert.ok(hrView.events.some((e: { title: string }) => e.title.startsWith('Verbal warning')));

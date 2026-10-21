@@ -43,6 +43,7 @@ export interface PlatformMail {
   to: string;
   subject: string;
   text: string;
+  html?: string;
   tenantId?: string | null;
   actorId?: string | null;
   /** Stable per-send, so a provider-side retry is deduplicated like any other. */
@@ -93,6 +94,7 @@ export async function sendPlatformMail(pool: Pool, mail: PlatformMail): Promise<
       to: [mail.to],
       subject: mail.subject,
       text: mail.text,
+      ...(mail.html ? { html: mail.html } : {}),
       ...(mail.attachments?.length ? { attachments: mail.attachments } : {}),
       idempotencyKey: mail.idempotencyKey,
       tags: { kind: mail.kind },
@@ -154,6 +156,8 @@ export async function sentRecently(
 // when it stops working, and what to do if it was not them — which is the line
 // that turns a stolen-address incident into a report instead of a breach.
 
+const escapeHtml = (value: string) => value.replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]!);
+
 export function invitationMail(args: {
   to: string;
   token: string;
@@ -162,9 +166,15 @@ export function invitationMail(args: {
   workspaceRole: string;
   message?: string;
   expiresAt: string;
-}): { subject: string; text: string } {
+}): { subject: string; text: string; html: string } {
   const link = `${appUrl()}/join/${args.token}`;
   const note = args.message?.trim() ? `\n${args.invitedBy} added a note:\n\n  ${args.message.trim()}\n` : '';
+  const workspace = escapeHtml(args.workspaceName);
+  const sender = escapeHtml(args.invitedBy);
+  const role = escapeHtml(args.workspaceRole.replace(/_/g, ' '));
+  const safeLink = escapeHtml(link);
+  const safeNote = args.message?.trim() ? `<div style="margin:24px 0;padding:16px 18px;background:#f4f7f2;border-radius:12px;color:#364b3c;white-space:pre-wrap">${escapeHtml(args.message.trim())}</div>` : '';
+  const expires = escapeHtml(new Date(args.expiresAt).toUTCString());
   return {
     subject: `${args.invitedBy} invited you to ${args.workspaceName}`,
     text: `${args.invitedBy} has invited you to join ${args.workspaceName} on Patform as a ${args.workspaceRole}.
@@ -176,6 +186,7 @@ Set up your account here:
 The link works once, and expires ${new Date(args.expiresAt).toUTCString()}.
 
 If you were not expecting this, you can ignore it — nothing happens until you follow the link.`,
+    html: `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Join ${workspace} on Patform</title></head><body style="margin:0;padding:0;background:#f5f6f2;font-family:Arial,Helvetica,sans-serif;color:#18241e"><table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background:#f5f6f2"><tr><td align="center" style="padding:32px 16px"><table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="max-width:560px;background:#ffffff;border:1px solid #dce5dc;border-radius:18px"><tr><td style="padding:32px 34px"><div style="font-size:17px;font-weight:700;color:#17623e;letter-spacing:-.02em">☑ Patform</div><div style="margin-top:28px;font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#578168">Workspace invitation</div><h1 style="margin:10px 0 14px;font-family:Georgia,serif;font-size:30px;line-height:1.17;color:#152a1d">You're invited to ${workspace}</h1><p style="margin:0;font-size:16px;line-height:1.6;color:#425248">${sender} invited you to join ${workspace} as ${role}. Set up your account to see your work and onboarding tasks.</p>${safeNote}<table role="presentation" cellpadding="0" cellspacing="0" style="margin-top:28px"><tr><td bgcolor="#17623e" style="border-radius:9px"><a href="${safeLink}" style="display:inline-block;padding:15px 24px;color:#ffffff;text-decoration:none;font-size:15px;font-weight:700">Accept invitation →</a></td></tr></table><p style="margin:24px 0 0;font-size:13px;line-height:1.5;color:#66766c">This link works once and expires ${expires}.</p><div style="height:1px;background:#e5ebe4;margin:28px 0 20px"></div><p style="margin:0;font-size:12px;line-height:1.6;color:#6a766d">If you were not expecting this invitation, you can ignore this email. The link points to Patform; check that your browser opens <strong>${escapeHtml(new URL(appUrl()).hostname)}</strong> before entering a password.</p></td></tr></table><p style="max-width:560px;margin:20px 0 0;font-size:11px;color:#7a877e">Patform · Work in one place</p></td></tr></table></body></html>`,
   };
 }
 

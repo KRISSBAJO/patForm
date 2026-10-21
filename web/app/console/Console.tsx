@@ -32,6 +32,7 @@ import { CONSOLE_MODULES, moduleIsEnabled, type ConsoleModule } from './module-c
 import { ReauthDialog } from './stepup';
 import { PasswordInput } from './PasswordInput';
 import { Icon } from './Icon';
+import { AccessState } from './AccessState';
 
 /**
  * Calls go to the same origin so the HttpOnly, SameSite=Lax session cookie is
@@ -478,6 +479,7 @@ export function Console() {
   if (!session) return <SignIn onSignedIn={() => void refreshSession()} signedOut={wasSignedOut} />;
 
   const me = session.actor;
+  const beforeFirstDay = me.workspace_role === 'pre_hire' && view !== 'hr' && view !== 'security';
   const counts = work?.counts ?? { arrived: 0, needsYou: 0, late: 0, failed: 0 };
   const currentProcess = session.processes.find((process) => process.process_key === processKey);
   const recentProcesses = recentProcessKeys
@@ -570,7 +572,10 @@ export function Console() {
         if ((event.target as HTMLElement).closest('button, a')) setMobileNavOpen(false);
       }}>
         <div className="cs__mobileNavHead"><strong>{area ? area.name : 'Menu'}</strong><button type="button" aria-label="Close menu" onClick={() => setMobileNavOpen(false)}>×</button></div>
-        {area ? <ModuleRail area={area} sections={moduleSections} current={moduleSection} onPick={setModuleSection} onBack={() => setView('home')} /> : <>
+        {beforeFirstDay ? <nav className="cs__nav cs__nav--module" aria-label="Available before your first day">
+          <button type="button" className="cs__navItem" onClick={() => setView('hr')}><NavIcon name="people"/><span className="cs__navText">Before you start</span></button>
+          <button type="button" className="cs__navItem" onClick={() => setView('security')}><NavIcon name="integrations"/><span className="cs__navText">Your account</span></button>
+        </nav> : area ? <ModuleRail area={area} sections={moduleSections} current={moduleSection} onPick={setModuleSection} onBack={() => setView('home')} /> : <>
         <nav className="cs__nav" aria-label="Console">
 <button type="button" className="cs__navItem" title="Home" aria-current={view === 'home' ? 'page' : undefined} onClick={() => { setActivationTarget(null); setView('home'); }}><NavIcon name="home"/><span className="cs__navText">Home</span></button>
 <div className="cs__railModules" ref={modulesRef}>
@@ -590,9 +595,9 @@ export function Console() {
 </nav>
         </>}
 <div className="cs__railBottom">
-<div className="cs__railSettings" ref={settingsRef}><button type="button" className="cs__navItem" title="Settings" aria-expanded={settingsOpen} aria-controls="console-settings-menu" aria-current={['health','held','integrations','data','modules','organisation'].includes(view) ? 'page' : undefined} onClick={event => { event.stopPropagation(); setSettingsOpen(!settingsOpen); }}><NavIcon name="integrations"/><span className="cs__navText">Settings</span></button>
+{me.workspace_role !== 'pre_hire' && <div className="cs__railSettings" ref={settingsRef}><button type="button" className="cs__navItem" title="Settings" aria-expanded={settingsOpen} aria-controls="console-settings-menu" aria-current={['health','held','integrations','data','modules','organisation'].includes(view) ? 'page' : undefined} onClick={event => { event.stopPropagation(); setSettingsOpen(!settingsOpen); }}><NavIcon name="integrations"/><span className="cs__navText">Settings</span></button>
 {settingsOpen && <nav id="console-settings-menu" className="cs__settingsMenu" aria-label="Workspace settings">{([{key:'health',label:'Automation health',icon:'health'},{key:'held',label:'Held submissions',icon:'held'},{key:'integrations',label:'Integrations',icon:'integrations'},{key:'data',label:'Import & data',icon:'data'},{key:'modules',label:'Modules & workspace',icon:'processes'},{key:'organisation',label:'Organisation & authority',icon:'people'},{key:'approvals',label:'Approval policies',icon:'work'}] as const).map(item => <button type="button" key={item.key} aria-current={view === item.key ? 'page' : undefined} onClick={() => { setActivationTarget(null); setView(item.key); setSettingsOpen(false); }}><NavIcon name={item.icon}/><span>{item.label}</span>{item.key === 'held' && heldCount > 0 && <span className="cs__navCount">{heldCount}</span>}</button>)}</nav>}
-</div>
+</div>}
 <button type="button" className="cs__navItem cs__railExpand" title={railExpanded ? 'Collapse sidebar' : 'Expand sidebar'} aria-label={railExpanded ? 'Collapse sidebar' : 'Expand sidebar'} aria-expanded={railExpanded} onClick={() => setRailExpanded(!railExpanded)}><span aria-hidden="true">{railExpanded ? '‹' : '›'}</span><span className="cs__navText">{railExpanded ? 'Collapse' : 'Expand'}</span></button>
 </div>
       </aside>
@@ -664,10 +669,19 @@ export function Console() {
           </button>}
         </div>
 
-        {area && <ModuleStrip sections={moduleSections} current={moduleSection} onPick={setModuleSection} />}
-        <div className={`cs__body ${view === 'home' ? 'cs__body--home' : ''} ${view === 'security' ? 'cs__body--security' : ''} ${view === 'ask' ? 'cs__body--ask' : ''} ${view === 'record' ? 'cs__body--record' : ''} ${view === 'health' ? 'cs__body--health' : ''} ${view === 'dashboard' ? 'cs__body--dashboard' : ''} ${view === 'people' ? 'cs__body--people' : ''} ${view === 'records' ? 'cs__body--records' : ''} ${view === 'work' ? 'cs__body--work' : ''} ${view === 'processes' ? 'cs__body--processes' : ''} ${view === 'held' ? 'cs__body--held' : ''} ${view === 'integrations' ? 'cs__body--integrations' : ''} ${view === 'data' ? 'cs__body--data' : ''} ${view === 'modules' || view === 'organisation' || view === 'approvals' || view === 'expenses' || view === 'procurement' || view === 'hr' || view === 'appraisals' || view === 'operations' || view === 'compliance' || view === 'sign' || view === 'meetings' || view === 'general_approvals' ? 'cs__body--integrations' : ''} ${view === 'meetings' || view === 'hr' || view === 'expenses' || view === 'procurement' || view === 'appraisals' || view === 'approvals' || view === 'general_approvals' ? 'cs__body--wide' : ''}`}>
+        {area && !beforeFirstDay && <ModuleStrip sections={moduleSections} current={moduleSection} onPick={setModuleSection} />}
+        <div className={`cs__body ${beforeFirstDay ? 'cs__body--access' : ''} ${view === 'home' ? 'cs__body--home' : ''} ${view === 'security' ? 'cs__body--security' : ''} ${view === 'ask' ? 'cs__body--ask' : ''} ${view === 'record' ? 'cs__body--record' : ''} ${view === 'health' ? 'cs__body--health' : ''} ${view === 'dashboard' ? 'cs__body--dashboard' : ''} ${view === 'people' ? 'cs__body--people' : ''} ${view === 'records' ? 'cs__body--records' : ''} ${view === 'work' ? 'cs__body--work' : ''} ${view === 'processes' ? 'cs__body--processes' : ''} ${view === 'held' ? 'cs__body--held' : ''} ${view === 'integrations' ? 'cs__body--integrations' : ''} ${view === 'data' ? 'cs__body--data' : ''} ${view === 'modules' || view === 'organisation' || view === 'approvals' || view === 'expenses' || view === 'procurement' || view === 'hr' || view === 'appraisals' || view === 'operations' || view === 'compliance' || view === 'sign' || view === 'meetings' || view === 'general_approvals' ? 'cs__body--integrations' : ''} ${view === 'meetings' || view === 'hr' || view === 'expenses' || view === 'procurement' || view === 'appraisals' || view === 'approvals' || view === 'general_approvals' ? 'cs__body--wide' : ''}`}>
           <div className="cs__left">
-            {view === 'home' ? (
+            {beforeFirstDay ? (
+              <AccessState
+                eyebrow="BEFORE YOUR FIRST DAY"
+                title="Your workspace is getting ready."
+                description={`You’re signed in to ${me.workspace_name}. Your onboarding tasks, documents and profile are available now. The rest of the workspace opens after your start date and the required checks are complete.`}
+                steps={['Complete the tasks assigned to you in HR.', 'Review any documents and finish your profile.', 'HR completes the remaining checks and activates your workspace role.']}
+                primary={{ label: 'Continue onboarding', onClick: () => setView('hr') }}
+                secondary={{ label: 'Your account', onClick: () => setView('security') }}
+              />
+            ) : view === 'home' ? (
               <HomeView name={me.display_name} workspace={me.workspace_name} modules={session.modules ?? []} onView={(next) => setView(next as typeof view)} onOpenModules={() => setModulesOpen(true)} onOpenRecord={(id) => void open(id)} />
             ) : view === 'record' && record ? (
               <RecordPage
@@ -793,12 +807,7 @@ export function Console() {
                 }}
               />
             ) : error ? (
-              <div className="cs__panel">
-                <div className="cs__empty">
-                  <strong>Refused.</strong>
-                  <div style={{ marginTop: 6, fontSize: 13 }}>{error}</div>
-                </div>
-              </div>
+              <AccessState eyebrow="WORKSPACE ACCESS" title="This area isn’t available yet." description={error} primary={{ label: 'Back to home', onClick: () => setView('home') }} />
             ) : (
               <>
                 <section className="mw__intro"><div><span className="db__eyebrow">YOUR QUEUE</span><h2>{counts.needsYou ? `${counts.needsYou} ${counts.needsYou === 1 ? 'item needs' : 'items need'} your attention` : 'You’re all caught up'}</h2><p>{counts.needsYou ? 'Review the next decisions and tasks in your queue.' : 'There are no decisions or tasks waiting on you in this process.'}</p></div><button type="button" className="mw__browse" onClick={() => setView('records')}>Browse records <span aria-hidden="true">→</span></button></section>
@@ -831,7 +840,7 @@ export function Console() {
 
           {/* The record page carries its own side column; two of them would
               be a column of cards about a different subject. */}
-          {view !== 'home' && view !== 'record' && view !== 'health' && view !== 'security' && view !== 'ask' && view !== 'dashboard' && view !== 'people' && view !== 'records' && view !== 'work' && view !== 'processes' && view !== 'held' && view !== 'integrations' && view !== 'data' && (
+          {!beforeFirstDay && view !== 'home' && view !== 'record' && view !== 'health' && view !== 'security' && view !== 'ask' && view !== 'dashboard' && view !== 'people' && view !== 'records' && view !== 'work' && view !== 'processes' && view !== 'held' && view !== 'integrations' && view !== 'data' && (
           <div className="cs__right">
             {!processKey ? null : health ? (
               <div className="cs__card">

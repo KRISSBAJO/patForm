@@ -456,14 +456,20 @@ export async function startOnboarding(pool: Pool, principal: Principal, body: Re
   if (branchId) { const { rows: b } = await pool.query('select 1 from hr_branch where id = $1 and tenant_id = $2 and active', [branchId, w.tenantId]); if (!b[0]) throw new InvalidInput('no such branch'); }
   const location = text(body.location, 120) || null;
   const probationEnd = day(body.probationEnd, 'probationEnd');
+  if (probationEnd && probationEnd < startDate) throw new InvalidInput('probation end must be after the start date');
   const managerId = body.managerId ? id(body.managerId, 'managerId') : null;
   const unitId = body.unitId ? id(body.unitId, 'unitId') : null;
   const hiringId = body.hiringId ? id(body.hiringId, 'hiringId') : null;
   const out = await inTransaction(pool, async (client) => {
     await client.query('select id from tenant where id = $1 for update', [w.tenantId]);
     const { rows: existing } = await client.query<{ id: string; active: boolean; workspace_role: string }>('select id, active, workspace_role from actor where tenant_id = $1 and lower(email) = $2', [w.tenantId, email]);
-    if (existing[0]?.active && existing[0].workspace_role !== 'pre_hire') throw new InvalidInput('someone with that email already works here');
+    const existingMember = Boolean(existing[0]?.active && existing[0].workspace_role !== 'pre_hire');
+    if (existingMember && body.onboardExisting !== true) throw new InvalidInput('this email already belongs to a member; choose onboarding for an existing member');
     if (existing[0] && !existing[0].active) throw new InvalidInput('that email belongs to a deactivated member; reactivate them on the People page for a rehire');
+    if (existing[0]) {
+      const { rows: openCases } = await client.query('select 1 from lifecycle_case c join employee_record e on e.id = c.employee_id where e.tenant_id = $1 and lower(e.email) = $2 and c.kind = $3 and c.status = $4 limit 1', [w.tenantId, email, 'onboarding', 'open']);
+      if (openCases.length) throw new InvalidInput('onboarding is already open for this member');
+    }
     if (hiringId) {
       const { rows: h } = await client.query<{ headcount: number; filled: number; status: string }>('select headcount, filled, status from hiring_requisition where id = $1 and tenant_id = $2 for update', [hiringId, w.tenantId]);
       if (!h[0]) throw new InvalidInput('no such hiring request');
@@ -479,8 +485,9 @@ export async function startOnboarding(pool: Pool, principal: Principal, body: Re
       const { rows: u } = await client.query('select 1 from org_unit where id = $1 and tenant_id = $2', [unitId, w.tenantId]);
       if (!u[0]) throw new InvalidInput('no such unit');
     }
-    await client.query('update actor set org_unit_id = coalesce($2, org_unit_id), position_title = coalesce($3, position_title) where id = $1', [actorId, unitId, text(body.title, 120) || null]);
+    await client.query('update actor set display_name = $2, org_unit_id = coalesce($3, org_unit_id), position_title = coalesce($4, position_title) where id = $1', [actorId, name, unitId, text(body.title, 120) || null]);
     if (managerId) {
+      if (managerId === actorId) throw new InvalidInput('a person cannot be their own manager');
       const { rows: m } = await client.query('select 1 from actor where id = $1 and tenant_id = $2 and active', [managerId, w.tenantId]);
       if (!m[0]) throw new InvalidInput('no such manager');
       await client.query(`update reporting_line set effective_to = greatest(now(), effective_from) where actor_id = $1 and kind = 'primary' and effective_to is null`, [actorId]);
@@ -488,18 +495,19 @@ export async function startOnboarding(pool: Pool, principal: Principal, body: Re
     }
     const { rows: rec } = await client.query<{ id: string }>(
       `insert into employee_record (tenant_id, actor_id, email, name, employment_type, status, location, start_date, probation_end, branch_id, grade)
-       values ($1, $2, $3, $4, $5, 'pre_hire', $6, $7, $8, $9, $10)
+       values ($1, $2, $3, $4, $5, $11, $6, $7, $8, $9, $10)
        on conflict (tenant_id, email) do update set actor_id = excluded.actor_id, name = excluded.name, employment_type = excluded.employment_type,
-         status = 'pre_hire', location = excluded.location, start_date = excluded.start_date, probation_end = excluded.probation_end, branch_id = excluded.branch_id, grade = excluded.grade, updated_at = now()
-       returning id`, [w.tenantId, actorId, email, name, employmentType, location, startDate, probationEnd, branchId, text(body.grade, 40) || null]);
+         status = excluded.status, location = excluded.location, start_date = excluded.start_date, probation_end = excluded.probation_end, branch_id = excluded.branch_id, grade = excluded.grade, updated_at = now()
+       returning id`, [w.tenantId, actorId, email, name, employmentType, location, startDate, probationEnd, branchId, text(body.grade, 40) || null, existingMember ? 'active' : 'pre_hire']);
     const tasks = await pickTemplate(client, w.tenantId, 'onboarding', employmentType, location);
     const caseId = await newCase(client, w, { employeeId: rec[0]!.id, kind: 'onboarding', effective: startDate, summary: text(body.summary, 500) || null, hiringId });
     await createTasks(client, caseId, tasks, { start: startDate });
+    if (existingMember) await client.query(`update lifecycle_task set status = 'done', note = 'Workspace access was already active before onboarding', completed_by = $2, completed_at = now() where case_id = $1 and action = 'activate_access'`, [caseId, w.actorId]);
     await recordWorkspaceAudit(client, { tenantId: w.tenantId, actorId: w.actorId, action: 'hr.onboarding_started', targetId: caseId, detail: { email, startDate, employmentType } });
-    return { caseId, employeeId: rec[0]!.id, actorId };
+    return { caseId, employeeId: rec[0]!.id, actorId, existingMember };
   });
   let invited: string | null = null;
-  if (body.sendInvitation === true) {
+  if (body.sendInvitation === true && !out.existingMember) {
     try { invited = (await invite(pool, { principal, email, workspaceRole: 'pre_hire' })).delivered; }
     catch (err) { invited = err instanceof Error ? err.message : String(err); }
   }

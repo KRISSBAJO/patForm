@@ -261,7 +261,7 @@ export async function inviteMany(
     if (!grantable.includes(role as WorkspaceRole)) return out('skipped', `you cannot give the ${role.replace(/_/g, ' ')} role`);
     if (memberOf.get(email) === true) return out('skipped', 'already in this workspace');
     if (memberOf.get(email) === false) return out('skipped', 'a deactivated member — reactivate them instead');
-    if (invited.has(email)) return out('ready', 'already invited; sending replaces the old link');
+    if (invited.has(email)) return out('skipped', 'already invited; wait for acceptance or revoke the old invitation first');
     return out('ready');
   });
 
@@ -364,6 +364,9 @@ export async function invite(
   }
 
   const sent = await inTransaction(pool, async (client) => {
+    // Serialize invitations within the workspace so simultaneous sends cannot
+    // both pass the pending-invitation check.
+    await client.query('select id from tenant where id = $1 for update', [tenantId]);
     const granterRole = await roleOf(client, principal.actorId);
     if (!grantableRoles(granterRole).includes(args.workspaceRole)) {
       // Otherwise every role holding `administer` is an escalation with one
@@ -384,8 +387,10 @@ export async function invite(
     if (existing[0]?.active && !imported) throw new InvalidInput('somebody with that address is already in this workspace');
     if (existing[0] && !existing[0].active) throw new InvalidInput('that address belongs to a deactivated member — reactivate them instead');
 
-    // One open invitation per address. A second would mean two valid links
-    // and a question about which role actually applies.
+    const { rows: pending } = await client.query('select 1 from invitation where tenant_id = $1 and email = $2 and accepted_at is null and revoked_at is null and expires_at > now() limit 1', [tenantId, email]);
+    if (pending.length) throw new InvalidInput('that address already has an open invitation; wait for acceptance or revoke it first');
+
+    // Expired links cannot be used; close them before making a fresh one.
     await client.query(
       `update invitation set revoked_at = now()
         where tenant_id = $1 and email = $2 and accepted_at is null and revoked_at is null`,
@@ -442,6 +447,7 @@ export async function invite(
     to: email,
     subject: mail.subject,
     text: mail.text,
+    html: mail.html,
     tenantId,
     actorId: principal.actorId,
     idempotencyKey: `invite:${sent.id}`,
@@ -540,8 +546,8 @@ export async function acceptInvitation(
 
     // An imported person already exists, with their manager and unit set;
     // accepting adopts that row rather than creating a second one.
-    const { rows: imported } = await client.query<{ id: string }>(
-      `select a.id from actor a
+    const { rows: imported } = await client.query<{ id: string; workspace_role: WorkspaceRole }>(
+      `select a.id, a.workspace_role from actor a
         where a.tenant_id = $1 and lower(a.email) = lower($2) and a.provisioned_by = 'import' and a.active
           and not exists (select 1 from credential c where c.actor_id = a.id)
         for update`,
@@ -550,7 +556,9 @@ export async function acceptInvitation(
     let actorId: string;
     if (imported[0]) {
       actorId = imported[0].id;
-      if (args.displayName.trim()) {
+      // HR has already recorded a pre-hire's official name. Accepting the link
+      // must not silently give their workspace identity a different name.
+      if (args.displayName.trim() && imported[0].workspace_role !== 'pre_hire') {
         await client.query('update actor set display_name = $2 where id = $1', [actorId, args.displayName.trim()]);
       }
     } else {
@@ -594,8 +602,14 @@ export async function listInvitations(pool: Pool, principal: Principal) {
   if (principal.kind !== 'actor') throw new Error('unreachable');
   const { rows } = await pool.query(
     `select i.id, i.email, i.workspace_role, i.expires_at, i.accepted_at, i.revoked_at, i.created_at,
-            a.display_name as invited_by
+            a.display_name as invited_by, mail.status as delivery_status
        from invitation i join actor a on a.id = i.invited_by
+       left join lateral (
+         select p.status from platform_email p
+          where p.tenant_id = i.tenant_id and p.kind = 'invitation'
+            and lower(p.recipient) = lower(i.email) and p.sent_at >= i.created_at
+          order by p.sent_at desc, p.id desc limit 1
+       ) mail on true
       where i.tenant_id = $1 order by i.created_at desc limit 100`,
     [principal.tenantId],
   );

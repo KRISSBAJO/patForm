@@ -17,6 +17,7 @@ import { recordWorkspaceAudit } from './authority.js';
 import { objectStore } from './object-store.js';
 import { readListQuery, runList, toCsv, type ListSpec } from './listing.js';
 import { balances, countryCode, currencyCode, currentManager, day, employeeFor, ensureLeaveTypes, hrSettings, id, num, ownedElsewhere, recordForActor, requireHr, requireHrAdmin, text, weekdays, who, type Who } from './hr.js';
+import { formatHrAddress, parseHrAddress } from './hr-address.js';
 
 const UUID = /^[0-9a-f-]{36}$/;
 const MAX_FILE = 5 * 1024 * 1024;
@@ -65,7 +66,7 @@ async function linkFor(pool: Pool, table: 'employee_file' | 'hr_document', rowId
 // ------------------------------------------------------------- the record
 
 const PROFILE_COLS = `e.id, e.actor_id, e.email, e.name, e.employment_type, e.status, e.location, e.start_date::text, e.end_date::text, e.probation_end::text,
-  e.payroll_ref, e.external_ref, e.branch_id, b.name as branch_name, b.country as branch_country, b.currency as branch_currency, b.timezone as branch_timezone, e.phone, e.personal_email, e.date_of_birth::text, e.address, e.emergency_name, e.emergency_phone, e.emergency_relation, e.grade, e.work_pattern, e.bio,
+  e.payroll_ref, e.external_ref, e.branch_id, b.name as branch_name, b.country as branch_country, b.currency as branch_currency, b.timezone as branch_timezone, e.phone, e.personal_email, e.date_of_birth::text, e.address, e.address_detail, e.emergency_name, e.emergency_phone, e.emergency_relation, e.grade, e.work_pattern, e.bio,
   e.created_at, e.updated_at, a.workspace_role, a.active, a.position_title, a.org_unit_id, u.name as unit_name,
   (select m.id from reporting_line r join actor m on m.id = r.manager_id where r.actor_id = e.actor_id and r.kind = 'primary' and r.effective_from <= now() and (r.effective_to is null or r.effective_to > now()) limit 1) as manager_id,
   (select m.display_name from reporting_line r join actor m on m.id = r.manager_id where r.actor_id = e.actor_id and r.kind = 'primary' and r.effective_from <= now() and (r.effective_to is null or r.effective_to > now()) limit 1) as manager_name`;
@@ -105,7 +106,7 @@ export async function myProfile(pool: Pool, principal: Principal) {
   return employeeDetail(pool, principal, employeeId);
 }
 
-const SELF_FIELDS = ['phone', 'personalEmail', 'address', 'emergencyName', 'emergencyPhone', 'emergencyRelation', 'bio'] as const;
+const SELF_FIELDS = ['phone', 'personalEmail', 'address', 'addressDetail', 'emergencyName', 'emergencyPhone', 'emergencyRelation', 'bio'] as const;
 const HR_FIELDS = [...SELF_FIELDS, 'dateOfBirth', 'grade', 'workPattern', 'location', 'startDate', 'endDate', 'probationEnd', 'externalRef', 'employmentType'] as const;
 const COL: Record<string, string> = { phone: 'phone', personalEmail: 'personal_email', address: 'address', emergencyName: 'emergency_name', emergencyPhone: 'emergency_phone', emergencyRelation: 'emergency_relation', bio: 'bio', dateOfBirth: 'date_of_birth', grade: 'grade', workPattern: 'work_pattern', location: 'location', startDate: 'start_date', endDate: 'end_date', probationEnd: 'probation_end', externalRef: 'external_ref', employmentType: 'employment_type' };
 const LIMIT: Record<string, number> = { phone: 40, personalEmail: 254, address: 500, emergencyName: 120, emergencyPhone: 40, emergencyRelation: 60, bio: 1000, grade: 40, workPattern: 120, location: 120, externalRef: 120, employmentType: 20 };
@@ -117,18 +118,44 @@ export async function updateProfile(pool: Pool, principal: Principal, employeeId
     const e = await employeeFor(client, w.tenantId, employeeId);
     const tier = await tierFor(client, w, e);
     if (tier === 'manager') throw new InvalidInput('only HR or the person themselves can change the record');
+    if ('address' in body && 'addressDetail' in body) throw new InvalidInput('send either the old address text or structured address fields');
     const allowed: readonly string[] = tier === 'hr' ? HR_FIELDS : SELF_FIELDS;
     const sets: string[] = []; const params: unknown[] = [e.id]; const changed: string[] = [];
     for (const [k, v] of Object.entries(body)) {
       if (!allowed.includes(k)) { if ((HR_FIELDS as readonly string[]).includes(k)) throw new InvalidInput(`only HR can change ${k}`); continue; }
       let value: unknown;
+      if (k === 'addressDetail') {
+        const address = parseHrAddress(v);
+        params.push(address ? JSON.stringify(address) : null);
+        sets.push(`address_detail = $${params.length}::jsonb`);
+        params.push(formatHrAddress(address));
+        sets.push(`address = $${params.length}`);
+        changed.push(k);
+        continue;
+      }
+      if (k === 'address') {
+        value = text(v, LIMIT[k]!) || null;
+        params.push(value);
+        sets.push(`address = $${params.length}`, 'address_detail = null');
+        changed.push(k);
+        continue;
+      }
       if (['dateOfBirth', 'startDate', 'endDate', 'probationEnd'].includes(k)) value = day(v, k);
       else if (k === 'employmentType') { value = text(v, 20); if (!['employee', 'contractor', 'intern'].includes(value as string)) throw new InvalidInput('employmentType must be employee, contractor or intern'); }
       else if (k === 'personalEmail') { value = text(v, 254).toLowerCase() || null; if (value && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(value as string)) throw new InvalidInput('personalEmail must be an email address'); }
+      else if (['phone', 'emergencyPhone'].includes(k)) {
+        const phone = text(v, LIMIT[k]!) || null;
+        if (phone && (!/^\+?[\d\s().-]+$/.test(phone) || phone.replace(/\D/g, '').length < 7 || phone.replace(/\D/g, '').length > 15)) throw new InvalidInput(`${k} needs a valid phone number, including country code when relevant`);
+        value = phone;
+      }
       else value = text(v, LIMIT[k]!) || null;
       params.push(value); sets.push(`${COL[k]} = $${params.length}`); changed.push(k);
     }
     if (!sets.length) throw new InvalidInput('nothing to change');
+    if (body.dateOfBirth && String(body.dateOfBirth) > new Date().toISOString().slice(0, 10)) throw new InvalidInput('date of birth cannot be in the future');
+    const start = body.startDate === undefined ? e.start_date : day(body.startDate, 'startDate');
+    if (body.probationEnd && start && String(body.probationEnd) < String(start)) throw new InvalidInput('probation end must be after the start date');
+    if (body.endDate && start && String(body.endDate) < String(start)) throw new InvalidInput('end date must be after the start date');
     await client.query(`update employee_record set ${sets.join(', ')}, updated_at = now() where id = $1`, params);
     await client.query(`insert into employee_event (tenant_id, employee_id, kind, title, detail, visibility, created_by) values ($1, $2, 'change', $3, $4, 'hr', $5)`,
       [w.tenantId, e.id, tier === 'self' ? 'Updated their own details' : 'Record updated by HR', changed.join(', '), w.actorId]);

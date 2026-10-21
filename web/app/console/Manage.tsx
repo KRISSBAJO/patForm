@@ -139,6 +139,7 @@ interface Invitation {
   expires_at: string;
   accepted_at: string | null;
   revoked_at: string | null;
+  delivery_status?: 'sent' | 'queued' | 'failed' | 'skipped' | null;
 }
 
 export function PeopleView({ canAdminister, onInvite }: { canAdminister: boolean; onInvite: () => void }) {
@@ -323,6 +324,7 @@ export function PeopleView({ canAdminister, onInvite }: { canAdminister: boolean
                     <span className="pp__meta">
                       {roleName(i.workspace_role)} · invited by {i.invited_by} · expires {days === 0 ? 'today' : `in ${days} day${days === 1 ? '' : 's'}`}
                     </span>
+                    <span className="pp__meta">Email: {i.delivery_status === 'sent' ? 'accepted by mail provider' : i.delivery_status === 'queued' ? 'queued by mail provider' : i.delivery_status === 'failed' ? 'sending failed' : i.delivery_status === 'skipped' ? 'sending suppressed' : 'delivery status unavailable'}. Inbox delivery cannot be confirmed here.</span>
                   </span>
                   <button
                     type="button"

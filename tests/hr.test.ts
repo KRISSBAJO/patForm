@@ -9,7 +9,7 @@ import { runScenarios } from '../src/runtime/scenarios.js';
 import { setModule } from '../src/runtime/modules.js';
 import { managerOf, orgChart, reportingHistory, setManager } from '../src/runtime/org.js';
 import { resolveSession, startSession } from '../src/runtime/auth.js';
-import { listMembers } from '../src/runtime/workspace.js';
+import { acceptInvitation, invite, listMembers } from '../src/runtime/workspace.js';
 import { saveBudget } from '../src/runtime/expenses.js';
 import {
   acknowledgeDocument, addCaseNote, cancelLeave, completeTask, createDocument, decideLeave, decideProbation, exceptTask, hrSummary, leaveToApprove,
@@ -66,6 +66,24 @@ const taskBy = async (pool: Pool, p: Principal, caseId: string, key: string) => 
   return c.tasks.find((t) => t.key === key)!;
 };
 
+test('an existing member can enter HR onboarding without losing sign-in access or receiving a duplicate invitation', { skip: !localDatabase }, async () => {
+  const pool = createPool(3);
+  try {
+    const w = await workspace(pool, new Engine(pool));
+    const { rows: actors } = await pool.query<{ email: string }>('select email from actor where id = $1', [w.staff.id]);
+    const email = actors[0]!.email;
+    await assert.rejects(startOnboarding(pool, w.hrClerk.p, { email, name: 'Bajo Gab', startDate: addDays(2) }), /choose onboarding for an existing member/);
+    const result = await startOnboarding(pool, w.hrClerk.p, { email, name: 'Bajo Gab', startDate: addDays(2), managerId: w.manager.id, employmentType: 'contractor', onboardExisting: true, sendInvitation: true });
+    assert.equal(result.existingMember, true);
+    assert.equal(result.invitation, null);
+    const { rows } = await pool.query<{ workspace_role: string; display_name: string; status: string }>('select a.workspace_role, a.display_name, e.status from actor a join employee_record e on e.actor_id = a.id where a.id = $1', [w.staff.id]);
+    assert.deepEqual(rows[0], { workspace_role: 'read_only', display_name: 'Bajo Gab', status: 'active' });
+    const c = (await listCases(pool, w.hrClerk.p)).find((item) => item.id === result.caseId)!;
+    assert.equal(c.tasks.find((task) => task.action === 'activate_access')?.status, 'done');
+    await assert.rejects(startOnboarding(pool, w.hrClerk.p, { email, name: 'Bajo Gab', startDate: addDays(2), onboardExisting: true }), /onboarding is already open/);
+  } finally { await pool.end(); }
+});
+
 test('acceptance 1 and 4, JRN-01: a future employee does only their own tasks; teams see no pay; access waits for checks and the start date', { skip: !localDatabase }, async () => {
   const pool = createPool(3);
   try {
@@ -75,6 +93,10 @@ test('acceptance 1 and 4, JRN-01: a future employee does only their own tasks; t
     // Only HR starts an onboarding.
     await assert.rejects(startOnboarding(pool, w.manager.p, { email, name: 'Nora New', startDate: today() }), /only HR/);
     const ob = await startOnboarding(pool, w.hrClerk.p, { email, name: 'Nora New', startDate: addDays(3), managerId: w.manager.id, location: 'Lagos', probationEnd: addDays(90) });
+    const invitation = await invite(pool, { principal: w.owner.p, email, workspaceRole: 'pre_hire' });
+    await acceptInvitation(pool, { token: invitation.token, displayName: 'A different name', password: 'a-long-enough-password' });
+    const { rows: names } = await pool.query<{ display_name: string }>('select display_name from actor where id = $1', [ob.actorId]);
+    assert.equal(names[0]!.display_name, 'Nora New', 'joining cannot silently replace the name HR recorded');
     await setCompensation(pool, w.hrAdmin.p, ob.employeeId, { amount: 4800000, currency: 'NGN', effectiveFrom: addDays(3), reason: 'Offer letter' });
 
     // The pre-hire: signed in, holding no capability, seeing only their own task.

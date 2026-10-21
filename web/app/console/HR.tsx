@@ -7,6 +7,7 @@ import { Illustration, type IllustrationName } from './illustrations';
 import { postJson } from './stepup';
 import { COUNTRIES, CURRENCIES, Choice, F, Sheet, SheetSection, TIMEZONES, WEEKDAYS, money, readFileAsBase64 } from './sheet';
 import { DataTable } from './datatable';
+import { HrAddressFields, addressFromForm, addressToForm } from './HrAddressFields';
 
 /*
  * HR (PRD Module 7). Everyone: my tasks, leave, documents and profile; the
@@ -98,6 +99,8 @@ function PersonPage({ id, onBack, admin, branches, act, busy, mine }: { id: stri
   const [tab, setTab] = useState<'overview' | 'timeline' | 'leave' | 'files' | 'documents' | 'pay' | 'notes'>('overview');
   const [sheet, setSheet] = useState<null | 'edit' | 'note' | 'file' | 'pay' | 'adjust' | 'branch' | 'cert'>(null);
   const [f, setForm] = useState<Record<string, string>>({});
+  const [addressEditor, setAddressEditor] = useState(false);
+  const [profileError, setProfileError] = useState('');
   const v = (k: string) => f[k] ?? '';
   const set = (k: string, val: string) => setForm((x) => ({ ...x, [k]: val }));
   const [file, setFile] = useState<File | null>(null);
@@ -111,7 +114,7 @@ function PersonPage({ id, onBack, admin, branches, act, busy, mine }: { id: stri
   const branch = branches.find((b) => b.id === p.branch_id);
   const cur = branch?.currency ?? '';
   const todayIso = new Date().toISOString().slice(0, 10);
-  const openEdit = () => { setForm({ phone: String(p.phone ?? ''), personalEmail: String(p.personal_email ?? ''), address: String(p.address ?? ''), emergencyName: String(p.emergency_name ?? ''), emergencyPhone: String(p.emergency_phone ?? ''), emergencyRelation: String(p.emergency_relation ?? ''), bio: String(p.bio ?? ''), dateOfBirth: String(p.date_of_birth ?? ''), grade: String(p.grade ?? ''), workPattern: String(p.work_pattern ?? ''), location: String(p.location ?? ''), startDate: String(p.start_date ?? ''), endDate: String(p.end_date ?? ''), probationEnd: String(p.probation_end ?? ''), externalRef: String(p.external_ref ?? ''), employmentType: String(p.employment_type ?? 'employee') }); setSheet('edit'); };
+  const openEdit = () => { setForm({ phone: String(p.phone ?? ''), personalEmail: String(p.personal_email ?? ''), emergencyName: String(p.emergency_name ?? ''), emergencyPhone: String(p.emergency_phone ?? ''), emergencyRelation: String(p.emergency_relation ?? ''), bio: String(p.bio ?? ''), dateOfBirth: String(p.date_of_birth ?? ''), grade: String(p.grade ?? ''), workPattern: String(p.work_pattern ?? ''), location: String(p.location ?? ''), startDate: String(p.start_date ?? ''), endDate: String(p.end_date ?? ''), probationEnd: String(p.probation_end ?? ''), externalRef: String(p.external_ref ?? ''), employmentType: String(p.employment_type ?? 'employee'), ...addressToForm(p.address_detail) }); setAddressEditor(Boolean(p.address_detail) || !p.address); setProfileError(''); setSheet('edit'); };
   const tabs: [typeof tab, string, number | null][] = [['overview', 'Overview', null], ['timeline', 'Timeline', d.timeline.length], ['leave', 'Leave', null]];
   if (!mgr) tabs.push(['files', 'Files', d.files.length], ['documents', 'Documents', d.documents.length]);
   if (hr && admin) tabs.push(['pay', 'Pay', null]);
@@ -192,7 +195,15 @@ function PersonPage({ id, onBack, admin, branches, act, busy, mine }: { id: stri
       <ul className="mx__list">{d.events.map((e) => <li key={e.id}><span className={`hr__tlDot k-${e.kind}`} style={{ margin: '0 4px' }} /><div className="mx__main"><strong>{e.title}</strong><small>{e.kind} · {day(e.occurred_on)}{e.by ? ` · ${e.by}` : ''}{e.detail ? ` · ${e.detail}` : ''}</small></div><Pill s={e.visibility} text={{ hr: 'HR only', manager: 'Managers', employee: 'Shared with them' }[e.visibility]} /></li>)}{!d.events.length && empty('inbox', 'No notes', 'Recognition, training, warnings and milestones, each with who may see it.')}</ul></div>}
 
     {sheet === 'edit' && <Sheet eyebrow={name} title={self ? 'My details' : 'Edit the record'} subtitle={self ? 'Your contact and emergency details. HR keeps the employment details.' : 'Name, status and payroll reference keep their own paths; everything else is here.'} onClose={() => setSheet(null)}
-      footer={<><small className="mx__tiny">Every change is logged on the timeline.</small><button type="button" className="mx__btn mx__btn--ghost" onClick={() => setSheet(null)}>Cancel</button><button type="button" className="mx__btn" disabled={busy === 'profile'} onClick={() => run('profile', async () => { const body: Record<string, string> = {}; const keys = self ? ['phone', 'personalEmail', 'address', 'emergencyName', 'emergencyPhone', 'emergencyRelation', 'bio'] : Object.keys(f); for (const k of keys) body[k] = f[k] ?? ''; await postJson(`/api/hr/employees/${eid}/profile`, body); return 'Saved.'; })}>Save</button></>}>
+      footer={<><small className="mx__tiny">Every change is logged on the timeline.</small><button type="button" className="mx__btn mx__btn--ghost" onClick={() => setSheet(null)}>Cancel</button><button type="button" className="mx__btn" disabled={busy === 'profile'} onClick={() => {
+        setProfileError('');
+        const address = addressFromForm(f);
+        if (addressEditor && Object.values(address).some(Boolean) && (!address.line1.trim() || !address.city.trim() || !address.country)) { setProfileError('Enter a street address, city and country, or leave all address fields empty.'); return; }
+        for (const key of ['phone', 'emergencyPhone']) { const phone = v(key).trim(); if (phone && (!/^\+?[\d\s().-]+$/.test(phone) || phone.replace(/\D/g, '').length < 7 || phone.replace(/\D/g, '').length > 15)) { setProfileError(`${key === 'phone' ? 'Phone' : 'Emergency phone'} needs 7 to 15 digits. Include the country code when relevant.`); return; } }
+        if (v('personalEmail') && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v('personalEmail'))) { setProfileError('Enter a valid personal email address.'); return; }
+        if (hr && v('startDate') && v('probationEnd') && v('probationEnd') < v('startDate')) { setProfileError('Probation end must be after the start date.'); return; }
+        run('profile', async () => { const body: Record<string, unknown> = {}; const keys = self ? ['phone', 'personalEmail', 'emergencyName', 'emergencyPhone', 'emergencyRelation', 'bio'] : Object.keys(f).filter((k) => !k.startsWith('addr_')); for (const k of keys) body[k] = f[k] ?? ''; if (addressEditor) body.addressDetail = address; await postJson(`/api/hr/employees/${eid}/profile`, body); return 'Saved.'; });
+      }}>Save</button></>}>
       {hr && <SheetSection title="Employment" hint="Type, grade, location and dates.">
         <F label="Type" wide><Choice value={v('employmentType')} onChange={(x) => set('employmentType', x)} options={[['employee', 'Employee'], ['contractor', 'Contractor'], ['intern', 'Intern']]} /></F>
         <F label="Grade"><input value={v('grade')} onChange={(e) => set('grade', e.target.value)} placeholder="e.g. G7, Senior" /></F>
@@ -203,16 +214,19 @@ function PersonPage({ id, onBack, admin, branches, act, busy, mine }: { id: stri
         <F label="External reference" hint="the id in payroll or another system"><input value={v('externalRef')} onChange={(e) => set('externalRef', e.target.value)} /></F>
       </SheetSection>}
       <SheetSection title="Contact" hint="Where to reach them outside work.">
-        <F label="Phone"><input value={v('phone')} onChange={(e) => set('phone', e.target.value)} /></F>
+        <F label="Phone" hint="Include country code if outside your country"><input type="tel" autoComplete="tel" maxLength={40} value={v('phone')} onChange={(e) => set('phone', e.target.value)} /></F>
         <F label="Personal email"><input type="email" value={v('personalEmail')} onChange={(e) => set('personalEmail', e.target.value)} /></F>
         {hr && <F label="Date of birth"><input type="date" value={v('dateOfBirth')} onChange={(e) => set('dateOfBirth', e.target.value)} /></F>}
-        <F label="Home address" wide><textarea rows={2} value={v('address')} onChange={(e) => set('address', e.target.value)} /></F>
+      </SheetSection>
+      <SheetSection title="Home address" hint="Private to you and HR. Enter it in separate fields for mail and records.">
+        {!addressEditor && p.address ? <div className="mx__stack" style={{ gridColumn: '1 / -1' }}><span>{String(p.address)}</span><button type="button" className="mx__btn mx__btn--ghost mx__btn--sm" onClick={() => setAddressEditor(true)}>Replace with address fields</button></div> : <HrAddressFields form={f} set={set} />}
       </SheetSection>
       <SheetSection title="Emergency contact" hint="Who to call, and how they are related.">
         <F label="Name"><input value={v('emergencyName')} onChange={(e) => set('emergencyName', e.target.value)} /></F>
         <F label="Relationship"><input value={v('emergencyRelation')} onChange={(e) => set('emergencyRelation', e.target.value)} placeholder="Spouse, parent, friend…" /></F>
-        <F label="Phone" wide><input value={v('emergencyPhone')} onChange={(e) => set('emergencyPhone', e.target.value)} /></F>
+        <F label="Phone" hint="Include country code if needed" wide><input type="tel" autoComplete="off" maxLength={40} value={v('emergencyPhone')} onChange={(e) => set('emergencyPhone', e.target.value)} /></F>
       </SheetSection>
+      {profileError && <p role="alert" style={{ color: '#a52a20', margin: '0 24px 16px' }}>{profileError}</p>}
       <SheetSection title="About" hint="A line or two, shown on the record."><F label="Bio" wide><textarea rows={3} value={v('bio')} onChange={(e) => set('bio', e.target.value)} /></F></SheetSection>
     </Sheet>}
 
@@ -406,6 +420,8 @@ export function HRView({ onChanged, shell }: { onChanged?: () => void; shell?: M
     ] : []),
   ];
   const memberOptions = (members.data ?? []).filter((m) => m.active);
+  const onboardingMember = memberOptions.find((m) => m.email.toLowerCase() === f('oEmail').trim().toLowerCase());
+  const onboardingCase = (cases.data ?? []).find((c) => c.kind === 'onboarding' && c.status === 'open' && c.employee.email.toLowerCase() === f('oEmail').trim().toLowerCase());
   const leaveLeft = (leave.data?.balances ?? []).find((b) => !b.unlimited);
   const openPerson = (id: string) => { setPerson(id); if (hr) { setTab('people'); shell?.onSection?.('people'); } };
   const openLink = async (url: string) => { const r = await get<{ url: string }>(url); window.open(r.url, '_blank', 'noopener'); return 'Opened in a new tab.'; };
@@ -413,7 +429,10 @@ export function HRView({ onChanged, shell }: { onChanged?: () => void; shell?: M
   const taskRow = (t: MyTask) => <li key={t.id}>
     <span className={`mx__avatar ${t.blockedBy.length ? '' : 'mx__avatar--on'}`} style={{ marginLeft: 0 }}>{t.critical ? '!' : '✓'}</span>
     <div className="mx__main"><strong>{t.title}</strong><small>{KIND[t.kind] ?? t.kind} · {t.employee}{t.effectiveDate ? ` · ${day(t.effectiveDate)}` : ''}{t.blockedBy.length ? ` · waiting: ${t.blockedBy.join(', ')}` : ''}</small></div>
-    {t.blockedBy.length ? <Pill s="requested" text="Waiting" /> : <button type="button" className="mx__btn mx__btn--sm" disabled={busy === t.id} onClick={() => ask(t.id, `Note for "${t.title}" (optional)`, async (n) => { await postJson(`/api/hr/tasks/${t.id}/complete`, { note: n }); return `"${t.title}" done.`; })}>Mark done</button>}
+    {t.blockedBy.length ? <Pill s="requested" text="Waiting" /> : <>
+      {t.key === 'personal_details' && <button type="button" className="mx__btn mx__btn--sm" onClick={() => pickTab('profile')}>Fill in details</button>}
+      <button type="button" className={`mx__btn ${t.key === 'personal_details' ? 'mx__btn--ghost' : ''} mx__btn--sm`} disabled={busy === t.id} onClick={() => ask(t.id, `Note for "${t.title}" (optional)`, async (n) => { await postJson(`/api/hr/tasks/${t.id}/complete`, { note: n }); return `"${t.title}" done.`; })}>Mark done</button>
+    </>}
   </li>;
 
   const caseCard = (c: Case) => { const open = openCase === c.id; return <div key={c.id} className={`mx__card hr__case ${open ? 'is-open' : ''}`}>
@@ -646,12 +665,13 @@ export function HRView({ onChanged, shell }: { onChanged?: () => void; shell?: M
       </>}
     </div>
 
-    {sheet === 'onboarding' && <Sheet eyebrow="New joiner" title={f('oName') || 'Who is joining?'} subtitle="They get a pre-hire account with their own tasks only. Access opens on the first day once the checks are done." onClose={() => setSheet(null)} wide
-      footer={<><small className="mx__tiny">Tasks come from the onboarding template for their type and branch.</small><button type="button" className="mx__btn mx__btn--ghost" onClick={() => setSheet(null)}>Cancel</button><button type="button" className="mx__btn" disabled={busy === 'start' || !f('oName') || !f('oEmail') || !f('oStart')} onClick={() => done('start', async () => { const r = await postJson<{ invitation: string | null }>('/api/hr/cases/onboarding', { name: f('oName'), email: f('oEmail'), startDate: f('oStart'), employmentType: f('oType') || 'employee', location: f('oLoc'), managerId: f('oMgr') || undefined, title: f('oTitle'), grade: f('oGrade'), branchId: f('oBranch') || undefined, probationEnd: f('oProb') || undefined, hiringId: f('oHire') || undefined, sendInvitation: f('oInvite') === 'yes' }); return `Onboarding started.${r.invitation ? ` Invitation: ${r.invitation}.` : ''}`; })}>Start onboarding</button></>}>
+    {sheet === 'onboarding' && <Sheet eyebrow="New joiner" title={f('oName') || 'Who is joining?'} subtitle={onboardingMember ? 'This person already has workspace access. Their existing role stays in place while onboarding tasks are tracked.' : 'They get a pre-hire account with their own tasks only. Access opens on the first day once the checks are done.'} onClose={() => setSheet(null)} wide
+      footer={<><small className="mx__tiny">Tasks come from the onboarding template for their type and branch.</small><button type="button" className="mx__btn mx__btn--ghost" onClick={() => setSheet(null)}>Cancel</button><button type="button" className="mx__btn" disabled={busy === 'start' || !f('oName') || !f('oEmail') || !f('oStart') || Boolean(onboardingCase) || (Boolean(onboardingMember) && onboardingMember?.id === f('oMgr'))} onClick={() => done('start', async () => { const r = await postJson<{ invitation: string | null; existingMember: boolean }>('/api/hr/cases/onboarding', { name: f('oName'), email: f('oEmail'), startDate: f('oStart'), employmentType: f('oType') || 'employee', location: f('oLoc'), managerId: f('oMgr') || undefined, title: f('oTitle'), grade: f('oGrade'), branchId: f('oBranch') || undefined, probationEnd: f('oProb') || undefined, hiringId: f('oHire') || undefined, onboardExisting: Boolean(onboardingMember), sendInvitation: !onboardingMember && f('oInvite') === 'yes' }); return r.existingMember ? 'Onboarding started for the existing member. Their sign-in and workspace role are unchanged.' : `Onboarding started.${r.invitation ? ` Invitation: ${r.invitation}.` : ''}`; })}>{onboardingMember ? 'Start member onboarding' : 'Start onboarding'}</button></>}>
       <SheetSection title="Who" hint="Their name and the work email they will sign in with.">
         <F label="Full name"><input autoFocus required value={f('oName')} onChange={(e) => setF('oName', e.target.value)} /></F>
         <F label="Work email"><input type="email" required value={f('oEmail')} onChange={(e) => setF('oEmail', e.target.value)} /></F>
       </SheetSection>
+      {onboardingCase ? <p role="status" style={{ margin: '0 24px 16px', padding: '12px 16px', background: '#fff4ed', borderRadius: 12 }}>Onboarding is already in progress for this email. Open their case instead of creating another invitation.</p> : onboardingMember && <p role="status" style={{ margin: '0 24px 16px', padding: '12px 16px', background: '#edf5ef', borderRadius: 12 }}>Already in this workspace as {onboardingMember.display_name}. This will update their name and start the HR checklist. They can keep using their existing sign-in; no new invitation is needed.</p>}
       <SheetSection title="Role" hint="Where they sit and who they report to.">
         <F label="Job title"><input value={f('oTitle')} onChange={(e) => setF('oTitle', e.target.value)} /></F>
         <F label="Grade"><input value={f('oGrade')} onChange={(e) => setF('oGrade', e.target.value)} placeholder="optional" /></F>
@@ -665,7 +685,7 @@ export function HRView({ onChanged, shell }: { onChanged?: () => void; shell?: M
         <F label="Probation ends"><input type="date" value={f('oProb')} onChange={(e) => setF('oProb', e.target.value)} /></F>
         <F label="For hiring request" wide><select value={f('oHire')} onChange={(e) => setF('oHire', e.target.value)}><option value="">None</option>{(hiring.data ?? []).filter((h) => h.status === 'open').map((h) => <option key={h.id} value={h.id}>{h.reference} · {h.position} ({h.filled}/{h.headcount})</option>)}</select></F>
       </SheetSection>
-      <SheetSection title="Invitation"><F label="Email them now?" wide><Choice value={f('oInvite') === 'yes' ? 'yes' : 'no'} onChange={(x) => setF('oInvite', x)} options={[['no', 'Not yet'], ['yes', 'Send the invitation now']]} /></F></SheetSection>
+      {!onboardingMember && <SheetSection title="Invitation"><F label="Email them now?" wide><Choice value={f('oInvite') === 'yes' ? 'yes' : 'no'} onChange={(x) => setF('oInvite', x)} options={[['no', 'Not yet'], ['yes', 'Send the invitation now']]} /></F></SheetSection>}
     </Sheet>}
 
     {(sheet === 'offboarding' || sheet === 'urgent' || sheet === 'probation' || sheet === 'transfer') && <Sheet eyebrow={{ offboarding: 'Leaver', urgent: 'Urgent termination', probation: 'Probation review', transfer: 'Transfer or promotion' }[sheet]} title={{ offboarding: 'Someone is leaving', urgent: 'End employment now', probation: 'Review a probation', transfer: 'Change a role' }[sheet]} subtitle={{ urgent: 'Revokes all access immediately. The reason stays in a restricted HR note.', offboarding: 'Access is revoked on the last day, whatever else is outstanding.', transfer: 'Approvals go to the new manager from the effective date; the old line is kept in the history.', probation: 'The manager checks in and recommends; HR decides.' }[sheet]} onClose={() => setSheet(null)}
