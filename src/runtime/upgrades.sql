@@ -2408,11 +2408,12 @@ alter table sign_recipient add constraint sign_recipient_status_check check (sta
 alter table sign_field add column if not exists party_id uuid references sign_party(id);
 alter table sign_field add column if not exists slot int;
 alter table sign_field add column if not exists filled_by uuid references sign_recipient(id);
+alter table sign_field add column if not exists choices jsonb not null default '[]'::jsonb;
 alter table sign_field alter column recipient_id drop not null;
 alter table sign_field drop constraint if exists sign_field_owner_check;
 alter table sign_field add constraint sign_field_owner_check check (recipient_id is not null or (party_id is not null and slot is not null));
 alter table sign_field drop constraint if exists sign_field_kind_check;
-alter table sign_field add constraint sign_field_kind_check check (kind in ('signature', 'initials', 'date', 'name', 'text', 'title'));
+alter table sign_field add constraint sign_field_kind_check check (kind in ('signature', 'initials', 'date', 'name', 'text', 'title', 'email', 'company', 'checkbox', 'dropdown', 'radio'));
 
 -- The certificate seal applied to the finished file, when one is configured.
 alter table sign_envelope add column if not exists seal jsonb;

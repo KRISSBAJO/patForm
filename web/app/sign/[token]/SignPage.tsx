@@ -11,7 +11,7 @@ import { PdfPages, PageBox } from '../../../components/pdf-pages';
 import { SignatureField, type SignatureValue } from '../../../components/signature-field';
 import '../sign.css';
 
-type Field = { id: string; kind: 'signature' | 'initials' | 'date' | 'name' | 'text' | 'title'; page: number; x: number; y: number; width: number; height: number; required: boolean; label: string | null };
+type Field = { id: string; kind: 'signature' | 'initials' | 'date' | 'name' | 'text' | 'title' | 'email' | 'company' | 'checkbox' | 'dropdown' | 'radio'; page: number; x: number; y: number; width: number; height: number; required: boolean; label: string | null; choices: string[] };
 type View = { stage: 'verify' | 'sign' | 'signed' | 'completed' | 'closed'; title: string; workspace: string; sender: string | null; name: string; email: string; expiresAt: string; status?: string;
   finalizing?: boolean;
   message?: string | null; pages?: number; consented?: boolean; consentText?: string; fields?: Field[]; completedAt?: string;
@@ -68,11 +68,11 @@ export function SignPage({ token }: { token: string }) {
   if (!view) return <div className="ps"><div className="ps__main"><p>Loading…</p></div></div>;
 
   const fields = view.fields ?? [];
-  const filled = (f: Field) => f.kind === 'signature' ? Boolean(signature) : f.kind === 'initials' ? Boolean(initials) : f.kind === 'text' || (f.kind === 'title' && !view.signerTitle) ? Boolean(values[f.id]?.trim()) : true;
+  const filled = (f: Field) => f.kind === 'signature' ? Boolean(signature) : f.kind === 'initials' ? Boolean(initials) : f.kind === 'checkbox' ? values[f.id] === 'Yes' : ['text', 'dropdown', 'radio'].includes(f.kind) || (f.kind === 'title' && !view.signerTitle) || (f.kind === 'company' && !view.party) ? Boolean(values[f.id]?.trim()) : true;
   const missing = fields.filter((f) => f.required && !filled(f));
   const needsSignature = !fields.some((f) => f.kind === 'signature');
   const ready = Boolean(signature) && missing.length === 0 && (!view.party || authority);
-  const shown = (f: Field) => f.kind === 'signature' ? (signature ? signature.name : 'Sign') : f.kind === 'initials' ? (initials ? initials.name : 'Initials') : f.kind === 'date' ? new Date().toLocaleDateString() : f.kind === 'name' ? (signature?.name ?? view.name) : f.kind === 'title' ? (view.signerTitle ?? values[f.id] ?? 'Job title') : (values[f.id] || f.label || 'Text');
+  const shown = (f: Field) => f.kind === 'signature' ? (signature ? signature.name : 'Sign') : f.kind === 'initials' ? (initials ? initials.name : 'Initials') : f.kind === 'date' ? new Date().toLocaleDateString() : f.kind === 'name' ? (signature?.name ?? view.name) : f.kind === 'email' ? view.email : f.kind === 'company' && view.party ? view.party.name : f.kind === 'title' ? (view.signerTitle ?? values[f.id] ?? 'Job title') : f.kind === 'checkbox' ? (values[f.id] === 'Yes' ? '☑' : '☐') : (values[f.id] || f.label || (f.kind === 'dropdown' || f.kind === 'radio' ? 'Choose' : 'Text'));
 
   return <div className="ps">
     <header className="ps__top"><strong>Patform Sign</strong><span>{view.workspace}</span></header>
@@ -120,7 +120,7 @@ export function SignPage({ token }: { token: string }) {
         </div>
         {view.allowAttachments && <div className="ps__card"><h2 style={{ fontSize: 17, margin: '0 0 5px' }}>Supporting files</h2><p className="ps__muted">Add a PDF or image if the sender needs proof or a supporting document. Each file is checked before you can finish.</p><label className="ps__btn" style={{ display: 'inline-block', cursor: 'pointer' }}>+ Add a file<input type="file" accept="application/pdf,image/png,image/jpeg,.pdf,.png,.jpg,.jpeg" hidden disabled={busy || (view.attachments?.length ?? 0) >= 5} onChange={(ev) => { const file = ev.target.files?.[0]; ev.target.value = ''; if (!file) return; void act(async () => { if (file.size > 10 * 1024 * 1024) throw new Error('Choose a file of 10 MB or less.'); const response = await call<{ status: string }>(`${base}/attachment`, { method: 'POST', session, body: JSON.stringify({ filename: file.name, contentType: file.type || (file.name.toLowerCase().endsWith('.pdf') ? 'application/pdf' : ''), base64: await fileBase64(file) }) }); await load(session); setNote(response.status === 'clean' ? 'File attached.' : 'File attached. Its security check is still running; wait before finishing.'); }); }} /></label><ul className="ps__attachments">{(view.attachments ?? []).map((file) => <li key={file.id}><strong>{file.filename}</strong><small>Recorded with this agreement · {file.sha256.slice(0, 12)}…</small></li>)}</ul></div>}
         {pdf ? <PdfPages data={pdf} overlay={(page) => fields.filter((f) => f.page === page).map((f) =>
-          <PageBox key={f.id} x={f.x} y={f.y} width={f.width} height={f.height} color={filled(f) ? '#1d6b3a' : '#b26b00'} title={f.label ?? f.kind} onClick={f.kind === 'date' || f.kind === 'name' || (f.kind === 'title' && view.signerTitle) ? undefined : () => { setEditing(f); setDraft(f.kind === 'signature' ? signature ?? undefined : f.kind === 'initials' ? initials ?? undefined : values[f.id] ?? ''); }}>
+          <PageBox key={f.id} x={f.x} y={f.y} width={f.width} height={f.height} color={filled(f) ? '#1d6b3a' : '#b26b00'} title={f.label ?? f.kind} onClick={f.kind === 'date' || f.kind === 'name' || f.kind === 'email' || (f.kind === 'company' && view.party) || (f.kind === 'title' && view.signerTitle) ? undefined : () => { setEditing(f); setDraft(f.kind === 'signature' ? signature ?? undefined : f.kind === 'initials' ? initials ?? undefined : values[f.id] ?? ''); }}>
             {f.kind === 'signature' && signature?.method === 'drawn' ? <img src={signature.image} alt={`Signature of ${signature.name}`} style={{ maxWidth: '100%', maxHeight: '100%' }} /> : <span>{shown(f)}{f.required && !filled(f) ? ' *' : ''}</span>}
           </PageBox>)} /> : <p>Loading the document…</p>}
         <div className="ps__bar">
@@ -149,7 +149,10 @@ export function SignPage({ token }: { token: string }) {
       <h2 style={{ fontSize: 17, marginTop: 0 }}>{editing.kind === 'signature' ? 'Your signature' : editing.kind === 'initials' ? 'Your initials' : editing.label ?? 'Fill in'}</h2>
       {editing.kind === 'signature' || editing.kind === 'initials'
         ? <SignatureField id="ps-edit" value={draft} onChange={setDraft} />
-        : <input className="ps__input" autoFocus value={String(draft ?? '')} onChange={(e) => setDraft(e.target.value)} />}
+        : editing.kind === 'checkbox' ? <label className="ps__row"><input type="checkbox" checked={draft === 'Yes'} onChange={(e) => setDraft(e.target.checked ? 'Yes' : 'No')} />{editing.label ?? 'I confirm'}</label>
+        : editing.kind === 'dropdown' ? <select className="ps__input" autoFocus value={String(draft ?? '')} onChange={(e) => setDraft(e.target.value)}><option value="">Choose an option</option>{editing.choices.map((choice) => <option key={choice} value={choice}>{choice}</option>)}</select>
+        : editing.kind === 'radio' ? <div className="ps__choices">{editing.choices.map((choice) => <label key={choice} className="ps__row"><input type="radio" name="ps-field-choice" checked={draft === choice} onChange={() => setDraft(choice)} />{choice}</label>)}</div>
+        : <input className="ps__input" autoFocus maxLength={editing.kind === 'company' ? 160 : editing.kind === 'title' ? 120 : 500} value={String(draft ?? '')} onChange={(e) => setDraft(e.target.value)} />}
       <div className="ps__row" style={{ marginTop: 12, justifyContent: 'flex-end' }}>
         <button type="button" className="ps__btn" onClick={() => setEditing(null)}>Cancel</button>
         <button type="button" className="ps__btn ps__btn--primary" onClick={() => {

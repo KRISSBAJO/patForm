@@ -250,14 +250,26 @@ export async function createEnvelope(pool: Pool, principal: Principal, body: Rec
 /** Fields are placed on the pages as fractions of the page, from the top left, as the screen shows them. */
 export async function setFields(pool: Pool, principal: Principal, envelopeId: string, body: Record<string, unknown>) {
   return inTransaction(pool, async (client) => {
-    const { e } = await envelopeFor(client, principal, envelopeId, true);
-    if (e.status !== 'draft') throw new InvalidInput('fields can only change before the envelope is sent');
+    const { e, w } = await envelopeFor(client, principal, envelopeId, true);
+    if (e.created_by !== w.actorId && !govInTeam(w, 'legal')) throw new InvalidInput('only the sender or Legal can edit signing fields');
+    const correctionReason = text(body.correctionReason, 500);
+    if (e.status !== 'draft' && e.status !== 'sent') throw new InvalidInput('this envelope can no longer be edited');
+    if (e.status === 'sent') {
+      if (!correctionReason) throw new InvalidInput('explain why the sent fields are being corrected');
+      const signed = await client.query('select 1 from sign_recipient where envelope_id = $1 and status = $2 limit 1', [envelopeId, 'signed']);
+      if (signed.rowCount) throw new InvalidInput('someone has already signed; cancel and create a new envelope instead');
+    }
     const { rows: rec } = await client.query<{ id: string; role: string }>('select id, role from sign_recipient where envelope_id = $1', [envelopeId]);
     const { rows: prt } = await client.query<{ id: string; required_count: number }>('select id, required_count from sign_party where envelope_id = $1', [envelopeId]);
     const fields = (Array.isArray(body.fields) ? body.fields : []).map((x, i) => {
       const o = (x ?? {}) as Record<string, unknown>;
       const kind = text(o.kind, 20);
-      if (!['signature', 'initials', 'date', 'name', 'text', 'title'].includes(kind)) throw new InvalidInput(`field ${i + 1}: kind must be signature, initials, date, name, title or text`);
+      if (!['signature', 'initials', 'date', 'name', 'text', 'title', 'email', 'company', 'checkbox', 'dropdown', 'radio'].includes(kind)) throw new InvalidInput(`field ${i + 1}: unsupported field type`);
+      const choices = Array.isArray(o.choices) ? o.choices.map((choice) => text(choice, 80)) : [];
+      if (kind === 'dropdown' || kind === 'radio') {
+        if (choices.length < 2 || choices.length > 20 || choices.some((choice) => !choice) || new Set(choices.map((choice) => choice.toLowerCase())).size !== choices.length)
+          throw new InvalidInput(`field ${i + 1}: add 2 to 20 distinct choices`);
+      } else if (choices.length) throw new InvalidInput(`field ${i + 1}: only choice fields can have choices`);
       let r: { id: string } | null = null; let partyId: string | null = null; let slot: number | null = null;
       if (o.partyId) {
         const pp = prt.find((y) => y.id === o.partyId);
@@ -274,12 +286,25 @@ export async function setFields(pool: Pool, principal: Principal, envelopeId: st
       if (!(page >= 1 && page <= e.page_count)) throw new InvalidInput(`field ${i + 1}: the document has ${e.page_count} page(s)`);
       const [x0, y0, wd, ht] = [n('x'), n('y'), n('width'), n('height')];
       if (![x0, y0, wd, ht].every(Number.isFinite) || x0 < 0 || y0 < 0 || wd <= 0 || ht <= 0 || x0 + wd > 1.0001 || y0 + ht > 1.0001) throw new InvalidInput(`field ${i + 1} is off the page`);
-      return { recipientId: r?.id ?? null, partyId, slot, kind, page, x: x0, y: y0, width: wd, height: ht, required: o.required !== false, label: text(o.label, 120) || null };
+      return { recipientId: r?.id ?? null, partyId, slot, kind, page, x: x0, y: y0, width: wd, height: ht, required: o.required !== false, label: text(o.label, 120) || null, choices };
     });
     if (fields.length > 400) throw new InvalidInput('at most 400 fields');
+    const previous = e.status === 'sent' ? await client.query('select recipient_id, party_id, slot, kind, page, x, y, width, height, required, label, choices from sign_field where envelope_id = $1 order by page, y', [envelopeId]) : null;
     await client.query('delete from sign_field where envelope_id = $1', [envelopeId]);
-    for (const fl of fields) await client.query(`insert into sign_field (envelope_id, recipient_id, party_id, slot, kind, page, x, y, width, height, required, label) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
-      [envelopeId, fl.recipientId, fl.partyId, fl.slot, fl.kind, fl.page, fl.x, fl.y, fl.width, fl.height, fl.required, fl.label]);
+    for (const fl of fields) await client.query(`insert into sign_field (envelope_id, recipient_id, party_id, slot, kind, page, x, y, width, height, required, label, choices) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+      [envelopeId, fl.recipientId, fl.partyId, fl.slot, fl.kind, fl.page, fl.x, fl.y, fl.width, fl.height, fl.required, fl.label, JSON.stringify(fl.choices)]);
+    if (e.status === 'sent') {
+      await client.query(`update sign_recipient set status = 'waiting', token_hash = null, token_sealed = null, otp_hash = null,
+        otp_expires_at = null, otp_attempts = 0, session_hash = null, session_expires_at = null, verified_at = null,
+        consented_at = null, viewed_at = null, notified_at = null, last_reminded_at = null
+        where envelope_id = $1 and role = 'signer'`, [envelopeId]);
+      await client.query('delete from sign_embed_session where envelope_id = $1', [envelopeId]);
+      await event(client, envelopeId, null, 'fields_corrected', { by: w.actorId, reason: correctionReason, previous: previous?.rows, current: fields });
+      await recordWorkspaceAudit(client, { tenantId: w.tenantId, actorId: w.actorId, action: 'sign.fields_corrected', targetId: envelopeId, detail: { reason: correctionReason, previous: previous?.rows, current: fields } });
+      const from = await client.query<{ display_name: string; workspace: string }>('select a.display_name, t.name as workspace from actor a join tenant t on t.id = a.tenant_id where a.id = $1', [w.actorId]);
+      const notified = await notifyNext(client, e, `${from.rows[0]!.display_name} (${from.rows[0]!.workspace})`);
+      return { fields: fields.length, corrected: true, notified };
+    }
     return { fields: fields.length };
   });
 }
@@ -295,7 +320,7 @@ async function notifyNext(client: Client | Pool, e: EnvelopeRow, from: string) {
   for (const r of next.filter((p) => p.status === 'waiting')) {
     const t = token();
     await client.query(`update sign_recipient set status = 'sent', token_hash = $2, token_sealed = $3, notified_at = now() where id = $1`, [r.id, hash(t), seal(t, `sign_recipient:${r.id}`)]);
-    await mailer(client, { kind: 'signature_request', to: r.email, tenantId: e.tenant_id, idempotencyKey: `sign-request:${r.id}`,
+    await mailer(client, { kind: 'signature_request', to: r.email, tenantId: e.tenant_id, idempotencyKey: `sign-request:${r.id}:${hash(t).slice(0, 16)}`,
       subject: `Please sign: ${e.title}`,
       text: `Hello ${r.name},\n\n${from} has asked you to sign "${e.title}"${r.party ? ` on behalf of ${r.party}${r.title ? ` as ${r.title}` : ''}` : ''}.${e.message ? `\n\n${e.message}` : ''}\n\nReview and sign here: ${appUrl()}/sign/${t}\n\nThis link is personal to you; do not forward it. We will ${r.verify_by === 'email' ? 'email you a code' : r.verify_by === 'sms' ? 'text a code to your phone' : 'email you a code and text another to your phone'} to confirm it is you. It expires on ${e.expires_at.toISOString().slice(0, 10)}.\n\nSent with Patform Sign.` });
     await event(client, e.id, r.id, 'sent', { to: r.email });
@@ -473,10 +498,10 @@ export async function saveAgreementTemplate(pool: Pool, principal: Principal, en
   const party = await pool.query('select 1 from sign_party where envelope_id = $1 limit 1', [envelopeId]);
   if (party.rowCount) throw new InvalidInput('company-signatory rules need their own agreement; this role template supports named people');
   const { rows: docs } = await pool.query<{ file_id: string; filename: string }>('select file_id, filename from sign_envelope_document where envelope_id = $1 order by ordinal', [envelopeId]);
-  const { rows: boxes } = await pool.query<{ recipient_id: string; kind: string; page: number; x: number; y: number; width: number; height: number; required: boolean; label: string | null }>(
-    'select recipient_id, kind, page, x::float, y::float, width::float, height::float, required, label from sign_field where envelope_id = $1 order by page, y', [envelopeId]);
+  const { rows: boxes } = await pool.query<{ recipient_id: string; kind: string; page: number; x: number; y: number; width: number; height: number; required: boolean; label: string | null; choices: string[] }>(
+    'select recipient_id, kind, page, x::float, y::float, width::float, height::float, required, label, choices from sign_field where envelope_id = $1 order by page, y', [envelopeId]);
   if (!boxes.length) throw new InvalidInput('place the agreement fields before saving a template');
-  const fields = boxes.map((b) => ({ recipientIndex: recipients.findIndex((r) => r.id === b.recipient_id), kind: b.kind, page: b.page, x: b.x, y: b.y, width: b.width, height: b.height, required: b.required, label: b.label }));
+  const fields = boxes.map((b) => ({ recipientIndex: recipients.findIndex((r) => r.id === b.recipient_id), kind: b.kind, page: b.page, x: b.x, y: b.y, width: b.width, height: b.height, required: b.required, label: b.label, choices: b.choices }));
   if (fields.some((f) => f.recipientIndex < 0)) throw new InvalidInput('every template field must belong to a named role');
   const roles = recipients.map((r, i) => ({ label: labels[i], role: r.role, order: r.routing_order }));
   const documents = docs.map((d) => ({ ref: `gov-file:${d.file_id}`, name: d.filename }));
@@ -509,7 +534,7 @@ export async function bulkSendAgreement(pool: Pool, principal: Principal, body: 
   const batchKey = text(body.batchKey, 120);
   if (!UUID.test(templateId)) throw new InvalidInput('choose an agreement template');
   if (!/^[A-Za-z0-9_-]{8,120}$/.test(batchKey)) throw new InvalidInput('batchKey must be a stable identifier');
-  const { rows: templates } = await pool.query<{ id: string; name: string; documents: { ref: string; name: string }[]; roles: { label: string; role: 'signer' | 'cc'; order: number }[]; fields: { recipientIndex: number; kind: string; page: number; x: number; y: number; width: number; height: number; required: boolean; label: string | null }[]; routing: string }>(
+  const { rows: templates } = await pool.query<{ id: string; name: string; documents: { ref: string; name: string }[]; roles: { label: string; role: 'signer' | 'cc'; order: number }[]; fields: { recipientIndex: number; kind: string; page: number; x: number; y: number; width: number; height: number; required: boolean; label: string | null; choices?: string[] }[]; routing: string }>(
     'select id, name, documents, roles, fields, routing from sign_agreement_template where id = $1 and tenant_id = $2', [templateId, w.tenantId]);
   const template = templates[0];
   if (!template) throw new InvalidInput('no such agreement template');
@@ -565,7 +590,7 @@ export async function envelopeDetail(pool: Pool, principal: Principal, envelopeI
   const { rows: recipients } = await pool.query(
     `select r.id, r.name, r.email, r.role, r.routing_order, r.status, r.notified_at, r.viewed_at, r.verified_at, r.consented_at, r.signed_at, r.declined_at, r.decline_reason, r.last_reminded_at, r.title, r.verify_by, r.party_id, r.register_match, p.name as party
        from sign_recipient r left join sign_party p on p.id = r.party_id where r.envelope_id = $1 order by r.position nulls last, r.created_at, r.id`, [envelopeId]);
-  const { rows: fields } = await pool.query(`select id, recipient_id, party_id, slot, kind, page, x::float, y::float, width::float, height::float, required, label, (value is not null) as filled from sign_field where envelope_id = $1 order by page, y`, [envelopeId]);
+  const { rows: fields } = await pool.query(`select id, recipient_id, party_id, slot, kind, page, x::float, y::float, width::float, height::float, required, label, choices, (value is not null) as filled from sign_field where envelope_id = $1 order by page, y`, [envelopeId]);
   const { rows: events } = await pool.query(`select v.kind, v.detail, v.ip, v.occurred_at, r.name as recipient from sign_event v left join sign_recipient r on r.id = v.recipient_id where v.envelope_id = $1 order by v.id`, [envelopeId]);
   const { rows: parties } = await pool.query(
     `select p.id, p.name, p.required_count, p.authority_note, p.completed_at, p.register, p.register_required, (select count(*)::int from sign_recipient r where r.party_id = p.id and r.status = 'signed') as signed from sign_party p where p.envelope_id = $1 order by p.routing_order`, [envelopeId]);
@@ -716,7 +741,7 @@ export async function signerView(pool: Pool, t: string, session?: string) {
   if (!sessionOk(r, session)) return { ...base, stage: 'verify' as const };
   // Own boxes, and the company's boxes for the next signatory slot (the slot is fixed when signing).
   const { rows: fields } = await pool.query(
-    `select id, kind, page, x::float, y::float, width::float, height::float, required, label, slot from sign_field
+    `select id, kind, page, x::float, y::float, width::float, height::float, required, label, choices, slot from sign_field
       where recipient_id = $1 or (party_id = $2 and slot = $3) order by page, y, x`, [r.id, x.party_id, (party?.signed ?? 0) + 1]);
   const { rows: attachments } = r.allow_attachments ? await pool.query('select id, filename, byte_size, sha256, uploaded_at from sign_attachment where recipient_id = $1 order by uploaded_at', [r.id]) : { rows: [] };
   return { ...base, stage: 'sign' as const, message: r.message, pages: r.page_count, consented: Boolean(r.consented_at), consentText: CONSENT_TEXT,
@@ -847,8 +872,8 @@ export async function signDocument(pool: Pool, t: string, session: string | unde
     if (problem) throw new InvalidInput(problem);
     const initials = body.initials as SignatureValue | undefined;
     const values = (body.values && typeof body.values === 'object' ? body.values : {}) as Record<string, unknown>;
-    const { rows: fields } = await client.query<{ id: string; kind: string; required: boolean; label: string | null }>(
-      'select id, kind, required, label from sign_field where recipient_id = $1 or (party_id = $2 and slot = $3)', [r.id, x.party_id, slot]);
+    const { rows: fields } = await client.query<{ id: string; kind: string; required: boolean; label: string | null; choices: string[] }>(
+      'select id, kind, required, label, choices from sign_field where recipient_id = $1 or (party_id = $2 and slot = $3)', [r.id, x.party_id, slot]);
     if (fields.some((f) => f.kind === 'initials') && signatureProblem(initials)) throw new InvalidInput('add your initials');
     const today = new Date().toISOString().slice(0, 10);
     for (const f of fields) {
@@ -857,8 +882,17 @@ export async function signDocument(pool: Pool, t: string, session: string | unde
       else if (f.kind === 'initials') value = 'initials';
       else if (f.kind === 'date') value = today;
       else if (f.kind === 'name') value = signature.name.trim();
+      else if (f.kind === 'email') value = r.email;
       else if (f.kind === 'title') value = x.signer_title ?? (text(values[f.id], 120) || null);
-      else { value = text(values[f.id], 500) || null; if (!value && f.required) throw new InvalidInput(`fill in "${f.label ?? 'the text field'}"`); }
+      else if (f.kind === 'company') value = party?.name ?? (text(values[f.id], 160) || null);
+      else if (f.kind === 'checkbox') {
+        value = values[f.id] === true || values[f.id] === 'Yes' ? 'Yes' : 'No';
+        if (f.required && value !== 'Yes') throw new InvalidInput(`check "${f.label ?? 'the required box'}"`);
+      } else if (f.kind === 'dropdown' || f.kind === 'radio') {
+        value = text(values[f.id], 80) || null;
+        if (value && !f.choices.includes(value)) throw new InvalidInput(`choose a listed option for "${f.label ?? 'this field'}"`);
+      } else value = text(values[f.id], 500) || null;
+      if (f.required && !value) throw new InvalidInput(`fill in "${f.label ?? 'the required field'}"`);
       await client.query('update sign_field set value = $2, filled_at = now(), filled_by = $3 where id = $1', [f.id, value, r.id]);
     }
     await client.query(`update sign_recipient set status = 'signed', signed_at = now(), signature = $2, initials = $3, ip = $4, user_agent = $5, session_hash = null, party_slot = $6,

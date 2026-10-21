@@ -69,14 +69,20 @@ test('Patform Sign: a contract goes to two signers in order, each verified by em
     const [rSupplier, rOwner] = env.recipients;
     await assert.rejects(setFields(pool, w.staff.p, env.id, { fields: [{ recipientId: rSupplier, kind: 'signature', page: 3, x: 0.1, y: 0.1, width: 0.2, height: 0.05 }] }), /2 page/);
     await assert.rejects(setFields(pool, w.staff.p, env.id, { fields: [{ recipientId: rSupplier, kind: 'signature', page: 1, x: 0.9, y: 0.1, width: 0.3, height: 0.05 }] }), /off the page/);
-    await setFields(pool, w.staff.p, env.id, { fields: [
+    const layout = [
       { recipientId: rSupplier, kind: 'signature', page: 2, x: 0.1, y: 0.7, width: 0.3, height: 0.06 },
       { recipientId: rSupplier, kind: 'date', page: 2, x: 0.45, y: 0.72, width: 0.15, height: 0.03 },
       { recipientId: rSupplier, kind: 'text', page: 1, x: 0.1, y: 0.2, width: 0.3, height: 0.03, label: 'Company number' },
       { recipientId: rOwner, kind: 'signature', page: 2, x: 0.6, y: 0.7, width: 0.3, height: 0.06 },
-    ] });
+    ];
+    await setFields(pool, w.staff.p, env.id, { fields: layout });
     await sendEnvelope(pool, w.staff.p, env.id);
     assert.equal((await contractDetail(pool, w.staff.p, c.id)).contract.status, 'out_for_signature');
+    const oldLink = w.link(supplier.email)!;
+    await assert.rejects(setFields(pool, w.staff.p, env.id, { fields: layout }), /explain why/);
+    const correction = await setFields(pool, w.staff.p, env.id, { fields: layout, correctionReason: 'Move a box before signing' });
+    assert.equal(correction.corrected, true);
+    await assert.rejects(signerView(pool, oldLink), /not valid|no longer/);
     // In order: only the supplier has been asked so far.
     const t1 = w.link(supplier.email)!;
     assert.ok(t1);
@@ -102,6 +108,7 @@ test('Patform Sign: a contract goes to two signers in order, each verified by em
     await assert.rejects(signDocument(pool, t1, s1, { signature: { method: 'drawn', name: 'A' }, values: { [textField.id]: 'RC 12345' } }), /full name|Draw/);
     const first = await signDocument(pool, t1, s1, { signature: sig, values: { [textField.id]: 'RC 12345' } }, { ip: '203.0.113.7', userAgent: 'TestBrowser/1' });
     assert.deepEqual(first, { signed: true, completed: false });
+    await assert.rejects(setFields(pool, w.staff.p, env.id, { fields: layout, correctionReason: 'Too late' }), /already signed/);
     // Codes travel in the body only; subjects are logged.
     assert.ok(w.mails.filter((m) => m.kind === 'signature_code').every((m) => !/\d{6}/.test(m.subject)));
     await assert.rejects(signDocument(pool, t1, s1, { signature: sig }), /confirm it is you|already responded/);
@@ -117,7 +124,7 @@ test('Patform Sign: a contract goes to two signers in order, each verified by em
     assert.equal(d.envelope.status, 'completed');
     assert.match(d.envelope.final_sha256!, /^[0-9a-f]{64}$/);
     assert.deepEqual(d.events.map((e: { kind: string }) => e.kind).filter((k: string) => ['created', 'sent', 'verified', 'consented', 'signed', 'completed'].includes(k)),
-      ['created', 'sent', 'verified', 'consented', 'signed', 'sent', 'verified', 'consented', 'signed', 'completed']);
+      ['created', 'sent', 'sent', 'verified', 'consented', 'signed', 'sent', 'verified', 'consented', 'signed', 'completed']);
     // The contract is signed, with the sealed copy attached.
     const cd = await contractDetail(pool, w.staff.p, c.id);
     assert.equal(cd.contract.status, 'signed');
@@ -166,6 +173,11 @@ test('Patform Sign: two PDFs share one envelope and two people can sign the same
       [['agreement.pdf', 1, 2], ['schedule.pdf', 3, 1]]);
     await setFields(pool, w.staff.p, env.id, { fields: [
       { recipientId: env.recipients[0], kind: 'signature', page: 1, x: .1, y: .8, width: .25, height: .06 },
+      { recipientId: env.recipients[0], kind: 'email', page: 1, x: .1, y: .1, width: .3, height: .03 },
+      { recipientId: env.recipients[0], kind: 'company', page: 1, x: .1, y: .15, width: .3, height: .03, label: 'Employer' },
+      { recipientId: env.recipients[0], kind: 'checkbox', page: 1, x: .1, y: .2, width: .06, height: .04, label: 'Terms accepted' },
+      { recipientId: env.recipients[0], kind: 'dropdown', page: 1, x: .1, y: .25, width: .25, height: .04, label: 'Office', choices: ['Lagos', 'London'] },
+      { recipientId: env.recipients[0], kind: 'radio', page: 1, x: .1, y: .3, width: .25, height: .04, label: 'Employment type', choices: ['Full time', 'Part time'] },
       { recipientId: env.recipients[1], kind: 'signature', page: 2, x: .1, y: .8, width: .25, height: .06 },
       { recipientId: env.recipients[2], kind: 'signature', page: 3, x: .1, y: .8, width: .25, height: .06 },
     ] });
@@ -173,7 +185,8 @@ test('Patform Sign: two PDFs share one envelope and two people can sign the same
     const template = (await listAgreementTemplates(pool, w.staff.p)).find((t: { id: string }) => t.id === saved.id);
     assert.deepEqual(template.roles.map((role: { label: string }) => role.label), ['Employee', 'Manager', 'Witness']);
     assert.deepEqual(template.documents.map((doc: { name: string }) => doc.name), ['agreement.pdf', 'schedule.pdf']);
-    assert.deepEqual(template.fields.map((field: { recipientIndex: number; page: number }) => [field.recipientIndex, field.page]), [[0, 1], [1, 2], [2, 3]]);
+    assert.equal(template.fields.length, 8);
+    assert.deepEqual(template.fields.find((field: { kind: string }) => field.kind === 'dropdown').choices, ['Lagos', 'London']);
     const bulkRows = [0, 1].map((n) => ({ people: template.roles.map((role: { label: string }) => ({ name: `${role.label} ${n}`, email: `${role.label.toLowerCase()}-${n}-${stamp()}@sign.test` })) }));
     const batchKey = `agreement-${stamp()}`;
     assert.equal((await bulkSendAgreement(pool, w.staff.p, { templateId: saved.id, batchKey, rows: bulkRows, dryRun: true })).ready, 2);
@@ -205,7 +218,12 @@ test('Patform Sign: two PDFs share one envelope and two people can sign the same
     mem.scans.set(storedAttachment[0]!.storage_key, 'scanning');
     await assert.rejects(signDocument(pool, t1, s1, { signature: { method: 'typed', name: r1.name, style: 'flowing' } }), /still being checked/);
     mem.scans.set(storedAttachment[0]!.storage_key, 'clean');
-    await signDocument(pool, t1, s1, { signature: { method: 'typed', name: r1.name, style: 'flowing' } });
+    const signerFields = (await signerView(pool, t1, s1) as { fields: { id: string; kind: string }[] }).fields;
+    const fieldId = (kind: string) => signerFields.find((field) => field.kind === kind)!.id;
+    const filledValues = { [fieldId('company')]: 'Northwind Ltd', [fieldId('checkbox')]: 'Yes', [fieldId('dropdown')]: 'Lagos', [fieldId('radio')]: 'Full time' };
+    await assert.rejects(signDocument(pool, t1, s1, { signature: { method: 'typed', name: r1.name, style: 'flowing' }, values: { ...filledValues, [fieldId('checkbox')]: 'No' } }), /check.*Terms accepted/);
+    await assert.rejects(signDocument(pool, t1, s1, { signature: { method: 'typed', name: r1.name, style: 'flowing' }, values: { ...filledValues, [fieldId('dropdown')]: 'Unknown' } }), /listed option/);
+    await signDocument(pool, t1, s1, { signature: { method: 'typed', name: r1.name, style: 'flowing' }, values: filledValues });
     await assert.rejects(resolveEmbedSession(pool, embedToken), /expired|no longer active/);
     assert.equal(w.link(r3.email), null);
     const t2 = w.link(correctedFirstEmail)!; const s2 = await signIn(pool, t2, correctedFirstEmail, w.code); await giveConsent(pool, t2, s2);

@@ -85,7 +85,10 @@ export async function sealPdf(original: Buffer, input: SealInput): Promise<SealO
     const box = { x: cb.x + f.x * cb.width, y: cb.y + cb.height - (f.y + f.height) * cb.height, w: f.width * cb.width, h: f.height * cb.height };
     if (f.kind === 'signature' && r.signature) await drawSignature(doc, page, r.signature, box, script);
     else if (f.kind === 'initials' && r.initials) await drawSignature(doc, page, r.initials, box, script);
-    else {
+    else if (f.kind === 'checkbox') {
+      page.drawRectangle({ x: box.x + 2, y: box.y + Math.max(0, (box.h - 13) / 2), width: 13, height: 13, borderWidth: 0.8, borderColor: ink });
+      if (f.value === 'Yes') page.drawText('X', { x: box.x + 4, y: box.y + Math.max(0, (box.h - 11) / 2), size: 10, font: bold, color: ink });
+    } else {
       const s = f.value;
       const size = fitText(regular, s, box.w * 0.95, Math.min(box.h * 0.7, 11));
       page.drawText(s, { x: box.x + 2, y: box.y + (box.h - size) / 2 + size * 0.2, size, font: regular, color: rgb(0, 0, 0) });

@@ -87,6 +87,7 @@
 .sc__palette { border-right: 1px solid #dce5da; }.sc__inspector { border-left: 1px solid #dce5da; }
 .sc__paletteLabel, .sc__inspector label { display: grid; gap: 8px; color: #45654f; font: 700 10px var(--ui); letter-spacing: .08em; }
 .sc__palette select, .sc__palette input, .sc__inspector select, .sc__inspector input { width: 100%; min-width: 0; height: 40px; padding: 8px 10px; border: 1px solid #d6e0d4; border-radius: 8px; background: #fafcf9; color: #193d2a; font: 500 12px var(--ui); letter-spacing: 0; }
+.sc__inspector textarea { width: 100%; min-width: 0; padding: 10px; border: 1px solid #d6e0d4; border-radius: 8px; background: #fafcf9; color: #193d2a; font: 500 12px/1.5 var(--ui); resize: vertical; }
 .sc__paletteGroup { display: grid; gap: 3px; padding-top: 12px; border-top: 1px solid #e6ece4; }.sc__paletteGroup > span { margin-bottom: 7px; color: #8a9a8d; font: 700 10px var(--ui); letter-spacing: .1em; }
 .sc__paletteGroup button { display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 8px; border: 1px solid transparent; border-radius: 9px; background: transparent; text-align: left; cursor: grab; }
 .sc__paletteGroup button:hover, .sc__paletteGroup button.is-current { background: #f0f7f1; border-color: #d5e7d8; }.sc__paletteGroup button:active { cursor: grabbing; }
