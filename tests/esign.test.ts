@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { PDFDocument } from 'pdf-lib';
 import { createPool, type Pool } from '../src/runtime/db.js';
 import { Engine } from '../src/runtime/engine.js';
@@ -213,5 +214,67 @@ test('Patform Sign: codes are limited, links are personal, declining closes the 
     const key = [...mem.objects.keys()].find((k) => k.endsWith(up5.id))!;
     mem.objects.set(key, { bytes: Buffer.concat([pdf, Buffer.from('x')]), type: 'application/pdf' });
     await assert.rejects(createEnvelope(pool, w.staff.p, { documentRef: up5.reference, title: 'Tampered', recipients: [a] }), /does not match/);
+  } finally { setSignMailerForTests(null); setObjectStoreForTests(undefined); await pool.end(); }
+});
+
+test('Patform Sign retries a final PDF storage failure without losing the last signature', { skip: !localDatabase }, async () => {
+  const pool = createPool(3); const engine = new Engine(pool);
+  const mem = memoryObjectStore(); setObjectStoreForTests(mem.store);
+  try {
+    const w = await setup(pool, engine);
+    const pdf = await twoPagePdf();
+    const up = await uploadGovFile(pool, w.staff.p, { purpose: 'signing', filename: 'retry.pdf', base64: pdf.toString('base64') });
+    const signer = { name: 'Ada Signer', email: `ada-${stamp()}@sign.test` };
+    const env = await createEnvelope(pool, w.staff.p, { documentRef: up.reference, title: 'Retry final copy', recipients: [signer] });
+    await sendEnvelope(pool, w.staff.p, env.id);
+    const token = w.link(signer.email)!;
+    const session = await signIn(pool, token, signer.email, w.code);
+    await giveConsent(pool, token, session);
+    let failOnce = true;
+    setObjectStoreForTests({ ...mem.store, async put(key, bytes, type, meta) {
+      if (key.startsWith('gov/files/') && failOnce) { failOnce = false; throw new Error('temporary storage outage'); }
+      await mem.store.put(key, bytes, type, meta);
+    } });
+    const response = await signDocument(pool, token, session, { signature: { method: 'typed', name: signer.name, style: 'flowing' } });
+    assert.deepEqual(response, { signed: true, completed: false, finalizing: true });
+    assert.equal((await envelopeDetail(pool, w.staff.p, env.id)).envelope.status, 'finalizing');
+    assert.equal((await signerView(pool, token)).stage, 'signed');
+    await sweepSignatures(pool);
+    const detail = await envelopeDetail(pool, w.staff.p, env.id);
+    assert.equal(detail.envelope.status, 'completed');
+    assert.equal(detail.events.filter((e: { kind: string }) => e.kind === 'signed').length, 1);
+    assert.equal(detail.events.filter((e: { kind: string }) => e.kind === 'completed').length, 1);
+    assert.equal((await verifyFingerprint(pool, { base64: (await finalDocument(pool, token)).toString('base64') })).valid, true);
+  } finally { setSignMailerForTests(null); setObjectStoreForTests(undefined); await pool.end(); }
+});
+
+test('Patform Sign routes a four-signer document in order and gives the copy recipient the completed PDF', { skip: !localDatabase }, async () => {
+  const pool = createPool(3); const engine = new Engine(pool);
+  const mem = memoryObjectStore(); setObjectStoreForTests(mem.store);
+  try {
+    const w = await setup(pool, engine);
+    const pdf = process.env.SIGN_TEST_PDF ? readFileSync(process.env.SIGN_TEST_PDF) : await twoPagePdf();
+    const up = await uploadGovFile(pool, w.staff.p, { purpose: 'signing', filename: 'test-contract-4-signers.pdf', base64: pdf.toString('base64') });
+    const people = Array.from({ length: 4 }, (_, i) => ({ name: `Test Signer ${i + 1}`, email: `four-${i + 1}-${stamp()}@sign.test`, order: i + 1 }));
+    const copy = { name: 'Record Keeper', email: `record-${stamp()}@sign.test`, role: 'cc' as const };
+    const env = await createEnvelope(pool, w.staff.p, { documentRef: up.reference, title: 'Four signer contract', routing: 'sequential', recipients: [...people, copy] });
+    await setFields(pool, w.staff.p, env.id, { fields: people.map((_, i) => ({ recipientId: env.recipients[i]!, kind: 'signature' as const, page: 2, x: 0.07 + i * 0.23, y: 0.72, width: 0.19, height: 0.06 })) });
+    await sendEnvelope(pool, w.staff.p, env.id);
+    for (let i = 0; i < people.length; i++) {
+      const person = people[i]!;
+      const token = w.link(person.email);
+      assert.ok(token, `signer ${i + 1} is invited`);
+      if (i < 3) assert.equal(w.link(people[i + 1]!.email), null, 'next signer waits for the previous one');
+      const session = await signIn(pool, token, person.email, w.code);
+      await giveConsent(pool, token, session);
+      const result = await signDocument(pool, token, session, { signature: { method: 'typed', name: person.name, style: 'flowing' } });
+      assert.equal(result.completed, i === 3);
+    }
+    const detail = await envelopeDetail(pool, w.staff.p, env.id);
+    assert.equal(detail.envelope.status, 'completed');
+    assert.equal(detail.events.filter((event: { kind: string }) => event.kind === 'signed').length, 4);
+    const copyToken = w.link(copy.email, 'signature_completed');
+    assert.ok(copyToken, 'copy recipient receives the final document');
+    assert.equal((await verifyFingerprint(pool, { base64: (await finalDocument(pool, copyToken)).toString('base64') })).valid, true);
   } finally { setSignMailerForTests(null); setObjectStoreForTests(undefined); await pool.end(); }
 });

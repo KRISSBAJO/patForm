@@ -2237,7 +2237,7 @@ create table if not exists sign_envelope (
   original_sha256  text not null,
   page_count       int not null,
   routing          text not null default 'sequential' check (routing in ('sequential', 'parallel')),
-  status           text not null default 'draft' check (status in ('draft', 'sent', 'completed', 'declined', 'voided', 'expired')),
+  status           text not null default 'draft' check (status in ('draft', 'sent', 'finalizing', 'completed', 'declined', 'voided', 'expired')),
   reminder_days    int not null default 3 check (reminder_days between 0 and 30),
   expires_at       timestamptz not null,
   created_by       uuid references actor(id),
@@ -2919,3 +2919,19 @@ create table if not exists attendance_adjustment (
   delta_seconds int not null, created_at timestamptz not null default now()
 );
 create index if not exists attendance_adjustment_period on attendance_adjustment (tenant_id, period_id, created_at);
+
+-- A fully signed envelope stays in this state while its final PDF is produced.
+-- The worker can retry safely after a crash or a temporary storage failure.
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'sign_envelope'::regclass
+      and conname = 'sign_envelope_status_check'
+      and pg_get_constraintdef(oid) like '%finalizing%'
+  ) then
+    alter table sign_envelope drop constraint if exists sign_envelope_status_check;
+    alter table sign_envelope add constraint sign_envelope_status_check
+      check (status in ('draft', 'sent', 'finalizing', 'completed', 'declined', 'voided', 'expired'));
+  end if;
+end $$;

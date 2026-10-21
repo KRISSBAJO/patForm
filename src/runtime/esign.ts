@@ -332,15 +332,17 @@ export async function listEnvelopes(pool: Pool, principal: Principal) {
 export async function signSummary(pool: Pool, principal: Principal) {
   const w = await govMember(pool, principal);
   const all = govInTeam(w, 'legal', 'compliance');
-  const { rows } = await pool.query<{ out: number; drafts: number; done30: number; expiring: number; declined: number }>(
+  const { rows } = await pool.query<{ out: number; drafts: number; finalizing: number; done30: number; expiring: number; declined: number }>(
     `select count(*) filter (where status = 'sent')::int as out,
             count(*) filter (where status = 'draft')::int as drafts,
+            count(*) filter (where status = 'finalizing')::int as finalizing,
             count(*) filter (where status = 'completed' and completed_at > now() - interval '30 days')::int as done30,
             count(*) filter (where status = 'sent' and expires_at < now() + interval '7 days')::int as expiring,
             count(*) filter (where status = 'declined')::int as declined
        from sign_envelope e where e.tenant_id = $1 and ($2 or e.created_by = $3)`, [w.tenantId, all, w.actorId]);
   const mine = await mySignatures(pool, principal);
-  return { ...rows[0]!, waitingForMe: mine.length };
+  const configuredSeal = sealConfig()?.info ?? null;
+  return { ...rows[0]!, waitingForMe: mine.length, certificateSeal: Boolean(configuredSeal), selfIssuedSeal: configuredSeal?.selfIssued ?? false };
 }
 
 /** Documents waiting for this person's own signature, with their personal link. Their own email, nobody else's. */
@@ -429,12 +431,19 @@ async function remind(client: Client | Pool, e: EnvelopeRow, force: boolean) {
 
 /** The worker: reminders on schedule, and envelopes past their date expire. */
 export async function sweepSignatures(pool: Pool) {
+  const { rows: finishing } = await pool.query<EnvelopeRow>(
+    `select * from sign_envelope where status = 'finalizing' order by sent_at limit 20`);
+  let finalized = 0;
+  for (const e of finishing) {
+    try { await completeEnvelope(pool, e); finalized++; }
+    catch (err) { console.error(`signature finalization failed for ${e.id}:`, err instanceof Error ? err.message : err); }
+  }
   const { rows: due } = await pool.query<EnvelopeRow>(`select * from sign_envelope where status = 'sent' and reminder_days > 0 and expires_at > now()`);
   let reminded = 0;
   for (const e of due) reminded += await remind(pool, e, false);
   const { rows: expired } = await pool.query<EnvelopeRow>(`update sign_envelope set status = 'expired' where status = 'sent' and expires_at <= now() returning *`);
   for (const e of expired) { await event(pool, e.id, null, 'expired', {}); await closeContractEnvelope(pool, e, 'voided', null); }
-  return { reminded, expired: expired.length };
+  return { reminded, expired: expired.length, finalized };
 }
 
 // ---------------------------------------------------------------- signer
@@ -476,6 +485,7 @@ export async function signerView(pool: Pool, t: string, session?: string) {
       listedAs: x.register_match?.officer ? `${x.register_match.officer.role}${x.register_match.officer.appointedOn ? ` since ${x.register_match.officer.appointedOn}` : ''}` : x.register_match ? 'not listed as an officer' : null } : null, signerTitle: x.signer_title };
   if (r.status === 'not_needed') return { ...base, stage: 'closed' as const, status: `no longer needed: enough people have signed for ${party?.name ?? 'the company'}` };
   if (r.e_status === 'completed') return { ...base, stage: 'completed' as const, completedAt: r.completed_at };
+  if (r.e_status === 'finalizing' && r.status === 'signed') return { ...base, stage: 'signed' as const, finalizing: true };
   if (r.e_status !== 'sent' || r.expires_at < new Date()) return { ...base, stage: 'closed' as const, status: r.e_status === 'sent' ? 'expired' : r.e_status };
   if (r.status === 'signed') return { ...base, stage: 'signed' as const };
   if (r.status === 'declined') return { ...base, stage: 'closed' as const, status: 'declined' };
@@ -612,10 +622,15 @@ export async function signDocument(pool: Pool, t: string, session: string | unde
       `select (select count(*)::int from sign_recipient where envelope_id = $1 and role = 'signer' and party_id is null and status <> 'signed')
             + (select count(*)::int from sign_party p where p.envelope_id = $1 and (select count(*) from sign_recipient r where r.party_id = p.id and r.status = 'signed') < p.required_count) as n`, [r.envelope_id]);
     if (left[0]!.n > 0) { await notifyNext(client, e[0]!, r.sender ? `${r.sender} (${r.workspace})` : r.workspace); return null; }
-    return e[0]!;
+    await client.query(`update sign_envelope set status = 'finalizing' where id = $1`, [r.envelope_id]);
+    return { ...e[0]!, status: 'finalizing' };
   });
-  if (sealed) await completeEnvelope(pool, sealed);
-  return { signed: true, completed: Boolean(sealed) };
+  if (sealed) {
+    try { await completeEnvelope(pool, sealed); }
+    catch (err) { console.error(`signature finalization queued for retry on ${sealed.id}:`, err instanceof Error ? err.message : err); }
+  }
+  const completed = sealed ? (await pool.query<{ status: string }>('select status from sign_envelope where id = $1', [sealed.id])).rows[0]?.status === 'completed' : false;
+  return { signed: true, completed, ...((sealed && !completed) ? { finalizing: true } : {}) };
 }
 
 export async function declineDocument(pool: Pool, t: string, session: string | undefined, body: Record<string, unknown>, ctx: Ctx = {}) {
@@ -638,18 +653,26 @@ export async function declineDocument(pool: Pool, t: string, session: string | u
 
 /** Seals: stamps the fields, adds the certificate, checks the original first, stores the result with its hash, tells everyone. */
 export async function completeEnvelope(pool: Pool, e: EnvelopeRow) {
-  const original = await documentBytes(pool, e.document_file_id);
+  const lock = await pool.connect();
+  try {
+    await lock.query('select pg_advisory_lock(hashtext($1), hashtext($2))', ['sign-finalize', e.id]);
+    const { rows: current } = await lock.query<{ status: string; final_sha256: string | null; final_file_id: string | null }>(
+      'select status, final_sha256, final_file_id from sign_envelope where id = $1', [e.id]);
+    if (current[0]?.status === 'completed' && current[0].final_sha256 && current[0].final_file_id)
+      return { sha256: current[0].final_sha256, fileId: current[0].final_file_id };
+    if (current[0]?.status !== 'finalizing') throw new Error('the envelope is not ready to finalize');
+  const original = await documentBytes(lock, e.document_file_id);
   if (hash(original) !== e.original_sha256) throw new Error('the original document changed after the envelope was made');
-  const { rows: recipients } = await pool.query<{ id: string; name: string; email: string; role: string; routing_order: number; signature: SignatureValue | null; initials: SignatureValue | null; verified_at: Date | null; consented_at: Date | null; viewed_at: Date | null; signed_at: Date | null; ip: string | null; user_agent: string | null; notified_at: Date | null;
+  const { rows: recipients } = await lock.query<{ id: string; name: string; email: string; role: string; routing_order: number; signature: SignatureValue | null; initials: SignatureValue | null; verified_at: Date | null; consented_at: Date | null; viewed_at: Date | null; signed_at: Date | null; ip: string | null; user_agent: string | null; notified_at: Date | null;
     status: string; title: string | null; phone: string | null; verify_by: string; party_id: string | null; party_slot: number | null; authority_confirmed_at: Date | null; authority_statement: string | null; register_match: { officer: { name: string; role: string; appointedOn: string | null } | null; checkedAt: string } | null }>(
     `select id, name, email, role, routing_order, signature, initials, verified_at, consented_at, viewed_at, signed_at, ip, user_agent, notified_at, status, title, phone, verify_by, party_id, party_slot, authority_confirmed_at, authority_statement, register_match
        from sign_recipient where envelope_id = $1 order by role desc, routing_order, party_slot nulls first, created_at`, [e.id]);
-  const { rows: fields } = await pool.query<{ recipient_id: string | null; filled_by: string | null; kind: string; page: number; x: number; y: number; width: number; height: number; value: string | null }>(
+  const { rows: fields } = await lock.query<{ recipient_id: string | null; filled_by: string | null; kind: string; page: number; x: number; y: number; width: number; height: number; value: string | null }>(
     `select recipient_id, filled_by, kind, page, x::float, y::float, width::float, height::float, value from sign_field where envelope_id = $1`, [e.id]);
-  const { rows: parties } = await pool.query<{ id: string; name: string; required_count: number; authority_note: string | null; register: RegisterResult | null }>('select id, name, required_count, authority_note, register from sign_party where envelope_id = $1 order by routing_order, created_at', [e.id]);
-  const { rows: events } = await pool.query<{ kind: string; occurred_at: Date; ip: string | null; name: string | null }>(
+  const { rows: parties } = await lock.query<{ id: string; name: string; required_count: number; authority_note: string | null; register: RegisterResult | null }>('select id, name, required_count, authority_note, register from sign_party where envelope_id = $1 order by routing_order, created_at', [e.id]);
+  const { rows: events } = await lock.query<{ kind: string; occurred_at: Date; ip: string | null; name: string | null }>(
     `select v.kind, v.occurred_at, v.ip, r.name from sign_event v left join sign_recipient r on r.id = v.recipient_id where v.envelope_id = $1 order by v.id`, [e.id]);
-  const { rows: t } = await pool.query<{ name: string }>('select name from tenant where id = $1', [e.tenant_id]);
+  const { rows: t } = await lock.query<{ name: string }>('select name from tenant where id = $1', [e.tenant_id]);
   const completedAt = new Date();
   const sealed = await sealPdf(original, {
     envelope: { id: e.id, number: e.number, title: e.title, workspace: t[0]!.name, originalSha256: e.original_sha256, routing: e.routing, completedAt },
@@ -658,10 +681,14 @@ export async function completeEnvelope(pool: Pool, e: EnvelopeRow) {
   const finalBytes = sealed.bytes;
   const sealInfo = sealConfig()?.info ?? null;
   const finalSha = hash(finalBytes);
-  const fileId = randomUUID();
+  // The key stays the same across retries, so a failed database commit cannot
+  // leave a growing trail of unreferenced final copies in the object store.
+  const fileId = e.id;
   const key = `gov/files/${e.tenant_id}/${fileId}`;
   await objectStore().put(key, finalBytes, 'application/pdf', { sha256: finalSha });
-  await inTransaction(pool, async (client) => {
+  await lock.query('begin');
+  try {
+    const client = lock;
     await client.query(`insert into gov_file (id, tenant_id, purpose, contract_id, filename, content_type, byte_size, sha256, storage_key, scan_status) values ($1, $2, 'signed', $3, $4, 'application/pdf', $5, $6, $7, 'clean')`,
       [fileId, e.tenant_id, e.contract_id, `${e.title.replace(/[^a-zA-Z0-9 ._-]/g, '').slice(0, 60) || 'document'} - signed.pdf`, finalBytes.length, finalSha, key]);
     await client.query(`update sign_envelope set status = 'completed', completed_at = $2, final_file_id = $3, final_sha256 = $4, seal = $5, seal_timestamp = $6 where id = $1`,
@@ -679,8 +706,16 @@ export async function completeEnvelope(pool: Pool, e: EnvelopeRow) {
       await mailer(client, { kind: 'signature_completed', to: r.email, tenantId: e.tenant_id, idempotencyKey: `sign-done:${r.id}`, subject: `Signed by everyone: ${e.title}`,
         text: `Hello ${r.name},\n\n"${e.title}" has been signed by everyone.\n\nDownload the signed copy (for ${FINAL_DAYS} days): ${appUrl()}/sign/${tk}\n\nIts fingerprint (SHA-256) is ${finalSha}. Anyone can check a copy at ${appUrl()}/sign/verify.` });
     }
-  });
+    await lock.query('commit');
+  } catch (error) {
+    await lock.query('rollback');
+    throw error;
+  }
   return { sha256: finalSha, fileId };
+  } finally {
+    try { await lock.query('select pg_advisory_unlock(hashtext($1), hashtext($2))', ['sign-finalize', e.id]); }
+    finally { lock.release(); }
+  }
 }
 
 /** The signed copy, through any recipient's link, for 30 days after completion. */

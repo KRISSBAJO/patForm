@@ -13,6 +13,7 @@ import '../sign.css';
 
 type Field = { id: string; kind: 'signature' | 'initials' | 'date' | 'name' | 'text' | 'title'; page: number; x: number; y: number; width: number; height: number; required: boolean; label: string | null };
 type View = { stage: 'verify' | 'sign' | 'signed' | 'completed' | 'closed'; title: string; workspace: string; sender: string | null; name: string; email: string; expiresAt: string; status?: string;
+  finalizing?: boolean;
   message?: string | null; pages?: number; consented?: boolean; consentText?: string; fields?: Field[]; completedAt?: string;
   verifyBy?: 'email' | 'sms' | 'email_and_sms'; phone?: string | null; party?: { name: string; required: number; signed: number; register?: { source?: string; companyName?: string; status?: string; number: string } | null; listedAs?: string | null } | null; signerTitle?: string | null; authorityText?: string | null; authorityNote?: string | null };
 
@@ -125,15 +126,15 @@ export function SignPage({ token }: { token: string }) {
           <div className="ps__row">
             <button type="button" className="ps__btn" onClick={() => setDeclining(true)}>Decline</button>
             <button type="button" className="ps__btn ps__btn--primary" disabled={!ready || busy} onClick={() => void act(async () => {
-              const r = await call<{ completed: boolean }>(`${base}/sign`, { method: 'POST', session, body: JSON.stringify({ signature, initials: initials ?? undefined, values, authority: view.party ? authority : undefined }) });
+              const r = await call<{ completed: boolean; finalizing?: boolean }>(`${base}/sign`, { method: 'POST', session, body: JSON.stringify({ signature, initials: initials ?? undefined, values, authority: view.party ? authority : undefined }) });
               try { sessionStorage.removeItem(KEY(token)); } catch { /* ignore */ }
-              setNote(null); setView(r.completed ? { ...view, stage: 'completed', completedAt: new Date().toISOString() } : { ...view, stage: 'signed' });
+              setNote(null); setView(r.completed ? { ...view, stage: 'completed', completedAt: new Date().toISOString() } : { ...view, stage: 'signed', finalizing: r.finalizing });
             })}>Finish</button>
           </div>
         </div>
       </>}
 
-      {view.stage === 'signed' && <div className="ps__card"><h2 className="ps__ok" style={{ fontSize: 18, margin: 0 }}>You have signed</h2><p className="ps__muted">When everyone has signed, we will email you the signed copy.</p></div>}
+      {view.stage === 'signed' && <div className="ps__card"><h2 className="ps__ok" style={{ fontSize: 18, margin: 0 }}>You have signed</h2><p className="ps__muted">{view.finalizing ? 'Everyone has signed. We are preparing the final copy and will email it when it is ready.' : 'When everyone has signed, we will email you the signed copy.'}</p>{view.finalizing && <button type="button" className="ps__btn" onClick={() => void load(null)}>Check progress</button>}</div>}
       {view.stage === 'completed' && <div className="ps__card"><h2 className="ps__ok" style={{ fontSize: 18, margin: 0 }}>Signed by everyone</h2>
         <p className="ps__muted">Completed {view.completedAt ? new Date(view.completedAt).toLocaleString() : ''}. A copy is also on its way to your email.</p>
         <a className="ps__btn ps__btn--primary" href={`${base}/final`} style={{ display: 'inline-block', textDecoration: 'none', padding: '10px 16px', borderRadius: 10 }}>Download the signed copy</a>

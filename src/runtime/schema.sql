@@ -3400,7 +3400,7 @@ create table if not exists sign_envelope (
   original_sha256  text not null,
   page_count       int not null,
   routing          text not null default 'sequential' check (routing in ('sequential', 'parallel')),
-  status           text not null default 'draft' check (status in ('draft', 'sent', 'completed', 'declined', 'voided', 'expired')),
+  status           text not null default 'draft' check (status in ('draft', 'sent', 'finalizing', 'completed', 'declined', 'voided', 'expired')),
   reminder_days    int not null default 3 check (reminder_days between 0 and 30),
   expires_at       timestamptz not null,
   created_by       uuid references actor(id),
