@@ -23,3 +23,8 @@
 .ps__bar { position: sticky; bottom: 0; background: var(--ps-card); border-top: 1px solid var(--ps-line); padding: 10px 16px; display: flex; gap: 8px; justify-content: space-between; align-items: center; flex-wrap: wrap; z-index: 4; }
 .ps__attachments{list-style:none;padding:0;margin:14px 0 0;display:grid;gap:7px}.ps__attachments li{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:9px 0;border-top:1px solid #e6ebe6}.ps__attachments strong{font-size:13px}.ps__attachments small{font-size:11px;color:#687c70}
 .ps__choices { display: grid; gap: 12px; padding: 10px 0; }
+.ps__documentLink { display: inline-flex; align-items: center; min-height: 44px; padding: 9px 14px; border-radius: 10px; border: 1px solid var(--ps-brand); color: var(--ps-brand); font-weight: 700; text-decoration: none; }
+.ps__fieldList { display: grid; gap: 8px; margin-top: 12px; }
+.ps__fieldAction { width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 12px; min-height: 48px; padding: 10px 12px; border: 1px solid var(--ps-line); border-radius: 10px; background: var(--ps-card); color: var(--ps-ink); font: inherit; text-align: left; cursor: pointer; }
+.ps__fieldAction small { color: var(--ps-muted); white-space: nowrap; }
+.ps__fieldAction:disabled { cursor: default; }

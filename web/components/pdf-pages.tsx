@@ -38,8 +38,9 @@ export function PdfPages({ data, overlay, onPageClick, onPageDrop, maxWidth = 82
   useEffect(() => {
     let cancelled = false;
     setDoc(null); setError(null);
-    pdfjs().then((p) => p.getDocument({ data: data.slice(0) }).promise).then((d) => { if (!cancelled) setDoc(d); }).catch(() => { if (!cancelled) setError('This PDF could not be shown.'); });
-    return () => { cancelled = true; };
+    const timer = window.setTimeout(() => { if (!cancelled) setError('The PDF preview is taking too long.'); }, 20_000);
+    pdfjs().then((p) => p.getDocument({ data: data.slice(0) }).promise).then((d) => { if (!cancelled) { window.clearTimeout(timer); setError(null); setDoc(d); } }).catch(() => { if (!cancelled) { window.clearTimeout(timer); setError('This PDF could not be shown here.'); } });
+    return () => { cancelled = true; window.clearTimeout(timer); };
   }, [data]);
   if (error) return <p role="alert">{error}</p>;
   if (!doc) return <p>Loading the document…</p>;

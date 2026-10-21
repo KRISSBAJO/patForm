@@ -19,7 +19,13 @@ type View = { stage: 'verify' | 'sign' | 'signed' | 'completed' | 'closed'; titl
 
 const KEY = (t: string) => `patform-sign:${t.slice(0, 12)}`;
 async function call<T>(path: string, init: RequestInit & { session?: string | null } = {}): Promise<T> {
-  const res = await fetch(path, { ...init, headers: { 'content-type': 'application/json', ...(init.session ? { 'x-sign-session': init.session } : {}) }, cache: 'no-store' });
+  let res: Response;
+  try {
+    res = await fetch(path, { ...init, headers: { 'content-type': 'application/json', ...(init.session ? { 'x-sign-session': init.session } : {}) }, cache: 'no-store', signal: AbortSignal.timeout(75_000) });
+  } catch (error) {
+    if (error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')) throw new Error('This is taking too long. Please try again; if your code has expired, request a new one.');
+    throw error;
+  }
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(body.reason ?? body.error ?? `Something went wrong (${res.status})`);
   return body as T;
@@ -39,6 +45,9 @@ export function SignPage({ token }: { token: string }) {
   const [codeSent, setCodeSent] = useState<string | null>(null);
   const [agree, setAgree] = useState(false);
   const [pdf, setPdf] = useState<ArrayBuffer | null>(null);
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+  const [pdfError, setPdfError] = useState<string | null>(null);
+  const [pdfAttempt, setPdfAttempt] = useState(0);
   const [signature, setSignature] = useState<SignatureValue | null>(null);
   const [initials, setInitials] = useState<SignatureValue | null>(null);
   const [values, setValues] = useState<Record<string, string>>({});
@@ -57,10 +66,19 @@ export function SignPage({ token }: { token: string }) {
   }, [token, load]);
   useEffect(() => {
     if (view?.stage !== 'sign' || pdf) return;
-    fetch(`${base}/document`, { headers: { 'x-sign-session': session ?? '' }, cache: 'no-store' })
-      .then(async (r) => { if (!r.ok) throw new Error('The document could not be loaded.'); setPdf(await r.arrayBuffer()); })
-      .catch((e: Error) => setError(e.message));
-  }, [view, pdf, base, session]);
+    let cancelled = false;
+    setPdfError(null);
+    fetch(`${base}/document`, { headers: { 'x-sign-session': session ?? '' }, cache: 'no-store', signal: AbortSignal.timeout(75_000) })
+      .then(async (r) => { if (!r.ok) throw new Error('The document could not be loaded.'); const bytes = await r.arrayBuffer(); if (!cancelled) setPdf(bytes); })
+      .catch(() => { if (!cancelled) setPdfError('The document is taking too long to open. Try again.'); });
+    return () => { cancelled = true; };
+  }, [view, pdf, base, session, pdfAttempt]);
+  useEffect(() => {
+    if (!pdf) return;
+    const url = URL.createObjectURL(new Blob([pdf], { type: 'application/pdf' }));
+    setPdfUrl(url);
+    return () => { URL.revokeObjectURL(url); };
+  }, [pdf]);
   useEffect(() => {
     if (view?.stage !== 'sign' || !view.consented || !view.fields?.some((f) => f.kind === 'payment' && f.paymentStatus !== 'paid') || !session) return;
     if (!new URLSearchParams(window.location.search).has('payment')) return;
@@ -102,10 +120,12 @@ export function SignPage({ token }: { token: string }) {
         {!codeSent ? <button type="button" className="ps__btn ps__btn--primary" disabled={busy} onClick={() => void act(async () => { const r = await call<{ sentTo: string }>(`${base}/code`, { method: 'POST', body: '{}' }); setCodeSent(r.sentTo); })}>{view.verifyBy === 'sms' ? 'Text me a code' : view.verifyBy === 'email_and_sms' ? 'Send my codes' : 'Email me a code'}</button>
           : <form onSubmit={(e) => { e.preventDefault(); void act(async () => { const r = await call<{ session: string }>(`${base}/verify`, { method: 'POST', body: JSON.stringify({ code, smsCode: smsCode || undefined }) }); try { sessionStorage.setItem(KEY(token), r.session); } catch { /* private window */ } setSession(r.session); await load(r.session); }); }}>
             <label htmlFor="ps-code" className="ps__muted">{view.verifyBy === 'email_and_sms' ? 'Code from the email' : `Code sent to ${codeSent}`}</label>
+            <p className="ps__muted" style={{ margin: '4px 0 0' }}>Use the newest code; asking for another makes the earlier one expire.</p>
             <div className="ps__row" style={{ marginTop: 6 }}><input id="ps-code" className="ps__input ps__code" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))} autoFocus />
               {view.verifyBy === 'email_and_sms' && <input aria-label="Code from the text message" placeholder="Text code" className="ps__input ps__code" inputMode="numeric" maxLength={6} value={smsCode} onChange={(e) => setSmsCode(e.target.value.replace(/\D/g, ''))} />}
-              <button type="submit" className="ps__btn ps__btn--primary" disabled={busy || code.length !== 6 || (view.verifyBy === 'email_and_sms' && smsCode.length !== 6)}>Continue</button>
-              <button type="button" className="ps__btn" disabled={busy} onClick={() => void act(async () => { const r = await call<{ sentTo: string }>(`${base}/code`, { method: 'POST', body: '{}' }); setCodeSent(r.sentTo); setNote('A new code is on its way.'); })}>Send another</button></div>
+              <button type="submit" className="ps__btn ps__btn--primary" disabled={busy || code.length !== 6 || (view.verifyBy === 'email_and_sms' && smsCode.length !== 6)}>{busy ? 'Checking…' : 'Continue'}</button>
+              <button type="button" className="ps__btn" disabled={busy} onClick={() => void act(async () => { const r = await call<{ sentTo: string }>(`${base}/code`, { method: 'POST', body: '{}' }); setCodeSent(r.sentTo); setCode(''); setSmsCode(''); setNote('A new code is on its way. Use this latest code.'); })}>Send another</button></div>
+            {busy && <p className="ps__muted" role="status">Checking your code. You can leave this page open while it finishes.</p>}
           </form>}
       </div>}
 
@@ -137,10 +157,12 @@ export function SignPage({ token }: { token: string }) {
           {needsSignature && <div style={{ marginTop: 12 }}><strong>Your signature</strong><SignatureField id="ps-sig" value={signature ?? undefined} onChange={(v) => setSignature((v as SignatureValue) ?? null)} /></div>}
         </div>
         {view.allowAttachments && <div className="ps__card"><h2 style={{ fontSize: 17, margin: '0 0 5px' }}>Supporting files</h2><p className="ps__muted">Add a PDF or image if the sender needs proof or a supporting document. Each file is checked before you can finish.</p><label className="ps__btn" style={{ display: 'inline-block', cursor: 'pointer' }}>+ Add a file<input type="file" accept="application/pdf,image/png,image/jpeg,.pdf,.png,.jpg,.jpeg" hidden disabled={busy || (view.attachments?.length ?? 0) >= 5} onChange={(ev) => { const file = ev.target.files?.[0]; ev.target.value = ''; if (!file) return; void act(async () => { if (file.size > 10 * 1024 * 1024) throw new Error('Choose a file of 10 MB or less.'); const response = await call<{ status: string }>(`${base}/attachment`, { method: 'POST', session, body: JSON.stringify({ filename: file.name, contentType: file.type || (file.name.toLowerCase().endsWith('.pdf') ? 'application/pdf' : ''), base64: await fileBase64(file) }) }); await load(session); setNote(response.status === 'clean' ? 'File attached.' : 'File attached. Its security check is still running; wait before finishing.'); }); }} /></label><ul className="ps__attachments">{(view.attachments ?? []).map((file) => <li key={file.id}><strong>{file.filename}</strong><small>Recorded with this agreement · {file.sha256.slice(0, 12)}…</small></li>)}</ul></div>}
+        {pdfUrl && <div className="ps__card"><strong>Review the document</strong><p className="ps__muted">If the preview is slow on your phone, open the PDF in your device’s viewer, then return here to complete the boxes.</p><a className="ps__documentLink" href={pdfUrl} target="_blank" rel="noopener noreferrer">Open the PDF ↗</a></div>}
+        {fields.some((f) => !['payment', 'date', 'name', 'email'].includes(f.kind)) && <div className="ps__card"><strong>Your boxes</strong><div className="ps__fieldList">{fields.filter((f) => !['payment', 'date', 'name', 'email'].includes(f.kind)).map((f) => <button type="button" key={f.id} className="ps__fieldAction" disabled={f.kind === 'company' && !!view.party || f.kind === 'title' && !!view.signerTitle} onClick={() => { setEditing(f); setDraft(f.kind === 'signature' ? signature ?? undefined : f.kind === 'initials' ? initials ?? undefined : values[f.id] ?? ''); }}><span>{f.label || (f.kind === 'signature' ? 'Signature' : f.kind === 'initials' ? 'Initials' : f.kind)}</span><small>{filled(f) ? 'Done' : 'Tap to fill'}</small></button>)}</div></div>}
         {pdf ? <PdfPages data={pdf} overlay={(page) => fields.filter((f) => f.page === page).map((f) =>
           <PageBox key={f.id} x={f.x} y={f.y} width={f.width} height={f.height} color={filled(f) ? '#1d6b3a' : '#b26b00'} title={f.label ?? f.kind} onClick={f.kind === 'payment' || f.kind === 'date' || f.kind === 'name' || f.kind === 'email' || (f.kind === 'company' && view.party) || (f.kind === 'title' && view.signerTitle) ? undefined : () => { setEditing(f); setDraft(f.kind === 'signature' ? signature ?? undefined : f.kind === 'initials' ? initials ?? undefined : values[f.id] ?? ''); }}>
             {f.kind === 'signature' && signature?.method === 'drawn' ? <img src={signature.image} alt={`Signature of ${signature.name}`} style={{ maxWidth: '100%', maxHeight: '100%' }} /> : <span>{shown(f)}{f.required && !filled(f) ? ' *' : ''}</span>}
-          </PageBox>)} /> : <p>Loading the document…</p>}
+          </PageBox>)} /> : <div className="ps__card" role="status"><p>{pdfError ?? 'Opening the PDF…'}</p>{pdfError && <button type="button" className="ps__btn" onClick={() => setPdfAttempt((attempt) => attempt + 1)}>Try opening it again</button>}</div>}
         <div className="ps__bar">
           <span className="ps__muted">{ready ? 'Ready to finish.' : missing.length ? `${missing.length} box${missing.length === 1 ? '' : 'es'} still to fill` : !signature ? 'Add your signature' : `Confirm you may sign for ${view.party?.name}`}</span>
           <div className="ps__row">
