@@ -4540,6 +4540,31 @@ a.cs__navItem {
 .ig__hero p { margin: 0; color: var(--muted); font: 14px/1.5 var(--ui); }
 .ig__everything { margin-top: 14px; }
 .ig__surface { overflow: hidden; border: 1px solid var(--card-line); border-radius: 14px; background: var(--white); box-shadow: var(--card-shadow); }
+.wl { margin-top: 18px; }
+.wl__heading { padding: 26px 28px 20px; }
+.wl__heading h3 { margin: 8px 0 5px; color: var(--ink); font: 600 20px/1.2 var(--ui); letter-spacing: -.025em; }
+.wl__heading p { margin: 0; color: var(--muted); font: 13px/1.5 var(--ui); }
+.wl__action { display: flex; align-items: center; gap: 17px; padding: 19px 28px; border-top: 1px solid var(--card-line); }
+.wl__icon { display: grid; place-items: center; flex: 0 0 42px; width: 42px; height: 42px; border-radius: 12px; background: #eaf5ee; color: var(--green-deep); }
+.wl__icon svg { width: 21px; height: 21px; }
+.wl__icon--closure { background: #f6f2ee; color: #876c55; }
+.wl__copy { flex: 1; min-width: 0; }
+.wl__copy h4 { margin: 0 0 4px; color: var(--ink); font: 600 14px/1.3 var(--ui); }
+.wl__copy p { max-width: 650px; margin: 0; color: var(--muted); font: 12px/1.5 var(--ui); }
+.wl__action > .cs__btn { flex: 0 0 auto; }
+.wl__exports { list-style: none; margin: 0 28px 18px 87px; padding: 0; border: 1px solid var(--card-line); border-radius: 9px; }
+.wl__exports .ig__row { padding: 13px 16px; }
+.wl .wl__closureState { margin: 0 28px 22px 87px; }
+.wl .wl__closureForm { margin: 0 28px 26px 87px; }
+@media (max-width: 700px) {
+  .wl__heading { padding: 22px 20px 17px; }
+  .wl__action { align-items: flex-start; flex-wrap: wrap; gap: 11px 13px; padding: 18px 20px; }
+  .wl__icon { flex-basis: 38px; width: 38px; height: 38px; }
+  .wl__copy { flex-basis: calc(100% - 51px); }
+  .wl__action > .cs__btn { margin-left: 51px; }
+  .wl__exports, .wl .wl__closureState { margin-left: 20px; margin-right: 20px; }
+  .wl .wl__closureForm { margin-left: 20px; margin-right: 20px; }
+}
 .ig__tabs { display: flex; gap: 4px; padding: 8px 12px 0; border-bottom: 1px solid var(--card-line); overflow-x: auto; scrollbar-width: thin; }
 .ig__tab { display: inline-flex; align-items: center; gap: 9px; flex: 0 0 auto; min-height: 48px; padding: 0 14px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--muted); font: 600 13px var(--ui); cursor: pointer; }
 .ig__tab .cs__icon { width: 16px; height: 16px; margin: 0; }
