@@ -33,7 +33,16 @@ export function DataTable<T extends { id: string }>({ path, columns, filters = [
   const [q, setQ] = useState('');
   const [qLive, setQLive] = useState('');
   const [active, setActive] = useState<Record<string, string>>({});
-  const [view, setView] = useState<'table' | 'cards'>(defaultView);
+  const [viewChoice, setViewChoice] = useState<'table' | 'cards' | null>(null);
+  const [compact, setCompact] = useState(false);
+  useEffect(() => {
+    const media = window.matchMedia('(max-width: 760px)');
+    const update = () => setCompact(media.matches);
+    update();
+    media.addEventListener('change', update);
+    return () => media.removeEventListener('change', update);
+  }, []);
+  const view = viewChoice ?? (compact ? 'cards' : defaultView);
   const [hidden, setHidden] = useState<Set<string>>(new Set(columns.filter((c) => c.hide).map((c) => c.key)));
   const [showCols, setShowCols] = useState(false);
   const [openFilter, setOpenFilter] = useState<string | null>(null);
@@ -85,7 +94,7 @@ export function DataTable<T extends { id: string }>({ path, columns, filters = [
           </div>}
         </div>)}
         <div className="dt__filter"><button type="button" className="mx__seg" aria-expanded={showCols} onClick={() => setShowCols(!showCols)}>Columns ▾</button>{showCols && <div className="dt__pop"><ul>{columns.map((c) => <li key={c.key}><label><input type="checkbox" checked={!hidden.has(c.key)} onChange={() => setHidden((h) => { const n = new Set(h); if (n.has(c.key)) n.delete(c.key); else n.add(c.key); return n; })} /><span>{c.label}</span></label></li>)}</ul><div className="dt__popFoot"><button type="button" className="mx__btn mx__btn--sm" onClick={() => setShowCols(false)}>Done</button></div></div>}</div>
-        {card && <div className="mx__segs"><button type="button" className={`mx__seg ${view === 'table' ? 'is-on' : ''}`} onClick={() => setView('table')} title="Table">☰</button><button type="button" className={`mx__seg ${view === 'cards' ? 'is-on' : ''}`} onClick={() => setView('cards')} title="Cards">▦</button></div>}
+        {(card || compact) && <div className="mx__segs" role="group" aria-label="View records"><button type="button" className={`mx__seg ${view === 'table' ? 'is-on' : ''}`} onClick={() => setViewChoice('table')} title="Table" aria-label="Table view" aria-pressed={view === 'table'}>☰</button><button type="button" className={`mx__seg ${view === 'cards' ? 'is-on' : ''}`} onClick={() => setViewChoice('cards')} title="Cards" aria-label="Card view" aria-pressed={view === 'cards'}>▦</button></div>}
         <button type="button" className="mx__btn mx__btn--ghost mx__btn--sm" disabled={busyCsv || !data?.total} onClick={() => void exportCsv()}>{busyCsv ? 'Preparing…' : 'Export CSV'}</button>
         {toolbar}
       </div>
@@ -95,7 +104,7 @@ export function DataTable<T extends { id: string }>({ path, columns, filters = [
     {data && !data.total && <EmptyState icon="search" title={q || chips.length ? 'No match' : empty?.title ?? 'Nothing here yet'} text={q || chips.length ? 'Try another search or clear a filter.' : empty?.text ?? ''} action={q || chips.length ? { label: 'Clear filters', onClick: () => { setActive({}); setQLive(''); } } : empty?.action} />}
     {data && data.total > 0 && view === 'table' && <div className={`dt__scroll ${loading ? 'is-loading' : ''}`}><table className="dt__table"><thead><tr>{visible.map((c) => <th key={c.key} scope="col" style={{ width: c.width, textAlign: c.align }} aria-sort={sortCol === c.key ? (sortDir === 'asc' ? 'ascending' : 'descending') : undefined}>{c.sortable ? <button type="button" className={`dt__sort ${sortCol === c.key ? 'is-on' : ''}`} onClick={() => toggleSort(c.key)}>{c.label}<span aria-hidden="true">{sortCol === c.key ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ' ↕'}</span></button> : c.label}</th>)}</tr></thead>
       <tbody>{data.rows.map((r) => <tr key={r.id} className={onRow ? 'is-link' : ''} onClick={onRow ? () => onRow(r) : undefined} tabIndex={onRow ? 0 : undefined} onKeyDown={onRow ? (e) => { if (e.key === 'Enter') onRow(r); } : undefined}>{visible.map((c) => <td key={c.key} style={{ textAlign: c.align }}>{c.render ? c.render(r) : String((r as Record<string, unknown>)[c.key] ?? '')}</td>)}</tr>)}</tbody></table></div>}
-    {data && data.total > 0 && view === 'cards' && card && <div className={`dt__cards ${loading ? 'is-loading' : ''}`}>{data.rows.map((r) => <div key={r.id} onClick={onRow ? () => onRow(r) : undefined} role={onRow ? 'button' : undefined}>{card(r)}</div>)}</div>}
+    {data && data.total > 0 && view === 'cards' && <div className={`dt__cards ${loading ? 'is-loading' : ''}`}>{data.rows.map((r) => <div key={r.id} onClick={onRow ? (e) => { if (!(e.target as HTMLElement).closest('button, a, input, select, textarea')) onRow(r); } : undefined} onKeyDown={onRow ? (e) => { if (e.key === 'Enter' && e.target === e.currentTarget) onRow(r); } : undefined} tabIndex={onRow ? 0 : undefined} role={onRow ? 'button' : undefined}>{card ? card(r) : <div className="dt__recordCard">{visible.map((c) => <div key={c.key} className={c.key === 'actions' ? 'dt__recordActions' : undefined}>{c.label && <span>{c.label}</span>}<div>{c.render ? c.render(r) : String((r as Record<string, unknown>)[c.key] ?? '') || '—'}</div></div>)}</div>}</div>)}</div>}
     {data && data.total > 0 && <div className="dt__foot">
       <small>{from.toLocaleString()}–{to.toLocaleString()} of {data.total.toLocaleString()}</small>
       <div className="dt__pages"><button type="button" className="mx__seg" disabled={data.page <= 1} onClick={() => setPage(data.page - 1)}>‹</button>{pageNumbers.map((n, i) => <span key={n} style={{ display: 'contents' }}>{i > 0 && n - pageNumbers[i - 1]! > 1 && <span className="dt__gap">…</span>}<button type="button" className={`mx__seg ${n === data.page ? 'is-on' : ''}`} onClick={() => setPage(n)}>{n}</button></span>)}<button type="button" className="mx__seg" disabled={data.page >= data.pages} onClick={() => setPage(data.page + 1)}>›</button></div>

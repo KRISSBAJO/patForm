@@ -226,6 +226,24 @@
   .mx__ev { display: none; } .mx__day .mx__dot { display: inline-block; }
   .mx__roomHead { grid-template-columns: 1fr; }
   .mx__steps { grid-template-columns: 1fr; }
+  .mx__cardHead { align-items: flex-start; flex-wrap: wrap; padding: 16px 16px 0; }
+  .mx__cardHead > div { max-width: 100%; }
+  .mx__calHead { gap: 10px; flex-wrap: wrap; padding: 14px 12px; }
+  .mx__calNav { flex-wrap: wrap; }
+  .mx__dow, .mx__days { padding-inline: 5px; }
+  .mx__dow span { padding-inline: 2px; text-align: center; font-size: 9px; }
+  .mx__day { border-radius: 8px; }
+  .mx__agendaRow { grid-template-columns: 30px minmax(0, 1fr); gap: 8px; }
+  .mx__agendaRow > :nth-child(n+3) { grid-column: 2; }
+  .mx__agendaRow .mx__input { width: 100%; min-width: 0; }
+  .mx__agendaRow .mx__rowBtns { justify-self: end; }
+  .mx__total { flex-wrap: wrap; gap: 6px 14px; }
+  .mx__signerRow { grid-template-columns: 30px minmax(0, 1fr); }
+  .mx__signerRow > :nth-child(n+3) { grid-column: 2; }
+  .mx__signerRow .mx__input { width: 100%; }
+  .mx__list > li { flex-wrap: wrap; padding: 12px 16px; }
+  .mx__list > li .mx__main { flex-basis: min(170px, 60%); }
+  .mx__list > li .mx__btn { margin-left: auto; }
 }
 .mx__dot { display: none; width: 6px; height: 6px; border-radius: 50%; background: var(--mod, #5b4bb7); }
 
@@ -549,6 +567,7 @@
 @media (max-width: 900px) { .hr__grid2 { grid-template-columns: 1fr; } .hr__personBtns { margin-left: 0; } }
 
 /* Data table: the one list every module uses for big sets */
+.dt.mx__card { overflow: visible; }
 .dt__bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; padding: 16px 20px 10px; }
 .dt__title { margin: 0; font: 600 18px var(--font-display, serif); display: flex; align-items: baseline; gap: 10px; }
 .dt__title small { font: 500 12.5px var(--ui); color: var(--mx-muted); }
@@ -585,6 +604,44 @@
 .dt__pages { display: flex; gap: 4px; margin-left: auto; } .dt__pages .mx__seg { min-width: 34px; justify-content: center; } .dt__gap { padding: 0 4px; align-self: center; }
 .dt__size { display: flex; align-items: center; gap: 6px; } .dt__size select { height: 32px; border-radius: 8px; border: 1px solid var(--mx-line); background: #fff; font: 13px var(--ui); padding: 0 6px; }
 @media (max-width: 760px) { .dt__tools { margin-left: 0; } .dt__pages { margin-left: 0; } }
+
+/* On phones, records read as labelled facts instead of compressed table cells. */
+.dt__recordCard { display: grid; gap: 0; height: 100%; padding: 4px 16px; border: 1px solid var(--mx-line); border-radius: 13px; background: #fff; }
+.dt__recordCard > div { display: grid; grid-template-columns: minmax(82px, 34%) minmax(0, 1fr); gap: 12px; align-items: start; min-width: 0; padding: 10px 0; border-bottom: 1px solid var(--mx-line); }
+.dt__recordCard > div:last-child { border-bottom: 0; }
+.dt__recordCard > div > span { color: var(--mx-muted); font: 700 10px/1.5 var(--ui); letter-spacing: .07em; text-transform: uppercase; }
+.dt__recordCard > div > div { min-width: 0; overflow-wrap: anywhere; font-size: 13px; line-height: 1.45; }
+.dt__recordCard .dt__cell { min-width: 0; }
+.dt__recordCard .dt__cell > span:last-child { min-width: 0; overflow-wrap: anywhere; }
+.dt__recordCard .dt__cell small { overflow-wrap: anywhere; }
+.dt__recordCard > .dt__recordActions { display: block; }
+.dt__recordActions .dt__actions { justify-content: flex-start; flex-wrap: wrap; white-space: normal; }
+.dt__recordCard > div:first-child { display: block; }
+.dt__recordCard > div:first-child > span { display: block; margin-bottom: 5px; }
+.dt__recordCard > div:first-child .dt__cell { flex-wrap: wrap; }
+.dt__recordCard > div:first-child .dt__cell > span:last-child { flex: 1 1 170px; }
+@media (max-width: 760px) {
+  .dt__bar { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; padding: 16px; }
+  .dt__title { flex-wrap: wrap; min-width: 0; }
+  .dt__search { width: 100%; max-width: none; flex-basis: auto; }
+  .dt__tools { gap: 7px; min-width: 0; }
+  .dt__filter { max-width: 100%; }
+  .dt__pop { position: fixed; top: auto; bottom: max(12px, env(safe-area-inset-bottom)); left: 12px; right: 12px; z-index: 100; width: auto; min-width: 0; max-width: none; max-height: min(70vh, 450px); }
+  .dt__cards { grid-template-columns: minmax(0, 1fr); padding: 14px 16px 18px; }
+  .dt__cards > div { min-width: 0; }
+  .dt__scroll .dt__table { min-width: 650px; }
+  .dt__foot { padding: 12px 16px 16px; }
+  .dt__pages { max-width: 100%; overflow-x: auto; }
+}
+@media (max-width: 640px) {
+  .mx__steps { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .mx__step { gap: 5px; min-width: 0; padding: 10px 6px; font-size: 11px; line-height: 1.15; }
+  .mx__step i { flex: 0 0 24px; width: 24px; height: 24px; }
+}
+@media (max-width: 360px) {
+  .dt__recordCard > div { display: block; }
+  .dt__recordCard > div > span { display: block; margin-bottom: 3px; }
+}
 
 .dt__actions { display: flex; gap: 4px; justify-content: flex-end; white-space: nowrap; }
 .dt__progress { display: grid; gap: 3px; min-width: 120px; } .dt__progress small { color: var(--mx-muted); font-size: 11.5px; }
