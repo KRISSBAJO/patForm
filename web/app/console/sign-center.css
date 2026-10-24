@@ -170,6 +170,13 @@
 .sc__reviewError{align-self:center;flex:1;margin:0;color:#a43d31;font-size:12px;line-height:1.4}
 .sc__detailSections{display:grid;gap:18px;min-width:0}
 .sc__detailSections>.mx__card{min-width:0}
+.sc__cancelGroup{display:flex;align-items:center;gap:8px;min-width:0}
+.sc__cancelGroup .mx__input{height:38px;width:220px;min-width:0}
+.sc__signer .mx__personText{min-width:0;overflow-wrap:anywhere}
+.sc__signer.mx__person{opacity:1}
+.sc__signer .mx__personText small{line-height:1.5;overflow-wrap:anywhere}
+.sc__signerActions{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap;min-width:0}
+.sc__signerActions .mx__pill{flex:none}
 .sc__record{overflow:hidden}
 .sc__eventList{list-style:none;margin:10px 0 0;padding:0 24px 12px}
 .sc__eventList li{display:grid;grid-template-columns:minmax(150px,190px) minmax(190px,1fr) minmax(160px,1fr);align-items:center;gap:16px;min-width:0;padding:13px 0;border-top:1px solid #e5ebe3;font-size:13px;line-height:1.4}
@@ -189,4 +196,21 @@
   .sc__wizard .mx__steps { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .sc__wizard .mx__step { gap: 6px; padding: 12px 6px; font-size: 11px; line-height: 1.2; white-space: nowrap; }
   .sc__wizard .mx__step i { width: 22px; height: 22px; flex: 0 0 22px; font-size: 10px; }
+}
+@media (max-width: 600px) {
+  .sc__detailFlow { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; overflow: visible; padding: 0 16px 16px; }
+  .sc__detailFlow span, .sc__detailFlow span:first-child { min-width: 0; padding: 7px 4px; border-radius: 8px; clip-path: none; text-align: center; font-size: 10px; line-height: 1.2; white-space: normal; }
+  .sc__detailFlow span:nth-child(n+4) { grid-column: 1 / -1; }
+  .sc__detailToolbar { align-items: stretch; padding: 16px; gap: 10px; }
+  .sc__detailToolbar > .mx__btn { justify-content: center; width: 100%; min-height: 42px; }
+  .sc__cancelGroup { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr); }
+  .sc__cancelGroup .mx__input { width: 100%; height: 42px; }
+  .sc__cancelGroup .mx__btn { justify-content: center; width: 100%; min-height: 42px; }
+  .sc__signerList { padding-inline: 14px; }
+  .sc__signer { display: grid; grid-template-columns: 34px minmax(0, 1fr); align-items: start; gap: 4px 12px; padding: 14px; }
+  .sc__signer > .mx__avatar { grid-column: 1; grid-row: 1; }
+  .sc__signer > .mx__personText { grid-column: 2; grid-row: 1; }
+  .sc__signerActions { grid-column: 2; display: grid; grid-template-columns: repeat(2, max-content); justify-content: flex-start; margin-top: 6px; }
+  .sc__signerActions .mx__pill { grid-column: 1 / -1; justify-self: start; }
+  .sc__signerActions .mx__btn { min-height: 36px; }
 }
