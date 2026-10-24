@@ -290,13 +290,25 @@ export function SignCenter({ startContract, onClose, shell }: { startContract?: 
   const expiring = (list ?? []).filter((e) => e.status === 'sent' && daysLeft(e.expires_at) <= 7);
   const recent = (list ?? []).filter((e) => e.status === 'completed').slice(0, 5);
 
-  const envRow = (e: Envelope) => <li key={e.id}>
-    <People people={e.people} />
-    <div className="mx__main"><strong>PS-{e.number} · {e.title}</strong><small>{e.contract ? `Contract: ${e.contract} · ` : ''}{e.sender ? `from ${e.sender} · ` : ''}{e.routing === 'parallel' ? 'all at once' : 'in order'} · {e.sent_at ? `sent ${day(e.sent_at)}` : `created ${day(e.created_at)}`}{e.completed_at ? ` · completed ${day(e.completed_at)}` : e.status === 'sent' ? ` · ${daysLeft(e.expires_at)} day${daysLeft(e.expires_at) === 1 ? '' : 's'} left` : ''}</small></div>
-    {e.status === 'sent' && <div style={{ display: 'grid', gap: 4, justifyItems: 'end' }}><Progress signed={e.signed} total={e.signers} /><span className="mx__tiny">{e.signed} of {e.signers} signed</span></div>}
-    <Pill s={e.status} />
-    {e.status === 'sent' && <button type="button" className="mx__btn mx__btn--ghost mx__btn--sm" disabled={busy} onClick={() => void act(async () => { const r = await postJson<{ reminded: number }>(`/api/sign/envelopes/${e.id}/remind`, {}); return `Reminded ${r.reminded} signer(s).`; })}>Remind</button>}
-    <button type="button" className={`mx__btn mx__btn--sm ${e.status === 'draft' ? '' : 'mx__btn--ghost'}`} onClick={() => void act(() => open(e.id, e.status === 'draft' ? 'place' : 'detail'))}>{e.status === 'draft' ? 'Continue' : 'Open'}</button>
+  const envRow = (e: Envelope) => <li key={e.id} className="sc__envelopeRow">
+    <div className="sc__envelopePeople"><People people={e.people} /></div>
+    <div className="sc__envelopeMain">
+      <span className="sc__envelopeNumber">PS-{e.number}</span>
+      <strong>{e.title}</strong>
+      <div className="sc__envelopeMeta">
+        {e.contract && <span>Contract: {e.contract}</span>}
+        {e.sender && <span>From {e.sender}</span>}
+        <span>{e.routing === 'parallel' ? 'All at once' : 'In order'}</span>
+        <span>{e.sent_at ? `Sent ${day(e.sent_at)}` : `Created ${day(e.created_at)}`}</span>
+        {e.completed_at ? <span>Completed {day(e.completed_at)}</span> : e.status === 'sent' && <span>{daysLeft(e.expires_at)} day{daysLeft(e.expires_at) === 1 ? '' : 's'} left</span>}
+      </div>
+    </div>
+    {e.status === 'sent' && <div className="sc__envelopeProgress"><Progress signed={e.signed} total={e.signers} /><span className="mx__tiny">{e.signed} of {e.signers} signed</span></div>}
+    <div className="sc__envelopeStatus"><Pill s={e.status} /></div>
+    <div className="sc__envelopeActions">
+      {e.status === 'sent' && <button type="button" className="mx__btn mx__btn--ghost mx__btn--sm" disabled={busy} onClick={() => void act(async () => { const r = await postJson<{ reminded: number }>(`/api/sign/envelopes/${e.id}/remind`, {}); return `Reminded ${r.reminded} signer(s).`; })}>Remind</button>}
+      <button type="button" className={`mx__btn mx__btn--sm ${e.status === 'draft' ? '' : 'mx__btn--ghost'}`} onClick={() => void act(() => open(e.id, e.status === 'draft' ? 'place' : 'detail'))}>{e.status === 'draft' ? 'Continue' : 'Open'}</button>
+    </div>
   </li>;
   const mineRow = (m: Mine) => <li key={m.envelopeId}>
     <Illustration name="sign" size={40} />
@@ -353,8 +365,8 @@ export function SignCenter({ startContract, onClose, shell }: { startContract?: 
 
     {mode === 'mine' && <div className="mx__card"><div className="mx__cardHead"><h3>Waiting for your signature</h3><small>Your personal links, same as in your email</small></div><ul className="mx__list" style={{ marginTop: 10 }}>{mine.map(mineRow)}{!mine.length && empty('Nothing waiting for you', 'When someone sends you a document to sign, it appears here with a Sign now button — the same link as in your email.', undefined, 'vote')}</ul></div>}
 
-    {mode === 'list' && <div className="mx__card">
-      <div className="mx__cardHead"><h3>Envelopes</h3><div className="mx__voteBtns" style={{ marginTop: 0 }}><input className="mx__input" style={{ height: 36, width: 220 }} placeholder="Search title, number, signer" value={q} onChange={(e) => setQ(e.target.value)} /><button type="button" className="mx__btn mx__btn--sm" onClick={startCompose}>+ Send a document</button>{onClose && <button type="button" className="mx__btn mx__btn--ghost mx__btn--sm" onClick={onClose}>Close</button>}</div></div>
+    {mode === 'list' && <div className="mx__card sc__envelopes">
+      <div className="mx__cardHead"><h3>Envelopes</h3><div className="mx__voteBtns sc__envelopeToolbar" style={{ marginTop: 0 }}><input className="mx__input" placeholder="Search title, number, signer" aria-label="Search envelopes" value={q} onChange={(e) => setQ(e.target.value)} /><button type="button" className="mx__btn mx__btn--sm" onClick={startCompose}>+ Send a document</button>{onClose && <button type="button" className="mx__btn mx__btn--ghost mx__btn--sm" onClick={onClose}>Close</button>}</div></div>
       <div className="mx__segs" style={{ padding: '12px 20px 4px' }}>{([['all', 'All'], ['sent', 'Out'], ['draft', 'Drafts'], ['finalizing', 'Preparing'], ['completed', 'Completed'], ['declined', 'Declined'], ['other', 'Cancelled / expired']] as const).map(([k, v]) => <button key={k} type="button" className={`mx__seg ${filter === k ? 'is-on' : ''}`} onClick={() => setFilter(k)}>{v}</button>)}</div>
       <ul className="mx__list" style={{ marginTop: 6 }}>{filtered.map(envRow)}{list && !filtered.length && empty(q ? 'No match' : 'Nothing sent for signature yet', q ? 'No envelope matches that search. Try a signer\'s name or the PS number.' : 'Upload a PDF, add the signers, place their boxes and send. They sign from a link; you follow it here.', q ? undefined : { label: '+ Send a document', onClick: startCompose }, q ? 'search' : 'send')}</ul>
     </div>}
