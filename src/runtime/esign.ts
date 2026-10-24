@@ -387,7 +387,8 @@ export async function correctRecipient(pool: Pool, principal: Principal, envelop
     if (duplicate.rowCount) throw new InvalidInput('this email already receives the envelope');
     const actor = await client.query<{ id: string }>('select id from actor where tenant_id = $1 and lower(email) = $2 and active', [w.tenantId, email]);
     await client.query(`update sign_recipient set name = $2, email = $3, actor_id = $4, status = 'waiting', token_hash = null, token_sealed = null,
-      otp_hash = null, otp_expires_at = null, otp_attempts = 0, session_hash = null, session_expires_at = null, verified_at = null, consented_at = null,
+      otp_hash = null, otp_expires_at = null, otp_attempts = 0, otp_sent_count = 0, otp_window_start = null,
+      session_hash = null, session_expires_at = null, verified_at = null, consented_at = null,
       viewed_at = null, notified_at = null, last_reminded_at = null where id = $1`, [r.id, name, email, actor.rows[0]?.id ?? null]);
     await client.query('delete from sign_embed_session where recipient_id = $1', [r.id]);
     await event(client, envelopeId, r.id, 'recipient_corrected', { by: w.actorId, reason, previous: { name: r.name, email: r.email }, current: { name, email } });
@@ -755,7 +756,7 @@ export async function sweepSignatures(pool: Pool) {
 // ---------------------------------------------------------------- signer
 
 interface RecipientRow { id: string; envelope_id: string; name: string; email: string; role: string; routing_order: number; status: string; otp_hash: string | null; otp_expires_at: Date | null; otp_attempts: number;
-  otp_sent_count: number; otp_window_start: Date | null; session_hash: string | null; session_expires_at: Date | null; verified_at: Date | null; consented_at: Date | null; signed_at: Date | null }
+  otp_sent_count: number; otp_window_start: Date | null; notified_at: Date | null; session_hash: string | null; session_expires_at: Date | null; verified_at: Date | null; consented_at: Date | null; signed_at: Date | null }
 
 async function byToken(client: Client | Pool, t: string, lock = false) {
   if (!/^[A-Za-z0-9_-]{30,60}$/.test(t)) throw new InvalidInput('this link is not valid');
@@ -795,7 +796,19 @@ export async function signerView(pool: Pool, t: string, session?: string) {
   if (r.e_status !== 'sent' || r.expires_at < new Date()) return { ...base, stage: 'closed' as const, status: r.e_status === 'sent' ? 'expired' : r.e_status };
   if (r.status === 'signed') return { ...base, stage: 'signed' as const };
   if (r.status === 'declined') return { ...base, stage: 'closed' as const, status: 'declined' };
-  if (!sessionOk(r, session)) return { ...base, stage: 'verify' as const };
+  if (!sessionOk(r, session)) {
+    const x = r as typeof r & SignerExtra;
+    const codePending = Boolean(r.otp_expires_at && r.otp_expires_at > new Date() &&
+      (x.verify_by === 'sms' ? x.sms_otp_hash : r.otp_hash) &&
+      (x.verify_by !== 'email_and_sms' || x.sms_otp_hash));
+    const limitUntil = r.otp_sent_count >= 5 && r.otp_window_start &&
+      (!r.notified_at || r.notified_at <= r.otp_window_start) &&
+      r.otp_window_start.getTime() + 3600_000 > Date.now()
+      ? new Date(r.otp_window_start.getTime() + 3600_000) : null;
+    return { ...base, stage: 'verify' as const,
+      codeExpiresAt: codePending ? r.otp_expires_at : null,
+      codeRequestAvailableAt: limitUntil };
+  }
   // Own boxes, and the company's boxes for the next signatory slot (the slot is fixed when signing).
   const { rows: fields } = await pool.query(
     `select f.id, f.kind, f.page, f.x::float, f.y::float, f.width::float, f.height::float, f.required, f.label, f.choices, f.slot,
@@ -900,7 +913,10 @@ export async function requestCode(pool: Pool, t: string, ctx: Ctx = {}) {
   return inTransaction(pool, async (client) => {
     const r = await byToken(client, t, true);
     if (r.e_status !== 'sent' || !['sent', 'viewed'].includes(r.status)) throw new InvalidInput('this document is not waiting for your signature');
-    const windowStart = r.otp_window_start && r.otp_window_start > new Date(Date.now() - 3600_000) ? r.otp_window_start : new Date();
+    // A corrected recipient gets a fresh invitation and code allowance, even
+    // when the previous address exhausted its hourly allowance.
+    const windowStart = r.otp_window_start && r.otp_window_start > new Date(Date.now() - 3600_000)
+      && (!r.notified_at || r.notified_at <= r.otp_window_start) ? r.otp_window_start : new Date();
     const count = windowStart === r.otp_window_start ? r.otp_sent_count : 0;
     if (count >= 5) throw new InvalidInput('too many codes sent; try again in an hour');
     const x = r as typeof r & SignerExtra;

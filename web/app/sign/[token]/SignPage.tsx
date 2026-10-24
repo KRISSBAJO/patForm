@@ -6,13 +6,14 @@
  * then the document with the signer's own boxes to fill. The server checks
  * every step again; this page only walks through them.
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { PdfPages, PageBox } from '../../../components/pdf-pages';
 import { SignatureField, SignatureView, isSignature, type SignatureValue } from '../../../components/signature-field';
 import '../sign.css';
 
 type Field = { id: string; kind: 'signature' | 'initials' | 'date' | 'name' | 'text' | 'title' | 'email' | 'company' | 'checkbox' | 'dropdown' | 'radio' | 'payment'; page: number; x: number; y: number; width: number; height: number; required: boolean; label: string | null; choices: string[]; amountMinor?: number | null; currency?: string | null; paymentStatus?: string | null };
 type View = { stage: 'verify' | 'sign' | 'signed' | 'completed' | 'closed'; title: string; workspace: string; sender: string | null; name: string; email: string; expiresAt: string; status?: string;
+  codeExpiresAt?: string | null; codeRequestAvailableAt?: string | null;
   finalizing?: boolean;
   message?: string | null; pages?: number; consented?: boolean; consentText?: string; fields?: Field[]; completedAt?: string;
   verifyBy?: 'email' | 'sms' | 'email_and_sms'; phone?: string | null; party?: { name: string; required: number; signed: number; register?: { source?: string; companyName?: string; status?: string; number: string } | null; listedAs?: string | null } | null; signerTitle?: string | null; authorityText?: string | null; authorityNote?: string | null; allowAttachments?: boolean; attachments?: { id: string; filename: string; sha256: string }[] };
@@ -36,6 +37,21 @@ async function call<T>(path: string, init: RequestInit & { session?: string | nu
 }
 async function fileBase64(file: File) { return await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result).split(',')[1] ?? ''); reader.onerror = () => reject(reader.error); reader.readAsDataURL(file); }); }
 
+function CodeInput({ id, label, value, onChange, autoFocus = false }: { id: string; label: string; value: string; onChange: (value: string) => void; autoFocus?: boolean }) {
+  const input = useRef<HTMLInputElement>(null);
+  return <div className="ps__otpGroup">
+    <label htmlFor={id} className="ps__otpLabel">{label}</label>
+    <div className="ps__otp" onClick={() => input.current?.focus()}>
+      <input ref={input} id={id} className="ps__otpInput" type="text" inputMode="numeric" autoComplete={id === 'ps-code' ? 'one-time-code' : 'off'}
+        pattern="[0-9]*" maxLength={6} value={value} autoFocus={autoFocus} aria-label={label}
+        onChange={(event) => onChange(event.target.value.replace(/\D/g, '').slice(0, 6))} />
+      {Array.from({ length: 6 }, (_, index) => <span key={index} aria-hidden="true" className={`ps__otpDigit${value.length === index ? ' ps__otpDigit--next' : ''}${value.length === 6 && index === 5 ? ' ps__otpDigit--last' : ''}`}>
+        {value[index] ?? ''}
+      </span>)}
+    </div>
+  </div>;
+}
+
 export function SignPage({ token }: { token: string }) {
   const base = `/api/sign/t/${token}`;
   const [session, setSession] = useState<string | null>(null);
@@ -46,7 +62,6 @@ export function SignPage({ token }: { token: string }) {
   const [code, setCode] = useState('');
   const [smsCode, setSmsCode] = useState('');
   const [authority, setAuthority] = useState(false);
-  const [codeSent, setCodeSent] = useState<string | null>(null);
   const [agree, setAgree] = useState(false);
   const [pdf, setPdf] = useState<ArrayBuffer | null>(null);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
@@ -68,6 +83,13 @@ export function SignPage({ token }: { token: string }) {
     try { s = sessionStorage.getItem(KEY(token)); } catch { /* private window */ }
     setSession(s); void load(s);
   }, [token, load]);
+  useEffect(() => {
+    if (view?.stage !== 'verify') return;
+    const refresh = () => { if (document.visibilityState === 'visible') void load(session); };
+    document.addEventListener('visibilitychange', refresh);
+    window.addEventListener('pageshow', refresh);
+    return () => { document.removeEventListener('visibilitychange', refresh); window.removeEventListener('pageshow', refresh); };
+  }, [view?.stage, load, session]);
   useEffect(() => {
     if (view?.stage !== 'sign' || pdf) return;
     let cancelled = false;
@@ -127,14 +149,18 @@ export function SignPage({ token }: { token: string }) {
       {view.stage === 'verify' && <div className="ps__card">
         <h2 style={{ fontSize: 17, margin: '0 0 6px' }}>First, confirm it is you</h2>
         <p className="ps__muted">{view.verifyBy === 'sms' ? `We will text a 6-digit code to ${view.phone}.` : view.verifyBy === 'email_and_sms' ? `We will email a code to ${view.email} and text another to ${view.phone}.` : `We will email a 6-digit code to ${view.email}.`}</p>
-        {!codeSent ? <button type="button" className="ps__btn ps__btn--primary" disabled={busy} onClick={() => void act(async () => { const r = await call<{ sentTo: string }>(`${base}/code`, { method: 'POST', body: '{}' }); setCodeSent(r.sentTo); })}>{view.verifyBy === 'sms' ? 'Text me a code' : view.verifyBy === 'email_and_sms' ? 'Send my codes' : 'Email me a code'}</button>
-          : <form onSubmit={(e) => { e.preventDefault(); void act(async () => { const r = await call<{ session: string }>(`${base}/verify`, { method: 'POST', body: JSON.stringify({ code, smsCode: smsCode || undefined }) }); try { sessionStorage.setItem(KEY(token), r.session); } catch { /* private window */ } setSession(r.session); await load(r.session); }); }}>
-            <label htmlFor="ps-code" className="ps__muted">{view.verifyBy === 'email_and_sms' ? 'Code from the email' : `Code sent to ${codeSent}`}</label>
-            <p className="ps__muted" style={{ margin: '4px 0 0' }}>Use the newest code; asking for another makes the earlier one expire.</p>
-            <div className="ps__row" style={{ marginTop: 6 }}><input id="ps-code" className="ps__input ps__code" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))} autoFocus />
-              {view.verifyBy === 'email_and_sms' && <input aria-label="Code from the text message" placeholder="Text code" className="ps__input ps__code" inputMode="numeric" maxLength={6} value={smsCode} onChange={(e) => setSmsCode(e.target.value.replace(/\D/g, ''))} />}
-              <button type="submit" className="ps__btn ps__btn--primary" disabled={busy || code.length !== 6 || (view.verifyBy === 'email_and_sms' && smsCode.length !== 6)}>{busy ? 'Checking…' : 'Continue'}</button>
-              <button type="button" className="ps__btn" disabled={busy} onClick={() => void act(async () => { const r = await call<{ sentTo: string }>(`${base}/code`, { method: 'POST', body: '{}' }); setCodeSent(r.sentTo); setCode(''); setSmsCode(''); setNote('A new code is on its way. Use this latest code.'); })}>Send another</button></div>
+        {!view.codeExpiresAt ? <div className="ps__verifyActions">
+          <button type="button" className="ps__btn ps__btn--primary" disabled={busy || Boolean(view.codeRequestAvailableAt)} onClick={() => void act(async () => { await call(`${base}/code`, { method: 'POST', body: '{}' }); await load(null); })}>{view.verifyBy === 'sms' ? 'Text me a code' : view.verifyBy === 'email_and_sms' ? 'Send my codes' : 'Email me a code'}</button>
+          {view.codeRequestAvailableAt && <p className="ps__muted" role="status">You can request another code after {new Date(view.codeRequestAvailableAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.</p>}
+        </div>
+          : <form className="ps__verifyForm" onSubmit={(e) => { e.preventDefault(); void act(async () => { const r = await call<{ session: string }>(`${base}/verify`, { method: 'POST', body: JSON.stringify({ code, smsCode: smsCode || undefined }) }); try { sessionStorage.setItem(KEY(token), r.session); } catch { /* private window */ } setSession(r.session); await load(r.session); }); }}>
+            <p className="ps__muted ps__codeHelp">The code is on its way. You can leave to check your email and return here.</p>
+            <CodeInput id="ps-code" label={view.verifyBy === 'sms' ? 'Code from the text message' : 'Code from the email'} value={code} onChange={setCode} autoFocus />
+            {view.verifyBy === 'email_and_sms' && <CodeInput id="ps-sms-code" label="Code from the text message" value={smsCode} onChange={setSmsCode} />}
+            <div className="ps__verifyActions"><button type="submit" className="ps__btn ps__btn--primary" disabled={busy || code.length !== 6 || (view.verifyBy === 'email_and_sms' && smsCode.length !== 6)}>{busy ? 'Checking…' : 'Verify and continue'}</button>
+              <button type="button" className="ps__btn ps__resend" disabled={busy || Boolean(view.codeRequestAvailableAt)} onClick={() => void act(async () => { await call(`${base}/code`, { method: 'POST', body: '{}' }); setCode(''); setSmsCode(''); await load(null); setNote('A new code is on its way. Use the latest code.'); })}>Send a new code</button></div>
+            <p className="ps__muted ps__codeHelp">This code expires at {new Date(view.codeExpiresAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}. Sending a new one replaces it.</p>
+            {view.codeRequestAvailableAt && <p className="ps__muted" role="status">You can request another code after {new Date(view.codeRequestAvailableAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.</p>}
             {busy && <p className="ps__muted" role="status">Checking your code. You can leave this page open while it finishes.</p>}
           </form>}
       </div>}

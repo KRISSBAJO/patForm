@@ -354,10 +354,16 @@ test('Patform Sign: codes are limited, links are personal, declining closes the 
 
     // Wrong codes lock; too many sends are refused.
     await requestCode(pool, ta);
+    const pendingView = await signerView(pool, ta);
+    assert.equal(pendingView.stage, 'verify');
+    assert.ok(pendingView.codeExpiresAt, 'a returning signer can reopen the code entry without sending again');
     for (let i = 0; i < 5; i++) await assert.rejects(verifyCode(pool, ta, '999999'), /not right/);
     await assert.rejects(verifyCode(pool, ta, w.code(a.email)), /too many wrong codes/);
     for (let i = 0; i < 4; i++) await requestCode(pool, ta);
     await assert.rejects(requestCode(pool, ta), /too many codes/);
+    const limitedView = await signerView(pool, ta);
+    assert.ok(limitedView.codeExpiresAt, 'the current code remains usable after the send limit');
+    assert.ok(limitedView.codeRequestAvailableAt, 'the page can show when another code may be requested');
     // A session from one signer does not open another's link.
     const sb = await signIn(pool, tb, b.email, w.code);
     await assert.rejects(signerDocument(pool, ta, sb), /confirm it is you/);
