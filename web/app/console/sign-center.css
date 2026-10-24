@@ -43,6 +43,11 @@
 .sc__envelopeStatus { min-width: 0; }
 .sc__envelopeActions { display: flex; gap: 6px; justify-content: flex-end; }
 .sc__envelopeActions .mx__btn { white-space: nowrap; }
+.sc__dashboard .mx__list > li.sc__envelopeRow { grid-template-columns: minmax(0, 1fr); align-items: start; }
+.sc__dashboard .sc__envelopeMain { grid-column: 1; order: -1; }
+.sc__dashboard .sc__envelopePeople, .sc__dashboard .sc__envelopeProgress, .sc__dashboard .sc__envelopeStatus, .sc__dashboard .sc__envelopeActions { grid-column: 1; }
+.sc__dashboard .sc__envelopeProgress { justify-items: start; }
+.sc__dashboard .sc__envelopeActions { justify-content: flex-start; }
 @media (max-width: 1050px) {
   .mx__list > li.sc__envelopeRow { grid-template-columns: minmax(0, 1fr) auto; gap: 12px; }
   .sc__envelopeMain { grid-column: 1 / -1; order: -1; }
