@@ -708,3 +708,11 @@
 .st__picked { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--mx-line); border-radius: 10px; background: #fff; } .st__picked .mx__btn { margin-left: auto; }
 .st__perms { display: grid; gap: 8px; } .st__perm { display: flex; gap: 10px; align-items: center; font-size: 14px; }
 @media (max-width: 900px) { .st__grid { grid-template-columns: 1fr; } .st__treeCard { position: static; max-height: 360px; } .st__office { grid-template-columns: 1fr; } }
+
+/* Headquarters */
+.hq__h { margin: 0 0 6px; font: 600 18px var(--font-display, serif); }
+.hq__wide { grid-column: 1 / -1; }
+.hq__code { grid-column: 1 / -1; font: 600 15px ui-monospace, Menlo, monospace; padding: 14px; border: 1px dashed var(--mx-line); border-radius: 10px; background: var(--mx-soft); word-break: break-all; user-select: all; }
+.hq__answers { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; } .hq__answers div { padding: 10px 12px; background: var(--mx-soft); border-radius: 10px; } .hq__answers span { display: block; font-size: 12px; color: var(--mx-muted); } .hq__answers strong { font-size: 14px; white-space: pre-wrap; }
+.hq__route { margin: 0; padding-left: 20px; display: grid; gap: 8px; } .hq__route small { display: block; color: var(--mx-muted); font-size: 12.5px; } .hq__route li.is-not_needed { opacity: .5; } .hq__route li.is-pending strong { color: #8a5a00; }
+.mx__list li.is-off { opacity: .55; }

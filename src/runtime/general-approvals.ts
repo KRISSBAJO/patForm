@@ -25,6 +25,7 @@ import { objectStore } from './object-store.js';
 import { requireWorkspaceCapability, type Principal } from './policy.js';
 import { recordWorkspaceAudit } from './authority.js';
 import { alternateFor, holdingsAt, resolveCommittee, resolveOffice, unitOfActor } from './structure.js';
+import { hqDeciders, ruleCovers, rulesForTenant } from './headquarters.js';
 
 const value = (raw: unknown, max = 500) => typeof raw === 'string' ? raw.trim().slice(0, max) : '';
 const UUID = /^[0-9a-f-]{36}$/;
@@ -34,9 +35,9 @@ type Cond = { field: string; op: 'gte' | 'gt' | 'lte' | 'lt' | 'eq' | 'in' | 'ye
 type Rule =
   | { kind: 'manager' } | { kind: 'person'; actorId: string } | { kind: 'team'; team: 'hr' | 'it' | 'facilities' | 'finance' }
   | { kind: 'office'; office: string } | { kind: 'committee'; committee: string };
-type Step = { name: string; responsible: Rule[]; mode: 'any' | 'all' | 'quorum' | 'majority'; required?: number; when?: Cond; parallel?: boolean; sameApprover?: 'once' | 'independent' };
-type Doc = { key: string; label: string; when?: Cond };
-type RequestType = { id: string; tenant_id: string; name: string; description: string | null; fields: Field[]; attachment_rule: 'none' | 'optional' | 'required'; steps: Step[]; active: boolean; category_id: string | null; amount_field: string | null; documents: Doc[] };
+type Step = { name: string; responsible: Rule[]; mode: 'any' | 'all' | 'quorum' | 'majority'; required?: number; when?: Cond; parallel?: boolean; sameApprover?: 'once' | 'independent'; hq?: { groupId: string; rule: string } };
+type Doc = { key: string; label: string; when?: Cond; hq?: boolean };
+type RequestType = { id: string; tenant_id: string; seed_key?: string | null; name: string; description: string | null; fields: Field[]; attachment_rule: 'none' | 'optional' | 'required'; steps: Step[]; active: boolean; category_id: string | null; amount_field: string | null; documents: Doc[] };
 type Request = { id: string; tenant_id: string; type_id: string; requester_id: string; title: string; answers: Record<string, unknown>; status: string; round: number; current_step: number; type_snapshot: RequestType | null };
 type Who = { tenantId: string; actorId: string };
 
@@ -170,6 +171,21 @@ async function visible(pool: Pool | Client, who: { tenantId: string; actorId: st
     (select 1 from general_request_step where request_id=$1 and $2=any(approvers))
     or exists (select 1 from general_request_share where request_id=$1 and actor_id=$2)`, [request.id, who.actorId]);
   return !!rows[0];
+}
+
+/**
+ * The documents this request needs: the type's own (those whose condition the
+ * answers meet) and any a Headquarters rule requires of the National.
+ */
+async function effectiveDocs(client: Client | Pool, tenantId: string, type: RequestType, answers: Record<string, unknown>, all = false): Promise<Doc[]> {
+  const own = (type.documents ?? []).filter((d) => all || matches(d.when, answers));
+  const rules = (await rulesForTenant(client, tenantId)).filter((r) => r.kind === 'require_document');
+  if (!rules.length) return own;
+  const { rows } = await client.query<{ name: string }>('select name from general_request_category where id = $1', [type.category_id]);
+  const category = rows[0]?.name ?? null;
+  const fromHq: Doc[] = rules.filter((r) => ruleCovers({ ...r, applies: { ...r.applies, minAmount: undefined } }, type, category, answers) && (all || ruleCovers(r, type, category, answers)))
+    .map((r) => ({ key: `hq_${r.id.slice(0, 8)}`, label: `${r.document} (required by Headquarters)`, hq: true, ...(r.applies.minAmount !== undefined && type.amount_field ? { when: { field: type.amount_field, op: 'gte' as const, value: r.applies.minAmount } } : {}) }));
+  return [...own, ...fromHq];
 }
 
 // -------------------------------------------------------------- categories
@@ -349,6 +365,15 @@ async function openFrom(client: Client, request: Request, type: RequestType, sta
     let open = 0;
     for (const w of waiting) {
       const step = type.steps[w.position]!;
+      if (step.hq) {
+        // Headquarters decides from its own workspace; the National only sees who it is with.
+        const deciders = await hqDeciders(client, step.hq.groupId);
+        if (!deciders.length && strict) throw new InvalidInput('this request needs a Headquarters review, and nobody at Headquarters can decide it yet');
+        await client.query(`update general_request_step set status='pending', opened_at=now(), approvers=$2, required=1 where id=$1`, [w.id, deciders]);
+        await event(client, { tenantId: request.tenant_id, actorId: actor }, request.id, 'escalated', { step: step.name, rule: step.hq.rule });
+        open++;
+        continue;
+      }
       const r = await resolveStep(client, { tenantId: request.tenant_id, requesterId: request.requester_id, step, earlier });
       if (r.skip) {
         await client.query(`update general_request_step set status='skipped', closed_at=now(), note=$2, offices=$3 where id=$1`, [w.id, r.skip, JSON.stringify(r.offices)]);
@@ -381,16 +406,23 @@ export async function submitRequest(pool: Pool, principal: Principal, requestId:
     const { rows: files } = await client.query<{ document_key: string | null }>('select document_key from general_request_file where request_id=$1', [requestId]);
     if (type.attachment_rule === 'required' && !files.length) throw new InvalidInput('attach a file before submitting');
     if (type.attachment_rule === 'none' && files.some((f) => !f.document_key)) throw new InvalidInput('this request type does not accept attachments');
-    for (const d of type.documents ?? []) {
-      if (matches(d.when, request.answers) && !files.some((f) => f.document_key === d.key)) throw new InvalidInput(`attach the ${d.label.toLowerCase()} before submitting`);
+    for (const d of await effectiveDocs(client, who.tenantId, type, request.answers)) {
+      if (!files.some((f) => f.document_key === d.key)) throw new InvalidInput(`attach the ${d.label.charAt(0).toLowerCase()}${d.label.slice(1)} before submitting`);
+    }
+    // A Headquarters rule may require its review after the National's own route.
+    const rules = (await rulesForTenant(client, who.tenantId)).filter((r) => r.kind === 'escalate');
+    if (rules.length) {
+      const { rows: cat } = await client.query<{ name: string }>('select name from general_request_category where id = $1', [type.category_id]);
+      const hit = rules.find((r) => ruleCovers(r, type, cat[0]?.name ?? null, request.answers));
+      if (hit) type.steps = [...type.steps, { name: 'Headquarters review', responsible: [], mode: 'any', hq: { groupId: hit.groupId, rule: hit.name } }];
     }
     const nextRound = request.round + 1;
     const stages = stagesOf(type.steps);
     for (let index = 0; index < type.steps.length; index++) {
       const step = type.steps[index]!;
       const applies = matches(step.when, request.answers);
-      await client.query(`insert into general_request_step (tenant_id,request_id,round,position,stage,name,approvers,mode,required,status,note) values ($1,$2,$3,$4,$5,$6,'{}',$7,1,$8,$9)`,
-        [who.tenantId, requestId, nextRound, index, stages[index], step.name, step.mode === 'majority' ? 'quorum' : step.mode, applies ? 'waiting' : 'not_needed', applies ? null : 'not needed for this request']);
+      await client.query(`insert into general_request_step (tenant_id,request_id,round,position,stage,name,approvers,mode,required,status,note,hq) values ($1,$2,$3,$4,$5,$6,'{}',$7,1,$8,$9,$10)`,
+        [who.tenantId, requestId, nextRound, index, stages[index], step.name, step.mode === 'majority' ? 'quorum' : step.mode, applies ? 'waiting' : 'not_needed', applies ? (step.hq ? `required by Headquarters: ${step.hq.rule}` : null) : 'not needed for this request', !!step.hq]);
     }
     await client.query(`update general_request set status='pending',type_snapshot=$2,round=$3,submitted_at=now(),updated_at=now() where id=$1`, [requestId, JSON.stringify(type), nextRound]);
     const fresh = { ...request, round: nextRound, type_snapshot: type };
@@ -436,8 +468,10 @@ export async function requestDetail(pool: Pool, principal: Principal, requestId:
   ]);
   const { rows: req } = await pool.query<{ name: string }>('select display_name as name from actor where id = $1', [request.requester_id]);
   type S = { round: number; stage: number; status: string; approvers: string[]; viewer_voted: boolean };
+  const shown = (request.type_snapshot ?? type.rows[0]) as RequestType;
+  const docs = await effectiveDocs(pool, who.tenantId, shown, request.answers ?? {}, true);
   return {
-    request, requester: req[0]?.name ?? null, type: request.type_snapshot ?? type.rows[0], steps: steps.rows, events: events.rows, files: files.rows, shares: shares.rows,
+    request, requester: req[0]?.name ?? null, type: { ...shown, documents: docs }, steps: steps.rows, events: events.rows, files: files.rows, shares: shares.rows,
     viewer: { own: request.requester_id === who.actorId, admin: who.admin, canShare: request.status !== 'draft' && (request.requester_id === who.actorId || who.admin),
       canDecide: request.status === 'pending' && (steps.rows as S[]).some((s) => s.round === request.round && s.stage === request.current_step && s.status === 'pending' && s.approvers.includes(who.actorId) && !s.viewer_voted) },
   };
@@ -538,7 +572,7 @@ export async function uploadFile(pool: Pool, principal: Principal, requestId: st
   if (request.requester_id !== who.actorId || !['draft', 'returned'].includes(request.status)) throw new InvalidInput('files can be added while you prepare this request');
   const { rows: types } = await pool.query<RequestType>('select * from general_request_type where id=$1', [request.type_id]);
   const documentKey = value(body.documentKey, 40) || null;
-  if (documentKey && !(types[0]?.documents ?? []).some((d) => d.key === documentKey)) throw new InvalidInput('this request type does not ask for that document');
+  if (documentKey && !(await effectiveDocs(pool, who.tenantId, types[0]!, request.answers ?? {}, true)).some((d) => d.key === documentKey)) throw new InvalidInput('this request type does not ask for that document');
   if (!documentKey && types[0]?.attachment_rule === 'none') throw new InvalidInput('this request type does not accept attachments');
   const filename = value(body.filename, 180); const raw = typeof body.base64 === 'string' ? body.base64 : '';
   const MAX = 10 * 1024 * 1024;

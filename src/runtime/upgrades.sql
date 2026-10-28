@@ -3152,3 +3152,57 @@ alter table general_request_step add column if not exists offices jsonb not null
 alter table general_request_step add column if not exists note text;
 alter table general_request_step drop constraint if exists general_request_step_status_check;
 alter table general_request_step add constraint general_request_step_status_check check (status in ('waiting','pending','approved','rejected','returned','skipped','not_needed','closed'));
+
+-- Headquarters over National workspaces. A group is the worldwide church:
+-- its Headquarters is one workspace, each National is another, joined by
+-- mutual consent (a one-time code from Headquarters, entered by the
+-- National's owner). Workspaces stay isolated: Headquarters reaches a
+-- National only through explicit grants, and every such read is recorded
+-- in both workspaces' audit trails.
+create table if not exists church_group (
+  id            uuid primary key default gen_random_uuid(),
+  name          text not null,
+  hq_tenant_id  uuid not null unique references tenant(id),
+  created_by    uuid references actor(id),
+  created_at    timestamptz not null default now()
+);
+alter table tenant add column if not exists group_id uuid references church_group(id);
+alter table tenant add column if not exists group_label text;
+alter table tenant add column if not exists group_joined_at timestamptz;
+create index if not exists tenant_group_idx on tenant (group_id) where group_id is not null;
+create table if not exists group_invite (
+  id                 uuid primary key default gen_random_uuid(),
+  group_id           uuid not null references church_group(id),
+  label              text not null,
+  token_hash         text not null unique,
+  created_by         uuid references actor(id),
+  created_at         timestamptz not null default now(),
+  expires_at         timestamptz not null,
+  accepted_tenant_id uuid references tenant(id),
+  accepted_at        timestamptz,
+  revoked_at         timestamptz
+);
+-- What a person at Headquarters may do across the Nationals.
+create table if not exists group_grant (
+  group_id    uuid not null references church_group(id),
+  actor_id    uuid not null references actor(id),
+  permissions text[] not null default '{}',
+  granted_by  uuid references actor(id),
+  updated_at  timestamptz not null default now(),
+  primary key (group_id, actor_id)
+);
+-- Rules Headquarters sets for every National; a National cannot change them.
+create table if not exists group_rule (
+  id          uuid primary key default gen_random_uuid(),
+  group_id    uuid not null references church_group(id),
+  kind        text not null check (kind in ('escalate', 'require_document')),
+  name        text not null,
+  applies     jsonb not null default '{}'::jsonb,
+  document    text,
+  active      boolean not null default true,
+  created_by  uuid references actor(id),
+  updated_at  timestamptz not null default now()
+);
+create index if not exists group_rule_group on group_rule (group_id, active);
+-- A Headquarters review step at the end of a National's request.
+alter table general_request_step add column if not exists hq boolean not null default false;

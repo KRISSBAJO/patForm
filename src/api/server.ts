@@ -40,6 +40,7 @@ import { addEmployeeEvent, adjustLeave, documentFileLink, listBranches, saveBran
 import { acknowledgeDocument, addCaseNote, addCertification, addOnboardingTask, cancelLeave, completeTask, createDocument, decideLeave, decideProbation, exceptTask, hrSummary, leaveToApprove, listCaseNotes, listCases, listCompensation, listDocuments, listEmployees, listHiring, listHolidays, listLeaveTypes, listReconciliations, listTeams, listTemplates, myDocuments, myLeave, myTasks, myTaskHistory, readHrSettings, requestLeave, resolveReconciliation, saveHoliday, saveLeaveType, saveTemplate, sendDocument, setCompensation, setEntitlement, setTeamMember, startOffboarding, startOnboarding, startProbationReview, startTransfer, updateEmployee, updateHrSettings, upcoming, urgentTermination } from '../runtime/hr.js';
 import * as apr from '../runtime/appraisals.js';
 import * as ga from '../runtime/general-approvals.js';
+import * as hqmod from '../runtime/headquarters.js';
 import { goalFileLink, uploadGoalFile } from '../runtime/goal-files.js';
 import * as ops from '../runtime/ops.js';
 import * as gov from '../runtime/gov.js';
@@ -1090,6 +1091,23 @@ route('POST', /^\/api\/structure\/invite$/, async ({ pool, principal }, b) => {
   const sent = await invite(pool, { principal, email: String(body.email ?? ''), workspaceRole: role as 'read_only', message: typeof body.message === 'string' ? body.message : undefined, unitId, officeTypeId, scopeChecked: !scope.workspaceAdmin });
   return { id: sent.id, expiresAt: sent.expiresAt, delivered: sent.delivered };
 });
+// Headquarters over National workspaces.
+route('GET', /^\/api\/headquarters$/, async ({ pool, principal }) => hqmod.hqStatus(pool, principal));
+route('POST', /^\/api\/headquarters$/, async ({ pool, principal }, b) => hqmod.createGroup(pool, principal, hb(b)));
+route('POST', /^\/api\/headquarters\/join$/, async ({ pool, principal }, b) => hqmod.joinGroup(pool, principal, hb(b)));
+route('GET', /^\/api\/headquarters\/overview$/, async ({ pool, principal }) => hqmod.hqOverview(pool, principal));
+route('POST', /^\/api\/headquarters\/invites$/, async ({ pool, principal }, b) => hqmod.inviteNational(pool, principal, hb(b)));
+route('POST', /^\/api\/headquarters\/invites\/([0-9a-f-]{36})\/revoke$/, async ({ pool, principal, url }) => hqmod.revokeInvite(pool, principal, hid(url, 4)));
+route('POST', /^\/api\/headquarters\/nationals\/([0-9a-f-]{36})\/remove$/, async ({ pool, principal, url }) => hqmod.removeNational(pool, principal, hid(url, 4)));
+route('GET', /^\/api\/headquarters\/nationals\/([0-9a-f-]{36})\/requests$/, async ({ pool, principal, url }) => hqmod.nationalRequests(pool, principal, hid(url, 4)));
+route('GET', /^\/api\/headquarters\/access$/, async ({ pool, principal }) => hqmod.listAccess(pool, principal));
+route('POST', /^\/api\/headquarters\/access$/, async ({ pool, principal }, b) => hqmod.setAccess(pool, principal, hb(b)));
+route('GET', /^\/api\/headquarters\/rules$/, async ({ pool, principal }) => hqmod.listRules(pool, principal));
+route('POST', /^\/api\/headquarters\/rules$/, async ({ pool, principal }, b) => hqmod.saveRule(pool, principal, hb(b)));
+route('GET', /^\/api\/headquarters\/escalations$/, async ({ pool, principal }) => hqmod.listEscalations(pool, principal));
+route('GET', /^\/api\/headquarters\/requests\/([0-9a-f-]{36})$/, async ({ pool, principal, url }) => hqmod.escalationDetail(pool, principal, hid(url, 4)));
+route('GET', /^\/api\/headquarters\/requests\/([0-9a-f-]{36})\/files\/([0-9a-f-]{36})$/, async ({ pool, principal, url }) => hqmod.escalationFileLink(pool, principal, hid(url, 4), hid(url, 6)));
+route('POST', /^\/api\/headquarters\/requests\/([0-9a-f-]{36})\/decide$/, async ({ pool, principal, url }, b) => hqmod.decideEscalation(pool, principal, hid(url, 4), hb(b)));
 route('GET', /^\/api\/general-approvals\/types$/, async ({ pool, principal }) => ga.listTypes(pool, principal));
 route('GET', /^\/api\/general-approvals\/categories$/, async ({ pool, principal }) => ga.listCategories(pool, principal));
 route('POST', /^\/api\/general-approvals\/categories$/, async ({ pool, principal }, b) => ga.saveCategory(pool, principal, hb(b)));
