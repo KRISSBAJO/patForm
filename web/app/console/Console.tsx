@@ -18,6 +18,7 @@ import { IntegrationsView } from './Integrations';
 import { ModulesView } from './Modules';
 import { OrganisationView } from './Organisation';
 import { ApprovalsView } from './Approvals';
+import { StructureView } from './Structure';
 import { ExpensesView } from './Expenses';
 import { ProcurementView } from './Procurement';
 import { HRView } from './HR';
@@ -164,6 +165,7 @@ export function Console() {
     | 'modules'
     | 'organisation'
     | 'approvals'
+    | 'structure'
     | 'expenses'
     | 'procurement'
     | 'hr'
@@ -600,8 +602,8 @@ export function Console() {
 </nav>
         </>}
 <div className="cs__railBottom">
-{me.workspace_role !== 'pre_hire' && <div className="cs__railSettings" ref={settingsRef}><button type="button" className="cs__navItem" title="Settings" aria-expanded={settingsOpen} aria-controls="console-settings-menu" aria-current={['health','held','integrations','data','modules','organisation'].includes(view) ? 'page' : undefined} onClick={event => { event.stopPropagation(); setSettingsOpen(!settingsOpen); }}><NavIcon name="integrations"/><span className="cs__navText">Settings</span></button>
-{settingsOpen && <nav id="console-settings-menu" className="cs__settingsMenu" aria-label="Workspace settings">{([{key:'health',label:'Automation health',icon:'health'},{key:'held',label:'Held submissions',icon:'held'},{key:'integrations',label:'Integrations',icon:'integrations'},{key:'data',label:'Import & data',icon:'data'},{key:'modules',label:'Modules & workspace',icon:'processes'},{key:'organisation',label:'Organisation & authority',icon:'people'},{key:'approvals',label:'Approval policies',icon:'work'}] as const).map(item => <button type="button" key={item.key} aria-current={view === item.key ? 'page' : undefined} onClick={() => { setActivationTarget(null); setView(item.key); setSettingsOpen(false); }}><NavIcon name={item.icon}/><span>{item.label}</span>{item.key === 'held' && heldCount > 0 && <span className="cs__navCount">{heldCount}</span>}</button>)}</nav>}
+{me.workspace_role !== 'pre_hire' && <div className="cs__railSettings" ref={settingsRef}><button type="button" className="cs__navItem" title="Settings" aria-expanded={settingsOpen} aria-controls="console-settings-menu" aria-current={['health','held','integrations','data','modules','organisation','approvals','structure'].includes(view) ? 'page' : undefined} onClick={event => { event.stopPropagation(); setSettingsOpen(!settingsOpen); }}><NavIcon name="integrations"/><span className="cs__navText">Settings</span></button>
+{settingsOpen && <nav id="console-settings-menu" className="cs__settingsMenu" aria-label="Workspace settings">{([{key:'health',label:'Automation health',icon:'health'},{key:'held',label:'Held submissions',icon:'held'},{key:'integrations',label:'Integrations',icon:'integrations'},{key:'data',label:'Import & data',icon:'data'},{key:'modules',label:'Modules & workspace',icon:'processes'},{key:'organisation',label:'Organisation & authority',icon:'people'},{key:'structure',label:'Structure & offices',icon:'people'},{key:'approvals',label:'Approval policies',icon:'work'}] as const).map(item => <button type="button" key={item.key} aria-current={view === item.key ? 'page' : undefined} onClick={() => { setActivationTarget(null); setView(item.key); setSettingsOpen(false); }}><NavIcon name={item.icon}/><span>{item.label}</span>{item.key === 'held' && heldCount > 0 && <span className="cs__navCount">{heldCount}</span>}</button>)}</nav>}
 </div>}
 <button type="button" className="cs__navItem cs__railExpand" title={railExpanded ? 'Collapse sidebar' : 'Expand sidebar'} aria-label={railExpanded ? 'Collapse sidebar' : 'Expand sidebar'} aria-expanded={railExpanded} onClick={() => setRailExpanded(!railExpanded)}><span aria-hidden="true">{railExpanded ? '‹' : '›'}</span><span className="cs__navText">{railExpanded ? 'Collapse' : 'Expand'}</span></button>
 </div>
@@ -645,6 +647,8 @@ export function Console() {
                                   ? 'Organisation & authority'
                                   : view === 'approvals'
                                     ? 'Approval policies'
+                                  : view === 'structure'
+                                    ? 'Structure & offices'
                                   : view === 'expenses'
                                     ? 'Expenses'
                                     : view === 'procurement'
@@ -671,13 +675,13 @@ export function Console() {
             <button type="button" className="cs__btn cs__btn--create" onClick={() => { sessionStorage.removeItem('patform:new-process-description'); window.location.href = '/builder/ai'; }}>
               <span className="cs__createMark" aria-hidden="true">✦</span> Build with AI
             </button>
-          ) : view !== 'security' && view !== 'home' && <button type="button" className="cs__btn" onClick={() => { if (view === 'integrations' || view === 'data' || view === 'modules' || view === 'organisation' || view === 'approvals' || view === 'expenses' || view === 'procurement' || view === 'hr' || view === 'attendance' || view === 'appraisals' || view === 'operations' || view === 'compliance' || view === 'sign' || view === 'meetings' || view === 'general_approvals') setSettingsRevision(value => value + 1); void load(); }}>
+          ) : view !== 'security' && view !== 'home' && <button type="button" className="cs__btn" onClick={() => { if (view === 'integrations' || view === 'data' || view === 'modules' || view === 'organisation' || view === 'approvals' || view === 'structure' || view === 'expenses' || view === 'procurement' || view === 'hr' || view === 'attendance' || view === 'appraisals' || view === 'operations' || view === 'compliance' || view === 'sign' || view === 'meetings' || view === 'general_approvals') setSettingsRevision(value => value + 1); void load(); }}>
             Refresh
           </button>}
         </div>
 
         {area && !beforeFirstDay && <ModuleStrip sections={moduleSections} current={moduleSection} onPick={setModuleSection} />}
-          <div className={`cs__body ${beforeFirstDay ? 'cs__body--access' : ''} ${view === 'home' ? 'cs__body--home' : ''} ${view === 'security' ? 'cs__body--security' : ''} ${view === 'ask' ? 'cs__body--ask' : ''} ${view === 'record' ? 'cs__body--record' : ''} ${view === 'health' ? 'cs__body--health' : ''} ${view === 'dashboard' ? 'cs__body--dashboard' : ''} ${view === 'people' ? 'cs__body--people' : ''} ${view === 'records' ? 'cs__body--records' : ''} ${view === 'work' ? 'cs__body--work' : ''} ${view === 'processes' ? 'cs__body--processes' : ''} ${view === 'held' ? 'cs__body--held' : ''} ${view === 'integrations' ? 'cs__body--integrations' : ''} ${view === 'data' ? 'cs__body--data' : ''} ${view === 'modules' || view === 'organisation' || view === 'approvals' || view === 'expenses' || view === 'procurement' || view === 'hr' || view === 'attendance' || view === 'appraisals' || view === 'operations' || view === 'compliance' || view === 'sign' || view === 'meetings' || view === 'general_approvals' ? 'cs__body--integrations' : ''} ${view === 'meetings' || view === 'sign' || view === 'hr' || view === 'attendance' || view === 'expenses' || view === 'procurement' || view === 'appraisals' || view === 'approvals' || view === 'general_approvals' ? 'cs__body--wide' : ''}`}>
+          <div className={`cs__body ${beforeFirstDay ? 'cs__body--access' : ''} ${view === 'home' ? 'cs__body--home' : ''} ${view === 'security' ? 'cs__body--security' : ''} ${view === 'ask' ? 'cs__body--ask' : ''} ${view === 'record' ? 'cs__body--record' : ''} ${view === 'health' ? 'cs__body--health' : ''} ${view === 'dashboard' ? 'cs__body--dashboard' : ''} ${view === 'people' ? 'cs__body--people' : ''} ${view === 'records' ? 'cs__body--records' : ''} ${view === 'work' ? 'cs__body--work' : ''} ${view === 'processes' ? 'cs__body--processes' : ''} ${view === 'held' ? 'cs__body--held' : ''} ${view === 'integrations' ? 'cs__body--integrations' : ''} ${view === 'data' ? 'cs__body--data' : ''} ${view === 'modules' || view === 'organisation' || view === 'approvals' || view === 'structure' || view === 'expenses' || view === 'procurement' || view === 'hr' || view === 'attendance' || view === 'appraisals' || view === 'operations' || view === 'compliance' || view === 'sign' || view === 'meetings' || view === 'general_approvals' ? 'cs__body--integrations' : ''} ${view === 'meetings' || view === 'sign' || view === 'hr' || view === 'attendance' || view === 'expenses' || view === 'procurement' || view === 'appraisals' || view === 'approvals' || view === 'structure' || view === 'general_approvals' ? 'cs__body--wide' : ''}`}>
           <div className="cs__left">
             {beforeFirstDay ? (
               <AccessState
@@ -729,6 +733,8 @@ export function Console() {
               <ProcurementView key={settingsRevision} shell={shell} canAdminister={['owner', 'admin'].includes(me.workspace_role)} canOperate={['owner', 'admin', 'operator'].includes(me.workspace_role)} onOpenRecord={(id) => void open(id)} />
             ) : view === 'expenses' ? (
               <ExpensesView key={settingsRevision} shell={shell} canAdminister={['owner', 'admin'].includes(me.workspace_role)} canOperate={['owner', 'admin', 'operator'].includes(me.workspace_role)} onOpenRecord={(id) => void open(id)} />
+            ) : view === 'structure' ? (
+              <StructureView key={settingsRevision} canAdminister={['owner', 'admin'].includes(me.workspace_role)} />
             ) : view === 'approvals' ? (
               <ApprovalsView key={settingsRevision} canAdminister={['owner', 'admin', 'builder'].includes(me.workspace_role)} onOpenRecord={(id) => void open(id)} />
             ) : view === 'organisation' ? (

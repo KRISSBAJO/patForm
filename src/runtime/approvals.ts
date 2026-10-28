@@ -29,6 +29,7 @@ import { InvalidInput } from './errors.js';
 import { requireWorkspaceCapability, type Principal } from './policy.js';
 import { recordWorkspaceAudit } from './authority.js';
 import { managerOf } from './org.js';
+import { alternateFor, holdingsAt, resolveCommittee, resolveOffice, unitOfActor } from './structure.js';
 import { expenseSettings } from './expenses.js';
 import { procurementSettings } from './procurement.js';
 import { objectStore } from './object-store.js';
@@ -50,7 +51,11 @@ export type Responsible =
   | { kind: 'person'; email: string }
   | { kind: 'cost_centre_owner'; field?: string }
   | { kind: 'field'; field: string }
-  | { kind: 'fallback' };
+  | { kind: 'fallback' }
+  /** The holder of an office, found up the tree from the requester's unit (for a church: their station). */
+  | { kind: 'office'; office: string }
+  /** The voting members of a committee, the one with this key nearest the requester (their station's CMC). */
+  | { kind: 'committee'; committee: string };
 
 export interface StepApplies { amountField?: string; minAmount?: number | null; maxAmount?: number | null; categoryField?: string; categories?: string[]; costCentreField?: string; costCentres?: string[]; branches?: string[] }
 export interface StepSla { remindAfterHours?: number | null; escalateAfterHours?: number | null; escalateTo?: Responsible[]; escalateMode?: 'add' | 'replace' }
@@ -59,10 +64,16 @@ export interface Step {
   applies?: StepApplies; evidence: 'none' | 'note' | 'file'; notTheSubmitter: boolean; sla?: StepSla; onReject: 'end' | 'return';
   /** What the approver is told to check. */
   guidance?: string;
+  /**
+   * When the person this step reaches already approved an earlier step (one
+   * person, two offices): `once` counts that approval and moves on;
+   * `independent` needs someone else, an alternate or the level above.
+   */
+  sameApprover?: 'once' | 'independent';
 }
 export interface Policy { id: string; tenant_id: string; process_key: string; name: string; description: string | null; branch_id: string | null; steps: Step[]; cost_centre_owners: Record<string, string>; template_key: string | null; active: boolean; version: number }
 
-const RESPONSIBLE_KINDS = ['manager', 'skip_manager', 'role', 'team', 'person', 'cost_centre_owner', 'field', 'fallback'];
+const RESPONSIBLE_KINDS = ['manager', 'skip_manager', 'role', 'team', 'person', 'cost_centre_owner', 'field', 'fallback', 'office', 'committee'];
 const TEAMS = ['hr', 'it', 'facilities', 'finance'];
 
 function checkResponsible(raw: unknown, where: string): Responsible {
@@ -74,6 +85,8 @@ function checkResponsible(raw: unknown, where: string): Responsible {
   if (kind === 'person') { const email = text(r.email, 254).toLowerCase(); if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new InvalidInput(`${where}: give the person's email`); return { kind, email }; }
   if (kind === 'field') { const field = text(r.field, 60); if (!field) throw new InvalidInput(`${where}: name the form field`); return { kind, field }; }
   if (kind === 'cost_centre_owner') return { kind, ...(text(r.field, 60) ? { field: text(r.field, 60) } : {}) };
+  if (kind === 'office') { const office = text(r.office, 40); if (!/^[a-z][a-z0-9_]*$/.test(office)) throw new InvalidInput(`${where}: choose the office`); return { kind, office }; }
+  if (kind === 'committee') { const committee = text(r.committee, 40); if (!/^[a-z][a-z0-9_]*$/.test(committee)) throw new InvalidInput(`${where}: name the committee`); return { kind, committee }; }
   if (kind === 'manager' || kind === 'skip_manager') { const fallback = text(r.fallback, 60); if (fallback && !/^[a-z][a-z0-9_]*$/.test(fallback)) throw new InvalidInput(`${where}: the fallback must be a process role`); return fallback ? { kind, fallback } : { kind }; }
   return { kind } as Responsible;
 }
@@ -119,7 +132,8 @@ export function checkSteps(raw: unknown): Step[] {
     if (sla.escalateAfterHours && !sla.escalateTo?.length) throw new InvalidInput(`${where}: say who the escalation goes to`);
     if (sla.remindAfterHours && sla.escalateAfterHours && sla.remindAfterHours > sla.escalateAfterHours) throw new InvalidInput(`${where}: the reminder must come before the escalation`);
     const onReject = r.onReject === 'return' ? 'return' : 'end';
-    return { key, name, responsible, mode: mode as Step['mode'], ...(required ? { required } : {}), applies, evidence: evidence as Step['evidence'], notTheSubmitter: r.notTheSubmitter !== false, sla, onReject, ...(text(r.guidance, 500) ? { guidance: text(r.guidance, 500) } : {}) };
+    const sameApprover = r.sameApprover === 'independent' ? 'independent' : 'once';
+    return { key, name, responsible, mode: mode as Step['mode'], ...(required ? { required } : {}), applies, evidence: evidence as Step['evidence'], notTheSubmitter: r.notTheSubmitter !== false, sla, onReject, sameApprover, ...(text(r.guidance, 500) ? { guidance: text(r.guidance, 500) } : {}) };
   });
 }
 
@@ -181,6 +195,17 @@ export const TEMPLATES: Template[] = [
     steps: [
       { key: 'manager', name: 'Manager approval', responsible: [{ kind: 'manager', fallback: 'line_manager' }], mode: 'any', evidence: 'none', notTheSubmitter: true, sla: { remindAfterHours: 72, escalateAfterHours: null, escalateTo: [], escalateMode: 'add' }, onReject: 'end', applies: {} },
       { key: 'hr', name: 'HR approval', responsible: [{ kind: 'role', role: 'hr_approver' }], mode: 'any', evidence: 'none', notTheSubmitter: true, sla: { remindAfterHours: 72, escalateAfterHours: null, escalateTo: [], escalateMode: 'add' }, onReject: 'end', applies: {} },
+    ] },
+  // A church: the Resident Pastor of the requester's station, then up the line
+  // as the amount grows. One pastor holding two offices approves once; a
+  // pastor's own request goes to the level above.
+  { key: 'church_line', name: 'Church: up the line by amount', description: 'The Resident Pastor of the requester\u2019s station approves; above the limits it also goes to the Area, Zonal, District and National Pastor in turn. Reminders after two days, escalation to the next pastor up after five.', fits: 'A church with stations, areas, zones, districts and a national office.',
+    steps: [
+      { key: 'resident_pastor', name: 'Resident Pastor', responsible: [{ kind: 'office', office: 'resident_pastor' }], mode: 'any', evidence: 'none', notTheSubmitter: true, sameApprover: 'once', sla: h(48, 120, [{ kind: 'office', office: 'area_pastor' }]), onReject: 'return', applies: {} },
+      { key: 'area_pastor', name: 'Area Pastor', responsible: [{ kind: 'office', office: 'area_pastor' }], mode: 'any', evidence: 'none', notTheSubmitter: true, sameApprover: 'once', sla: h(48, 120, [{ kind: 'office', office: 'zonal_pastor' }]), onReject: 'end', applies: { minAmount: 1000 } },
+      { key: 'zonal_pastor', name: 'Zonal Pastor', responsible: [{ kind: 'office', office: 'zonal_pastor' }], mode: 'any', evidence: 'note', notTheSubmitter: true, sameApprover: 'once', sla: h(48, 120, [{ kind: 'office', office: 'district_pastor' }]), onReject: 'end', applies: { minAmount: 5000 } },
+      { key: 'district_pastor', name: 'District Pastor', responsible: [{ kind: 'office', office: 'district_pastor' }], mode: 'any', evidence: 'note', notTheSubmitter: true, sameApprover: 'once', sla: h(72, 168, [{ kind: 'office', office: 'national_pastor' }]), onReject: 'end', applies: { minAmount: 20000 } },
+      { key: 'national_pastor', name: 'National Pastor', responsible: [{ kind: 'office', office: 'national_pastor' }], mode: 'any', evidence: 'file', notTheSubmitter: true, sameApprover: 'independent', sla: { remindAfterHours: 72, escalateAfterHours: null, escalateTo: [], escalateMode: 'add' }, onReject: 'end', applies: { minAmount: 100000 } },
     ] },
   { key: 'hr_case', name: 'HR, then a director', description: 'HR approves; a director also approves when the category says so. Rejections end the request.', fits: 'HR requests: hiring, pay changes, contract changes.',
     steps: [
@@ -345,6 +370,8 @@ export async function resolveResponsible(client: Client, r: Responsible, args: {
     }
     case 'field': { const v = fieldValue(instance, r.field); return v && v.includes('@') ? [v.toLowerCase()] : []; }
     case 'fallback': { const out: string[] = []; for (const p of args.approval.approvers) for (const who of await resolveParty(client, p, instance, bp, now)) if (!out.includes(who)) out.push(who); return out; }
+    case 'office': { const at = await unitOfActor(client, await submitterActor(client, bp, instance)); return (await resolveOffice(client, instance.tenant_id, at, r.office)).holders.map((h) => h.email.toLowerCase()); }
+    case 'committee': { const at = await unitOfActor(client, await submitterActor(client, bp, instance)); return (await resolveCommittee(client, instance.tenant_id, at, r.committee)).emails; }
   }
 }
 
@@ -375,34 +402,153 @@ async function notify(client: Client | Pool, args: { tenantId: string; processKe
 const modeOf = (s: Step): 'any_of' | 'sequential' | 'quorum' => (s.mode === 'all' ? 'sequential' : s.mode === 'quorum' ? 'quorum' : 'any_of');
 
 /** Create the approval request for one step and the step run that tracks its clock. */
-async function openStep(client: Client, args: { instance: InstanceRow; bp: Blueprint; approval: Approval; policy: Policy; steps: Step[]; index: number; runId: number | null; now: Date; actor: string }): Promise<void> {
+interface Resolved { approvers: string[]; offices: { unitId: string; officeTypeId: string }[]; via: { responsible: Responsible; resolved: string[]; note?: string }[]; notes: string[]; skip: { reason: string; by: string[] } | null }
+
+/** The emails of everyone who approved an earlier step of the chain this record is on now. */
+async function earlierApprovers(client: Client, instance: InstanceRow, approvalKey: string, index: number): Promise<string[]> {
+  const { rows } = await client.query<{ email: string }>(
+    `with start as (select max(started_at) as at from approval_step_run where instance_id = $1 and approval_key = $2 and step_index = 0)
+     select distinct lower(a.email) as email from approval_step_run r, start, actor a
+      where r.instance_id = $1 and r.approval_key = $2 and r.step_index < $3 and r.status = 'approved' and r.started_at >= start.at
+        and a.id::text = substring(r.decided_by from 7) and r.decided_by like 'actor:%'`, [instance.id, approvalKey, index]);
+  return rows.map((r) => r.email);
+}
+
+/**
+ * Who a step goes to. Offices are found up the tree from the requester; the
+ * requester never decides their own request; a person who already approved
+ * an earlier step either counts once (the step is skipped, on the record) or,
+ * when the step must be independent, is replaced by an alternate: an
+ * assistant at the same unit, else the overseer above.
+ */
+async function resolveStep(client: Client, args: { instance: InstanceRow; bp: Blueprint; approval: Approval; policy: Policy; step: Step; index: number; now: Date }): Promise<Resolved> {
+  const { instance, bp, approval, policy, step, index, now } = args;
+  const out: Resolved = { approvers: [], offices: [], via: [], notes: [], skip: null };
+  let fromUnit: string | null | undefined;
+  const unitOfRequester = async () => (fromUnit === undefined ? (fromUnit = await unitOfActor(client, await submitterActor(client, bp, instance))) : fromUnit);
+  for (const r of step.responsible) {
+    if (r.kind === 'office') {
+      const o = await resolveOffice(client, instance.tenant_id, await unitOfRequester(), r.office);
+      if (o.unitId && o.officeTypeId) out.offices.push({ unitId: o.unitId, officeTypeId: o.officeTypeId });
+      const emails = o.holders.map((h) => h.email.toLowerCase());
+      out.via.push({ responsible: r, resolved: emails, ...(o.vacant ? { note: o.wentTo ? `${o.office} is vacant; it went to the overseer of ${o.wentTo.unit}` : `${o.office} is vacant and nobody above holds an office` } : !o.unitId ? { note: `the requester has no unit with a ${o.office}` } : {}) });
+      for (const e of emails) if (!out.approvers.includes(e)) out.approvers.push(e);
+    } else {
+      const emails = r.kind === 'committee'
+        ? (await resolveCommittee(client, instance.tenant_id, await unitOfRequester(), r.committee)).emails
+        : await resolveResponsible(client, r, { instance, bp, approval, policy, now });
+      out.via.push({ responsible: r, resolved: emails });
+      for (const e of emails) if (!out.approvers.includes(e)) out.approvers.push(e);
+    }
+  }
+  const submitter = (submitterOf(bp, instance) ?? '').toLowerCase();
+  const earlier = index > 0 ? await earlierApprovers(client, instance, approval.key, index) : [];
+  const exclude: string[] = [];
+  if (step.notTheSubmitter && submitter && out.approvers.includes(submitter)) { exclude.push(submitter); out.notes.push('the requester holds this office, so it goes to someone else'); }
+  const already = out.approvers.filter((e) => earlier.includes(e) && !exclude.includes(e));
+  if (already.length) {
+    const others = out.approvers.filter((e) => !earlier.includes(e) && !exclude.includes(e));
+    if ((step.sameApprover ?? 'once') === 'once' && !others.length && !exclude.length) {
+      out.skip = { reason: 'already approved this record in another office', by: already };
+      return out;
+    }
+    exclude.push(...already);
+    out.notes.push((step.sameApprover ?? 'once') === 'independent' ? 'this step must be independent of earlier approvals' : 'an earlier approver is not counted twice');
+  }
+  out.approvers = out.approvers.filter((e) => !exclude.includes(e));
+  if (!out.approvers.length && exclude.length) {
+    for (const seat of out.offices) {
+      const alt = await alternateFor(client, instance.tenant_id, seat.unitId, [...exclude, submitter].filter(Boolean));
+      if (alt) { out.approvers = alt.holders.map((h) => h.email.toLowerCase()); out.notes.push(alt.how === 'assistant' ? `an assistant at ${alt.unit} takes it` : `it goes up to the overseer of ${alt.unit}`); break; }
+    }
+  }
+  if (!out.approvers.length) {
+    // Nobody resolved: the process's own approvers take it, so nothing waits on an empty seat.
+    for (const p of approval.approvers) for (const who of await resolveParty(client, p, instance, bp, now)) if (!out.approvers.includes(who) && who.toLowerCase() !== submitter) out.approvers.push(who);
+    if (out.approvers.length) out.notes.push('nobody holds the office, so the process\u2019s own approvers take it');
+  }
+  return out;
+}
+
+async function openStep(client: Client, args: { instance: InstanceRow; bp: Blueprint; approval: Approval; policy: Policy; steps: Step[]; index: number; runId: number | null; now: Date; actor: string }): Promise<'opened' | 'skipped'> {
   const { instance, bp, approval, policy, steps, index, now } = args;
   const step = steps[index]!;
-  const approvers: string[] = [];
-  const via: { responsible: Responsible; resolved: string[] }[] = [];
-  for (const r of step.responsible) {
-    const resolved = await resolveResponsible(client, r, { instance, bp, approval, policy, now });
-    via.push({ responsible: r, resolved });
-    for (const who of resolved) if (!approvers.includes(who)) approvers.push(who);
+  const res = await resolveStep(client, { instance, bp, approval, policy, step, index, now });
+  if (res.skip) {
+    await client.query(
+      `insert into approval_step_run (tenant_id, instance_id, approval_key, request_id, policy_id, policy_version, step_index, step_key, step_name, step, started_at, status, decided_at, decided_by, offices)
+       values ($1, $2, $3, null, $4, $5, $6, $7, $8, $9, $10, 'skipped', $10, 'system:policy', $11)`,
+      [instance.tenant_id, instance.id, approval.key, policy.id, policy.version, index, step.key, step.name, JSON.stringify(step), now, JSON.stringify(res.offices)]);
+    await appendEvent(client, { tenantId: instance.tenant_id, instanceId: instance.id, type: 'approval_step_skipped', actor: args.actor, now,
+      payload: { approval: approval.key, step: { index: index + 1, of: steps.length, key: step.key, name: step.name }, reason: res.skip.reason, by: res.skip.by } });
+    return 'skipped';
   }
+  const approvers = res.approvers;
   const mode = modeOf(step);
   const sla = step.sla ?? {};
   const remindAt = sla.remindAfterHours ? new Date(now.getTime() + sla.remindAfterHours * 3_600_000) : null;
   const escalateAt = sla.escalateAfterHours ? new Date(now.getTime() + sla.escalateAfterHours * 3_600_000) : null;
   const dueAt = escalateAt ?? remindAt ?? (approval.dueInHours ? new Date(now.getTime() + approval.dueInHours * 3_600_000) : null);
+  const required = mode === 'quorum' ? Math.min(step.required ?? 2, Math.max(1, approvers.length)) : null;
   const { rows } = await client.query<{ id: string }>(
     `insert into approval_request (tenant_id, instance_id, action_run_id, approval_key, approvers, mode, due_at, created_at, required, electorate) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, null) returning id`,
-    [instance.tenant_id, instance.id, args.runId, approval.key, approvers, mode, dueAt, now, mode === 'quorum' ? step.required ?? 2 : null]);
+    [instance.tenant_id, instance.id, args.runId, approval.key, approvers, mode, dueAt, now, required]);
   await client.query(
-    `insert into approval_step_run (tenant_id, instance_id, approval_key, request_id, policy_id, policy_version, step_index, step_key, step_name, step, started_at, remind_at, escalate_at)
-     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
-    [instance.tenant_id, instance.id, approval.key, rows[0]!.id, policy.id, policy.version, index, step.key, step.name, JSON.stringify(step), now, remindAt, escalateAt]);
+    `insert into approval_step_run (tenant_id, instance_id, approval_key, request_id, policy_id, policy_version, step_index, step_key, step_name, step, started_at, remind_at, escalate_at, offices)
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+    [instance.tenant_id, instance.id, approval.key, rows[0]!.id, policy.id, policy.version, index, step.key, step.name, JSON.stringify(step), now, remindAt, escalateAt, JSON.stringify(res.offices)]);
   await appendEvent(client, {
     tenantId: instance.tenant_id, instanceId: instance.id, type: approvers.length ? 'approval_routed' : 'routing_unresolved', actor: args.actor, now,
-    payload: { approval: approval.key, approvers, policy: { id: policy.id, name: policy.name, version: policy.version }, step: { index: index + 1, of: steps.length, key: step.key, name: step.name, mode: step.mode, evidence: step.evidence }, via, ...(approvers.length ? {} : { reason: ['nobody responsible for this step could be found'] }) },
+    payload: { approval: approval.key, approvers, policy: { id: policy.id, name: policy.name, version: policy.version }, step: { index: index + 1, of: steps.length, key: step.key, name: step.name, mode: step.mode, evidence: step.evidence }, via: res.via, ...(res.notes.length ? { notes: res.notes } : {}) },
   });
-  await notify(client, { tenantId: instance.tenant_id, processKey: instance.process_key, approvers, kind: 'approval_requested', key: `apr-req:${instance.id}:${approval.key}:${index}`,
+  await notify(client, { tenantId: instance.tenant_id, processKey: instance.process_key, approvers, kind: 'approval_requested', key: `apr-req:${instance.id}:${approval.key}:${index}:${now.getTime()}`,
     subject: `${bp.name}: ${step.name} needed`, text: `A ${bp.name} record is waiting for your decision (${step.name}, step ${index + 1} of ${steps.length}).${step.guidance ? `\n\n${step.guidance}` : ''}\n\nOpen your work queue in Patform to decide.` });
+  return 'opened';
+}
+
+/**
+ * A holder of an office changed (appointed, replaced, ended). Every open step
+ * addressed to that office is worked out again, so the approval waits with
+ * whoever holds it now; the record says it moved and why.
+ */
+export async function rerouteOffice(client: Client, tenantId: string, unitId: string, officeTypeId: string, now = new Date()): Promise<number> {
+  const { rows: runs } = await client.query<{ id: number; instance_id: string; approval_key: string; request_id: string; policy_id: string; step_index: number; step: Step }>(
+    `select id, instance_id, approval_key, request_id, policy_id, step_index, step from approval_step_run
+      where tenant_id = $1 and status = 'pending' and offices @> $2::jsonb`, [tenantId, JSON.stringify([{ unitId, officeTypeId }])]);
+  let moved = 0;
+  for (const run of runs) {
+    const { rows: inst } = await client.query<InstanceRow>(`select id, tenant_id, process_key, process_version_id, state, data, assignee, outcome, state_entered_at, completed_at from instance where id = $1`, [run.instance_id]);
+    const { rows: ver } = await client.query<{ blueprint: Blueprint }>('select blueprint from process_version where id = $1', [inst[0]!.process_version_id]);
+    const { rows: pol } = await client.query<Policy>('select * from approval_policy where id = $1', [run.policy_id]);
+    const bp = ver[0]!.blueprint; const approval = bp.workflow.approvals.find((a) => a.key === run.approval_key);
+    if (!approval || !pol[0]) continue;
+    const res = await resolveStep(client, { instance: inst[0]!, bp, approval, policy: pol[0], step: run.step, index: run.step_index, now });
+    if (res.skip || !res.approvers.length) continue;
+    const { rows: req } = await client.query<{ approvers: string[] }>(`select approvers from approval_request where id = $1 and status = 'pending'`, [run.request_id]);
+    if (!req[0] || [...req[0].approvers].sort().join() === [...res.approvers].sort().join()) continue;
+    await client.query(`update approval_request set approvers = $2 where id = $1 and status = 'pending'`, [run.request_id, res.approvers]);
+    await client.query('update approval_step_run set offices = $2 where id = $1', [run.id, JSON.stringify(res.offices)]);
+    await appendEvent(client, { tenantId, instanceId: run.instance_id, type: 'approval_rerouted', actor: 'system:structure', now, payload: { approval: run.approval_key, step: run.step.name, from: req[0].approvers, to: res.approvers, reason: 'the holder of the office changed', notes: res.notes } });
+    await notify(client, { tenantId, processKey: inst[0]!.process_key, approvers: res.approvers.filter((e) => !req[0]!.approvers.includes(e)), kind: 'approval_requested', key: `apr-reroute:${run.id}:${now.getTime()}`,
+      subject: `${bp.name}: ${run.step.name} needed`, text: `A ${bp.name} record now waits for your decision (${run.step.name}), because the office changed hands.\n\nOpen your work queue in Patform to decide.` });
+    moved++;
+  }
+  return moved;
+}
+
+/**
+ * A holder deciding in an office with a mandate may approve up to it. The
+ * office the decider holds among those the step was addressed to is what
+ * counts; someone deciding as an alternate or by escalation is not held to it.
+ */
+export async function checkOfficeMandate(client: Client, args: { run: StepRunRow; instance: InstanceRow; bp: Blueprint; actorId: string }): Promise<{ office: string; unit: string; acting: boolean }[]> {
+  const held = await holdingsAt(client, args.instance.tenant_id, args.actorId, args.run.offices ?? []);
+  if (!held.length) return [];
+  const limits = held.map((h) => (h.mandate_limit === null ? Infinity : Number(h.mandate_limit)));
+  const amount = amountValue(args.instance, args.bp, args.run.step);
+  const best = Math.max(...limits);
+  if (amount > best) throw new InvalidInput(`your mandate as ${held[0]!.office} of ${held[0]!.unit} is up to ${best.toLocaleString()}; this is ${amount.toLocaleString()}. Send it back, or it waits for someone with a higher mandate.`);
+  return held.map((h) => ({ office: h.office, unit: h.unit, acting: h.acting }));
 }
 
 /**
@@ -437,15 +583,17 @@ export async function startPolicyChain(client: Client, args: { instance: Instanc
     await appendEvent(client, { tenantId: args.instance.tenant_id, instanceId: args.instance.id, type: 'approval_policy_waived', actor: 'system:policy', now: args.now, payload: { approval: args.approval.key, policy: { id: policy.id, name: policy.name } } });
     return false;
   }
-  await openStep(client, { ...args, policy, steps, index: 0, actor: 'system:policy' });
-  return true;
+  for (let i = 0; i < steps.length; i++) if ((await openStep(client, { ...args, policy, steps, index: i, actor: 'system:policy' })) === 'opened') return true;
+  // Every step counted an approval already given: nothing more to ask.
+  await appendEvent(client, { tenantId: args.instance.tenant_id, instanceId: args.instance.id, type: 'approval_policy_waived', actor: 'system:policy', now: args.now, payload: { approval: args.approval.key, policy: { id: policy.id, name: policy.name }, reason: 'every step was already approved' } });
+  return false;
 }
 
-export interface StepRunRow { id: number; policy_id: string; policy_version: number; step_index: number; step_key: string; step_name: string; step: Step; status: string }
+export interface StepRunRow { id: number; policy_id: string; policy_version: number; step_index: number; step_key: string; step_name: string; step: Step; status: string; offices?: { unitId: string; officeTypeId: string }[] }
 
 /** The open step behind a pending request, if the request came from a policy. */
 export async function stepRunFor(client: Client, requestId: string | number): Promise<StepRunRow | null> {
-  const { rows } = await client.query<StepRunRow>(`select id, policy_id, policy_version, step_index, step_key, step_name, step, status from approval_step_run where request_id = $1 and status = 'pending'`, [requestId]);
+  const { rows } = await client.query<StepRunRow>(`select id, policy_id, policy_version, step_index, step_key, step_name, step, status, offices from approval_step_run where request_id = $1 and status = 'pending'`, [requestId]);
   return rows[0] ?? null;
 }
 
@@ -459,7 +607,7 @@ export async function evidenceCount(client: Client, instanceId: string, approval
  * Called by the engine once a step's request is settled. Opens the next
  * applicable step, or says which decision the process should now see.
  */
-export async function continuePolicyChain(client: Client, args: { instance: InstanceRow; bp: Blueprint; approval: Approval; run: StepRunRow; decision: 'approved' | 'rejected' | 'changes_requested'; actor: string; now: Date }): Promise<{ fire: 'approved' | 'rejected' | 'changes_requested' | null; step: number; of: number; stepName?: string }> {
+export async function continuePolicyChain(client: Client, args: { instance: InstanceRow; bp: Blueprint; approval: Approval; run: StepRunRow; decision: 'approved' | 'rejected' | 'changes_requested'; actor: string; now: Date; as?: { office: string; unit: string; acting: boolean }[] }): Promise<{ fire: 'approved' | 'rejected' | 'changes_requested' | null; step: number; of: number; stepName?: string }> {
   const { instance, bp, run, decision, now } = args;
   const { rows: pol } = await client.query<Policy>('select * from approval_policy where id = $1', [run.policy_id]);
   const policy = pol[0]!;
@@ -474,10 +622,9 @@ export async function continuePolicyChain(client: Client, args: { instance: Inst
     await appendEvent(client, { tenantId: instance.tenant_id, instanceId: instance.id, type: 'approval_step_decided', actor: args.actor, now, payload: { approval: args.approval.key, step: { index: at + 1, of: order.length, key: run.step_key, name: run.step_name }, decision, outcome: back ? 'returned to the requester' : 'ended' } });
     return { fire: back ? 'changes_requested' : 'rejected', step: at + 1, of: order.length };
   }
-  await appendEvent(client, { tenantId: instance.tenant_id, instanceId: instance.id, type: 'approval_step_decided', actor: args.actor, now, payload: { approval: args.approval.key, step: { index: at + 1, of: order.length, key: run.step_key, name: run.step_name }, decision } });
-  if (at + 1 < order.length) {
-    await openStep(client, { instance, bp, approval: args.approval, policy, steps: order, index: at + 1, runId: null, now, actor: 'system:policy' });
-    return { fire: null, step: at + 2, of: order.length, stepName: order[at + 1]!.name };
+  await appendEvent(client, { tenantId: instance.tenant_id, instanceId: instance.id, type: 'approval_step_decided', actor: args.actor, now, payload: { approval: args.approval.key, step: { index: at + 1, of: order.length, key: run.step_key, name: run.step_name }, decision, ...(args.as?.length ? { as: args.as } : {}) } });
+  for (let i = at + 1; i < order.length; i++) {
+    if ((await openStep(client, { instance, bp, approval: args.approval, policy, steps: order, index: i, runId: null, now, actor: 'system:policy' })) === 'opened') return { fire: null, step: i + 1, of: order.length, stepName: order[i]!.name };
   }
   return { fire: 'approved', step: order.length, of: order.length };
 }
@@ -601,6 +748,20 @@ export async function simulatePolicy(pool: Pool, principal: Principal, body: Rec
   const bp = { finance: { amountField: 'amount', categoryField: 'category', costCentreField: 'cost_centre' } } as unknown as Blueprint;
   const policy: Policy = { id: 'simulated', tenant_id: tenantId, process_key: fake.process_key, name: 'simulated', description: null, branch_id: branchId, steps, cost_centre_owners: owners, template_key: null, active: true, version: 0 };
   const applicable = applicableSteps(policy, fake, bp, branchId);
-  const describe = (r: Responsible) => r.kind === 'manager' ? 'the submitter’s manager' : r.kind === 'skip_manager' ? 'the manager’s manager' : r.kind === 'role' ? `anyone holding the ${r.role} role` : r.kind === 'team' ? `the ${r.team.toUpperCase()} team` : r.kind === 'person' ? r.email : r.kind === 'cost_centre_owner' ? (owners[costCentre] ? `${owners[costCentre]} (owner of ${costCentre})` : `the owner of ${costCentre || 'the cost centre'} (none named)`) : r.kind === 'field' ? `the address in ${r.field}` : 'the process’s own approvers';
+  const describe = (r: Responsible) => r.kind === 'manager' ? 'the submitter’s manager' : r.kind === 'skip_manager' ? 'the manager’s manager' : r.kind === 'role' ? `anyone holding the ${r.role} role` : r.kind === 'team' ? `the ${r.team.toUpperCase()} team` : r.kind === 'person' ? r.email : r.kind === 'cost_centre_owner' ? (owners[costCentre] ? `${owners[costCentre]} (owner of ${costCentre})` : `the owner of ${costCentre || 'the cost centre'} (none named)`) : r.kind === 'field' ? `the address in ${r.field}` : r.kind === 'office' ? `the ${r.office.replace(/_/g, ' ')} over the requester` : r.kind === 'committee' ? `the ${r.committee.replace(/_/g, ' ')} committee nearest the requester` : 'the process’s own approvers';
   return { amount, category, costCentre, steps: steps.map((s) => ({ key: s.key, name: s.name, applies: applicable.includes(s), who: s.responsible.map(describe), mode: s.mode, required: s.required, evidence: s.evidence, remindAfterHours: s.sla?.remindAfterHours ?? null, escalateAfterHours: s.sla?.escalateAfterHours ?? null, escalateTo: (s.sla?.escalateTo ?? []).map(describe), onReject: s.onReject })) };
+}
+
+/**
+ * Someone leaves (deactivated, or access revoked by HR): every office they
+ * hold ends today, on the record, and what waited for them moves to whoever
+ * the office falls to now.
+ */
+export async function endOfficesOfMember(client: Client, tenantId: string, actorId: string, by: string | null, reason: string): Promise<number> {
+  const { rows } = await client.query<{ id: string; unit_id: string; office_type_id: string }>(
+    `update office_holder set ends_on = greatest(starts_on, current_date), ended_by = $3, end_reason = $4
+      where tenant_id = $1 and actor_id = $2 and (ends_on is null or ends_on > current_date) returning id, unit_id, office_type_id`, [tenantId, actorId, by, reason]);
+  for (const h of rows) await rerouteOffice(client, tenantId, h.unit_id, h.office_type_id);
+  if (rows.length) await recordWorkspaceAudit(client, { tenantId, actorId: by, action: 'structure.offices_ended_on_leaving', targetId: actorId, detail: { offices: rows.length, reason } });
+  return rows.length;
 }

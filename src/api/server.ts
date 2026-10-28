@@ -33,7 +33,8 @@ import { createLegalEntity, createOrgUnit, orgChart, reportingHistory, setManage
 import { addRate, advanceMovements, disburseAdvance, expenseSummary, exportPaid, listAdvances, listBudgets, listExports, listRates, listSettlements, moveSettlement, myBeneficiary, readExpenseSettings, recordAdvanceReturn, revealBeneficiary, reviewLines, saveBeneficiary, saveBudget, settlementLines, updateExpenseSettings, verifyBeneficiary } from '../runtime/expenses.js';
 import { addQuote, approveOrder, cancelOrder, createAgreement, createOrder, createVendor, enterInvoice, exportInvoices, listAgreements, listInvoices, listOrders, listQuotes, listRequisitions, listVendors, openQuotes, orderDetail, payInvoice, procurementSummary, readProcurementSettings, receiveGoods, returnGoods, revealVendorBank, reviewInvoice, reviseOrder, saveVendorBank, selectQuote, setQuoteDeadline, setVendorStatus, updateProcurementSettings, updateVendor, vendorHistory, verifyVendorBank } from '../runtime/procurement.js';
 import { allowance, cancelPaymentRun, createPaymentRun, expenseReport, listCategories, listRateCards, paymentRun, paymentRunBankFile, saveCategory, saveRateCard, searchAdvances, searchClaims, searchMyClaims, searchPaymentRuns, settlePaymentRun } from '../runtime/expenses-depth.js';
-import { adoptTemplate, approvalsOverview, evidenceLink, listEvidence, listPolicies, savePolicy, setPolicyActive, simulatePolicy, uploadEvidence } from '../runtime/approvals.js';
+import { adoptTemplate, approvalsOverview, evidenceLink, listEvidence, listPolicies, rerouteOffice, savePolicy, setPolicyActive, simulatePolicy, uploadEvidence } from '../runtime/approvals.js';
+import { appoint, checkInviteScope, endAppointment, linkCommittee, placeMember, readStructure, saveCatalogItem, saveLevel, saveOfficeType, saveUnit, searchPeople, setDepartments, setupChurch, unitDetail } from '../runtime/structure.js';
 import { searchCases, searchDocuments, searchHiring, searchHolidays, searchLeave, searchReconciliation, searchUpcoming } from '../runtime/hr-lists.js';
 import { addEmployeeEvent, adjustLeave, documentFileLink, listBranches, saveBranch, searchEmployees, setEmployeeBranch, employeeDetail, employeeFileLink, leaveCalendar, leaveLedger, myProfile, orgTree, removeEmployeeFile, setEmployeeFileVisibility, updateProfile, uploadDocumentFile, uploadEmployeeFile } from '../runtime/hr-records.js';
 import { acknowledgeDocument, addCaseNote, addCertification, addOnboardingTask, cancelLeave, completeTask, createDocument, decideLeave, decideProbation, exceptTask, hrSummary, leaveToApprove, listCaseNotes, listCases, listCompensation, listDocuments, listEmployees, listHiring, listHolidays, listLeaveTypes, listReconciliations, listTeams, listTemplates, myDocuments, myLeave, myTasks, myTaskHistory, readHrSettings, requestLeave, resolveReconciliation, saveHoliday, saveLeaveType, saveTemplate, sendDocument, setCompensation, setEntitlement, setTeamMember, startOffboarding, startOnboarding, startProbationReview, startTransfer, updateEmployee, updateHrSettings, upcoming, urgentTermination } from '../runtime/hr.js';
@@ -1064,6 +1065,31 @@ route('GET', /^\/api\/approvals\/overview$/, async ({ pool, principal }) => appr
 route('GET', /^\/api\/records\/([0-9a-f-]{36})\/approvals\/([a-z0-9_]+)\/evidence$/, async ({ pool, principal, url }) => listEvidence(pool, principal, hid(url, 3), hid(url, 5)));
 route('POST', /^\/api\/records\/([0-9a-f-]{36})\/approvals\/([a-z0-9_]+)\/evidence\/files$/, async ({ pool, principal, url }, b) => uploadEvidence(pool, principal, hid(url, 3), hid(url, 5), hb(b)));
 route('GET', /^\/api\/approvals\/evidence\/([0-9a-f-]{36})\/link$/, async ({ pool, principal, url }) => evidenceLink(pool, principal, hid(url, 4)));
+
+// Structure and offices: levels, jurisdictions and stations, offices and who holds them.
+const rerouteHook = (client: Parameters<typeof rerouteOffice>[0], tenantId: string, unitId: string, officeTypeId: string) => rerouteOffice(client, tenantId, unitId, officeTypeId).then(() => undefined);
+route('GET', /^\/api\/structure$/, async ({ pool, principal }) => readStructure(pool, principal));
+route('GET', /^\/api\/structure\/units\/([0-9a-f-]{36})$/, async ({ pool, principal, url }) => unitDetail(pool, principal, hid(url, 4)));
+route('GET', /^\/api\/structure\/people$/, async ({ pool, principal, url }) => searchPeople(pool, principal, url.searchParams.get('q') ?? ''));
+route('POST', /^\/api\/structure\/setup$/, async ({ pool, principal }, b) => setupChurch(pool, principal, hb(b), (processKey) => adoptTemplate(pool, principal, { templateKey: 'church_line', processKey })));
+route('POST', /^\/api\/structure\/levels$/, async ({ pool, principal }, b) => saveLevel(pool, principal, hb(b)));
+route('POST', /^\/api\/structure\/office-types$/, async ({ pool, principal }, b) => saveOfficeType(pool, principal, hb(b)));
+route('POST', /^\/api\/structure\/catalog$/, async ({ pool, principal }, b) => saveCatalogItem(pool, principal, hb(b)));
+route('POST', /^\/api\/structure\/units$/, async ({ pool, principal }, b) => saveUnit(pool, principal, hb(b)));
+route('POST', /^\/api\/structure\/units\/([0-9a-f-]{36})\/departments$/, async ({ pool, principal, url }, b) => setDepartments(pool, principal, hid(url, 4), hb(b)));
+route('POST', /^\/api\/structure\/members\/([0-9a-f-]{36})\/place$/, async ({ pool, principal, url }, b) => placeMember(pool, principal, hid(url, 4), hb(b)));
+route('POST', /^\/api\/structure\/appointments$/, async ({ pool, principal }, b) => appoint(pool, principal, hb(b), rerouteHook));
+route('POST', /^\/api\/structure\/appointments\/([0-9a-f-]{36})\/end$/, async ({ pool, principal, url }, b) => endAppointment(pool, principal, hid(url, 4), hb(b), rerouteHook));
+route('POST', /^\/api\/structure\/committees$/, async ({ pool, principal }, b) => linkCommittee(pool, principal, hb(b)));
+route('POST', /^\/api\/structure\/invite$/, async ({ pool, principal }, b) => {
+  const body = hb(b);
+  const unitId = typeof body.unitId === 'string' ? body.unitId : '';
+  const officeTypeId = typeof body.officeTypeId === 'string' && body.officeTypeId ? body.officeTypeId : null;
+  const scope = await checkInviteScope(pool, principal, unitId, officeTypeId);
+  const role = typeof body.role === 'string' && body.role ? body.role : 'read_only';
+  const sent = await invite(pool, { principal, email: String(body.email ?? ''), workspaceRole: role as 'read_only', message: typeof body.message === 'string' ? body.message : undefined, unitId, officeTypeId, scopeChecked: !scope.workspaceAdmin });
+  return { id: sent.id, expiresAt: sent.expiresAt, delivered: sent.delivered };
+});
 route('GET', /^\/api\/general-approvals\/types$/, async ({ pool, principal }) => ga.listTypes(pool, principal));
 route('POST', /^\/api\/general-approvals\/types$/, async ({ pool, principal }, b) => ga.saveType(pool, principal, hb(b)));
 route('GET', /^\/api\/general-approvals\/requests$/, async ({ pool, principal, url }) => ga.listRequests(pool, principal, url.searchParams.get('scope') ?? 'mine'));

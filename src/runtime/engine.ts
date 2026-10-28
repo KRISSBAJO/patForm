@@ -22,7 +22,7 @@ import { inTransaction, isUniqueViolation, type Client, type Pool } from './db.j
 import { InvalidInput } from './errors.js';
 import { managerOf } from './org.js';
 import { authorityOf, covers } from './authority.js';
-import { continuePolicyChain, evidenceCount, policyCoveredDecision, startPolicyChain, stepRunFor } from './approvals.js';
+import { checkOfficeMandate, continuePolicyChain, evidenceCount, policyCoveredDecision, startPolicyChain, stepRunFor } from './approvals.js';
 import { BudgetExceeded, applyFinancePolicy, recordFinanceOutcome, releaseFinanceHolds, reserveBudget } from './expenses.js';
 import { ensurePublicForm } from './form-links.js';
 import { requireIntakeOpen } from './intake-control.js';
@@ -423,6 +423,10 @@ export class Engine {
         if (stepRun.step.evidence === 'note' && !args.reason?.trim()) throw new InvalidInput(`${stepRun.step_name}: write a note saying what you checked before approving`);
         if (stepRun.step.evidence === 'file' && !(await evidenceCount(client, instance.id, args.approvalKey, describePrincipal(args.principal)))) throw new InvalidInput(`${stepRun.step_name}: attach the evidence before approving`);
       }
+      // The office the decider holds among those the step went to, and the mandate that office carries.
+      const decidedAs = stepRun && args.principal.kind === 'actor'
+        ? (args.decision === 'approved' ? await checkOfficeMandate(client, { run: stepRun, instance, bp, actorId: args.principal.actorId }) : [])
+        : [];
 
       /*
        * ORG-05: being named is not the same as being allowed this amount.
@@ -546,7 +550,7 @@ export class Engine {
       let outcome: 'approved' | 'rejected' | 'changes_requested' = args.decision;
       let chain: { step: number; of: number; stepName?: string } | undefined;
       if (stepRun && declared) {
-        const next = await continuePolicyChain(client, { instance, bp, approval: declared, run: stepRun, decision: args.decision, actor: describePrincipal(args.principal), now: args.now });
+        const next = await continuePolicyChain(client, { instance, bp, approval: declared, run: stepRun, decision: args.decision, actor: describePrincipal(args.principal), now: args.now, as: decidedAs });
         chain = next.stepName ? { step: next.step, of: next.of, stepName: next.stepName } : { step: next.step, of: next.of };
         if (!next.fire) return { applied: true, chain };
         outcome = next.fire;

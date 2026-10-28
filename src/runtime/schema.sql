@@ -4106,3 +4106,100 @@ alter table approval_vote add column if not exists evidence_ids uuid[] not null 
 alter table approval_request alter column action_run_id drop not null;
 alter table approval_request drop constraint if exists approval_request_action_run_id_key;
 create unique index if not exists approval_request_run_uq on approval_request (action_run_id) where action_run_id is not null;
+
+-- Structure and offices (church phase one). People are not churches,
+-- churches are not jurisdictions, offices are not people: each is its own
+-- row, connected. Levels name the tiers of the tree (National, District,
+-- Zone, Area, Station); a unit at a station level is a church, any other
+-- unit is a jurisdiction. A jurisdiction's office is hosted at a station,
+-- which keeps its own leadership.
+create table if not exists org_level (
+  id          uuid primary key default gen_random_uuid(),
+  tenant_id   uuid not null references tenant(id),
+  key         text not null,
+  name        text not null,
+  rank        int not null,
+  is_station  boolean not null default false,
+  created_at  timestamptz not null default now(),
+  unique (tenant_id, key)
+);
+alter table org_unit add column if not exists level_id uuid references org_level(id);
+alter table org_unit add column if not exists host_station_id uuid references org_unit(id);
+alter table org_unit add column if not exists country text;
+alter table org_unit add column if not exists code text;
+alter table org_unit add column if not exists active boolean not null default true;
+create index if not exists org_unit_parent_idx on org_unit (tenant_id, parent_id);
+
+-- An office is a seat, held by people over time. Permissions are explicit:
+-- holding an office grants exactly these, over the unit and everything
+-- under it, and nothing because of the title.
+create table if not exists office_type (
+  id          uuid primary key default gen_random_uuid(),
+  tenant_id   uuid not null references tenant(id),
+  key         text not null,
+  name        text not null,
+  level_id    uuid references org_level(id),
+  kind        text not null check (kind in ('overseer', 'assistant', 'admin', 'secretary', 'unit_head', 'officer')),
+  single      boolean not null default true,
+  permissions text[] not null default '{}',
+  active      boolean not null default true,
+  sort        int not null default 0,
+  created_at  timestamptz not null default now(),
+  unique (tenant_id, key)
+);
+
+-- The approved catalogue of church departments, and which ones a station runs.
+create table if not exists unit_catalog (
+  id          uuid primary key default gen_random_uuid(),
+  tenant_id   uuid not null references tenant(id),
+  key         text not null,
+  name        text not null,
+  active      boolean not null default true,
+  sort        int not null default 0,
+  created_at  timestamptz not null default now(),
+  unique (tenant_id, key)
+);
+create table if not exists station_department (
+  id          uuid primary key default gen_random_uuid(),
+  tenant_id   uuid not null references tenant(id),
+  station_id  uuid not null references org_unit(id) on delete cascade,
+  catalog_id  uuid not null references unit_catalog(id),
+  active      boolean not null default true,
+  created_at  timestamptz not null default now(),
+  unique (station_id, catalog_id)
+);
+
+-- Who holds which office where, and when. Never deleted: a transfer ends one
+-- row and starts another, so history can say who decided in which office.
+create table if not exists office_holder (
+  id             uuid primary key default gen_random_uuid(),
+  tenant_id      uuid not null references tenant(id),
+  unit_id        uuid not null references org_unit(id),
+  office_type_id uuid not null references office_type(id),
+  department_id  uuid references station_department(id),
+  actor_id       uuid not null references actor(id),
+  acting         boolean not null default false,
+  starts_on      date not null default current_date,
+  ends_on        date,
+  mandate_limit  numeric(18, 2),
+  appointed_by   uuid references actor(id),
+  ended_by       uuid references actor(id),
+  end_reason     text,
+  created_at     timestamptz not null default now(),
+  check (ends_on is null or ends_on >= starts_on)
+);
+create index if not exists office_holder_unit on office_holder (tenant_id, unit_id, office_type_id);
+create index if not exists office_holder_actor on office_holder (tenant_id, actor_id);
+
+-- An invitation may place the person in a unit and seat them in an office on arrival.
+alter table invitation add column if not exists org_unit_id uuid references org_unit(id);
+alter table invitation add column if not exists office_type_id uuid references office_type(id);
+
+-- A committee that approves as a body belongs to a unit (the station's CMC).
+alter table mtg_body add column if not exists org_unit_id uuid references org_unit(id);
+alter table mtg_body add column if not exists structure_key text;
+
+-- The offices a policy step was addressed to, so a change of holder can move the pending approval.
+alter table approval_step_run add column if not exists offices jsonb not null default '[]'::jsonb;
+alter table approval_step_run drop constraint if exists approval_step_run_status_check;
+alter table approval_step_run add constraint approval_step_run_status_check check (status in ('pending', 'approved', 'rejected', 'returned', 'skipped'));

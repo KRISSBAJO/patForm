@@ -1,3 +1,4 @@
+import { endOfficesOfMember, rerouteOffice } from './approvals.js';
 import { createHash, randomBytes } from 'node:crypto';
 import { inTransaction, type Client, type Pool } from './db.js';
 import { setPassword } from './auth.js';
@@ -203,6 +204,7 @@ export interface InviteRowResult {
 
 /** Most at once. A mistake in a pasted list should cost a hundred emails at worst, not a thousand. */
 export const MAX_INVITES = 100;
+const SCOPED_ROLES: WorkspaceRole[] = ['read_only', 'approver', 'operator'];
 
 /**
  * Many invitations at once — typed, pasted or from a spreadsheet.
@@ -336,13 +338,24 @@ export interface InviteArgs {
   workspaceRole: WorkspaceRole;
   processRoles?: { processKey: string; roleKey: string }[];
   message?: string;
+  /** Place the person in this unit on arrival (their station). */
+  unitId?: string | null;
+  /** Seat them in this office at that unit on arrival. */
+  officeTypeId?: string | null;
+  /**
+   * Set only by the structure module, after it checked the inviter holds an
+   * office with the people permission over `unitId`. Such an invitation may
+   * grant only the plain member roles.
+   */
+  scopeChecked?: boolean;
 }
 
 export async function invite(
   pool: Pool,
   args: InviteArgs,
 ): Promise<{ id: string; token: string; expiresAt: string; delivered: string }> {
-  await requireWorkspaceCapability(pool, args.principal, 'administer', 'invitations');
+  if (!args.scopeChecked) await requireWorkspaceCapability(pool, args.principal, 'administer', 'invitations');
+  else if (!SCOPED_ROLES.includes(args.workspaceRole)) throw new InvalidInput('an invitation into a unit can give the member, approver or operator role only');
   const principal = args.principal;
   if (principal.kind !== 'actor') throw new Error('unreachable');
   const tenantId = principal.tenantId;
@@ -368,7 +381,7 @@ export async function invite(
     // both pass the pending-invitation check.
     await client.query('select id from tenant where id = $1 for update', [tenantId]);
     const granterRole = await roleOf(client, principal.actorId);
-    if (!grantableRoles(granterRole).includes(args.workspaceRole)) {
+    if (!args.scopeChecked && !grantableRoles(granterRole).includes(args.workspaceRole)) {
       // Otherwise every role holding `administer` is an escalation with one
       // extra step: invite an owner, accept it yourself.
       throw new InvalidInput(
@@ -400,8 +413,8 @@ export async function invite(
     const token = `inv_${randomBytes(24).toString('base64url')}`;
     const { rows } = await client.query<{ id: string; expires_at: Date }>(
       `insert into invitation
-         (tenant_id, email, workspace_role, process_roles, token_hash, invited_by, message, expires_at)
-       values ($1, $2, $3, $4, $5, $6, $7, now() + make_interval(days => $8))
+         (tenant_id, email, workspace_role, process_roles, token_hash, invited_by, message, expires_at, org_unit_id, office_type_id)
+       values ($1, $2, $3, $4, $5, $6, $7, now() + make_interval(days => $8), $9, $10)
        returning id, expires_at`,
       [
         tenantId,
@@ -412,6 +425,8 @@ export async function invite(
         principal.actorId,
         args.message ?? '',
         INVITE_TTL_DAYS,
+        args.unitId ?? null,
+        args.officeTypeId ?? null,
       ],
     );
 
@@ -530,8 +545,11 @@ export async function acceptInvitation(
       expires_at: Date;
       accepted_at: Date | null;
       revoked_at: Date | null;
+      org_unit_id: string | null;
+      office_type_id: string | null;
+      invited_by: string;
     }>(
-      `select id, tenant_id, email, workspace_role, process_roles, expires_at, accepted_at, revoked_at
+      `select id, tenant_id, email, workspace_role, process_roles, expires_at, accepted_at, revoked_at, org_unit_id, office_type_id, invited_by
          from invitation where token_hash = $1 for update`,
       [hash(args.token)],
     );
@@ -576,6 +594,17 @@ export async function acceptInvitation(
     // address, which is exactly what a verification link proves — asking them
     // to do it twice would be ceremony.
     await client.query('update actor set email_verified_at = now() where id = $1', [actorId]);
+
+    // Invited into a unit, and perhaps an office: they arrive in place.
+    if (invitation.org_unit_id) {
+      await client.query('update actor set org_unit_id = coalesce(org_unit_id, $2) where id = $1', [actorId, invitation.org_unit_id]);
+      if (invitation.office_type_id) {
+        await client.query(
+          `insert into office_holder (tenant_id, unit_id, office_type_id, actor_id, appointed_by) values ($1, $2, $3, $4, $5)`,
+          [invitation.tenant_id, invitation.org_unit_id, invitation.office_type_id, actorId, invitation.invited_by]);
+        await rerouteOffice(client, invitation.tenant_id, invitation.org_unit_id, invitation.office_type_id);
+      }
+    }
 
     // The process roles they were invited for, so they arrive able to do the
     // job rather than able to see nothing.
@@ -680,6 +709,8 @@ export async function setMemberActive(
      */
     let sessionsRevoked = 0;
     if (!args.active) {
+      // Their offices end today, and what waited for them moves to the next holder or the level above.
+      await endOfficesOfMember(client, tenantId, args.actorId, principal.actorId, 'left');
       const { rowCount } = await client.query(
         'update session set revoked_at = now() where actor_id = $1 and revoked_at is null',
         [args.actorId],

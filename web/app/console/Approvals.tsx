@@ -17,8 +17,8 @@ import { DataTable } from './datatable';
  * the policy goes live.
  */
 
-type Responsible = { kind: string; role?: string; team?: string; email?: string; field?: string; fallback?: string };
-type Step = { key: string; name: string; responsible: Responsible[]; mode: 'any' | 'all' | 'quorum'; required?: number; applies?: { amountField?: string; minAmount?: number | null; maxAmount?: number | null; categories?: string[]; costCentres?: string[]; branches?: string[] }; evidence: 'none' | 'note' | 'file'; notTheSubmitter: boolean; sla?: { remindAfterHours?: number | null; escalateAfterHours?: number | null; escalateTo?: Responsible[]; escalateMode?: 'add' | 'replace' }; onReject: 'end' | 'return'; guidance?: string };
+type Responsible = { kind: string; role?: string; team?: string; email?: string; field?: string; fallback?: string; office?: string; committee?: string };
+type Step = { key: string; name: string; sameApprover?: 'once' | 'independent'; responsible: Responsible[]; mode: 'any' | 'all' | 'quorum'; required?: number; applies?: { amountField?: string; minAmount?: number | null; maxAmount?: number | null; categories?: string[]; costCentres?: string[]; branches?: string[] }; evidence: 'none' | 'note' | 'file'; notTheSubmitter: boolean; sla?: { remindAfterHours?: number | null; escalateAfterHours?: number | null; escalateTo?: Responsible[]; escalateMode?: 'add' | 'replace' }; onReject: 'end' | 'return'; guidance?: string };
 type Policy = { id: string; process_key: string; process_name: string | null; name: string; description: string | null; branch_id: string | null; branch: string | null; steps: Step[]; cost_centre_owners: Record<string, string>; template_key: string | null; active: boolean; version: number; updated_at: string; open_steps: number };
 type Process = { key: string; name: string; approvals: { key: string; name: string; policy: boolean }[]; finance: unknown };
 type Template = { key: string; name: string; description: string; fits: string; steps: Step[]; process?: string; limitFrom?: { step: string; module: string } };
@@ -42,15 +42,20 @@ function useFeed<T>(path: string | null) {
 const flag = (cc: string | null) => (cc && /^[A-Z]{2}$/.test(cc) ? String.fromCodePoint(...[...cc].map((c) => 0x1f1e6 + c.charCodeAt(0) - 65)) : '');
 const day = (v: string | null | undefined) => (v ? new Date(v).toLocaleDateString([], { dateStyle: 'medium' }) : '');
 const Pill = ({ s, text }: { s: string; text?: string }) => <span className={`mx__pill mx__pill--${s}`}><i />{text ?? s}</span>;
-const who = (r: Responsible) => r.kind === 'manager' ? (r.fallback ? `Their manager, else role ${r.fallback}` : 'Their manager') : r.kind === 'skip_manager' ? 'Manager’s manager' : r.kind === 'role' ? `Role: ${r.role}` : r.kind === 'team' ? `${(r.team ?? '').toUpperCase()} team` : r.kind === 'person' ? r.email ?? '' : r.kind === 'cost_centre_owner' ? 'Cost centre owner' : r.kind === 'field' ? `Address in ${r.field}` : 'Process approvers';
-const KINDS: [string, string][] = [['manager', 'Their manager'], ['skip_manager', 'Manager’s manager'], ['team', 'A team'], ['role', 'A process role'], ['person', 'A named person'], ['cost_centre_owner', 'Cost centre owner'], ['field', 'An address on the form'], ['fallback', 'The process’s own approvers']];
+/** Office keys to names, filled when the structure loads. */
+let OFFICE_NAMES: Record<string, string> = {};
+const who = (r: Responsible) => r.kind === 'office' ? (OFFICE_NAMES[r.office ?? ''] ?? (r.office ?? '').replace(/_/g, ' ')) : r.kind === 'committee' ? `${(r.committee ?? '').replace(/_/g, ' ').toUpperCase()} committee` : r.kind === 'manager' ? (r.fallback ? `Their manager, else role ${r.fallback}` : 'Their manager') : r.kind === 'skip_manager' ? 'Manager’s manager' : r.kind === 'role' ? `Role: ${r.role}` : r.kind === 'team' ? `${(r.team ?? '').toUpperCase()} team` : r.kind === 'person' ? r.email ?? '' : r.kind === 'cost_centre_owner' ? 'Cost centre owner' : r.kind === 'field' ? `Address in ${r.field}` : 'Process approvers';
+const KINDS: [string, string][] = [['office', 'An office (pastor, admin…)'], ['committee', 'A committee'], ['manager', 'Their manager'], ['skip_manager', 'Manager’s manager'], ['team', 'A team'], ['role', 'A process role'], ['person', 'A named person'], ['cost_centre_owner', 'Cost centre owner'], ['field', 'An address on the form'], ['fallback', 'The process’s own approvers']];
 const blankStep = (): Step => ({ key: '', name: '', responsible: [{ kind: 'manager' }], mode: 'any', applies: {}, evidence: 'none', notTheSubmitter: true, sla: { remindAfterHours: 24, escalateAfterHours: null, escalateTo: [], escalateMode: 'add' }, onReject: 'end' });
 
 /** One responsible party, editable. */
 function Party({ r, onChange, onRemove, roles }: { r: Responsible; onChange: (r: Responsible) => void; onRemove?: () => void; roles: string[] }) {
+  const offices = Object.entries(OFFICE_NAMES);
   return <div className="ap__party">
     <select value={r.kind} onChange={(e) => onChange({ kind: e.target.value })}>{KINDS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
     {r.kind === 'team' && <select value={r.team ?? 'finance'} onChange={(e) => onChange({ ...r, team: e.target.value })}>{[['finance', 'Finance'], ['hr', 'HR'], ['it', 'IT'], ['facilities', 'Facilities']].map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>}
+    {r.kind === 'office' && <select value={r.office ?? ''} onChange={(e) => onChange({ kind: 'office', office: e.target.value })}><option value="">Choose the office…</option>{offices.map(([k, n]) => <option key={k} value={k}>{n}</option>)}</select>}
+    {r.kind === 'committee' && <input value={r.committee ?? ''} onChange={(e) => onChange({ kind: 'committee', committee: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '_') })} placeholder="cmc" />}
     {r.kind === 'role' && <input list="ap-roles" value={r.role ?? ''} onChange={(e) => onChange({ ...r, role: e.target.value })} placeholder="finance_approver" />}
     {r.kind === 'person' && <input type="email" value={r.email ?? ''} onChange={(e) => onChange({ ...r, email: e.target.value })} placeholder="name@company.com" />}
     {r.kind === 'field' && <input value={r.field ?? ''} onChange={(e) => onChange({ ...r, field: e.target.value })} placeholder="manager_email" />}
@@ -84,6 +89,8 @@ function StepCard({ step, index, total, currency, branches, onEdit, onMove, onRe
 
 export function ApprovalsView({ canAdminister, onOpenRecord }: { canAdminister: boolean; onOpenRecord: (instanceId: string) => void }) {
   const list = useFeed<{ policies: Policy[]; processes: Process[]; templates: Template[] }>('/api/approvals/policies');
+  const structure = useFeed<{ officeTypes: { key: string; name: string; active: boolean }[] }>('/api/structure');
+  OFFICE_NAMES = Object.fromEntries((structure.data?.officeTypes ?? []).filter((o) => o.active).map((o) => [o.key, o.name]));
   const overview = useFeed<Overview>('/api/approvals/overview');
   const branches = useFeed<{ branches: Branch[]; defaultCurrency: string }>('/api/hr/branches');
   const [tab, setTab] = useState<'overview' | 'policies' | 'templates'>('overview');
@@ -187,6 +194,7 @@ export function ApprovalsView({ canAdminister, onOpenRecord }: { canAdminister: 
           <F label="Settled by" wide><Choice value={s.mode} onChange={(x) => up({ mode: x as Step['mode'] })} options={[['any', 'Any one of them'], ['all', 'All of them, in turn'], ['quorum', 'A number of them']]} /></F>
           {s.mode === 'quorum' && <F label="How many"><input inputMode="numeric" value={s.required ?? 2} onChange={(e) => up({ required: Number(e.target.value) })} /></F>}
           <F label="Separation of duties" wide><Choice value={s.notTheSubmitter ? 'yes' : 'no'} onChange={(x) => up({ notTheSubmitter: x === 'yes' })} options={[['yes', 'Never the person who asked'], ['no', 'The requester may decide']]} /></F>
+          <F label="If this person already approved in another office" wide><Choice value={s.sameApprover ?? 'once'} onChange={(x) => up({ sameApprover: x as 'once' | 'independent' })} options={[['once', 'Count it once and move on'], ['independent', 'Needs someone independent']]} /></F>
         </SheetSection>
         <SheetSection title="When it applies" hint={`Amounts in ${cur || 'the workspace currency'}. Leave empty for always.`}>
           <F label="From amount"><input inputMode="decimal" value={a.minAmount ?? ''} onChange={(e) => upA({ minAmount: e.target.value === '' ? null : Number(e.target.value) })} /></F>

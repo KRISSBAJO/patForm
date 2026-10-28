@@ -19,6 +19,7 @@
  * (acceptance 2). A transfer dates the new reporting line, so routing changes
  * on the day and past decisions keep the old manager (acceptance 3).
  */
+import { endOfficesOfMember } from './approvals.js';
 import { inTransaction, type Client, type Pool } from './db.js';
 import { randomUUID } from 'node:crypto';
 import { InvalidInput } from './errors.js';
@@ -791,6 +792,7 @@ async function revokeAccess(client: Client, w: Who, actorId: string) {
   await client.query('update session set revoked_at = now() where actor_id = $1 and revoked_at is null', [actorId]);
   await client.query('update api_key set revoked_at = now() where actor_id = $1 and revoked_at is null', [actorId]);
   await recordWorkspaceAudit(client, { tenantId: w.tenantId, actorId: w.actorId, action: 'member.deactivated', targetId: actorId, detail: { via: 'hr' } });
+  await endOfficesOfMember(client, w.tenantId, actorId, w.actorId, 'left');
   // Access in other systems goes to revocation, tracked apart from this case (PRD OPS-05).
   await queueRevocations(client, w.tenantId, actorId, 'access revoked by HR');
 }
