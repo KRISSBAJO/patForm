@@ -4203,3 +4203,22 @@ alter table mtg_body add column if not exists structure_key text;
 alter table approval_step_run add column if not exists offices jsonb not null default '[]'::jsonb;
 alter table approval_step_run drop constraint if exists approval_step_run_status_check;
 alter table approval_step_run add constraint approval_step_run_status_check check (status in ('pending', 'approved', 'rejected', 'returned', 'skipped'));
+
+-- General Approvals on offices: categories set by the admin, conditional
+-- documents, steps that run side by side (a stage), office and committee
+-- approvers, and the record of which office a step was addressed to.
+create table if not exists general_request_category (
+  id uuid primary key default gen_random_uuid(), tenant_id uuid not null references tenant(id),
+  name text not null, sort int not null default 0, active boolean not null default true,
+  created_at timestamptz not null default now(), unique (tenant_id, name)
+);
+alter table general_request_type add column if not exists category_id uuid references general_request_category(id);
+alter table general_request_type add column if not exists amount_field text;
+alter table general_request_type add column if not exists documents jsonb not null default '[]'::jsonb;
+alter table general_request_file add column if not exists document_key text;
+alter table general_request_step add column if not exists stage int;
+update general_request_step set stage = position where stage is null;
+alter table general_request_step add column if not exists offices jsonb not null default '[]'::jsonb;
+alter table general_request_step add column if not exists note text;
+alter table general_request_step drop constraint if exists general_request_step_status_check;
+alter table general_request_step add constraint general_request_step_status_check check (status in ('waiting','pending','approved','rejected','returned','skipped','not_needed','closed'));

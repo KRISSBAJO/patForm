@@ -1091,6 +1091,8 @@ route('POST', /^\/api\/structure\/invite$/, async ({ pool, principal }, b) => {
   return { id: sent.id, expiresAt: sent.expiresAt, delivered: sent.delivered };
 });
 route('GET', /^\/api\/general-approvals\/types$/, async ({ pool, principal }) => ga.listTypes(pool, principal));
+route('GET', /^\/api\/general-approvals\/categories$/, async ({ pool, principal }) => ga.listCategories(pool, principal));
+route('POST', /^\/api\/general-approvals\/categories$/, async ({ pool, principal }, b) => ga.saveCategory(pool, principal, hb(b)));
 route('POST', /^\/api\/general-approvals\/types$/, async ({ pool, principal }, b) => ga.saveType(pool, principal, hb(b)));
 route('GET', /^\/api\/general-approvals\/requests$/, async ({ pool, principal, url }) => ga.listRequests(pool, principal, url.searchParams.get('scope') ?? 'mine'));
 route('POST', /^\/api\/general-approvals\/requests$/, async ({ pool, principal }, b) => ga.createRequest(pool, principal, hb(b)));

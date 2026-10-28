@@ -21,6 +21,7 @@ import { inTransaction, type Client, type Pool } from './db.js';
 import { InvalidInput } from './errors.js';
 import type { Principal } from './policy.js';
 import { recordWorkspaceAudit } from './authority.js';
+import { seedChurchRequestTypes } from './general-approvals.js';
 
 export const PERMISSIONS = ['people', 'appointments', 'structure', 'reports'] as const;
 export type Permission = (typeof PERMISSIONS)[number];
@@ -209,8 +210,10 @@ export async function setupChurch(pool: Pool, principal: Principal, body: Record
     }
     sort = 0;
     for (const name of CHURCH.catalog) await client.query('insert into unit_catalog (tenant_id, key, name, sort) values ($1, $2, $3, $4) on conflict (tenant_id, key) do nothing', [c.tenantId, keyOf(name), name, sort += 10]);
-    await recordWorkspaceAudit(client, { tenantId: c.tenantId, actorId: c.actorId, action: 'structure.church_setup', detail: { levels: CHURCH.levels.length, offices: CHURCH.offices.length } });
-    return { levels: CHURCH.levels.length, offices: CHURCH.offices.length, catalog: CHURCH.catalog.length };
+    // Everyday church requests in General Approvals, routed by office.
+    const requestTypes = await seedChurchRequestTypes(client, c.tenantId, c.actorId);
+    await recordWorkspaceAudit(client, { tenantId: c.tenantId, actorId: c.actorId, action: 'structure.church_setup', detail: { levels: CHURCH.levels.length, offices: CHURCH.offices.length, requestTypes } });
+    return { levels: CHURCH.levels.length, offices: CHURCH.offices.length, catalog: CHURCH.catalog.length, requestTypes };
   });
   const adopted: string[] = [];
   if (body.adoptPolicy !== false) {

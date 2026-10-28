@@ -30,6 +30,7 @@ import { requireWorkspaceCapability, type Principal } from './policy.js';
 import { recordWorkspaceAudit } from './authority.js';
 import { managerOf } from './org.js';
 import { alternateFor, holdingsAt, resolveCommittee, resolveOffice, unitOfActor } from './structure.js';
+import { rerouteGeneralOffice } from './general-approvals.js';
 import { expenseSettings } from './expenses.js';
 import { procurementSettings } from './procurement.js';
 import { objectStore } from './object-store.js';
@@ -533,6 +534,8 @@ export async function rerouteOffice(client: Client, tenantId: string, unitId: st
       subject: `${bp.name}: ${run.step.name} needed`, text: `A ${bp.name} record now waits for your decision (${run.step.name}), because the office changed hands.\n\nOpen your work queue in Patform to decide.` });
     moved++;
   }
+  // General Approvals steps addressed to the same office move too.
+  moved += await rerouteGeneralOffice(client, tenantId, unitId, officeTypeId);
   return moved;
 }
 
